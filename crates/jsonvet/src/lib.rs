@@ -60,6 +60,9 @@ pub fn check<'a>(text: &'a str, config: &Config) -> Report<'a> {
 /// let kinds: Vec<EventKind> = events.unwrap().into_iter().map(|e| e.kind).collect();
 /// assert_eq!(kinds[2], EventKind::Number("0x10"));
 /// ```
+///
+/// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
+#[doc(hidden)]
 pub fn parse<'a>(text: &'a str, config: &Config) -> (Report<'a>, Option<Vec<Event<'a>>>) {
     let (problems, events) = parse::check(text, config, true);
     let syntax_error = problems.iter().any(|p| p.rule() == Rule::Syntax);

@@ -41,7 +41,7 @@ pub(crate) fn report_violation(text: &str, config: &Config) -> Result<(), String
     }
     let offsets = problems
         .iter()
-        .flat_map(|p| std::iter::once(p.offset()).chain(p.related_offset()));
+        .flat_map(|p| std::iter::once(p.offset()).chain(p.related().map(|r| r.offset)));
     for offset in offsets
         .clone()
         .chain(problems.iter().rev().map(jsonvet::Problem::offset))

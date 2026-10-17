@@ -79,6 +79,9 @@ pub(crate) fn rendered(segment: &Segment<'_>) -> String {
 }
 
 /// One step of a [`json_path`]: an object key or an array index.
+///
+/// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
+#[doc(hidden)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum PathStep<'a> {
@@ -100,6 +103,9 @@ pub enum PathStep<'a> {
 /// let steps = [PathStep::Key("a"), PathStep::Index(0), PathStep::Key("")];
 /// assert_eq!(json_path(steps), "$.a[0][\"\"]");
 /// ```
+///
+/// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
+#[doc(hidden)]
 pub fn json_path<'a>(steps: impl IntoIterator<Item = PathStep<'a>>) -> String {
     let segments: Vec<String> = std::iter::once("$".to_owned())
         .chain(steps.into_iter().map(|step| match step {

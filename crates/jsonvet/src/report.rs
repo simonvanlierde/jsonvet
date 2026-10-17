@@ -209,7 +209,7 @@ mod tests {
         for problem in report.problems() {
             let at = report.location(problem.offset());
             assert_eq!(at.column, problem.offset() + 1);
-            report.location(problem.related_offset().unwrap_or_default());
+            report.location(problem.related().map(|r| r.offset).unwrap_or_default());
         }
         assert_eq!(report.counted.get(), 0);
     }
@@ -226,7 +226,7 @@ mod tests {
             let at = report.location(problem.offset());
             // Every character but the `é` is one byte.
             assert_eq!(at.column, problem.offset());
-            let first = problem.related_offset().unwrap_or_default();
+            let first = problem.related().map(|r| r.offset).unwrap_or_default();
             assert_eq!(report.location(first).column, first);
         }
         let bound = 2 * text.len() + 2 * super::CHUNK * report.problems().len();

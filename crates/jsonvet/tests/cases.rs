@@ -21,7 +21,7 @@ fn render(dialect: Dialect, text: &str) -> String {
             problem.severity(),
             problem.rule()
         );
-        if let Some(related) = problem.related_offset() {
+        if let Some(related) = problem.related().map(|r| r.offset) {
             let first = report.location(related);
             let _ = write!(out, " (from {}:{})", first.line, first.column);
         }
@@ -350,10 +350,7 @@ fn related_offsets_say_what_they_point_at() {
     use jsonvet::RelatedKind;
     let related = |dialect, text| {
         let report = check(text, &Config::new(dialect));
-        let problem = &report.problems()[0];
-        let related = problem.related().map(|r| (r.offset, r.kind));
-        assert_eq!(problem.related_offset(), related.map(|(offset, _)| offset));
-        related
+        report.problems()[0].related().map(|r| (r.offset, r.kind))
     };
     assert_eq!(
         related(Dialect::Json, r#"{"a": 1, "a": 2}"#),
