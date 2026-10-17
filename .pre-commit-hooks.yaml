@@ -6,10 +6,10 @@
   files: (\.(json|jsonc|json5|geojson|jsonld|hujson|jwcc|code-workspace|code-snippets|webmanifest|jsonl|ndjson)|(^|/)\.babelrc)$
   types: [text]
   minimum_pre_commit_version: "2.0.0"
-# The 1.x hook id, kept until 3.0.
+# The 1.x hook id, kept through 3.x.
 - id: check-json5
   name: check json5
-  description: the 1.x hook id of jsonvet, kept until 3.0
+  description: the 1.x hook id of jsonvet, kept through 3.x
   entry: jsonvet
   language: python
   files: (\.(json|jsonc|json5|geojson|jsonld|hujson|jwcc|code-workspace|code-snippets|webmanifest|jsonl|ndjson)|(^|/)\.babelrc)$
