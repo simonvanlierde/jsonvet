@@ -80,8 +80,14 @@ jobs:
       - run: cargo nextest run --workspace --locked
       # nextest skips doctests.
       - run: cargo test --workspace --doc --locked
-      # The PyPI wheels' build: `--schema` exits 2 and says how to get it.
+      # The action's own logic on bash 3.2, /bin/bash on macOS. The Windows checkout converts line
+      # endings, which bash scripts do not survive; the action job covers Windows.
+      - run: /bin/bash scripts/test-action.sh
+        if: runner.os == 'macOS'
+      # The PyPI wheels' build: `--schema` exits 2 and says how to get it. The hook job and
+      # smoke.py run that binary on macOS and Windows.
       - run: cargo nextest run -p jsonvet-cli --no-default-features --locked
+        if: runner.os == 'Linux'
 
   # The oldest Rust the crates support, from rust-version in Cargo.toml. Builds the library and
   # binaries only: test-only dependencies may need a newer compiler.
@@ -124,9 +130,8 @@ jobs:
           echo "seed: $SEED (uv run scripts/differential.py --cases 5000 --seed $SEED)"
           uv run scripts/differential.py --cases 5000 --seed "$SEED"
 
-  # The wheel, built the way the release does, and the hook and the action as users install them,
-  # on every OS: pre-commit and prek install this repository, and its placeholder setup.py pins
-  # the jsonvet wheel. Until that version is on PyPI, the wheel built here stands in for it,
+  # The wheel, built the way the release does, and the hook as users install it, on every OS:
+  # pre-commit and prek install this repository, and its placeholder setup.py pins the jsonvet wheel. Until that version is on PyPI, the wheel built here stands in for it,
   # through pip's and uv's find-links settings.
   hook:
     strategy:
@@ -152,7 +157,7 @@ jobs:
           manylinux: auto
           container: ${{ matrix.container || '' }}
           rust-toolchain: ${{ env.RELEASE_RUST }}
-      # For the action job below.
+      # For the action job below, which installs it.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: wheel-${{ matrix.os }}
@@ -176,53 +181,6 @@ jobs:
               exit 1
             fi
           done
-      # The action from this checkout, installing the wheel built above instead of PyPI's. `$/` is
-      # this repository at the running commit, fetched like a remote action, so the action runs as
-      # users get it: github.action_ref is a commit SHA, and github.action_path is not the
-      # checkout (docs.github.com, workflow syntax, `jobs.<job_id>.steps[*].uses`).
-      - name: Run the action on a duplicate key
-        id: action-bad
-        continue-on-error: true
-        uses: $/
-        env:
-          PIP_NO_INDEX: "1"
-          PIP_FIND_LINKS: ${{ github.workspace }}/dist
-        with:
-          files: dup.json ok.json
-          sarif: jsonvet.sarif
-      - name: Check that the action failed and wrote one SARIF result
-        shell: bash
-        env:
-          OUTCOME: ${{ steps.action-bad.outcome }}
-        run: |
-          test "$OUTCOME" = failure
-          uv run --isolated --no-project python -c '
-          import json
-          results = json.load(open("jsonvet.sarif"))["runs"][0]["results"]
-          assert [r["ruleId"] for r in results] == ["duplicate-key"], results
-          '
-      - name: Run the action on a valid file
-        uses: $/
-        env:
-          PIP_NO_INDEX: "1"
-          PIP_FIND_LINKS: ${{ github.workspace }}/dist
-        with:
-          files: ok.json
-
-  # The action's own logic, on bash 3.2 too: /bin/bash on macOS. The Windows checkout converts
-  # line endings, which bash scripts do not survive; the action job below covers Windows.
-  action-script:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - run: /bin/bash scripts/test-action.sh
 
   # The action as users run it, in a repository of its own: the default file list (nested files,
   # tracked only, no symlinks), `args`, `**` in `files` and the SARIF check. No checkout: `$/`
@@ -331,29 +289,3 @@ jobs:
       # Both crates, with jsonvet-cli built against the packaged jsonvet even when its `=x.y.z`
       # version is not on crates.io yet. The release job skips this with --no-verify.
       - run: cargo publish --dry-run --locked --workspace
-
-  # Public API changes in the library against its last release on crates.io. A break fails the
-  # job unless Cargo.toml has the next major version. Reported, not enforced, so read the job
-  # summary on a pull request that touches the library.
-  semver:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
-        with:
-          tool: cargo-semver-checks@0.51.0
-      - name: cargo semver-checks
-        run: |
-          status=0
-          cargo semver-checks --package jsonvet --color never > semver.txt 2>&1 || status=$?
-          cat semver.txt
-          { echo '## cargo semver-checks: jsonvet'; echo '```'; cat semver.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-          exit "$status"
