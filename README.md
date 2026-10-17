@@ -284,12 +284,9 @@ keep working through 3.x, and the `check-json5` package on PyPI now installs jso
 
 For `.json`, `.json5`, `.geojson`, `.jsonld`, `.webmanifest` and `.babelrc` files, and in strict
 mode, 2.0 gives the same pass or fail as 1.4.1, the same exit codes and the same duplicate-key
-paths. Comparing both on 20,184 files in JSON5 and in strict mode (20,000 generated, the 114
-json5-tests cases and the 70-file corpus), 40,368 runs in all, the verdicts and duplicate-key
-reports match on every run but 385, on 383 files, all deliberate: an unquoted key that starts with
-a `\u` escape that cannot start a key (381 files), a nesting depth of 10,000, and a syntax error
-reported after a duplicate key. What changes, and why, is listed in the
-[CHANGELOG](https://github.com/simonvanlierde/jsonvet/blob/main/CHANGELOG.md) and in [docs/design.md](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md):
+paths. The evidence, a comparison on 20,184 files, is in [docs/design.md](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#known-differences-from-14).
+What changes is listed in the
+[CHANGELOG](https://github.com/simonvanlierde/jsonvet/blob/main/CHANGELOG.md):
 
 - each line gains the severity and rule, as in `error[duplicate-key]`, and syntax errors use
   jsonvet's own wording;

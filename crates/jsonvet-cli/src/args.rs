@@ -29,15 +29,8 @@ Options:
       --format FORMAT           Print problems as text (the default) or as one SARIF 2.1.0
                                 document, for GitHub code scanning.
       --schema FILE             Also check each file against the JSON Schema in FILE, reported
-                                under the rule schema at the value each error is about, named
-                                by its JSONPath as duplicate-key names keys ($ is the root). Files
-                                with a syntax error are not checked, and with --schema a file
-                                nested deeper than 512 levels has one. A $ref must stay inside
-                                FILE: nothing is fetched. At most 100 errors per document are
-                                listed, the first jsonschema finds (it takes object keys in sorted
-                                order), then a count of the rest. Not in the PyPI wheels, which
-                                the pre-commit hook and the GitHub Action install; `cargo install
-                                jsonvet-cli` has it.
+                                under the rule schema. Not in the PyPI wheels; `cargo install
+                                jsonvet-cli` has it. Limits: see the README.
       --config FILE             Read settings from FILE instead of searching for one.
       --no-config               Do not read a settings file.
   -h, --help                    Print this help.

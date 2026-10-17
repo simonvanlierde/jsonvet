@@ -43,31 +43,14 @@ Hook and command users who do neither of the first two need no other change.
   conformance matrix can be cited.
 - `--schema FILE` checks each file against one JSON Schema and reports each error under the rule
   `schema`, at the line and column of the value it is about, in every dialect and output format.
-  Each message ends with the value's JSONPath, as duplicate-key messages write it, with `$` for the
-  root. The rule id and the position are the stable part; the message wording comes from the
-  jsonschema crate and may change between releases. A file with a syntax error gets no schema
-  errors, and with `--schema` a file nested deeper than 512 levels has one, since jsonschema's
-  memory use grows with the square of the depth there. A `$ref` must stay inside the schema file:
-  jsonvet fetches nothing. Each document lists at most 100 schema errors, the first jsonschema finds
-  (it takes object keys in sorted order), then a count of the rest, which SARIF output leaves out. A
-  document holding `NaN`, `Infinity` or a number past a double's range has no JSON Schema value, nor
-  does one with two keys in an object that differ only in lone surrogates, which both become U+FFFD;
-  such a document gets one schema error and is not checked. Schema errors are always errors:
-  `--error`, `--warn`, `--ignore` and settings files do not take `schema`. SARIF output lists
-  `schema` among its rules in builds that have `--schema`. A schema that cannot be read or used,
-  nests more than 128 levels, or holds such a number or keys exits with status 2, as does one whose
-local `$ref`s chain more than 128 deep, counting the nesting along the way. A regex in it may
-  backtrack 5,000 times per match; past that, `pattern` reports an error, but `patternProperties`
-  and an `additionalProperties` beside it count the key as not matching. With `--schema`, memory use
-  is about 23 times the file's size.
+  Each message ends with the value's JSONPath. A `$ref` must stay inside the schema file: jsonvet
+  fetches nothing. Schema errors are always errors. The limits on depth, error count, message
+  length, regex backtracking and memory are in the
+  [README](https://github.com/simonvanlierde/jsonvet#json-schema).
 - `--schema` comes with `cargo install jsonvet-cli`, where the binary grows from about 0.6 MB to
   about 5 MB on Linux x86-64. The PyPI wheels, which the hook and the GitHub Action install, are
   built without it and stay at about 0.65 MB; there `--schema` exits with status 2 and says how to
   get it. Building the crate with `--no-default-features` leaves it out too.
-- The library's `parse` returns a text's values as positioned events (the new types `Event` and
-  `EventKind`), next to the report `check` gives.
-- The library's `json_path` writes a path of steps (the new type `PathStep`) as duplicate-key
-  messages do, long paths shortened the same way.
 
 ### Changed
 
@@ -95,6 +78,10 @@ local `$ref`s chain more than 128 deep, counting the nesting along the way. A re
   not only until 3.0.
 - Unquoted JSON5 keys follow Unicode 17, up from 16, so they may use the letters it added, such
   as the 4,298 ideographs of CJK Extension J.
+
+### Deprecated
+
+- `Problem::related_offset()`: use `related()`, which also says what the second position is.
 
 ### Fixed
 

@@ -2,8 +2,8 @@
 
 jsonvet checks files in the JSON family for syntax errors, duplicate keys and the rules each
 dialect adds, and reports every problem with its file, line, column and rule. 2.0 was a rewrite of
-check-json5 1.4 (Python) in Rust. This document records what jsonvet promises, how it is built, and
-the bar it had to meet before it shipped. Items marked *since 3.0* changed after 2.0.0.
+check-json5 1.4 (Python) in Rust. This document records what jsonvet promises and how it is built. Items marked *since 3.0*
+changed after 2.0.0.
 
 ## The contract with 1.4
 
@@ -122,27 +122,26 @@ downloads it. Without the feature, `--schema` still parses, so it exits 2 with a
 `cargo install jsonvet-cli` instead of reading the next argument as a file. One help text serves
 both builds. CI tests and lints both builds.
 
-jsonschema validates recursively, and its memory grows with the square of the depth when an error
-sits deep under a recursive `$ref` (1.3 GB for a 50 KB file nested 10,000 levels). So with
-`--schema` a file is read to 512 levels, not 10,000, and deeper is a syntax error. Only a run with
-`--schema` starts a thread with a 64 MB stack for it; 512 levels against a recursive schema took
-up to 2.2 MB in a debug build, more than Windows' 1 MB main thread. Without `--schema` jsonvet runs
-on the main thread, as it did before. Folded values take about 23 times the file's size in memory.
+The limits are listed in the [README](../README.md#json-schema). Why each exists:
 
-The schema itself is read to 128 levels, and its local `$ref`s count too: each one jsonvet can
-follow inside the file (a JSON Pointer, an anchor, or a URI naming an `$id` there) adds a level,
-and a schema whose longest chain passes 128 is a usage error, placed at the `$ref` that crosses
-the line. A `$ref` back to a schema on the way to it is recursion and adds nothing. Without the
-check, 1,000 `allOf` and `$ref` hops overflow the 64 MB stack at once against a 512-level array.
-jsonschema is also exponential in a schema where each level `$ref`s the next twice (24 levels
-take 0.25 s, each level doubles it); no check covers that yet.
-
-Schema regexes with back-references or lookaround run on fancy-regex, which backtracks; jsonvet
-caps that at 5,000 steps per match, so `^(a|a)*\1b` over 5,000 strings takes under a second
-instead of minutes. Over the cap, `pattern` reports an error, but `patternProperties` (and
-`additionalProperties` beside it) count the key as not matching, because jsonschema 0.58 drops
-the regex error there (`is_match(..).unwrap_or(false)`). A schema-side pre-check of every
-`patternProperties` regex would close it; until then it is a known limit.
+- **File depth.** jsonschema validates recursively, and its memory grows with the square of the
+  depth when an error sits deep under a recursive `$ref`: 1.3 GB for a 50 KB file nested 10,000
+  levels. Only a run with `--schema` starts a thread with a 64 MB stack for it, because the
+  deeper read took up to 2.2 MB in a debug build, more than Windows' 1 MB main thread. Without
+  `--schema` jsonvet runs on the main thread, as it did before.
+- **Memory.** Folded values take about 23 times the file's size.
+- **Schema depth and `$ref` chains.** Without the check, 1,000 `allOf` and `$ref` hops overflow
+  the 64 MB stack at once against a 512-level array. A `$ref` back to a schema on the way to it
+  is recursion and adds nothing. The error lands at the `$ref` that crosses the line. A `$ref`
+  jsonvet can follow inside the file is a JSON Pointer, an anchor, or a URI naming an `$id` there.
+- **Not covered yet.** jsonschema is exponential in a schema where each level `$ref`s the next
+  twice: 24 levels take 0.25 s, and each level doubles it.
+- **Regex backtracking.** Schema regexes with back-references or lookaround run on fancy-regex,
+  which backtracks. With the cap, `^(a|a)*\1b` over 5,000 strings takes under a second instead
+  of minutes. `patternProperties` (and `additionalProperties` beside it) count an over-cap key
+  as not matching, because jsonschema 0.58 drops the regex error there
+  (`is_match(..).unwrap_or(false)`). A schema-side pre-check of every `patternProperties` regex
+  would close it; until then it is a known limit.
 
 Output:
 
@@ -192,68 +191,13 @@ fuzz/  tests/  scripts/
 
 ### The library interface
 
-```rust
-pub fn check(text: &str, config: &Config) -> Report<'_>;
-pub fn parse(text: &str, config: &Config) -> (Report<'_>, Option<Vec<Event<'_>>>); // None after a syntax error
-
-pub struct Config { /* dialect, rule overrides, depth limit */ }
-impl Config {
-    pub const DEFAULT_MAX_DEPTH: usize;  // 10,000
-    pub fn new(dialect: Dialect) -> Self;
-    pub fn rule(self, rule: Rule, severity: Severity) -> Self;
-    pub fn max_depth(self, depth: usize) -> Self;
-    pub fn dialect(&self) -> Dialect;
-    pub fn severity(&self, rule: Rule) -> Severity;
-}
-
-#[non_exhaustive] pub enum Dialect { Json, IJson, Jsonc, Jwcc, Json5, JsonLines }
-impl Dialect {
-    pub const ALL: &'static [Dialect];
-    pub const EXTENSIONS: &'static [(&'static str, Dialect)];  // default extensions, no dot
-    pub const FILE_NAMES: &'static [(&'static str, Dialect)];  // default file names
-    pub fn name(self) -> &'static str;                         // as on the command line, e.g. `jsonc`
-    pub fn for_path(path: &Path) -> Option<Dialect>;
-}
-
-#[non_exhaustive] pub enum Rule { /* Syntax, DuplicateKey, ... */ }
-impl Rule {
-    pub const ALL: &'static [Rule];
-    pub fn id(self) -> &'static str;
-    pub fn description(self) -> &'static str;
-    pub fn default_severity(self, dialect: Dialect) -> Severity;
-}
-
-#[non_exhaustive] pub enum Severity { Off, Warning, Error }  // ordered; name() gives `off`, `warning`, `error`
-#[non_exhaustive] pub struct Location { pub line: usize, pub column: usize }
-impl Location { pub const START: Location; }
-
-impl<'a> Report<'a> {
-    pub fn problems(&self) -> &[Problem];               // document order
-    pub fn passed(&self) -> bool;                       // no problem is an error
-    pub fn location(&self, offset: usize) -> Location;  // line and column, computed on first use
-}
-
-impl Problem {
-    pub fn rule(&self) -> Rule;
-    pub fn severity(&self) -> Severity;
-    pub fn offset(&self) -> usize;
-    pub fn related(&self) -> Option<Related>;  // the first copy of a duplicate key, or where an unterminated string or comment starts
-    pub fn related_offset(&self) -> Option<usize>;  // related()'s offset
-    pub fn path(&self) -> Option<&str>;        // the JSONPath of a duplicate key, at most 256 bytes and a `…`
-    /* Display for the message */
-}
-#[non_exhaustive] pub struct Related { pub offset: usize, pub kind: RelatedKind }
-#[non_exhaustive] pub enum RelatedKind { FirstOccurrence, Start }
-```
-
-`Rule`, `Severity`, `Dialect` and `Problem` implement `Display`, and `Rule` and `Dialect` parse
-from their ids and names with `FromStr`. On failure, `UnknownRule::id()` and
-`UnknownDialect::name()` give back the text that failed to parse. A `Report` is `Send` but not
-`Sync`, because `location` caches line starts and character counts inside it.
-
-The text is `&str`: the caller has already checked UTF-8, so every offset falls on a character
-boundary and columns are well defined. `check` never panics and has no error mode. Problems in the
-file are its output.
+The public types are `check`, `Config`, `Dialect`, `Rule`, `Severity`, `Location`, `Report`,
+`Problem` and `Related`. The enums and structs are `#[non_exhaustive]`, so adding a variant or
+field is not a breaking change. The text is `&str`: the caller has already checked UTF-8, so every
+offset falls on a character boundary and columns are well defined. `check` never panics and has no
+error mode. Problems in the file are its output. A `Report` is `Send` but not `Sync`, because
+`location` caches line starts and character counts inside it. The full interface is on
+[docs.rs](https://docs.rs/jsonvet).
 
 Behind that interface:
 
@@ -277,42 +221,28 @@ arm64), macOS (x86-64 and arm64) and Windows (x64 and arm64).
 
 ## Testing
 
-- **Conformance:** the json5-tests suite as a git submodule; each file's extension says whether
-  it must pass or fail.
-- **Corpus:** one file per case under `tests/corpus/<dialect>/`: cases from 1.4's tests, edge
-  cases found while surveying other parsers, and every fuzz finding. `crates/jsonvet-cli/tests/corpus.rs`
-  runs the binary on each, and one insta snapshot keeps every exit code and output line.
-- **Differential:** `scripts/differential.py` runs the corpus through `check-json5==1.4.1`
-  (Python 3.13) and jsonvet, in the two dialects 1.4 knows, and compares verdicts, positions,
-  paths and exit codes.
-- **Fuzzing:** on a pull request that touches the library, each target runs for 30 seconds;
-  cargo-fuzz targets for raw bytes (no panics, offsets on character boundaries),
-  and against serde_json and the json5 crate, both ways. The json5 target skips inputs that hit
-  json5's own limits rather than the grammar's, each found by fuzzing: integers past 64 bits,
-  lone surrogate escapes, U+2028 and U+2029 in strings, and identifier characters from a Unicode
-  release one side has and the other lacks.
-- **API changes:** `cargo semver-checks` compares the library with its last release on every pull
-  request. It reports and does not block, since 3.0 changes the public API on purpose.
-- **Properties:** proptest, for example that a location matches a naive recount.
-- **Mutations:** cargo-mutants over both crates with `test_workspace = true`, run weekly by
-  `mutants.yml` and by hand (about 25 minutes). The mutants that survive change no behaviour, and
-  `.cargo/mutants.toml` lists them, so any other survivor fails the weekly run:
-  speed-only branches, OR of bits that never overlap, a match arm the fallback repeats, a
-  Windows-only branch, a loop guard the loop body always stops first, a character-count
-  checkpoint moved to the boundary before instead of after, the no-schema stub the run does not
-  compile, and running every check on the big-stack thread.
+How to run each layer is in [CONTRIBUTING.md](../CONTRIBUTING.md#tests). Each layer exists for one reason:
 
-## Release bar for 2.0.0 (met; kept as history)
+- **Conformance** (json5-tests): the suite is the spec's own answer for what must pass or fail.
+- **Corpus:** one file per case keeps every edge case, every survey finding and every fuzz finding
+  from regressing, and one snapshot pins every exit code and output line.
+- **Differential:** the promise to 1.4 is a verdict match, so it is checked against 1.4 itself.
+- **Fuzzing:** finds panics, offsets inside a character, and disagreements with serde_json and the
+  json5 crate that hand-written cases miss. The json5 target skips inputs that hit json5's own
+  limits rather than the grammar's, each found by fuzzing: integers past 64 bits, lone surrogate
+  escapes, U+2028 and U+2029 in strings, and identifier characters from a Unicode release one side
+  has and the other lacks.
+- **API changes:** `cargo semver-checks` reports and does not block, since 3.0 changes the public
+  API on purpose.
+- **Properties:** proptest checks laws no single case shows, for example that a location matches a
+  naive recount.
+- **Mutations:** show which behaviour no test pins. The mutants that survive change no behaviour,
+  and `.cargo/mutants.toml` lists them: speed-only branches, OR of bits that never overlap, a match
+  arm the fallback repeats, a Windows-only branch, a loop guard the loop body always stops first, a
+  character-count checkpoint moved to the boundary before instead of after, the no-schema stub the
+  run does not compile, and running every check on the big-stack thread.
 
-1. json5-tests passes in every dialect it applies to.
-2. The differential run shows no unexplained difference from 1.4.
-3. Every fuzz target runs until an hour passes with no new coverage, and none crashes. Bugs
-   so far turned up in a run's first minutes, and coverage flattens soon after, so more hours
-   mostly retest covered paths. After the merge, the fuzz workflow runs after each parser change
-   and weekly, on a corpus it keeps between runs.
-4. The placeholder installs and runs under pre-commit and prek on Linux, macOS and Windows.
-5. A committed hyperfine table against 1.4, including the large JSONC files where 1.4 comes close.
-6. The README leads with the contract; the changelog lists every Breaking change.
+## Publishing
 
 A release publishes to PyPI and crates.io from `release.yml`, with trusted publishing on both.
 The `check-json5` package uploads after the `jsonvet` wheels, and `jsonvet-cli` after the
