@@ -26,8 +26,6 @@ exclude_re = [
   "schema.rs:.* replace match guard integer with true in number",
   # The stub for a build without the schema feature, which the run does not compile.
   "lib.rs:\\d+:13: replace schema::Schema::(load|errors) ",
-  # Every run on the big-stack thread, not only `--schema` ones: same output.
-  "lib.rs:\\d+:9: replace && with \\|\\| in run",
   # A character-count checkpoint moved to the boundary before instead of after.
   "report.rs:.* replace \\+= with -= in Report<'a>::chars_before",
 ]
