@@ -21,6 +21,7 @@ jsonvet = { path = "../jsonvet", version = "=3.0.0" }
 # No default features: they fetch remote `$ref`s over HTTP and read them from disk.
 jsonschema = { version = "0.58.6", default-features = false, optional = true }
 lexopt = "0.3.2"
+percent-encoding = { version = "2.3.2", optional = true }
 serde_json = { version = "1.0.154", optional = true }
 toml = { version = "1.1.8", default-features = false, features = ["parse", "serde"] }
 
@@ -28,7 +29,7 @@ toml = { version = "1.1.8", default-features = false, features = ["parse", "serd
 default = ["schema"]
 # `--schema`. It takes the binary from about 0.6 MB to about 5 MB, so the PyPI wheels, which the
 # pre-commit hook and the GitHub Action install, are built without it (pyproject.toml).
-schema = ["dep:jsonschema", "dep:serde_json"]
+schema = ["dep:jsonschema", "dep:percent-encoding", "dep:serde_json"]
 
 [dev-dependencies]
 insta = "1.49.0"

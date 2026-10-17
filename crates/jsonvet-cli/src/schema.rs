@@ -8,6 +8,7 @@ use std::path::Path;
 use jsonschema::error::ValidationErrorKind;
 use jsonschema::{PatternOptions, ReferencingError, ValidationError, Validator};
 use jsonvet::{Event, EventKind, PathStep, Severity};
+use percent_encoding::percent_decode_str;
 use serde_json::{Map, Number, Value};
 
 use crate::settings::Settings;
@@ -440,12 +441,11 @@ impl<'v> Reach<'v> {
         if fragment.is_empty() {
             return Some((resource, path));
         }
-        let Some(pointer) = fragment.strip_prefix('/') else {
+        if !fragment.starts_with('/') {
             return self.anchors.get(fragment).cloned();
-        };
+        }
         let mut value = resource;
-        for segment in percent_decoded(pointer).split('/') {
-            let segment = segment.replace("~1", "/").replace("~0", "~");
+        for segment in segments(&percent_decode_str(fragment).decode_utf8_lossy()) {
             value = match value {
                 Value::Array(items) => items.get(segment.parse::<usize>().ok()?)?,
                 _ => value.get(&segment)?,
@@ -518,31 +518,6 @@ impl<'v> Reach<'v> {
         self.height.insert(address, below + 1);
         Ok(below + 1)
     }
-}
-
-/// `text` with each `%XX` escape decoded, as a URI fragment holds a JSON Pointer.
-fn percent_decoded(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        let hex = bytes
-            .get(i + 1..i + 3)
-            .filter(|hex| hex.iter().all(u8::is_ascii_hexdigit))
-            .and_then(|hex| std::str::from_utf8(hex).ok())
-            .and_then(|hex| u8::from_str_radix(hex, 16).ok());
-        match (bytes[i], hex) {
-            (b'%', Some(byte)) => {
-                out.push(byte);
-                i += 3;
-            }
-            (byte, _) => {
-                out.push(byte);
-                i += 1;
-            }
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// An open container while the events are folded into values, with an object's current key.
