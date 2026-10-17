@@ -361,19 +361,7 @@ fn strict_globs_keep_their_1x_meaning() {
 #[test]
 fn an_unknown_option_is_a_usage_error_unless_it_is_a_file() {
     let dir = workdir(&[("bad.json", "[1,"), ("--x.json", "[1,")]);
-    let run = |args: &[&str]| {
-        let out = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
-            .args(args)
-            .current_dir(&dir)
-            .env_remove("GITHUB_ACTIONS")
-            .output()
-            .expect("run jsonvet");
-        (
-            out.status.code().expect("an exit code"),
-            String::from_utf8_lossy(&out.stdout).into_owned(),
-            String::from_utf8_lossy(&out.stderr).into_owned(),
-        )
-    };
+    let run = |args: &[&str]| jsonvet_stderr(&dir, args);
     let (code, out, err) = run(&["--strcit", "*.json", "bad.json"]);
     assert_eq!((code, out.as_str()), (2, ""));
     assert!(
@@ -554,16 +542,9 @@ fn pyproject_tool_table_and_bad_configs() {
             "unknown key `\\n::error::x`; expected rules or dialects",
         ),
     ] {
-        let out = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
-            .args(["--config", config, "d.json"])
-            .current_dir(&wrong_types)
-            .output()
-            .expect("run jsonvet");
-        assert_eq!(out.status.code(), Some(2));
-        assert_eq!(
-            String::from_utf8_lossy(&out.stderr),
-            format!("jsonvet: {config}: {message}\n")
-        );
+        let (code, _, err) = jsonvet_stderr(&wrong_types, &["--config", config, "d.json"]);
+        assert_eq!(code, 2);
+        assert_eq!(err, format!("jsonvet: {config}: {message}\n"));
     }
 }
 
@@ -576,15 +557,10 @@ fn sarif_holds_every_problem_and_keeps_the_exit_codes() {
         ("open.json", "[1, /* x"),
     ]);
     let run = |args: &[&str]| {
-        let out = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
-            .args(args)
-            .current_dir(&dir)
-            // SARIF replaces the workflow annotations, even in GitHub Actions.
-            .env("GITHUB_ACTIONS", "true")
-            .output()
-            .expect("run jsonvet");
-        let sarif: serde_json::Value = serde_json::from_slice(&out.stdout).expect("JSON output");
-        (out.status.code().expect("an exit code"), sarif)
+        // SARIF replaces the workflow annotations, even in GitHub Actions.
+        let (code, out, _) = run_jsonvet(&dir, args, true);
+        let sarif: serde_json::Value = serde_json::from_str(&out).expect("JSON output");
+        (code, sarif)
     };
 
     let (code, sarif) = run(&["--format", "sarif", "dup.json", "gone.json", "ok.json"]);
@@ -676,13 +652,9 @@ fn sarif_holds_every_problem_and_keeps_the_exit_codes() {
 fn sarif_columns_count_code_points() {
     // CRLF ends line 1; the emoji is one code point but two UTF-16 code units.
     let dir = workdir(&[("e.jsonc", "{\r\n\"\u{1F600}\": x}\r\n")]);
-    let out = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
-        .args(["--format", "sarif", "e.jsonc"])
-        .current_dir(&dir)
-        .output()
-        .expect("run jsonvet");
-    assert_eq!(out.status.code(), Some(1));
-    let sarif: serde_json::Value = serde_json::from_slice(&out.stdout).expect("JSON output");
+    let (code, out) = jsonvet(&dir, &["--format", "sarif", "e.jsonc"]);
+    assert_eq!(code, 1);
+    let sarif: serde_json::Value = serde_json::from_str(&out).expect("JSON output");
     let run = &sarif["runs"][0];
     assert_eq!(run["columnKind"], "unicodeCodePoints");
     let result = &run["results"][0];
@@ -866,12 +838,20 @@ fn sarif_keeps_25000_results_and_counts_the_rest() {
 
 /// Run jsonvet in `dir` with GitHub annotations off; return its exit code, stdout and stderr.
 fn jsonvet_stderr(dir: &Path, args: &[&str]) -> (i32, String, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
-        .args(args)
-        .current_dir(dir)
-        .env_remove("GITHUB_ACTIONS")
-        .output()
-        .expect("run jsonvet");
+    run_jsonvet(dir, args, false)
+}
+
+/// Run jsonvet in `dir`, as in GitHub Actions when `annotate` is set; return its exit code,
+/// stdout and stderr.
+fn run_jsonvet(dir: &Path, args: &[&str], annotate: bool) -> (i32, String, String) {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_jsonvet"));
+    command.args(args).current_dir(dir);
+    if annotate {
+        command.env("GITHUB_ACTIONS", "true");
+    } else {
+        command.env_remove("GITHUB_ACTIONS");
+    }
+    let out = command.output().expect("run jsonvet");
     (
         out.status.code().expect("an exit code"),
         String::from_utf8(out.stdout).expect("UTF-8 output"),
@@ -971,13 +951,8 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         assert_eq!(out, expected);
 
         // The same errors as GitHub annotations and as SARIF results.
-        let annotated = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
-            .args(["--schema", "schema.json", "f.json5"])
-            .current_dir(&dir)
-            .env("GITHUB_ACTIONS", "true")
-            .output()
-            .expect("run jsonvet");
-        assert!(String::from_utf8_lossy(&annotated.stdout).contains(
+        let (_, annotated, _) = run_jsonvet(&dir, &["--schema", "schema.json", "f.json5"], true);
+        assert!(annotated.contains(
             "::error file=f.json5,line=1,col=26,title=jsonvet (schema)::\"80\" is not of type"
         ));
         let (_, out, _) = jsonvet_stderr(
@@ -1643,13 +1618,7 @@ fn a_file_name_with_control_characters_is_escaped_in_text_and_annotations() {
             "a\\n::error::x\\u001b[31m.json:1:10: error[duplicate-key] duplicate key $.a (first at 1:2)\n"
         )
     );
-    let annotated = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
-        .arg(name)
-        .current_dir(&dir)
-        .env("GITHUB_ACTIONS", "true")
-        .output()
-        .expect("run jsonvet");
-    let out = String::from_utf8(annotated.stdout).expect("UTF-8 output");
+    let (_, out, _) = run_jsonvet(&dir, &[name], true);
     assert_eq!(out.lines().count(), 2, "{out}");
     assert!(
         out.contains("::error file=a\\n%3A%3Aerror%3A%3Ax\\u001b[31m.json,line=1,col=10,"),
