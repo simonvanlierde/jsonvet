@@ -682,45 +682,24 @@ fn a_backslash_path_matches_a_slash_pattern() {
     );
 }
 
+/// One file per dialect: `cases.rs` checks every extension and file name the library maps, and
+/// `file_lists.rs` the lists the hooks, the Action and the README give.
 #[test]
 fn each_extension_has_its_dialect() {
     let single = "{'a': 1}";
-    let mut files = vec![(".babelrc".to_owned(), single)];
-    let extensions = [
-        ("jsonc", "jsonc"),
-        ("code-workspace", "jsonc"),
-        ("code-snippets", "jsonc"),
-        ("hujson", "jwcc"),
-        ("jwcc", "jwcc"),
-    ];
-    let json5 = [
-        "json",
-        "json5",
-        "geojson",
-        "jsonld",
-        "webmanifest",
-        "cfg",
-        "JSONC",
-    ];
-    for (ext, _) in extensions {
-        files.push((format!("a.{ext}"), single));
-    }
-    for ext in json5 {
-        files.push((format!("a.{ext}"), single));
-    }
-    // Two values on two lines: JSON Lines, not one JSON5 document.
-    files.push(("a.jsonl".to_owned(), "{}\n{}\n"));
-    files.push(("a.ndjson".to_owned(), "{}\n{}\n"));
-    let dir = workdir(
-        &files
-            .iter()
-            .map(|(n, t)| (n.as_str(), *t))
-            .collect::<Vec<_>>(),
-    );
-    for (ext, dialect) in extensions {
-        let name = format!("a.{ext}");
+    let dir = workdir(&[
+        ("a.jsonc", single),
+        ("a.hujson", single),
+        ("a.json", single),
+        // An unknown extension falls back to JSON5.
+        ("a.cfg", single),
+        (".babelrc", single),
+        // Two values on two lines: JSON Lines, not one JSON5 document.
+        ("a.jsonl", "{}\n{}\n"),
+    ]);
+    for (name, dialect) in [("a.jsonc", "jsonc"), ("a.hujson", "jwcc")] {
         assert_eq!(
-            jsonvet(&dir, &[&name]),
+            jsonvet(&dir, &[name]),
             (
                 1,
                 format!(
@@ -729,17 +708,10 @@ fn each_extension_has_its_dialect() {
             )
         );
     }
-    for name in json5
-        .iter()
-        .map(|ext| format!("a.{ext}"))
-        .chain([".babelrc".to_owned()])
-    {
-        assert_eq!(jsonvet(&dir, &[&name]), (0, String::new()), "{name}");
-    }
-    for name in ["a.jsonl", "a.ndjson"] {
+    for name in ["a.json", "a.cfg", ".babelrc", "a.jsonl"] {
         assert_eq!(jsonvet(&dir, &[name]), (0, String::new()), "{name}");
-        assert_eq!(jsonvet(&dir, &["--dialect", "json5", name]).0, 1, "{name}");
     }
+    assert_eq!(jsonvet(&dir, &["--dialect", "json5", "a.jsonl"]).0, 1);
 }
 
 /// A write error other than a closed pipe, such as a full disk, is a failure of the run (exit 2),
