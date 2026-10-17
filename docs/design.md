@@ -126,9 +126,10 @@ The limits are listed in the [README](../README.md#json-schema). Why each exists
 
 - **File depth.** jsonschema validates recursively, and its memory grows with the square of the
   depth when an error sits deep under a recursive `$ref`: 1.3 GB for a 50 KB file nested 10,000
-  levels. Only a run with `--schema` starts a thread with a 64 MB stack for it, because the
-  deeper read took up to 2.2 MB in a debug build, more than Windows' 1 MB main thread. Without
-  `--schema` jsonvet runs on the main thread, as it did before.
+  levels. Every run starts a thread with a 64 MB stack for it, because the deeper read took up to
+  2.2 MB in a debug build, more than Windows' 1 MB main thread. Only the stack a run uses is
+  committed, so a plain check still works under `ulimit -v 60000`; where the thread cannot start,
+  jsonvet runs on the main thread.
 - **Memory.** Folded values take about 23 times the file's size.
 - **Schema depth and `$ref` chains.** Without the check, 1,000 `allOf` and `$ref` hops overflow
   the 64 MB stack at once against a 512-level array. A `$ref` back to a schema on the way to it
@@ -239,8 +240,8 @@ How to run each layer is in [CONTRIBUTING.md](../CONTRIBUTING.md#tests). Each la
 - **Mutations:** show which behaviour no test pins. The mutants that survive change no behaviour,
   and `.cargo/mutants.toml` lists them: speed-only branches, OR of bits that never overlap, a match
   arm the fallback repeats, a Windows-only branch, a loop guard the loop body always stops first, a
-  character-count checkpoint moved to the boundary before instead of after, the no-schema stub the
-  run does not compile, and running every check on the big-stack thread.
+  character-count checkpoint moved to the boundary before instead of after, and the no-schema stub
+  the run does not compile.
 
 ## Publishing
 
