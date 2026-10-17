@@ -119,107 +119,75 @@ fn github_annotations_follow_each_problem() {
     );
 }
 
-// Unix only: Windows refuses `:` in a file name.
-#[cfg(unix)]
+/// A file name or a key in a message reaches every output path escaped: a control character,
+/// bidi control or newline as a code point, a `##[` with its `[` escaped, a name starting with
+/// `::` after `./`, and `%`, `:` and `,` percent-encoded where an annotation needs it.
+/// `src/output.rs` and `src/sarif.rs` test the escaping itself; this checks each path uses it.
 #[test]
-fn a_file_name_cannot_start_a_workflow_command_or_send_escapes() {
+fn each_output_path_escapes_names_and_messages() {
+    let key = "\u{202a}##[k:%,";
+    let doubled = format!("{{\"{key}\": 1, \"{key}\": 2}}");
     let dir = workdir(&[
-        ("::stop-commands::tok.json", "[1,"),
-        ("\u{1b}]0;x\u{7}.json", "[1,"),
+        ("##[\u{2069}a.json", "[1,"),
+        ("m.json", &doubled),
+        #[cfg(unix)]
+        ("::a\n\u{1b}[2J,.json", "[1,"),
     ]);
-    let out = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
-        .args([
-            "::stop-commands::tok.json",
-            "\u{1b}]0;x\u{7}.json",
-            "gone\u{1b}[2J.json",
-        ])
-        .current_dir(&dir)
-        .env("GITHUB_ACTIONS", "true")
-        .output()
-        .expect("run jsonvet");
-    assert_eq!(
-        String::from_utf8(out.stdout).expect("UTF-8 output"),
-        "./::stop-commands::tok.json:1:4: error[syntax] expected a value, found the end of the file\n\
-         ::error file=%3A%3Astop-commands%3A%3Atok.json,line=1,col=4,title=jsonvet (syntax)::expected a value, found the end of the file\n\
-         \\u001b]0;x\\u0007.json:1:4: error[syntax] expected a value, found the end of the file\n\
-         ::error file=\\u001b]0;x\\u0007.json,line=1,col=4,title=jsonvet (syntax)::expected a value, found the end of the file\n\
-         gone\\u001b[2J.json: error: no such file\n\
-         ::error file=gone\\u001b[2J.json,title=jsonvet::no such file\n"
-    );
-}
-
-/// A bidi control would reorder how the rest of the line displays, so neither a file name nor a
-/// key in a message may print one, in text or annotations.
-#[test]
-fn output_never_holds_a_bidi_control() {
-    let bidi = [
-        '\u{61c}', '\u{200e}', '\u{200f}', '\u{202a}', '\u{202b}', '\u{202c}', '\u{202d}',
-        '\u{202e}', '\u{2066}', '\u{2067}', '\u{2068}', '\u{2069}',
+    let end = "error[syntax] expected a value, found the end of the file";
+    let message = "duplicate key $[\"\\u202a##\\u005bk:%,\"] (first at 1:2)";
+    let text = format!("m.json:1:17: error[duplicate-key] {message}\n");
+    let cases = [
+        // A file name in text.
+        (
+            "##[\u{2069}a.json",
+            false,
+            format!("##\\u005b\\u2069a.json:1:4: {end}\n"),
+        ),
+        // A message in text.
+        ("m.json", false, text.clone()),
+        // A file name in an annotation. Unix only: Windows refuses `:` and control characters
+        // in a file name.
+        #[cfg(unix)]
+        (
+            "::a\n\u{1b}[2J,.json",
+            true,
+            format!(
+                "./::a\\n\\u001b[2J,.json:1:4: {end}\n\
+                 ::error file=%3A%3Aa\\n\\u001b[2J%2C.json,line=1,col=4,title=jsonvet (syntax)::expected a value, found the end of the file\n"
+            ),
+        ),
+        // A message in an annotation.
+        (
+            "m.json",
+            true,
+            format!(
+                "{text}::error file=m.json,line=1,col=17,title=jsonvet (duplicate-key)::{}\n",
+                message.replace('%', "%25")
+            ),
+        ),
+        // A file that cannot be read.
+        #[cfg(unix)]
+        (
+            "::gone\u{1b}[2J.json",
+            true,
+            "./::gone\\u001b[2J.json: error: no such file\n\
+             ::error file=%3A%3Agone\\u001b[2J.json,title=jsonvet::no such file\n"
+                .to_owned(),
+        ),
     ];
-    let names: Vec<String> = bidi.iter().map(|c| format!("{c}.json")).collect();
-    let texts: Vec<String> = bidi
-        .iter()
-        .map(|c| format!("{{\"{c}\": 1, \"{c}\": 2}}"))
-        .collect();
-    let files: Vec<(&str, &str)> = names
-        .iter()
-        .zip(&texts)
-        .map(|(name, text)| (name.as_str(), text.as_str()))
-        .collect();
-    let dir = workdir(&files);
-    for actions in ["false", "true"] {
-        let out = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
-            .args(&names)
-            .current_dir(&dir)
-            .env("GITHUB_ACTIONS", actions)
-            .output()
-            .expect("run jsonvet");
-        let out = String::from_utf8(out.stdout).expect("UTF-8 output");
-        assert!(!out.contains(bidi), "{out}");
-        let expected: String = bidi
-            .iter()
-            .map(|&c| {
-                let c = format!("\\u{:04x}", u32::from(c));
-                let text = format!("{c}.json:1:10: error[duplicate-key] duplicate key $[\"{c}\"] (first at 1:2)\n");
-                if actions == "true" {
-                    format!("{text}::error file={c}.json,line=1,col=10,title=jsonvet (duplicate-key)::duplicate key $[\"{c}\"] (first at 1:2)\n")
-                } else {
-                    text
-                }
-            })
-            .collect();
-        assert_eq!(out, expected);
+    for (name, annotate, expected) in cases {
+        let (_, out, _) = run_jsonvet(&dir, &[name], annotate);
+        assert_eq!(out, expected, "{name:?}");
     }
-}
 
-/// GitHub Actions also runs the older `##[command]` form found anywhere in a line, so neither a
-/// file name nor a key in a message may print one, in text, annotations or SARIF.
-#[test]
-fn output_never_holds_a_legacy_workflow_command() {
-    let dir = workdir(&[(
-        "##[add-mask]a.json",
-        "{\"##[add-mask]s\": 1, \"##[add-mask]s\": 2}",
-    )]);
-    let run = |format: &str| {
-        let out = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
-            .args(["--format", format, "##[add-mask]a.json"])
-            .current_dir(&dir)
-            .env("GITHUB_ACTIONS", "true")
-            .output()
-            .expect("run jsonvet");
-        String::from_utf8(out.stdout).expect("UTF-8 output")
-    };
-    assert_eq!(
-        run("text"),
-        "##\\u005badd-mask]a.json:1:22: error[duplicate-key] duplicate key $[\"##\\u005badd-mask]s\"] (first at 1:2)\n\
-         ::error file=##\\u005badd-mask]a.json,line=1,col=22,title=jsonvet (duplicate-key)::duplicate key $[\"##\\u005badd-mask]s\"] (first at 1:2)\n"
-    );
-    let sarif = run("sarif");
+    // SARIF escapes the `[` of `##[` in JSON strings, which keeps the value.
+    let args = ["--format", "sarif", "##[\u{2069}a.json", "m.json"];
+    let (_, sarif, _) = run_jsonvet(&dir, &args, true);
     assert!(!sarif.contains("##["), "{sarif}");
     let sarif: serde_json::Value = serde_json::from_str(&sarif).expect("JSON output");
     assert_eq!(
-        sarif["runs"][0]["results"][0]["message"]["text"],
-        "duplicate key $[\"##[add-mask]s\"] (first at 1:2)"
+        sarif["runs"][0]["results"][1]["message"]["text"],
+        "duplicate key $[\"\\u202a##[k:%,\"] (first at 1:2)"
     );
 }
 
@@ -361,19 +329,7 @@ fn strict_globs_keep_their_1x_meaning() {
 #[test]
 fn an_unknown_option_is_a_usage_error_unless_it_is_a_file() {
     let dir = workdir(&[("bad.json", "[1,"), ("--x.json", "[1,")]);
-    let run = |args: &[&str]| {
-        let out = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
-            .args(args)
-            .current_dir(&dir)
-            .env_remove("GITHUB_ACTIONS")
-            .output()
-            .expect("run jsonvet");
-        (
-            out.status.code().expect("an exit code"),
-            String::from_utf8_lossy(&out.stdout).into_owned(),
-            String::from_utf8_lossy(&out.stderr).into_owned(),
-        )
-    };
+    let run = |args: &[&str]| jsonvet_stderr(&dir, args);
     let (code, out, err) = run(&["--strcit", "*.json", "bad.json"]);
     assert_eq!((code, out.as_str()), (2, ""));
     assert!(
@@ -554,16 +510,9 @@ fn pyproject_tool_table_and_bad_configs() {
             "unknown key `\\n::error::x`; expected rules or dialects",
         ),
     ] {
-        let out = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
-            .args(["--config", config, "d.json"])
-            .current_dir(&wrong_types)
-            .output()
-            .expect("run jsonvet");
-        assert_eq!(out.status.code(), Some(2));
-        assert_eq!(
-            String::from_utf8_lossy(&out.stderr),
-            format!("jsonvet: {config}: {message}\n")
-        );
+        let (code, _, err) = jsonvet_stderr(&wrong_types, &["--config", config, "d.json"]);
+        assert_eq!(code, 2);
+        assert_eq!(err, format!("jsonvet: {config}: {message}\n"));
     }
 }
 
@@ -576,15 +525,10 @@ fn sarif_holds_every_problem_and_keeps_the_exit_codes() {
         ("open.json", "[1, /* x"),
     ]);
     let run = |args: &[&str]| {
-        let out = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
-            .args(args)
-            .current_dir(&dir)
-            // SARIF replaces the workflow annotations, even in GitHub Actions.
-            .env("GITHUB_ACTIONS", "true")
-            .output()
-            .expect("run jsonvet");
-        let sarif: serde_json::Value = serde_json::from_slice(&out.stdout).expect("JSON output");
-        (out.status.code().expect("an exit code"), sarif)
+        // SARIF replaces the workflow annotations, even in GitHub Actions.
+        let (code, out, _) = run_jsonvet(&dir, args, true);
+        let sarif: serde_json::Value = serde_json::from_str(&out).expect("JSON output");
+        (code, sarif)
     };
 
     let (code, sarif) = run(&["--format", "sarif", "dup.json", "gone.json", "ok.json"]);
@@ -676,13 +620,9 @@ fn sarif_holds_every_problem_and_keeps_the_exit_codes() {
 fn sarif_columns_count_code_points() {
     // CRLF ends line 1; the emoji is one code point but two UTF-16 code units.
     let dir = workdir(&[("e.jsonc", "{\r\n\"\u{1F600}\": x}\r\n")]);
-    let out = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
-        .args(["--format", "sarif", "e.jsonc"])
-        .current_dir(&dir)
-        .output()
-        .expect("run jsonvet");
-    assert_eq!(out.status.code(), Some(1));
-    let sarif: serde_json::Value = serde_json::from_slice(&out.stdout).expect("JSON output");
+    let (code, out) = jsonvet(&dir, &["--format", "sarif", "e.jsonc"]);
+    assert_eq!(code, 1);
+    let sarif: serde_json::Value = serde_json::from_str(&out).expect("JSON output");
     let run = &sarif["runs"][0];
     assert_eq!(run["columnKind"], "unicodeCodePoints");
     let result = &run["results"][0];
@@ -742,45 +682,24 @@ fn a_backslash_path_matches_a_slash_pattern() {
     );
 }
 
+/// One file per dialect: `cases.rs` checks every extension and file name the library maps, and
+/// `file_lists.rs` the lists the hooks, the Action and the README give.
 #[test]
 fn each_extension_has_its_dialect() {
     let single = "{'a': 1}";
-    let mut files = vec![(".babelrc".to_owned(), single)];
-    let extensions = [
-        ("jsonc", "jsonc"),
-        ("code-workspace", "jsonc"),
-        ("code-snippets", "jsonc"),
-        ("hujson", "jwcc"),
-        ("jwcc", "jwcc"),
-    ];
-    let json5 = [
-        "json",
-        "json5",
-        "geojson",
-        "jsonld",
-        "webmanifest",
-        "cfg",
-        "JSONC",
-    ];
-    for (ext, _) in extensions {
-        files.push((format!("a.{ext}"), single));
-    }
-    for ext in json5 {
-        files.push((format!("a.{ext}"), single));
-    }
-    // Two values on two lines: JSON Lines, not one JSON5 document.
-    files.push(("a.jsonl".to_owned(), "{}\n{}\n"));
-    files.push(("a.ndjson".to_owned(), "{}\n{}\n"));
-    let dir = workdir(
-        &files
-            .iter()
-            .map(|(n, t)| (n.as_str(), *t))
-            .collect::<Vec<_>>(),
-    );
-    for (ext, dialect) in extensions {
-        let name = format!("a.{ext}");
+    let dir = workdir(&[
+        ("a.jsonc", single),
+        ("a.hujson", single),
+        ("a.json", single),
+        // An unknown extension falls back to JSON5.
+        ("a.cfg", single),
+        (".babelrc", single),
+        // Two values on two lines: JSON Lines, not one JSON5 document.
+        ("a.jsonl", "{}\n{}\n"),
+    ]);
+    for (name, dialect) in [("a.jsonc", "jsonc"), ("a.hujson", "jwcc")] {
         assert_eq!(
-            jsonvet(&dir, &[&name]),
+            jsonvet(&dir, &[name]),
             (
                 1,
                 format!(
@@ -789,17 +708,10 @@ fn each_extension_has_its_dialect() {
             )
         );
     }
-    for name in json5
-        .iter()
-        .map(|ext| format!("a.{ext}"))
-        .chain([".babelrc".to_owned()])
-    {
-        assert_eq!(jsonvet(&dir, &[&name]), (0, String::new()), "{name}");
-    }
-    for name in ["a.jsonl", "a.ndjson"] {
+    for name in ["a.json", "a.cfg", ".babelrc", "a.jsonl"] {
         assert_eq!(jsonvet(&dir, &[name]), (0, String::new()), "{name}");
-        assert_eq!(jsonvet(&dir, &["--dialect", "json5", name]).0, 1, "{name}");
     }
+    assert_eq!(jsonvet(&dir, &["--dialect", "json5", "a.jsonl"]).0, 1);
 }
 
 /// A write error other than a closed pipe, such as a full disk, is a failure of the run (exit 2),
@@ -866,12 +778,20 @@ fn sarif_keeps_25000_results_and_counts_the_rest() {
 
 /// Run jsonvet in `dir` with GitHub annotations off; return its exit code, stdout and stderr.
 fn jsonvet_stderr(dir: &Path, args: &[&str]) -> (i32, String, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
-        .args(args)
-        .current_dir(dir)
-        .env_remove("GITHUB_ACTIONS")
-        .output()
-        .expect("run jsonvet");
+    run_jsonvet(dir, args, false)
+}
+
+/// Run jsonvet in `dir`, as in GitHub Actions when `annotate` is set; return its exit code,
+/// stdout and stderr.
+fn run_jsonvet(dir: &Path, args: &[&str], annotate: bool) -> (i32, String, String) {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_jsonvet"));
+    command.args(args).current_dir(dir);
+    if annotate {
+        command.env("GITHUB_ACTIONS", "true");
+    } else {
+        command.env_remove("GITHUB_ACTIONS");
+    }
+    let out = command.output().expect("run jsonvet");
     (
         out.status.code().expect("an exit code"),
         String::from_utf8(out.stdout).expect("UTF-8 output"),
@@ -971,13 +891,8 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         assert_eq!(out, expected);
 
         // The same errors as GitHub annotations and as SARIF results.
-        let annotated = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
-            .args(["--schema", "schema.json", "f.json5"])
-            .current_dir(&dir)
-            .env("GITHUB_ACTIONS", "true")
-            .output()
-            .expect("run jsonvet");
-        assert!(String::from_utf8_lossy(&annotated.stdout).contains(
+        let (_, annotated, _) = run_jsonvet(&dir, &["--schema", "schema.json", "f.json5"], true);
+        assert!(annotated.contains(
             "::error file=f.json5,line=1,col=26,title=jsonvet (schema)::\"80\" is not of type"
         ));
         let (_, out, _) = jsonvet_stderr(
@@ -1615,44 +1530,5 @@ fn a_build_without_schema_says_how_to_get_it() {
     assert!(
         help.contains("--schema FILE             Also check"),
         "{help}"
-    );
-}
-
-#[test]
-fn a_bidi_control_in_a_message_is_not_printed_raw() {
-    let dir = workdir(&[("b.json", "[\u{202e}]")]);
-    assert_eq!(
-        jsonvet(&dir, &["b.json"]),
-        (
-            1,
-            "b.json:1:2: error[syntax] expected a value, found U+202E\n".to_owned()
-        )
-    );
-}
-
-#[cfg(unix)]
-#[test]
-fn a_file_name_with_control_characters_is_escaped_in_text_and_annotations() {
-    let name = "a\n::error::x\u{1b}[31m.json";
-    let dir = workdir(&[(name, "{\"a\": 1, \"a\": 2}")]);
-    let (code, out) = jsonvet(&dir, &[name]);
-    assert_eq!(
-        (code, out.as_str()),
-        (
-            1,
-            "a\\n::error::x\\u001b[31m.json:1:10: error[duplicate-key] duplicate key $.a (first at 1:2)\n"
-        )
-    );
-    let annotated = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
-        .arg(name)
-        .current_dir(&dir)
-        .env("GITHUB_ACTIONS", "true")
-        .output()
-        .expect("run jsonvet");
-    let out = String::from_utf8(annotated.stdout).expect("UTF-8 output");
-    assert_eq!(out.lines().count(), 2, "{out}");
-    assert!(
-        out.contains("::error file=a\\n%3A%3Aerror%3A%3Ax\\u001b[31m.json,line=1,col=10,"),
-        "{out}"
     );
 }
