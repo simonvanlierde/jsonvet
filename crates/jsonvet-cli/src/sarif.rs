@@ -7,6 +7,8 @@ use std::path::Path;
 
 use jsonvet::{Location, Rule, Severity};
 
+use crate::output::{escape_utf16, is_hidden};
+
 /// A file that could not be read gets its own rule, so it shows as an alert. GitHub code scanning
 /// lists tool notifications only on its tool status page, where a failing file is easy to miss.
 pub(crate) const UNREADABLE: &str = "unreadable";
@@ -172,9 +174,8 @@ fn string(value: &str) -> String {
             // GitHub Actions reads `##[command]` anywhere in a log line, the SARIF printed
             // there included; `\u005b` keeps the value and breaks the match.
             '[' if json.ends_with("##") => json.push_str("\\u005b"),
-            c if c < ' ' => {
-                let _ = write!(json, "\\u{:04x}", u32::from(c));
-            }
+            // Also DEL, C1 controls and hidden characters, so a log view shows them.
+            c if c.is_control() || is_hidden(c) => escape_utf16(&mut json, c),
             c => json.push(c),
         }
     }
@@ -192,7 +193,11 @@ mod tests {
     fn strings_escape_quotes_backslashes_and_control_characters() {
         assert_eq!(
             string("a\"b\\c\n\u{1}\u{7f}\u{e9}"),
-            "\"a\\\"b\\\\c\\u000a\\u0001\u{7f}\u{e9}\""
+            "\"a\\\"b\\\\c\\u000a\\u0001\\u007f\u{e9}\""
+        );
+        assert_eq!(
+            string("\u{85}\u{9f}\u{202e}\u{200b}\u{ad}\u{e0041}"),
+            "\"\\u0085\\u009f\\u202e\\u200b\\u00ad\\udb40\\udc41\""
         );
         assert_eq!(string("a b"), "\"a b\"");
         assert_eq!(string("##[add-mask]"), "\"##\\u005badd-mask]\"");

@@ -12,7 +12,7 @@ setup:
     git submodule update --init
     prek install
 
-# ci.yml `lint`, apart from check-versions and the rendered-page diff, which `check` adds.
+# ci.yml `lint`.
 lint:
     cargo fmt --all --check
     cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -20,6 +20,8 @@ lint:
     RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
     cargo deny check
     prek run ruff-check ruff-format --all-files --show-diff-on-failure
+    uv run scripts/check-versions.py
+    just matrix-check
     uv run conformance/run.py --check
 
 # ci.yml `test`. nextest skips doctests, so they run on their own.
@@ -33,10 +35,9 @@ differential CASES="5000" SEED="7":
     cargo build --release --locked -p jsonvet-cli
     uv run scripts/differential.py --cases {{ CASES }} --seed {{ SEED }} --jsonvet {{ target }}/release/jsonvet
 
-# ci.yml `lint` and `test` on this OS. Not ci.yml's msrv, differential, hook, packaging,
-# action-script, action or semver jobs: `just msrv` and `just differential` run two of them.
-check: lint test matrix-check
-    uv run scripts/check-versions.py
+# ci.yml `lint` and `test` on this OS. Not ci.yml's msrv, differential, hook, packaging or
+# action jobs, nor semver.yml: `just msrv` and `just differential` run two of them.
+check: lint test
 
 # ci.yml `msrv`: the oldest Rust the crates support (`rust-version` in Cargo.toml).
 msrv:
@@ -58,7 +59,7 @@ matrix-check:
     uv run conformance/report.py
     git diff --exit-code docs/conformance.md README.md
 
-# Fuzz one target for 20 minutes, as fuzz.yml does: check, diff_serde_json or diff_json5.
+# Fuzz one target for 20 minutes, as fuzz.yml does: check, diff_serde_json, diff_json5 or parse.
 fuzz TARGET:
     cd fuzz && cargo +nightly fuzz run -O {{ TARGET }} -- -max_total_time=1200 -print_final_stats=1
 

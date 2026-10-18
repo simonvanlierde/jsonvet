@@ -38,15 +38,17 @@ mod unicode;
 
 pub use dialect::{Dialect, UnknownDialect};
 pub use event::{Event, EventKind};
-pub use path::{PathStep, json_path};
+pub use path::{PathStep, json_path, key_text};
 pub use problem::{Problem, Related, RelatedKind};
 pub use report::{Location, Report};
 pub use rule::{Config, Rule, Severity, UnknownRule};
+pub use unicode::is_hidden;
 
 /// Check one text and return every problem in it, in document order. Checking stops at the
 /// first syntax error; problems found before it stay in the report.
 pub fn check<'a>(text: &'a str, config: &Config) -> Report<'a> {
-    Report::new(text, parse::check(text, config, false).0)
+    let problems = parse::check(text, config, false).0;
+    Report::new(text, problems, config.dialect() == Dialect::Json5)
 }
 
 /// Check one text as [`check`] does, and also return its values as events, unless the text has
@@ -60,11 +62,14 @@ pub fn check<'a>(text: &'a str, config: &Config) -> Report<'a> {
 /// let kinds: Vec<EventKind> = events.unwrap().into_iter().map(|e| e.kind).collect();
 /// assert_eq!(kinds[2], EventKind::Number("0x10"));
 /// ```
+///
+/// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
+#[doc(hidden)]
 pub fn parse<'a>(text: &'a str, config: &Config) -> (Report<'a>, Option<Vec<Event<'a>>>) {
     let (problems, events) = parse::check(text, config, true);
     let syntax_error = problems.iter().any(|p| p.rule() == Rule::Syntax);
     (
-        Report::new(text, problems),
+        Report::new(text, problems, config.dialect() == Dialect::Json5),
         (!syntax_error).then_some(events),
     )
 }

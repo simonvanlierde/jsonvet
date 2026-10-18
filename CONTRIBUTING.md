@@ -6,12 +6,12 @@ Clone with `--recurse-submodules` and install the tools in `mise.toml` (`mise in
 Rust from rustup. Then run `just setup` once: it fetches the json5-tests submodule and installs
 the git hooks with [prek](https://github.com/j178/prek). `just --list` shows every task.
 
-`just check` runs CI's Linux `lint` and `test` jobs: formatting, clippy, rustdoc, cargo deny,
-ruff, the tests (including doctests), clippy and the CLI tests again without the `schema` feature,
-as the PyPI wheels are built, the version check and the conformance page diff, which fails
-while `README.md` or `docs/conformance.md` has uncommitted edits. Run it before you open a pull
-request. CI also runs the msrv, differential, hook, packaging, action-script, action and semver
-jobs, which `just check` leaves out; `just msrv` and `just differential` run two of them.
+Run `just check` before you open a pull request. It runs CI's Linux `lint` and `test` jobs:
+formatting, clippy, rustdoc, cargo deny, ruff, the tests with doctests, the version check and the
+conformance page diff. Clippy and the CLI tests run twice, once without the `schema` feature as
+the PyPI wheels are built. The page diff fails while `README.md` or `docs/conformance.md` has
+unstaged edits. CI also runs the msrv, differential, hook, packaging, action-script, action and
+semver jobs. `just msrv` and `just differential` run two of them.
 
 ## Pull requests
 
@@ -33,21 +33,21 @@ cargo deny.
 - **`\uXXXX` escapes.** Tests and snapshots contain them. Edit those files with a script, not an
   editor that unescapes them, and check the diff.
 - **File lists.** The hooks in `.pre-commit-hooks.yaml` and the Action's `scripts/action.sh`
-  pick files by their own lists of extensions and names. When you add a default extension or
-  file name to the library (`Dialect::EXTENSIONS`, `Dialect::FILE_NAMES`), add it to both hooks,
-  to `scripts/action.sh` and to the README's list too, or `crates/jsonvet-cli/tests/file_lists.rs`
-  fails. Also add it to the README's dialect table.
+  pick files by their own lists of extensions and names. A new default extension or file name in
+  the library (`Dialect::EXTENSIONS`, `Dialect::FILE_NAMES`) goes into both hooks,
+  `scripts/action.sh` and the README's list, or `crates/jsonvet-cli/tests/file_lists.rs` fails.
+  Add it to the README's dialect table too.
 - **Conformance matrix.** `just matrix` runs one set of inputs through 17 other parsers in docker
   containers (never on the host), then renders `docs/conformance.md` and the block in the README.
-  Commit `conformance/results/` and both rendered files. CI fails when the report is stale, and when
-  `conformance/results/versions.json` disagrees with the pinned parsers (`run.py --check`), which
-  happens after a pin bump until someone re-runs the matrix. After a pin change, run
-  `just matrix-lock` first. Details: [conformance/README.md](conformance/README.md).
-- **Fuzzing.** `just fuzz check` (or `diff_serde_json`, `diff_json5`) runs a target for 20
+  Commit `conformance/results/` and both rendered files. CI fails when the report is stale. It also
+  fails when `conformance/results/versions.json` disagrees with the pinned parsers
+  (`run.py --check`), as it does after a pin bump until someone re-runs the matrix. After a pin
+  change, run `just matrix-lock` first. Details: [conformance/README.md](conformance/README.md).
+- **Fuzzing.** `just fuzz check` (or `diff_serde_json`, `diff_json5`, `parse`) runs a target for 20
   minutes. CI runs each target for 30 seconds on a pull request that touches the library, and for
   20 minutes after a parser change on `main` and once a week. It needs a nightly toolchain and
   cargo-fuzz. Coverage stops growing within about two hours per target. A new json5 version in
-  `fuzz/` can need new skips in `diff_json5`: read its skip list before calling a divergence a
+  `fuzz/` can need new skips in `diff_json5`. Read its skip list before you call a divergence a
   jsonvet bug.
 - **Mutation testing.** `just mutants` runs cargo-mutants over both crates in about 25 minutes, and
   `mutants.yml` runs it weekly. It fails when a mutant survives that `.cargo/mutants.toml` does
@@ -73,9 +73,8 @@ A release changes the version in these places, in one commit on a branch:
 heading for the version. Renovate owns the dependency pins, so do not bump those by hand.
 
 After the pull request merges, publish a GitHub release for the tag `vX.Y.Z`. That runs
-`release.yml`: it checks the tag against the versions, builds the wheels, publishes them to PyPI,
-then publishes the `check-json5` package and the crates to crates.io, all by trusted publishing.
-After `publish-jsonvet` has put the wheels on PyPI, the `major-tag` job moves the `v<major>` tag
-(`v3`) to the release, which is what `uses: simonvanlierde/jsonvet@v3` follows. It moves the tag
-only when the new tag is the newest `vX.*.*`, so a patch to an older minor leaves it alone, and
-it skips pre-releases.
+`release.yml`. It checks the tag against the versions and builds the wheels. Then it publishes
+the wheels to PyPI, the `check-json5` package, and the crates to crates.io, all by trusted
+publishing. Once the wheels are on PyPI, the `major-tag` job moves the `v<major>` tag (`v3`),
+which `uses: simonvanlierde/jsonvet@v3` follows. It moves the tag only when the new tag is the
+newest `vX.*.*`, so a patch to an older minor leaves it alone. It skips pre-releases.

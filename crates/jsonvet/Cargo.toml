@@ -1,6 +1,6 @@
 [package]
 name = "jsonvet"
-description = "Checks JSON, JSONC, JSON5, HuJSON and JSON Lines for syntax errors and duplicate keys, with exact positions."
+description = "Checks JSON, I-JSON, JSONC, JWCC (HuJSON), JSON5 and JSON Lines for syntax errors and duplicate keys, with exact positions."
 readme = "../../README.md"
 version.workspace = true
 edition.workspace = true

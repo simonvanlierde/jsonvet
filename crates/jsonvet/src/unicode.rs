@@ -16,6 +16,30 @@ pub(crate) fn is_json5_space(c: char) -> bool {
     )
 }
 
+/// Characters that reorder or hide text without showing themselves: Unicode's `Bidi_Control`
+/// set, the soft hyphen, the Mongolian
+/// vowel separator, the zero-width space, joiners and marks U+200B to U+200F, the line and
+/// paragraph separators, the word joiner and invisible operators U+2060 to U+2064, the byte
+/// order mark, and the tag characters U+E0000 to U+E007F. Paths and the command line's output
+/// show them as `\u` escapes.
+///
+/// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
+#[doc(hidden)]
+pub fn is_hidden(c: char) -> bool {
+    matches!(
+        c,
+        '\u{ad}'
+            | '\u{61c}'
+            | '\u{180e}'
+            | '\u{200b}'..='\u{200f}'
+            | '\u{2028}'..='\u{202e}'
+            | '\u{2060}'..='\u{2064}'
+            | '\u{2066}'..='\u{2069}'
+            | '\u{feff}'
+            | '\u{e0000}'..='\u{e007f}'
+    )
+}
+
 /// Whether U+2028 or U+2029 starts at `at`. In UTF-8 they are `E2 80 A8` and `E2 80 A9`.
 pub(crate) fn line_separator_at(bytes: &[u8], at: usize) -> bool {
     matches!(bytes.get(at..at + 3), Some([0xE2, 0x80, 0xA8 | 0xA9]))

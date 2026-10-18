@@ -68,7 +68,9 @@ def expand(done, parts):
         return
     head, rest = parts[0], parts[1:]
     if not glob.has_magic(head):
-        if os.path.lexists("/".join(done + [head]) or "/"):
+        path = "/".join(done + [head]) or "/"
+        # A symlinked directory is not entered, as the wildcards enter none either.
+        if os.path.lexists(path) and not (rest and os.path.islink(path)):
             yield from expand(done + [head], rest)
         return
     try:

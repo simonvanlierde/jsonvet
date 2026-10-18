@@ -13,6 +13,7 @@ exit status is 1 when a difference falls in no accepted category.
 """
 
 import argparse
+import json
 import random
 import re
 import shutil
@@ -50,6 +51,8 @@ KNOWN = {
         "accepted: a \\u escape in a key must stand for a character the key could hold"
     ),
 }
+
+ESCAPE = re.compile(r"(\\u[0-9a-f]{4})+")
 
 LINE = re.compile(r"^(?P<file>[^:]+?):(?:(?P<line>\d+):(?P<col>\d+):)? ?(?P<rest>.*)$")
 
@@ -147,10 +150,28 @@ def syntax_only_in_ours(ours: list[Problem], theirs: list[Problem]) -> str | Non
     return None
 
 
-def classify(name: str, text: str, ours: list[Problem], theirs: list[Problem]) -> str:
+def as_written(path: str) -> str:
+    r"""A 1.4 path with its `\u` escapes undone where jsonvet writes the character itself.
+
+    jsonvet keeps escaping control and invisible characters, `…` and lone surrogates.
+    """
+
+    def undo(m: re.Match) -> str:
+        text = json.loads(f'"{m[0]}"')
+        return "".join(c if c >= "\x80" and c.isprintable() and c != "…" else json.dumps(c)[1:-1] for c in text)
+
+    return ESCAPE.sub(undo, path)
+
+
+def classify(name: str, text: str, ours: list[Problem], theirs: list[Problem]) -> str:  # noqa: PLR0911 - a return per category
     """Why the two tools disagree, as an accepted category or `unexplained`."""
     if name in KNOWN:
         return KNOWN[name]
+    written = [p._replace(text=as_written(p.text)) if p.kind == "duplicate" else p for p in theirs]
+    if written != theirs:
+        if failed(ours) == failed(theirs) and duplicates(ours) == duplicates(written):
+            return "accepted: non-ASCII keys in paths print as written, not as \\u escapes"
+        theirs = written
     flipped = failed(ours) != failed(theirs)
     syntax_differs = has_syntax_error(ours) != has_syntax_error(theirs)
     # The same duplicate keys with the same paths, at other positions.

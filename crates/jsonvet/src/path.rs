@@ -1,8 +1,11 @@
-//! JSONPath rendering, matching check-json5 1.4: `$.key` for identifier-like keys,
-//! `$["other key"]` otherwise, with the key quoted as Python's `json.dumps` quotes it.
+//! JSONPath rendering, as check-json5 1.4 wrote it: `$.key` for identifier-like keys,
+//! `$["other key"]` otherwise. Unlike 1.4's `json.dumps`, a quoted key keeps non-ASCII text as
+//! written.
 
 use std::borrow::Cow;
 use std::fmt::Write;
+
+use crate::unicode::is_hidden;
 
 /// One step from a container to a child.
 #[derive(Clone, Debug)]
@@ -14,8 +17,8 @@ pub(crate) enum Segment<'a> {
 
 /// Past this many bytes, a path keeps only the segments that fit in `MAX_PATH / 2` bytes at
 /// each end, with `…` in place of the rest. A segment longer than that is cut, so a long key
-/// still shows its start or its end. A full path never holds `…`: quoted keys escape
-/// non-ASCII, and `…` cannot be part of an unquoted key.
+/// still shows its start or its end. A full path never holds `…`: quoted keys escape it, and
+/// it cannot be part of an unquoted key.
 pub(crate) const MAX_PATH: usize = 256;
 
 /// The JSONPath made of `count` segments, root first, each as [`rendered`] gives it, cut as
@@ -79,11 +82,14 @@ pub(crate) fn rendered(segment: &Segment<'_>) -> String {
 }
 
 /// One step of a [`json_path`]: an object key or an array index.
+///
+/// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
+#[doc(hidden)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum PathStep<'a> {
-    /// A member of an object, by its key.
-    Key(&'a str),
+    /// A member of an object, by its key as WTF-8, as in [`EventKind::Key`](crate::EventKind::Key).
+    Key(&'a [u8]),
     /// An element of an array, by its index from 0.
     Index(usize),
 }
@@ -97,13 +103,16 @@ pub enum PathStep<'a> {
 /// use jsonvet::{json_path, PathStep};
 ///
 /// assert_eq!(json_path([]), "$");
-/// let steps = [PathStep::Key("a"), PathStep::Index(0), PathStep::Key("")];
-/// assert_eq!(json_path(steps), "$.a[0][\"\"]");
+/// let steps = [PathStep::Key(b"a"), PathStep::Index(0), PathStep::Key(b"\xED\xA0\x80")];
+/// assert_eq!(json_path(steps), "$.a[0][\"\\ud800\"]");
 /// ```
+///
+/// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
+#[doc(hidden)]
 pub fn json_path<'a>(steps: impl IntoIterator<Item = PathStep<'a>>) -> String {
     let segments: Vec<String> = std::iter::once("$".to_owned())
         .chain(steps.into_iter().map(|step| match step {
-            PathStep::Key(key) => rendered(&Segment::Key(Cow::Borrowed(key.as_bytes()))),
+            PathStep::Key(key) => rendered(&Segment::Key(Cow::Borrowed(key))),
             PathStep::Index(i) => rendered(&Segment::Index(i)),
         }))
         .collect();
@@ -132,6 +141,19 @@ pub(crate) fn push_key(path: &mut String, key: &[u8]) {
         quote(path, &chars);
         path.push(']');
     }
+}
+
+/// A key from [`EventKind::Key`](crate::EventKind::Key) as text, with U+FFFD for each lone
+/// surrogate, as `serde_json` reads it.
+///
+/// ```
+/// assert_eq!(jsonvet::key_text(b"a\xED\xA0\x80"), "a\u{FFFD}");
+/// ```
+///
+/// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
+#[doc(hidden)]
+pub fn key_text(key: &[u8]) -> Cow<'_, str> {
+    text(Cow::Borrowed(key))
 }
 
 /// A decoded string or key as text, with U+FFFD for each lone surrogate.
@@ -189,7 +211,10 @@ fn is_identifier(chars: &[Result<char, u32>]) -> bool {
                 || matches!(c.general_category_group(), Letter | Number))
         })
 }
-/// Quote a key as `json.dumps` does with its defaults: non-ASCII as lowercase `\uXXXX` escapes.
+
+/// Quote a key as JSON: `\"`, `\\`, the short escapes for control characters, and lowercase
+/// `\uXXXX` for other control characters, hidden ones (see [`is_hidden`]), `…` and lone
+/// surrogates. Any other character is kept as written.
 fn quote(out: &mut String, chars: &[Result<char, u32>]) {
     out.push('"');
     for c in chars {
@@ -208,13 +233,13 @@ fn quote(out: &mut String, chars: &[Result<char, u32>]) {
             '\t' => out.push_str("\\t"),
             '\u{8}' => out.push_str("\\b"),
             '\u{c}' => out.push_str("\\f"),
-            c if c.is_ascii() && !c.is_ascii_control() => out.push(c),
-            c => {
+            c if c.is_control() || is_hidden(c) || c == '…' => {
                 let mut units = [0u16; 2];
                 for unit in c.encode_utf16(&mut units) {
                     let _ = write!(out, "\\u{unit:04x}");
                 }
             }
+            c => out.push(c),
         }
     }
     out.push('"');
@@ -231,20 +256,26 @@ mod tests {
     }
 
     #[test]
-    fn keys_render_as_check_json5_rendered_them() {
+    fn keys_render_as_check_json5_rendered_them_but_keep_non_ascii() {
         assert_eq!(rendered("server"), "$.server");
         assert_eq!(rendered("$ref"), "$.$ref");
         assert_eq!(rendered("café"), "$.café");
         assert_eq!(rendered("1st"), "$[\"1st\"]");
         assert_eq!(rendered("b c"), "$[\"b c\"]");
-        assert_eq!(rendered("ünicode"), "$[\"\\u00fcnicode\"]");
+        assert_eq!(rendered("ünicode"), "$[\"ünicode\"]");
+        assert_eq!(rendered("日本 語"), "$[\"日本 語\"]");
         assert_eq!(rendered("q\"\\\n"), "$[\"q\\\"\\\\\\n\"]");
-        assert_eq!(rendered("😀"), "$[\"\\ud83d\\ude00\"]");
+        assert_eq!(rendered("😀"), "$[\"😀\"]");
+        // Control, hidden and the cut mark `…` stay escaped, past U+FFFF as a surrogate pair.
+        assert_eq!(
+            rendered("a\u{7f}\u{85}\u{202e}\u{ad}…\u{e0041}"),
+            "$[\"a\\u007f\\u0085\\u202e\\u00ad\\u2026\\udb40\\udc41\"]"
+        );
         assert_eq!(rendered(""), "$[\"\"]");
-        // Marks and symbols are not `\w` in Python, numbers like U+00B2 are.
-        assert_eq!(rendered("a\u{093E}"), "$[\"a\\u093e\"]");
-        assert_eq!(rendered("a\u{24B6}"), "$[\"a\\u24b6\"]");
-        assert_eq!(rendered("a\u{0345}"), "$[\"a\\u0345\"]");
+        // Marks and symbols are not `\w` in Python, so the key is quoted; numbers like U+00B2 are.
+        assert_eq!(rendered("a\u{093E}"), "$[\"a\u{093E}\"]");
+        assert_eq!(rendered("a\u{24B6}"), "$[\"a\u{24B6}\"]");
+        assert_eq!(rendered("a\u{0345}"), "$[\"a\u{0345}\"]");
         assert_eq!(rendered("a\u{00B2}"), "$.a\u{00B2}");
         let mut path = "$".to_owned();
         push_key(&mut path, b"a\xED\xA0\x80b");

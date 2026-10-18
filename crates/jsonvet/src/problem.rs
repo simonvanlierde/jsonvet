@@ -64,6 +64,7 @@ impl Problem {
     }
 
     /// The offset of [`related`](Self::related).
+    #[deprecated(since = "3.0.0", note = "use related().map(|r| r.offset)")]
     pub fn related_offset(&self) -> Option<usize> {
         self.related().map(|r| r.offset)
     }

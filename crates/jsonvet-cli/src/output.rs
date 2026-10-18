@@ -8,6 +8,7 @@ use std::io::{self, Write};
 use jsonvet::{Location, Problem, RelatedKind, Report, Severity};
 
 use crate::sarif;
+pub(crate) use jsonvet::is_hidden;
 
 /// The output format, from `--format`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -29,9 +30,7 @@ pub(crate) fn printable(value: &str) -> String {
         match c {
             '\r' => shown.push_str("\\r"),
             '\n' => shown.push_str("\\n"),
-            c if c.is_control() || is_hidden(c) => {
-                let _ = write!(shown, "\\u{:04x}", u32::from(c));
-            }
+            c if c.is_control() || is_hidden(c) => escape_utf16(&mut shown, c),
             '[' if shown.ends_with("##") => shown.push_str("\\u005b"),
             c => shown.push(c),
         }
@@ -39,18 +38,12 @@ pub(crate) fn printable(value: &str) -> String {
     shown
 }
 
-/// Characters that reorder or hide text without showing themselves: Unicode's `Bidi_Control`
-/// set (as `is_bidi_control` in jsonvet, which is not public), the zero-width space, joiners
-/// and marks U+200B to U+200F, the line and paragraph separators, and the byte order mark.
-fn is_hidden(c: char) -> bool {
-    matches!(
-        c,
-        '\u{61c}'
-            | '\u{200b}'..='\u{200f}'
-            | '\u{2028}'..='\u{202e}'
-            | '\u{2066}'..='\u{2069}'
-            | '\u{feff}'
-    )
+/// Write `c` as `\uXXXX`, or as two of them, a UTF-16 surrogate pair, past U+FFFF, as JSON
+/// writes it.
+pub(crate) fn escape_utf16(out: &mut String, c: char) {
+    for unit in c.encode_utf16(&mut [0; 2]) {
+        let _ = write!(out, "\\u{unit:04x}");
+    }
 }
 
 /// A file name as it starts an output line. A name starting with `::`, after any leading
@@ -65,13 +58,10 @@ fn line_start(file: &str) -> String {
     }
 }
 
-/// Escape a value for a GitHub workflow command: `%`, CR and LF always, `:` and `,` in
-/// properties such as `file=`.
+/// Escape a [`printable`] value for a GitHub workflow command: `%` always, `:` and `,` in
+/// properties such as `file=`. CR and LF never reach it.
 fn escape(value: &str, property: bool) -> String {
-    let value = value
-        .replace('%', "%25")
-        .replace('\r', "%0D")
-        .replace('\n', "%0A");
+    let value = value.replace('%', "%25");
     if property {
         value.replace(':', "%3A").replace(',', "%2C")
     } else {
@@ -126,7 +116,7 @@ impl<W: Write> Printer<W> {
             problem.rule().id(),
             problem.severity(),
             &message,
-            at,
+            Some(at),
             related,
         )
     }
@@ -145,77 +135,63 @@ impl<W: Write> Printer<W> {
             return Ok(());
         }
         let at = report.location(offset);
-        self.line(file, sarif::SCHEMA, Severity::Error, message, at, None)
+        self.line(
+            file,
+            sarif::SCHEMA,
+            Severity::Error,
+            message,
+            Some(at),
+            None,
+        )
+    }
+
+    /// A file that could not be checked at all.
+    pub(crate) fn unreadable(&mut self, file: &OsStr, message: &str) -> io::Result<()> {
+        self.line(
+            file,
+            sarif::UNREADABLE,
+            Severity::Error,
+            message,
+            None,
+            None,
+        )
     }
 
     /// One problem, in whichever format: a text line and maybe an annotation, or a SARIF
-    /// result. `related` is only for SARIF; the text message already names it.
+    /// result. `related` is only for SARIF; the text message already names it. With no `at`,
+    /// for a file that could not be read, the text shows neither a position nor the rule.
     fn line(
         &mut self,
         file: &OsStr,
         rule: &str,
         severity: Severity,
         message: &str,
-        at: Location,
+        at: Option<Location>,
         related: Option<(Location, &str)>,
     ) -> io::Result<()> {
         if self.sarif.is_some() {
+            // GitHub code scanning needs a line in every result.
+            let at = at.unwrap_or(Location::START);
             self.push(|| sarif::result(file, rule, severity, message, at, related));
             return Ok(());
         }
         let file = &file.to_string_lossy();
-        writeln!(
-            self.out,
-            "{}:{}:{}: {severity}[{rule}] {}",
-            line_start(file),
-            at.line,
-            at.column,
-            printable(message)
-        )?;
+        let message = &printable(message);
+        let (position, title) = match at {
+            Some(at) => (
+                format!(":{}:{}: {severity}[{rule}]", at.line, at.column),
+                format!(",line={},col={},title=jsonvet ({rule})", at.line, at.column),
+            ),
+            None => (format!(": {severity}:"), ",title=jsonvet".to_owned()),
+        };
+        writeln!(self.out, "{}{position} {message}", line_start(file))?;
         if self.annotate {
             writeln!(
                 self.out,
-                "::{} file={},line={},col={},title=jsonvet ({rule})::{}",
+                "::{} file={}{title}::{}",
                 sarif::level(severity),
                 escape(&printable(file), true),
-                at.line,
-                at.column,
-                escape(&printable(message), false)
-            )?;
-        }
-        Ok(())
-    }
-
-    /// A file that could not be checked at all.
-    pub(crate) fn unreadable(&mut self, file: &OsStr, message: &str) -> io::Result<()> {
-        if self.sarif.is_some() {
-            // GitHub code scanning needs a line in every result.
-            let start = Location::START;
-            self.push(|| {
-                sarif::result(
-                    file,
-                    sarif::UNREADABLE,
-                    Severity::Error,
-                    message,
-                    start,
-                    None,
-                )
-            });
-            return Ok(());
-        }
-        let file = &file.to_string_lossy();
-        writeln!(
-            self.out,
-            "{}: error: {}",
-            line_start(file),
-            printable(message)
-        )?;
-        if self.annotate {
-            writeln!(
-                self.out,
-                "::error file={},title=jsonvet::{}",
-                escape(&printable(file), true),
-                escape(&printable(message), false)
+                escape(message, false)
             )?;
         }
         Ok(())
@@ -266,13 +242,27 @@ mod tests {
             printable("a\u{202e}b\u{2066}c\u{200f}d\u{61c}e\u{200d}f"),
             "a\\u202eb\\u2066c\\u200fd\\u061ce\\u200df"
         );
-        assert_eq!(escape("50% a\r\nb", false), "50%25 a%0D%0Ab");
+        assert_eq!(escape("50% a", false), "50%25 a");
         assert_eq!(escape("a:b,c", true), "a%3Ab%2Cc");
         assert_eq!(escape("not strict: x, y", false), "not strict: x, y");
         assert_eq!(
             printable("x\u{202e}y\u{200b}\u{feff}\u{2028}"),
             "x\\u202ey\\u200b\\ufeff\\u2028"
         );
+    }
+
+    #[test]
+    fn soft_hyphens_word_joiners_and_tag_characters_are_hidden() {
+        assert_eq!(
+            printable("a\u{ad}b\u{180e}c\u{2060}d\u{2064}e"),
+            "a\\u00adb\\u180ec\\u2060d\\u2064e"
+        );
+        // Past U+FFFF, as a UTF-16 surrogate pair, the way JSON writes it.
+        assert_eq!(
+            printable("\u{e0000}x\u{e007f}"),
+            "\\udb40\\udc00x\\udb40\\udc7f"
+        );
+        assert_eq!(printable("\u{e0080}\u{2065}é"), "\u{e0080}\u{2065}é");
     }
 
     #[test]

@@ -1,13 +1,15 @@
 //! `--schema`: each file's values checked against one JSON Schema, every error placed at the
 //! value it is about.
 
-use std::collections::{HashMap, HashSet};
+use std::borrow::Cow;
+use std::collections::{BTreeSet, HashMap};
 use std::ops::Range;
 use std::path::Path;
 
 use jsonschema::error::ValidationErrorKind;
 use jsonschema::{PatternOptions, ReferencingError, ValidationError, Validator};
-use jsonvet::{Event, EventKind, PathStep, Severity};
+use jsonvet::{Event, EventKind, PathStep, Severity, key_text};
+use percent_encoding::percent_decode_str;
 use serde_json::{Map, Number, Value};
 
 use crate::settings::Settings;
@@ -22,8 +24,6 @@ struct Document {
 
 const NOT_A_NUMBER: &str =
     "NaN, Infinity and numbers beyond a double's range have no JSON Schema value";
-// shortcut: two copies of one key holding U+FFFD or a lone surrogate also land here, though they
-// were already the same; tell them apart by the key's source text if that is ever reported.
 const SAME_KEYS: &str =
     "this key and an earlier one in the object are the same once lone surrogates become U+FFFD";
 
@@ -39,6 +39,11 @@ const MAX_MESSAGE: usize = 200;
 /// schemas stay well under it.
 const MAX_SCHEMA_DEPTH: usize = 128;
 
+/// How many objects and arrays a schema may hold once each local `$ref` is replaced by what it
+/// points at. jsonschema may check every one of them for one value, so `$ref`s that each point
+/// twice at the next schema, 24 levels deep, took 12.9 s and 11.4 GB.
+const MAX_SCHEMA_SIZE: usize = 5_000_000;
+
 /// The keys whose value points at another schema.
 const REF_KEYS: [&str; 3] = ["$ref", "$dynamicRef", "$recursiveRef"];
 
@@ -46,7 +51,82 @@ const REF_KEYS: [&str; 3] = ["$ref", "$dynamicRef", "$recursiveRef"];
 /// for a lookaround over the whole string, so a string over a few thousand characters can hit it.
 const BACKTRACK_LIMIT: usize = 5_000;
 
-pub(crate) struct Schema(Validator);
+pub(crate) struct Schema {
+    validator: Validator,
+    /// `{"pattern": p}` for each regex in the schema tried on keys: `patternProperties` and a
+    /// `pattern` under `propertyNames`.
+    key_patterns: Vec<(String, Validator)>,
+    /// `{"pattern": p}` for each `pattern` in the schema, tried on strings.
+    string_patterns: Vec<(String, Validator)>,
+}
+
+/// Whether `error` says a regex match ran past [`BACKTRACK_LIMIT`].
+fn backtracked(error: &ValidationError<'_>) -> bool {
+    match error.kind() {
+        ValidationErrorKind::BacktrackLimitExceeded { .. } => true,
+        ValidationErrorKind::PropertyNames { error } => backtracked(error),
+        _ => false,
+    }
+}
+
+/// The regexes in `schema`: those tried on keys, and every `pattern`, tried on strings.
+fn patterns<'v>(
+    schema: &'v Value,
+    names: bool,
+    keys: &mut BTreeSet<&'v str>,
+    strings: &mut BTreeSet<&'v str>,
+) {
+    match schema {
+        Value::Object(members) => {
+            for (key, member) in members {
+                match (key.as_str(), member) {
+                    ("patternProperties", Value::Object(regexes)) => {
+                        keys.extend(regexes.keys().map(String::as_str));
+                    }
+                    ("pattern", Value::String(regex)) => {
+                        strings.insert(regex);
+                        if names {
+                            keys.insert(regex);
+                        }
+                    }
+                    _ => {}
+                }
+                patterns(member, names || key == "propertyNames", keys, strings);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                patterns(item, names, keys, strings);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// An error about a key or a value, placed by its object's path and the key, or by the value's
+/// path alone: the path, the key, and the message.
+type Keyed = (Vec<String>, Option<String>, String);
+
+/// The keys an `additionalProperties` error is about, to report one error each: those it lists,
+/// or every key for `"additionalProperties": false` with no `properties` or `patternProperties`
+/// beside it, which jsonschema reports once as a false schema at the object's first value.
+fn unexpected(value: &Value, error: &ValidationError<'_>) -> Option<Vec<String>> {
+    match error.kind() {
+        ValidationErrorKind::AdditionalProperties { unexpected } => Some(unexpected.clone()),
+        ValidationErrorKind::FalseSchema
+            if error
+                .schema_path()
+                .as_str()
+                .ends_with("/additionalProperties") =>
+        {
+            // A `false` under `properties` with that name is about the value itself.
+            let object = value.pointer(error.instance_path().as_str())?;
+            let members = object.as_object()?;
+            (object != error.instance().as_ref()).then(|| members.keys().cloned().collect())
+        }
+        _ => None,
+    }
+}
 
 impl Schema {
     /// Read and compile the schema at `path`, in its dialect under `settings`. Any problem
@@ -80,18 +160,23 @@ impl Schema {
         }
         // jsonschema also validates recursively through each `$ref`, so a long chain of them
         // takes the stack or hours, however shallow the schema is.
-        if let Some((path, key)) = Reach::new(&document.value).too_deep() {
-            let offset = place(
+        if let Some(Over { path, key, size }) = Reach::new(&document.value).over() {
+            let (offset, _) = place(
                 &events[document.events.clone()],
                 &[(path, vec![key.to_owned()])],
             )[0];
-            return Err(at(
-                offset,
-                &format!(
+            let problem = if size {
+                format!(
+                    "this `{key}` takes the schema past {MAX_SCHEMA_SIZE} objects and arrays, \
+                     counting what each `$ref` points at every time it is followed"
+                )
+            } else {
+                format!(
                     "this `{key}` leads more than {MAX_SCHEMA_DEPTH} levels deep, counting each \
                      `$ref` followed as a level"
-                ),
-            ));
+                )
+            };
+            return Err(at(offset, &problem));
         }
         // Offline: a `$ref` to anything outside the schema file fails here.
         let options = jsonschema::options()
@@ -100,7 +185,25 @@ impl Schema {
             // of a million lets one 30-byte string take 30 ms.
             .with_pattern_options(PatternOptions::fancy_regex().backtrack_limit(BACKTRACK_LIMIT));
         let error = match options.build(&document.value) {
-            Ok(validator) => return Ok(Schema(validator)),
+            Ok(validator) => {
+                let (mut keys, mut strings) = (BTreeSet::new(), BTreeSet::new());
+                patterns(&document.value, false, &mut keys, &mut strings);
+                // A regex jsonschema could not compile already failed the build above.
+                let compile = |regexes: BTreeSet<&str>| {
+                    regexes
+                        .into_iter()
+                        .filter_map(|regex| {
+                            let schema = serde_json::json!({ "pattern": regex });
+                            Some((regex.to_owned(), options.build(&schema).ok()?))
+                        })
+                        .collect()
+                };
+                return Ok(Schema {
+                    validator,
+                    key_patterns: compile(keys),
+                    string_patterns: compile(strings),
+                });
+            }
             Err(error) => error,
         };
         // A failed `$ref` has no instance path to place it by.
@@ -112,7 +215,7 @@ impl Schema {
                  schemas"
             ));
         }
-        let offset = locate(&events[document.events], std::slice::from_ref(&error))[0];
+        let (offset, _) = locate(&events[document.events], std::slice::from_ref(&error))[0];
         Err(at(offset, &error))
     }
 
@@ -129,24 +232,69 @@ impl Schema {
                 ));
                 continue;
             }
-            let mut all = self.0.iter_errors(&document.value);
-            let found: Vec<ValidationError<'_>> = all.by_ref().take(MAX_ERRORS).collect();
-            if found.is_empty() {
+            // jsonschema counts a regex that runs past the backtrack limit as not matching, so
+            // `patternProperties` and any `pattern` under `not` or `if` would pass silently.
+            // Every key and string is tried here instead, and jsonschema's own errors for it,
+            // which this repeats, are dropped.
+            // shortcut: each regex is tried on every key or string, not only where the schema
+            // applies it; follow the schema's applicators if that fails a file wrongly.
+            let mut keyed = Vec::new();
+            self.unmatched(&document.value, &mut Vec::new(), &mut keyed);
+            let mut more = keyed.len().saturating_sub(MAX_ERRORS);
+            keyed.truncate(MAX_ERRORS);
+            let mut found: Vec<ValidationError<'_>> = Vec::new();
+            let all = self
+                .validator
+                .iter_errors(&document.value)
+                .filter(|error| !backtracked(error));
+            for error in all {
+                let room = MAX_ERRORS - keyed.len() - found.len();
+                match unexpected(&document.value, &error) {
+                    Some(keys) => {
+                        more += keys.len().saturating_sub(room);
+                        let path: Vec<String> = segments(error.instance_path().as_str()).collect();
+                        keyed.extend(keys.into_iter().take(room).map(|key| {
+                            let message = format!(
+                                "Additional properties are not allowed ('{key}' was unexpected)"
+                            );
+                            (path.clone(), Some(key), message)
+                        }));
+                    }
+                    None if room > 0 => found.push(error),
+                    None => more += 1,
+                }
+            }
+            if found.is_empty() && keyed.is_empty() {
                 continue;
             }
             let events = &events[document.events];
             let mut placed: Vec<(usize, String, bool)> = locate(events, &found)
                 .into_iter()
                 .zip(&found)
-                .map(|(offset, error)| {
-                    let at = json_path(&document.value, error.instance_path().as_str());
+                .map(|((offset, at), error)| {
                     (offset, cut(format!("{} (at {at})", message(error))), false)
                 })
                 .collect();
+            // For a key, its own offset and the path of its value.
+            let targets: Vec<(Vec<String>, Vec<String>)> = keyed
+                .iter()
+                .flat_map(|(path, key, _)| {
+                    let mut value = path.clone();
+                    value.extend(key.clone());
+                    [
+                        (path.clone(), key.iter().cloned().collect()),
+                        (value, Vec::new()),
+                    ]
+                })
+                .collect();
+            let spots = place(events, &targets);
+            for ((.., message), spot) in keyed.iter().zip(spots.chunks(2)) {
+                let at = &spot[1].1;
+                placed.push((spot[0].0, cut(format!("{message} (at {at})")), false));
+            }
             // Stable, so errors at one value keep the schema's order.
             placed.sort_by_key(|(offset, ..)| *offset);
             errors.append(&mut placed);
-            let more = all.count();
             if more > 0 {
                 errors.push((
                     events[0].offset,
@@ -157,24 +305,54 @@ impl Schema {
         }
         errors
     }
-}
 
-/// The JSONPath of the value at the JSON Pointer `pointer` in `value`, written as duplicate-key
-/// paths are. The pointer alone cannot tell the index `0` from the key `"0"`, so each segment
-/// is read as an index only where the value it steps into is an array.
-// shortcut: a key holding a lone surrogate is written with U+FFFD here and with the surrogate's
-// escape in a duplicate-key path; carry the key's source text if that is ever reported.
-fn json_path(value: &Value, pointer: &str) -> String {
-    let segments: Vec<String> = segments(pointer).collect();
-    let mut value = Some(value);
-    jsonvet::json_path(segments.iter().map(|segment| {
-        if let (Some(Value::Array(items)), Ok(i)) = (value, segment.parse::<usize>()) {
-            value = items.get(i);
-            return PathStep::Index(i);
+    /// The keys and strings in `value`, which is at `path`, that a regex in the schema could
+    /// not be matched on within [`BACKTRACK_LIMIT`].
+    fn unmatched(&self, value: &Value, path: &mut Vec<String>, out: &mut Vec<Keyed>) {
+        let fails = |regex: &Validator, value: &Value| {
+            regex
+                .validate(value)
+                .is_err_and(|error| backtracked(&error))
+        };
+        let message = |what: &str, regex: &str| {
+            format!(
+                "this {what} could not be checked against the pattern \"{regex}\": matching it \
+                 takes more than {BACKTRACK_LIMIT} backtracking steps"
+            )
+        };
+        match value {
+            Value::Object(members) => {
+                for (key, member) in members {
+                    if !self.key_patterns.is_empty() {
+                        let name = Value::String(key.clone());
+                        for (regex, validator) in &self.key_patterns {
+                            if fails(validator, &name) {
+                                out.push((path.clone(), Some(key.clone()), message("key", regex)));
+                            }
+                        }
+                    }
+                    path.push(key.clone());
+                    self.unmatched(member, path, out);
+                    path.pop();
+                }
+            }
+            Value::Array(items) => {
+                for (i, item) in items.iter().enumerate() {
+                    path.push(i.to_string());
+                    self.unmatched(item, path, out);
+                    path.pop();
+                }
+            }
+            Value::String(_) => {
+                for (regex, validator) in &self.string_patterns {
+                    if fails(validator, value) {
+                        out.push((path.clone(), None, message("string", regex)));
+                    }
+                }
+            }
+            _ => {}
         }
-        value = value.and_then(|v| v.get(segment));
-        PathStep::Key(segment)
-    }))
+    }
 }
 
 /// The unescaped segments of the JSON Pointer `pointer`: `~1` is `/` and `~0` is `~`, in that
@@ -231,16 +409,19 @@ fn cut(mut message: String) -> String {
 
 /// The values some errors are about, as a tree of JSON Pointer segments, with the offset of
 /// each value and, for an object member, of its key.
-struct Wanted(Vec<Node>);
+struct Wanted<'e>(Vec<Node<'e>>);
 
 #[derive(Default)]
-struct Node {
+struct Node<'e> {
     children: HashMap<String, usize>,
     /// The value's offset, and for an object member, its key's offset and its object's.
     at: (usize, Option<(usize, usize)>),
+    /// The step to the value as written: an index, or the key's source text, which keeps lone
+    /// surrogates that the pointer holds as U+FFFD.
+    step: Option<PathStep<'e>>,
 }
 
-impl Wanted {
+impl Wanted<'_> {
     /// The node for `key` under `node`, added if new.
     fn child(&mut self, node: usize, key: &str) -> usize {
         if let Some(&child) = self.0[node].children.get(key) {
@@ -253,21 +434,21 @@ impl Wanted {
     }
 }
 
-/// In an open container: an array's next index, or an object's current key and its offset.
-type Slot<'e> = Result<usize, (&'e str, usize)>;
+/// In an open container: an array's next index, or an object's current key as text and as
+/// written, and its offset.
+type Slot<'e> = Result<usize, (Cow<'e, str>, &'e [u8], usize)>;
 
 /// An open container: its node if any error is inside it, its offset, and its next index or key.
 type Container<'e> = (Option<usize>, usize, Slot<'e>);
 
 /// Where each error is, found in one walk over its document's events: its value; for unexpected
-/// properties, the first such key; for a property name, that key.
-fn locate(events: &[Event<'_>], errors: &[ValidationError<'_>]) -> Vec<usize> {
+/// properties, the first such key; for a property name, that key. With it, the value's path.
+fn locate(events: &[Event<'_>], errors: &[ValidationError<'_>]) -> Vec<(usize, String)> {
     let targets: Vec<(Vec<String>, Vec<String>)> = errors
         .iter()
         .map(|error| {
             let keys = match error.kind() {
-                ValidationErrorKind::AdditionalProperties { unexpected }
-                | ValidationErrorKind::UnevaluatedProperties { unexpected } => unexpected.clone(),
+                ValidationErrorKind::UnevaluatedProperties { unexpected } => unexpected.clone(),
                 ValidationErrorKind::PropertyNames { error } => error
                     .instance()
                     .as_str()
@@ -282,19 +463,22 @@ fn locate(events: &[Event<'_>], errors: &[ValidationError<'_>]) -> Vec<usize> {
 }
 
 /// Where each target is, found in one walk over its document's events: given as a value's path
-/// and keys in it, the first of those keys found, or else the value.
-fn place(events: &[Event<'_>], targets: &[(Vec<String>, Vec<String>)]) -> Vec<usize> {
+/// and keys in it, the first of those keys found, or else the value. With it, the value's
+/// JSONPath, written as duplicate-key paths are.
+fn place(events: &[Event<'_>], targets: &[(Vec<String>, Vec<String>)]) -> Vec<(usize, String)> {
     let mut wanted = Wanted(vec![Node::default()]);
-    // For each target, its value's node and the nodes of its keys.
-    let nodes: Vec<(usize, Vec<usize>)> = targets
+    // For each target, the nodes on the way to its value and the nodes of its keys.
+    let nodes: Vec<(Vec<usize>, Vec<usize>)> = targets
         .iter()
         .map(|(path, keys)| {
+            let mut way = Vec::with_capacity(path.len());
             let mut node = 0;
             for segment in path {
                 node = wanted.child(node, segment);
+                way.push(node);
             }
             let keys = keys.iter().map(|key| wanted.child(node, key)).collect();
-            (node, keys)
+            (way, keys)
         })
         .collect();
 
@@ -302,7 +486,7 @@ fn place(events: &[Event<'_>], targets: &[(Vec<String>, Vec<String>)]) -> Vec<us
     for event in events {
         match (&event.kind, stack.last_mut()) {
             (EventKind::Key(key), Some((_, _, slot))) => {
-                *slot = Err((key, event.offset));
+                *slot = Err((key_text(key), &**key, event.offset));
                 continue;
             }
             (EventKind::End, _) => {
@@ -312,19 +496,20 @@ fn place(events: &[Event<'_>], targets: &[(Vec<String>, Vec<String>)]) -> Vec<us
             _ => {}
         }
         let node = match stack.last_mut() {
-            None => Some((0, None)),
+            None => Some((0, None, None)),
             Some((parent, _, Ok(index))) => {
                 *index += 1;
-                let key = *index - 1;
+                let i = *index - 1;
                 parent
-                    .and_then(|p| wanted.0[p].children.get(&key.to_string()))
-                    .map(|&n| (n, None))
+                    .and_then(|p| wanted.0[p].children.get(&i.to_string()))
+                    .map(|&n| (n, Some(PathStep::Index(i)), None))
             }
-            Some((parent, object, Err((key, offset)))) => parent
-                .and_then(|p| wanted.0[p].children.get(*key))
-                .map(|&n| (n, Some((*offset, *object)))),
+            Some((parent, object, Err((key, raw, offset)))) => parent
+                .and_then(|p| wanted.0[p].children.get(key.as_ref()))
+                .map(|&n| (n, Some(PathStep::Key(raw)), Some((*offset, *object)))),
         };
-        if let Some((node, key)) = node {
+        if let Some((node, step, key)) = node {
+            wanted.0[node].step = step;
             let at = &mut wanted.0[node].at;
             // A later duplicate key's value overwrites, as it does in the folded value, but the
             // key stays at its first copy in that object.
@@ -334,10 +519,12 @@ fn place(events: &[Event<'_>], targets: &[(Vec<String>, Vec<String>)]) -> Vec<us
             }
         }
         let node = node
-            .map(|(n, _)| n)
+            .map(|(n, ..)| n)
             .filter(|&n| !wanted.0[n].children.is_empty());
         match event.kind {
-            EventKind::ObjectStart => stack.push((node, event.offset, Err(("", 0)))),
+            EventKind::ObjectStart => {
+                stack.push((node, event.offset, Err((Cow::Borrowed(""), &[], 0))));
+            }
             EventKind::ArrayStart => stack.push((node, event.offset, Ok(0))),
             _ => {}
         }
@@ -345,19 +532,29 @@ fn place(events: &[Event<'_>], targets: &[(Vec<String>, Vec<String>)]) -> Vec<us
 
     nodes
         .into_iter()
-        .map(|(node, keys)| {
-            keys.iter()
+        .zip(targets)
+        .map(|((way, keys), (path, _))| {
+            let node = way.last().copied().unwrap_or(0);
+            let offset = keys
+                .iter()
                 .filter_map(|&key| wanted.0[key].at.1.map(|(offset, _)| offset))
                 .min()
-                .unwrap_or(wanted.0[node].at.0)
+                .unwrap_or(wanted.0[node].at.0);
+            // Every value an error is about is in the events, so each step is found.
+            let steps = way.iter().zip(path).map(|(&n, segment)| {
+                wanted.0[n]
+                    .step
+                    .unwrap_or(PathStep::Key(segment.as_bytes()))
+            });
+            (offset, jsonvet::json_path(steps))
         })
         .collect()
 }
 
-/// How deep a schema reaches when its local `$ref`s are followed: `#` with a JSON Pointer or an
-/// anchor (`$anchor`, `$dynamicAnchor`, or an `$id` of `#name`), or a URI naming an `$id` in the
-/// file. A `$ref` back to a schema on the way to it is recursion, which jsonschema handles: it
-/// adds nothing.
+/// How deep and how big a schema gets when its local `$ref`s are followed: `#` with a JSON
+/// Pointer or an anchor (`$anchor`, `$dynamicAnchor`, or an `$id` of `#name`), or a URI naming an
+/// `$id` in the file. A `$ref` back to a schema on the way to it is recursion, which jsonschema
+/// handles: it adds nothing.
 // shortcut: a URI matches an `$id` by its text or last path segments, not by full RFC 3986
 // resolution against each base, and a relative `#` reference resolves against the root; a
 // missed match only undercounts. Resolve as jsonschema's `referencing` crate does if one slips by.
@@ -365,10 +562,12 @@ struct Reach<'v> {
     root: &'v Value,
     anchors: HashMap<&'v str, (&'v Value, Vec<String>)>,
     ids: Vec<(&'v str, &'v Value, Vec<String>)>,
-    /// The levels at and under each schema already measured, by address.
-    height: HashMap<*const Value, usize>,
-    /// The schemas on the way to the current one.
-    open: HashSet<*const Value>,
+    /// The levels at and under each schema already measured, and its objects and arrays with
+    /// every `$ref` followed, by address. Only for a schema measured without skipping a `$ref`
+    /// back to a schema above it, as that one is shorter where the skipped schema is not open.
+    measured: HashMap<*const Value, Measure>,
+    /// The schemas on the way to the current one, with their levels.
+    open: HashMap<*const Value, usize>,
     /// Where the current schema is in the file.
     path: Vec<String>,
     /// Where each `$ref` on the way is: its object's path and the key.
@@ -381,8 +580,8 @@ impl<'v> Reach<'v> {
             root,
             anchors: HashMap::new(),
             ids: Vec::new(),
-            height: HashMap::new(),
-            open: HashSet::new(),
+            measured: HashMap::new(),
+            open: HashMap::new(),
             path: Vec::new(),
             refs: Vec::new(),
         };
@@ -440,12 +639,11 @@ impl<'v> Reach<'v> {
         if fragment.is_empty() {
             return Some((resource, path));
         }
-        let Some(pointer) = fragment.strip_prefix('/') else {
+        if !fragment.starts_with('/') {
             return self.anchors.get(fragment).cloned();
-        };
+        }
         let mut value = resource;
-        for segment in percent_decoded(pointer).split('/') {
-            let segment = segment.replace("~1", "/").replace("~0", "~");
+        for segment in segments(&percent_decode_str(fragment).decode_utf8_lossy()) {
             value = match value {
                 Value::Array(items) => items.get(segment.parse::<usize>().ok()?)?,
                 _ => value.get(&segment)?,
@@ -455,43 +653,61 @@ impl<'v> Reach<'v> {
         Some((value, path))
     }
 
-    /// Where a `$ref` leads past [`MAX_SCHEMA_DEPTH`] levels, as its object's path and key.
-    fn too_deep(mut self) -> Option<(Vec<String>, &'static str)> {
+    /// Where a `$ref` leads past [`MAX_SCHEMA_DEPTH`] levels or [`MAX_SCHEMA_SIZE`] objects
+    /// and arrays.
+    fn over(mut self) -> Option<Over> {
         self.visit(self.root, 1).err()
     }
 
-    /// The levels at and under `value`, which is `level` levels deep, or where that is too many.
-    fn visit(
-        &mut self,
-        value: &'v Value,
-        level: usize,
-    ) -> Result<usize, (Vec<String>, &'static str)> {
+    /// Where the current `$ref` is, for an error about it.
+    fn over_here(&self, size: bool) -> Over {
+        // Containers alone stay within the parser's depth limit, so a `$ref` is on the way.
+        let (path, key) = self.refs.last().cloned().unwrap_or((Vec::new(), "$ref"));
+        Over { path, key, size }
+    }
+
+    /// `value`, which is `level` levels deep, measured, or where it is too deep or too big.
+    fn visit(&mut self, value: &'v Value, level: usize) -> Result<Visit, Over> {
         if !(value.is_object() || value.is_array()) {
-            return Ok(0);
+            return Ok(Visit {
+                measure: Measure::default(),
+                cut: usize::MAX,
+            });
         }
         let address: *const Value = value;
-        let known = self.height.get(&address).copied();
-        if level + known.unwrap_or(1) - 1 > MAX_SCHEMA_DEPTH {
-            // Containers alone stay within the parser's depth limit, so a `$ref` is on the way.
-            return Err(self.refs.last().cloned().unwrap_or((Vec::new(), "$ref")));
+        let known = self.measured.get(&address).copied();
+        if level + known.map_or(1, |m| m.height) - 1 > MAX_SCHEMA_DEPTH {
+            return Err(self.over_here(false));
         }
-        if let Some(height) = known {
-            return Ok(height);
+        if let Some(measure) = known {
+            return Ok(Visit {
+                measure,
+                cut: usize::MAX,
+            });
         }
-        self.open.insert(address);
-        let mut below = 0;
+        self.open.insert(address, level);
+        let mut below = Visit {
+            measure: Measure { height: 0, size: 1 },
+            cut: usize::MAX,
+        };
         match value {
             Value::Array(items) => {
                 for (i, item) in items.iter().enumerate() {
                     self.path.push(i.to_string());
-                    below = below.max(self.visit(item, level + 1)?);
+                    let child = self.visit(item, level + 1)?;
+                    if below.add(child) {
+                        return Err(self.over_here(true));
+                    }
                     self.path.pop();
                 }
             }
             Value::Object(members) => {
                 for (key, member) in members {
                     self.path.push(key.clone());
-                    below = below.max(self.visit(member, level + 1)?);
+                    let child = self.visit(member, level + 1)?;
+                    if below.add(child) {
+                        return Err(self.over_here(true));
+                    }
                     self.path.pop();
                 }
                 for key in REF_KEYS {
@@ -502,12 +718,16 @@ impl<'v> Reach<'v> {
                     else {
                         continue;
                     };
-                    if self.open.contains(&std::ptr::from_ref(target)) {
+                    if let Some(&open) = self.open.get(&std::ptr::from_ref(target)) {
+                        below.cut = below.cut.min(open);
                         continue;
                     }
                     self.refs.push((self.path.clone(), key));
                     let here = std::mem::replace(&mut self.path, path);
-                    below = below.max(self.visit(target, level + 1)?);
+                    let child = self.visit(target, level + 1)?;
+                    if below.add(child) {
+                        return Err(self.over_here(true));
+                    }
                     self.path = here;
                     self.refs.pop();
                 }
@@ -515,58 +735,78 @@ impl<'v> Reach<'v> {
             _ => {}
         }
         self.open.remove(&address);
-        self.height.insert(address, below + 1);
-        Ok(below + 1)
-    }
-}
-
-/// `text` with each `%XX` escape decoded, as a URI fragment holds a JSON Pointer.
-fn percent_decoded(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        let hex = bytes
-            .get(i + 1..i + 3)
-            .filter(|hex| hex.iter().all(u8::is_ascii_hexdigit))
-            .and_then(|hex| std::str::from_utf8(hex).ok())
-            .and_then(|hex| u8::from_str_radix(hex, 16).ok());
-        match (bytes[i], hex) {
-            (b'%', Some(byte)) => {
-                out.push(byte);
-                i += 3;
-            }
-            (byte, _) => {
-                out.push(byte);
-                i += 1;
-            }
+        below.measure.height += 1;
+        // A skipped `$ref` back to `value` itself is skipped wherever `value` is reached.
+        if below.cut >= level {
+            below.cut = usize::MAX;
+            self.measured.insert(address, below.measure);
         }
+        Ok(below)
     }
-    String::from_utf8_lossy(&out).into_owned()
 }
 
-/// An open container while the events are folded into values, with an object's current key.
-enum Open {
+/// A schema's levels, counting each `$ref` followed as one, and its objects and arrays with each
+/// `$ref` replaced by what it points at.
+#[derive(Clone, Copy, Default)]
+struct Measure {
+    height: usize,
+    size: usize,
+}
+
+/// A schema measured, and the level of the highest schema above it that a skipped `$ref` points
+/// back at, or `usize::MAX`.
+#[derive(Clone, Copy)]
+struct Visit {
+    measure: Measure,
+    cut: usize,
+}
+
+impl Visit {
+    /// Take in a schema under this one, and say whether this one is now past
+    /// [`MAX_SCHEMA_SIZE`].
+    fn add(&mut self, child: Visit) -> bool {
+        self.measure.height = self.measure.height.max(child.measure.height);
+        self.measure.size = self.measure.size.saturating_add(child.measure.size);
+        self.cut = self.cut.min(child.cut);
+        self.measure.size > MAX_SCHEMA_SIZE
+    }
+}
+
+/// Where a schema is too deep or, with `size`, too big: the path of the `$ref`'s object and the
+/// key.
+struct Over {
+    path: Vec<String>,
+    key: &'static str,
+    size: bool,
+}
+
+/// An open container while the events are folded into values, with an object's current key
+/// (as text, its offset, and as written) and, as written, each earlier key holding U+FFFD.
+enum Open<'e> {
     Array(Vec<Value>),
-    Object(Map<String, Value>, (String, usize)),
+    Object(Map<String, Value>, (String, usize, &'e [u8]), Vec<&'e [u8]>),
 }
 
 /// Fold events into documents: one, or one per line in JSON Lines.
 fn documents(events: &[Event<'_>]) -> Vec<Document> {
     let mut documents = Vec::new();
     let mut first_event = 0;
-    let mut stack: Vec<Open> = Vec::new();
+    let mut stack: Vec<Open<'_>> = Vec::new();
     let mut unchecked = None;
     for (i, event) in events.iter().enumerate() {
         let value = match &event.kind {
             EventKind::Key(key) => {
-                if let Some(Open::Object(_, current)) = stack.last_mut() {
-                    *current = (key.to_string(), event.offset);
+                if let Some(Open::Object(_, current, _)) = stack.last_mut() {
+                    *current = (key_text(key).into_owned(), event.offset, &**key);
                 }
                 continue;
             }
             EventKind::ObjectStart => {
-                stack.push(Open::Object(Map::new(), (String::new(), 0)));
+                stack.push(Open::Object(
+                    Map::new(),
+                    (String::new(), 0, &[]),
+                    Vec::new(),
+                ));
                 continue;
             }
             EventKind::ArrayStart => {
@@ -575,7 +815,7 @@ fn documents(events: &[Event<'_>]) -> Vec<Document> {
             }
             EventKind::End => match stack.pop() {
                 Some(Open::Array(items)) => Value::Array(items),
-                Some(Open::Object(members, _)) => Value::Object(members),
+                Some(Open::Object(members, ..)) => Value::Object(members),
                 None => continue,
             },
             EventKind::Null => Value::Null,
@@ -594,11 +834,21 @@ fn documents(events: &[Event<'_>]) -> Vec<Document> {
                 unchecked: unchecked.take(),
             }),
             Some(Open::Array(items)) => items.push(value),
-            Some(Open::Object(members, (key, offset))) => {
+            Some(Open::Object(members, (key, offset, raw), seen)) => {
                 let key = std::mem::take(key);
-                // Real duplicates are the duplicate-key rule's; lone surrogates are not.
-                if key.contains('\u{FFFD}') && members.contains_key(&key) {
-                    unchecked.get_or_insert((*offset, SAME_KEYS));
+                // Real duplicates are the duplicate-key rule's; keys that only become the same
+                // once lone surrogates are U+FFFD are not.
+                if key.contains('\u{FFFD}') {
+                    match seen
+                        .iter()
+                        .find(|earlier| key_text(earlier) == key.as_str())
+                    {
+                        Some(earlier) if earlier != raw => {
+                            unchecked.get_or_insert((*offset, SAME_KEYS));
+                        }
+                        Some(_) => {}
+                        None => seen.push(raw),
+                    }
                 }
                 members.insert(key, value);
             }
@@ -646,7 +896,9 @@ fn number(text: &str) -> Option<Value> {
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_MESSAGE, Reach, cut, documents, fits, json_path, locate, message, number};
+    use super::{
+        MAX_MESSAGE, Reach, cut, documents, fits, locate, message, number, place, segments,
+    };
     use jsonvet::{Config, Dialect};
     use proptest::prelude::*;
     use serde_json::{Value, json};
@@ -700,25 +952,30 @@ mod tests {
         let errors: Vec<_> = validator.iter_errors(&documents[0].value).collect();
         let pointers: Vec<_> = errors.iter().map(|e| e.instance_path().as_str()).collect();
         assert_eq!(pointers, ["/a", "/b\u{e9}~1~0"]);
-        assert_eq!(locate(&events, &errors), [44, 34]);
+        let located: Vec<_> = locate(&events, &errors)
+            .into_iter()
+            .map(|(o, _)| o)
+            .collect();
+        assert_eq!(located, [44, 34]);
     }
 
     #[test]
     fn pointers_become_the_paths_duplicate_key_writes() {
-        let value = json!({"": 1, "0": [true, {"a/b~c.d\"\u{e9}": 2}], "x": {"": 3}});
+        let text = r#"{"": 1, "0": [true, {"a/b~c.d\"\u00e9": 2}], "x": {"": 3}, "\ud800": 4}"#;
+        let (_, events) = jsonvet::parse(text, &Config::new(Dialect::Json));
+        let events = events.unwrap_or_default();
         let cases = [
             ("", "$"),
             ("/", "$[\"\"]"),
             ("/x/", "$.x[\"\"]"),
             ("/0", "$[\"0\"]"),
             ("/0/1", "$[\"0\"][1]"),
-            (
-                "/0/1/a~1b~0c.d\"\u{e9}",
-                "$[\"0\"][1][\"a/b~c.d\\\"\\u00e9\"]",
-            ),
+            ("/0/1/a~1b~0c.d\"\u{e9}", "$[\"0\"][1][\"a/b~c.d\\\"é\"]"),
+            ("/\u{FFFD}", "$[\"\\ud800\"]"),
         ];
         for (pointer, path) in cases {
-            assert_eq!(json_path(&value, pointer), path, "{pointer}");
+            let target = (segments(pointer).collect(), Vec::new());
+            assert_eq!(place(&events, &[target])[0].1, path, "{pointer}");
         }
     }
 
@@ -797,8 +1054,9 @@ mod tests {
     fn ref_chains_count_through_arrays_and_from_each_place_they_are_reached() {
         let too_deep = |schema: &Value| {
             Reach::new(schema)
-                .too_deep()
-                .map(|(path, key)| (path.join("/"), key))
+                .over()
+                .filter(|over| !over.size)
+                .map(|over| (over.path.join("/"), over.key))
         };
         // `$defs/long` is first reached near the root, then again under 100 levels of `allOf`.
         let long = nested(60, json!({"type": "integer"}));
@@ -821,6 +1079,71 @@ mod tests {
         }
         let schema = json!({"$defs": defs, "$ref": "#/$defs/d%250"});
         assert!(too_deep(&schema).is_some());
+    }
+
+    /// `x{i}`'s `additionalProperties` goes through `y{i}` back to `x{i}`, and its `allOf`, 60
+    /// levels deep, ends in a `$ref` to `y{i-1}`: `k` such pairs.
+    fn cycles(k: usize) -> Value {
+        let mut defs = serde_json::Map::new();
+        for i in 0..k {
+            let end = match i {
+                0 => json!({"type": "integer"}),
+                _ => json!({"$ref": format!("#/$defs/y{}", i - 1)}),
+            };
+            defs.insert(
+                format!("x{i}"),
+                json!({"additionalProperties": {"$ref": format!("#/$defs/y{i}")}, "allOf": [nested(120, end)]}),
+            );
+            defs.insert(format!("y{i}"), json!({"$ref": format!("#/$defs/x{i}")}));
+        }
+        json!({"$defs": defs, "$ref": format!("#/$defs/y{}", k - 1)})
+    }
+
+    #[test]
+    fn a_height_measured_while_a_ref_back_up_was_skipped_is_not_reused() {
+        // `y0` is first measured inside `x1`'s `allOf`, while `y1` and `x1` are open and the
+        // `$ref` back to them is skipped. From the root, `y1` to `y0` is 2 + 122 + 122 levels.
+        let over = Reach::new(&cycles(2)).over().map(|over| over.size);
+        assert_eq!(over, Some(false));
+        assert!(Reach::new(&cycles(1)).over().is_none());
+    }
+
+    #[test]
+    fn a_schema_too_big_once_its_refs_are_followed_is_caught() {
+        // Each `d{i}` points twice at `d{i+1}`, so following the `$ref`s doubles it 24 times:
+        // through an array, through an object's members, and through two reference keywords.
+        type Shape = fn(String) -> Value;
+        let fan_out = |levels: usize, shape: Shape| {
+            let mut defs = serde_json::Map::new();
+            for i in 0..levels {
+                defs.insert(format!("d{i}"), shape(format!("#/$defs/d{}", i + 1)));
+            }
+            defs.insert(format!("d{levels}"), json!({"type": "string"}));
+            json!({"$defs": defs, "$ref": "#/$defs/d0"})
+        };
+        let shapes: [(Shape, &str); 4] = [
+            (
+                |next| json!({"anyOf": [{"$ref": next}, {"$ref": next}]}),
+                "$ref",
+            ),
+            (
+                |next| json!({"allOf": [{"$ref": next}, {"$ref": next}]}),
+                "$ref",
+            ),
+            (
+                |next| json!({"properties": {"a": {"$ref": next}, "b": {"$ref": next}}}),
+                "$ref",
+            ),
+            (
+                |next| json!({"$ref": next, "$dynamicRef": next}),
+                "$dynamicRef",
+            ),
+        ];
+        for (shape, key) in shapes {
+            let over = Reach::new(&fan_out(24, shape)).over();
+            assert!(over.is_some_and(|over| over.size && over.key == key));
+            assert!(Reach::new(&fan_out(16, shape)).over().is_none());
+        }
     }
 
     /// Any JSON value, with numbers `serde_json` reads exactly without its `float_roundtrip`

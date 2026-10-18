@@ -1,0 +1,43 @@
+name: semver
+
+# Public API changes in the library against its last release on crates.io. A break fails the
+# job unless Cargo.toml has the next major version. Reported, not enforced, so read the job
+# summary on a pull request that touches the library.
+on:
+  pull_request:
+    paths: ["crates/jsonvet/**", Cargo.toml, Cargo.lock]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  semver:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: cargo-semver-checks@0.51.0
+      - name: cargo semver-checks
+        run: |
+          status=0
+          cargo semver-checks --package jsonvet --color never > semver.txt 2>&1 || status=$?
+          cat semver.txt
+          { echo '## cargo semver-checks: jsonvet'; echo '```'; cat semver.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

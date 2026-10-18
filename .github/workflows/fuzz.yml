@@ -1,19 +1,11 @@
 name: fuzz
 
-# Every cargo-fuzz target runs for 20 minutes after a merge that changes the parser or the test
-# helper the check target includes, and once a week (see docs/design.md), and for 30 seconds on a
-# pull request that touches the library or the targets. The corpus is cached between runs, so each
-# run goes on where the last one stopped. A crashing input is kept as an artifact.
+# Every cargo-fuzz target runs for 20 minutes once a week (see docs/design.md), and for 30 seconds
+# on a pull request that touches the library or the targets. The check target includes
+# crates/jsonvet/tests/common/mod.rs; the pull_request filter covers it through crates/jsonvet/**.
+# The corpus is cached between runs, so each run goes on where the last one stopped. A crashing
+# input is kept as an artifact.
 on:
-  # The check target includes crates/jsonvet/tests/common/mod.rs, so a change there also runs it.
-  # The pull_request filter covers it through crates/jsonvet/**.
-  push:
-    branches: [main]
-    paths:
-      - "crates/jsonvet/src/**"
-      - "crates/jsonvet/tests/common/**"
-      - "fuzz/**"
-      - ".github/workflows/fuzz.yml"
   pull_request:
     paths: ["crates/jsonvet/**", "fuzz/**", ".github/workflows/fuzz.yml"]
   schedule:
@@ -32,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [check, diff_serde_json, diff_json5]
+        target: [check, diff_serde_json, diff_json5, parse]
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:

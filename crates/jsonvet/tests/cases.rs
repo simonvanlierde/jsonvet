@@ -21,7 +21,7 @@ fn render(dialect: Dialect, text: &str) -> String {
             problem.severity(),
             problem.rule()
         );
-        if let Some(related) = problem.related_offset() {
+        if let Some(related) = problem.related().map(|r| r.offset) {
             let first = report.location(related);
             let _ = write!(out, " (from {}:{})", first.line, first.column);
         }
@@ -225,11 +225,22 @@ fn json_lines_positions_do_not_depend_on_the_line_ending() {
 
 #[test]
 fn positions_follow_json5_line_terminators() {
-    use Dialect::Json5;
+    use Dialect::{Json, Json5, JsonLines, Jsonc, Jwcc};
+    // A raw U+2028 in a string ends a line in JSON5 only, so the duplicate is on line 2
+    // elsewhere and on line 4 in JSON5, after both.
+    let separator = "{\"s\": \"a\u{2028}b\u{2029}\",\n \"s\": 2}";
     insta::assert_snapshot!(snapshot(&[
         (Json5, "{a: 1,\r\n a: 2}"),
         (Json5, "{a: 1,\r a: 2}"),
         (Json5, "{a: 1,\u{2028} a: 2}"),
+        (Json, separator),
+        (Jsonc, separator),
+        (Jwcc, separator),
+        (Json5, separator),
+        (
+            JsonLines,
+            "{\"s\": \"\u{2028}\", \"s\": 2}\n{\"t\": 1, \"t\": 2}\n"
+        ),
         (Json5, "{\"é😀\": 1, \"é😀\": 2}"),
     ]));
 }
@@ -350,10 +361,7 @@ fn related_offsets_say_what_they_point_at() {
     use jsonvet::RelatedKind;
     let related = |dialect, text| {
         let report = check(text, &Config::new(dialect));
-        let problem = &report.problems()[0];
-        let related = problem.related().map(|r| (r.offset, r.kind));
-        assert_eq!(problem.related_offset(), related.map(|(offset, _)| offset));
-        related
+        report.problems()[0].related().map(|r| (r.offset, r.kind))
     };
     assert_eq!(
         related(Dialect::Json, r#"{"a": 1, "a": 2}"#),

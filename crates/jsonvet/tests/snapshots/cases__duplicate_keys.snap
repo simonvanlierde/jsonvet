@@ -13,26 +13,26 @@ json5 "{a: 1, 'a': 2, \"b c\": {d: 1, d: 2}, \\u0061: 3}"
        1:30 error[duplicate-key] duplicate key $["b c"].d (from 1:24)
        1:37 error[duplicate-key] duplicate key $.a (from 1:2)
 json5 "{\"ünicode\": 1, \"ünicode\": 2}"
-       1:16 error[duplicate-key] duplicate key $["\u00fcnicode"] (from 1:2)
+       1:16 error[duplicate-key] duplicate key $["ünicode"] (from 1:2)
 json "{\"\\ud800\": 1, \"\\udbff\": 2, \"\\ufffd\": 3, \"a\\udc00\": 4}"
        ok
 json "{\"\\ud800\": 1, \"\\uD800\": 2, \"\\ud83d\\ude00\": 3, \"😀\": 4}"
        1:15 error[duplicate-key] duplicate key $["\ud800"] (from 1:2)
-       1:47 error[duplicate-key] duplicate key $["\ud83d\ude00"] (from 1:28)
+       1:47 error[duplicate-key] duplicate key $["😀"] (from 1:28)
 json "{\"\\ud800\": 1, \"\\ud801\": 2}"
        ok
 json "{\"\\u0041\\udc00\": 1, \"A\\udc00\": 2, \"\\ud800\\u0041\": 3, \"\\ud800A\": 4}"
        1:21 error[duplicate-key] duplicate key $["A\udc00"] (from 1:2)
        1:54 error[duplicate-key] duplicate key $["\ud800A"] (from 1:35)
 json "{\"\\u00e9\": 1, \"é\": 2, \"\\u4e2d\": 3, \"中\": 4}"
-       1:15 error[duplicate-key] duplicate key $["\u00e9"] (from 1:2)
-       1:36 error[duplicate-key] duplicate key $["\u4e2d"] (from 1:23)
+       1:15 error[duplicate-key] duplicate key $["é"] (from 1:2)
+       1:36 error[duplicate-key] duplicate key $["中"] (from 1:23)
 json "{\"\\n\": 1, \"n\": 2, \"\\/\": 3, \"/\": 4}"
        1:28 error[duplicate-key] duplicate key $["/"] (from 1:19)
 json5 "{\"\\v\": 1, \"v\": 2, \"\\0\": 3, \"0\": 4, \"\\'\": 5, \"'\": 6}"
        1:45 error[duplicate-key] duplicate key $["'"] (from 1:36)
 json5 "{\"\\é\": 1, \"é\": 2, \"\\q\": 3, \"q\": 4}"
-       1:11 error[duplicate-key] duplicate key $["\u00e9"] (from 1:2)
+       1:11 error[duplicate-key] duplicate key $["é"] (from 1:2)
        1:28 error[duplicate-key] duplicate key $.q (from 1:19)
 json5 "{\"\\x41b\": 1, \"Ab\": 2}"
        1:14 error[duplicate-key] duplicate key $.Ab (from 1:2)

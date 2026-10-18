@@ -25,9 +25,9 @@ mod schema {
 
     use crate::settings::Settings;
 
-    const NO_SCHEMA: &str = "--schema is not in this build: the PyPI wheels, which the \
-        pre-commit hook and the GitHub Action install, leave it out to stay small. `cargo install \
-        jsonvet-cli` builds jsonvet with it.";
+    const NO_SCHEMA: &str = "--schema is not in this build. The PyPI wheels, which the \
+        pre-commit hook and the GitHub Action install, leave it out. `cargo install jsonvet-cli` \
+        builds jsonvet with it.";
 
     /// No schema can be loaded, so none exists.
     pub(crate) enum Schema {}
@@ -53,32 +53,23 @@ use settings::Settings;
 /// nested 10,000 levels.
 const SCHEMA_MAX_DEPTH: usize = 512;
 
-/// The stack `--schema` runs on. jsonschema validates recursively, and building, validating and
-/// dropping a value [`SCHEMA_MAX_DEPTH`] levels deep against a recursive schema took up to
-/// 2.2 MB in a debug build, more than Windows' 1 MB main thread. Only the pages used are
-/// committed.
+/// The stack every run uses, for `--schema`: jsonschema validates recursively, and building,
+/// validating and dropping a value [`SCHEMA_MAX_DEPTH`] levels deep against a recursive schema
+/// took up to 2.2 MB in a debug build, more than Windows' 1 MB main thread. Only the pages used
+/// are committed, so a plain check costs no more memory.
 const STACK: usize = 64 << 20;
 
 /// Run the command with the process's arguments and environment, and return its exit code.
 /// `--schema` needs the `schema` feature, on by default; without it, `--schema` exits with
 /// status 2.
 pub fn run() -> ExitCode {
-    let schema = cfg!(feature = "schema")
-        && matches!(
-            args::parse(std::env::args_os().skip(1)),
-            Ok(Command::Check(args)) if args.schema.is_some()
-        );
-    if schema {
-        on_big_stack(run_here)
-    } else {
-        run_here()
-    }
+    on_big_stack(run_here)
 }
 
 /// Run `f` on a thread with a [`STACK`]-byte stack, or here if no thread can start. A panic in
 /// `f` carries on here.
 fn on_big_stack<T: Send + 'static>(f: fn() -> T) -> T {
-    let thread = std::thread::Builder::new().name("schema".into());
+    let thread = std::thread::Builder::new().name("jsonvet".into());
     match thread.stack_size(STACK).spawn(f) {
         Ok(thread) => thread
             .join()
@@ -110,12 +101,17 @@ fn run_with(
     annotate: bool,
     out: impl Write,
 ) -> Result<u8, String> {
-    let args =
-        match args::parse(args).map_err(|e| format!("{e}\n\nRun `jsonvet --help` for usage."))? {
-            Command::Help => return print(out, args::HELP),
-            Command::Version => return print(out, concat!("jsonvet ", env!("CARGO_PKG_VERSION"))),
-            Command::Check(args) => args,
-        };
+    // Usage errors quote arguments and the schema file, which can hold a newline or an escape.
+    let args = match args::parse(args).map_err(|e| {
+        format!(
+            "{}\n\nRun `jsonvet --help` for usage.",
+            output::printable(&e)
+        )
+    })? {
+        Command::Help => return print(out, args::HELP),
+        Command::Version => return print(out, concat!("jsonvet ", env!("CARGO_PKG_VERSION"))),
+        Command::Check(args) => args,
+    };
     let from_file = match &args.config {
         ConfigSource::None => Settings::default(),
         ConfigSource::File(path) => settings::load(path)?,
@@ -133,7 +129,8 @@ fn run_with(
         .schema
         .as_deref()
         .map(|path| Schema::load(path, &settings))
-        .transpose()?;
+        .transpose()
+        .map_err(|e| output::printable(&e))?;
 
     let mut printer = Printer::new(out, args.format, annotate);
     let mut counts = Counts::default();

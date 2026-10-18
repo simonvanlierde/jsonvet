@@ -233,7 +233,7 @@ fn token(kind: &EventKind<'_>) -> String {
         EventKind::ObjectStart => "{".to_owned(),
         EventKind::ArrayStart => "[".to_owned(),
         EventKind::End => "end".to_owned(),
-        EventKind::Key(key) => format!("k:{key}"),
+        EventKind::Key(key) => format!("k:{}", jsonvet::key_text(key)),
         EventKind::Null => "null".to_owned(),
         EventKind::Bool(b) => b.to_string(),
         EventKind::Number(n) => format!("n:{n}"),
