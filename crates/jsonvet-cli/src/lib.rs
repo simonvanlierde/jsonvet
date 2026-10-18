@@ -25,9 +25,9 @@ mod schema {
 
     use crate::settings::Settings;
 
-    const NO_SCHEMA: &str = "--schema is not in this build: the PyPI wheels, which the \
-        pre-commit hook and the GitHub Action install, leave it out to stay small. `cargo install \
-        jsonvet-cli` builds jsonvet with it.";
+    const NO_SCHEMA: &str = "--schema is not in this build. The PyPI wheels, which the \
+        pre-commit hook and the GitHub Action install, leave it out. `cargo install jsonvet-cli` \
+        builds jsonvet with it.";
 
     /// No schema can be loaded, so none exists.
     pub(crate) enum Schema {}

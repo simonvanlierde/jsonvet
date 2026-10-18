@@ -43,8 +43,8 @@ errors, and --error, --warn, --ignore and settings files do not take schema.
 Settings come from jsonvet.toml, or [tool.jsonvet] in pyproject.toml, found in the working
 directory or a parent up to the repository root. Options on the command line win.
 
-Exit status: 0 when no file has an error, 1 when one does, 2 for a usage error, which
-includes a schema that cannot be read or used.";
+Exit status: 0 when no file has an error, 1 when one does, 2 for a usage error, such as a
+schema that cannot be read or used.";
 
 /// Where settings come from besides the command line.
 #[derive(Debug, PartialEq, Eq)]

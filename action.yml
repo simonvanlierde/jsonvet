@@ -1,7 +1,7 @@
 # The jsonvet GitHub Action: `uses: simonvanlierde/jsonvet@v3`. It installs jsonvet from PyPI
 # into a virtual environment, so it needs only the Python that every hosted runner has.
 name: jsonvet
-description: Check JSON, I-JSON, JSONC, JSON5, HuJSON and JSON Lines files, with optional SARIF output
+description: Check JSON, I-JSON, JSONC, JWCC (HuJSON), JSON5 and JSON Lines files, with optional SARIF output
 author: Simon van Lierde
 branding:
   icon: check-square

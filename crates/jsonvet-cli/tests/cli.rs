@@ -1520,9 +1520,9 @@ fn a_build_without_schema_says_how_to_get_it() {
     assert_eq!((code, out.as_str()), (2, ""));
     assert_eq!(
         err,
-        "jsonvet: --schema is not in this build: the PyPI wheels, which the pre-commit hook and \
-         the GitHub Action install, leave it out to stay small. `cargo install jsonvet-cli` \
-         builds jsonvet with it.\n"
+        "jsonvet: --schema is not in this build. The PyPI wheels, which the pre-commit hook and \
+         the GitHub Action install, leave it out. `cargo install jsonvet-cli` builds jsonvet \
+         with it.\n"
     );
     // One help text for both builds; the exit status is what tells them apart.
     let (code, help) = jsonvet(&dir, &["--help"]);

@@ -1,6 +1,6 @@
 - id: jsonvet
   name: jsonvet
-  description: checks JSON, I-JSON, JSONC, JSON5, HuJSON and JSON Lines files for syntax errors and duplicate keys
+  description: checks JSON, I-JSON, JSONC, JWCC (HuJSON), JSON5 and JSON Lines files for syntax errors and duplicate keys
   entry: jsonvet
   language: python
   files: (\.(json|jsonc|json5|geojson|jsonld|hujson|jwcc|code-workspace|code-snippets|webmanifest|jsonl|ndjson)|(^|/)\.babelrc)$
