@@ -103,9 +103,30 @@ fn patterns<'v>(
     }
 }
 
-/// A key or string a regex could not be matched on: the value's path, the key if it is a key,
-/// and the regex.
-type Unmatched<'s> = (Vec<String>, Option<String>, &'s str);
+/// An error about a key or a value, placed by its object's path and the key, or by the value's
+/// path alone: the path, the key, and the message.
+type Keyed = (Vec<String>, Option<String>, String);
+
+/// The keys an `additionalProperties` error is about, to report one error each: those it lists,
+/// or every key for `"additionalProperties": false` with no `properties` or `patternProperties`
+/// beside it, which jsonschema reports once as a false schema at the object's first value.
+fn unexpected(value: &Value, error: &ValidationError<'_>) -> Option<Vec<String>> {
+    match error.kind() {
+        ValidationErrorKind::AdditionalProperties { unexpected } => Some(unexpected.clone()),
+        ValidationErrorKind::FalseSchema
+            if error
+                .schema_path()
+                .as_str()
+                .ends_with("/additionalProperties") =>
+        {
+            // A `false` under `properties` with that name is about the value itself.
+            let object = value.pointer(error.instance_path().as_str())?;
+            let members = object.as_object()?;
+            (object != error.instance().as_ref()).then(|| members.keys().cloned().collect())
+        }
+        _ => None,
+    }
+}
 
 impl Schema {
     /// Read and compile the schema at `path`, in its dialect under `settings`. Any problem
@@ -217,15 +238,33 @@ impl Schema {
             // which this repeats, are dropped.
             // shortcut: each regex is tried on every key or string, not only where the schema
             // applies it; follow the schema's applicators if that fails a file wrongly.
-            let mut unmatched = Vec::new();
-            self.unmatched(&document.value, &mut Vec::new(), &mut unmatched);
-            let mut all = self
+            let mut keyed = Vec::new();
+            self.unmatched(&document.value, &mut Vec::new(), &mut keyed);
+            let mut more = keyed.len().saturating_sub(MAX_ERRORS);
+            keyed.truncate(MAX_ERRORS);
+            let mut found: Vec<ValidationError<'_>> = Vec::new();
+            let all = self
                 .validator
                 .iter_errors(&document.value)
                 .filter(|error| !backtracked(error));
-            let room = MAX_ERRORS.saturating_sub(unmatched.len());
-            let found: Vec<ValidationError<'_>> = all.by_ref().take(room).collect();
-            if found.is_empty() && unmatched.is_empty() {
+            for error in all {
+                let room = MAX_ERRORS - keyed.len() - found.len();
+                match unexpected(&document.value, &error) {
+                    Some(keys) => {
+                        more += keys.len().saturating_sub(room);
+                        let path: Vec<String> = segments(error.instance_path().as_str()).collect();
+                        keyed.extend(keys.into_iter().take(room).map(|key| {
+                            let message = format!(
+                                "Additional properties are not allowed ('{key}' was unexpected)"
+                            );
+                            (path.clone(), Some(key), message)
+                        }));
+                    }
+                    None if room > 0 => found.push(error),
+                    None => more += 1,
+                }
+            }
+            if found.is_empty() && keyed.is_empty() {
                 continue;
             }
             let events = &events[document.events];
@@ -236,9 +275,8 @@ impl Schema {
                     (offset, cut(format!("{} (at {at})", message(error))), false)
                 })
                 .collect();
-            let shown = &unmatched[..unmatched.len().min(MAX_ERRORS)];
             // For a key, its own offset and the path of its value.
-            let targets: Vec<(Vec<String>, Vec<String>)> = shown
+            let targets: Vec<(Vec<String>, Vec<String>)> = keyed
                 .iter()
                 .flat_map(|(path, key, _)| {
                     let mut value = path.clone();
@@ -250,22 +288,13 @@ impl Schema {
                 })
                 .collect();
             let spots = place(events, &targets);
-            for ((_, key, regex), spot) in shown.iter().zip(spots.chunks(2)) {
-                let what = if key.is_some() { "key" } else { "string" };
+            for ((.., message), spot) in keyed.iter().zip(spots.chunks(2)) {
                 let at = &spot[1].1;
-                placed.push((
-                    spot[0].0,
-                    cut(format!(
-                        "this {what} could not be checked against the pattern \"{regex}\": \
-                         matching it takes more than {BACKTRACK_LIMIT} backtracking steps (at {at})"
-                    )),
-                    false,
-                ));
+                placed.push((spot[0].0, cut(format!("{message} (at {at})")), false));
             }
             // Stable, so errors at one value keep the schema's order.
             placed.sort_by_key(|(offset, ..)| *offset);
             errors.append(&mut placed);
-            let more = all.count() + unmatched.len() - shown.len();
             if more > 0 {
                 errors.push((
                     events[0].offset,
@@ -279,16 +308,17 @@ impl Schema {
 
     /// The keys and strings in `value`, which is at `path`, that a regex in the schema could
     /// not be matched on within [`BACKTRACK_LIMIT`].
-    fn unmatched<'s>(
-        &'s self,
-        value: &Value,
-        path: &mut Vec<String>,
-        out: &mut Vec<Unmatched<'s>>,
-    ) {
+    fn unmatched(&self, value: &Value, path: &mut Vec<String>, out: &mut Vec<Keyed>) {
         let fails = |regex: &Validator, value: &Value| {
             regex
                 .validate(value)
                 .is_err_and(|error| backtracked(&error))
+        };
+        let message = |what: &str, regex: &str| {
+            format!(
+                "this {what} could not be checked against the pattern \"{regex}\": matching it \
+                 takes more than {BACKTRACK_LIMIT} backtracking steps"
+            )
         };
         match value {
             Value::Object(members) => {
@@ -297,7 +327,7 @@ impl Schema {
                         let name = Value::String(key.clone());
                         for (regex, validator) in &self.key_patterns {
                             if fails(validator, &name) {
-                                out.push((path.clone(), Some(key.clone()), regex));
+                                out.push((path.clone(), Some(key.clone()), message("key", regex)));
                             }
                         }
                     }
@@ -316,7 +346,7 @@ impl Schema {
             Value::String(_) => {
                 for (regex, validator) in &self.string_patterns {
                     if fails(validator, value) {
-                        out.push((path.clone(), None, regex));
+                        out.push((path.clone(), None, message("string", regex)));
                     }
                 }
             }
@@ -418,8 +448,7 @@ fn locate(events: &[Event<'_>], errors: &[ValidationError<'_>]) -> Vec<(usize, S
         .iter()
         .map(|error| {
             let keys = match error.kind() {
-                ValidationErrorKind::AdditionalProperties { unexpected }
-                | ValidationErrorKind::UnevaluatedProperties { unexpected } => unexpected.clone(),
+                ValidationErrorKind::UnevaluatedProperties { unexpected } => unexpected.clone(),
                 ValidationErrorKind::PropertyNames { error } => error
                     .instance()
                     .as_str()

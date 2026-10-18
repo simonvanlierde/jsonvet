@@ -35,7 +35,8 @@ Hook and command users who do none of the first three need no other change.
   on depth, size, error count, message length, regex backtracking and memory are in the
   [README](https://github.com/simonvanlierde/jsonvet#json-schema). A key or string whose pattern
   match needs more than 5,000 backtracking steps is an error, so `patternProperties` cannot let
-  it pass unchecked.
+  it pass unchecked. `additionalProperties` gives one error per key it does not allow, at that
+  key, also for `"additionalProperties": false` on its own.
 - `--schema` comes with `cargo install jsonvet-cli`, where it grows the binary from about 0.6 MB
   to about 5 MB on Linux x86-64. The PyPI wheels, which the hook and the GitHub Action install,
   leave it out and stay at about 0.65 MB. There `--schema` exits with status 2 and says how to get

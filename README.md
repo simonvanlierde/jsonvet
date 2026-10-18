@@ -198,7 +198,7 @@ line and column of its value, in every dialect, with comments and JSON5 syntax:
 ```text
 $ jsonvet --schema server.schema.json server.json5
 server.json5:3:9: error[schema] "80" is not of type "integer" (at $.port)
-server.json5:6:3: error[schema] Additional properties are not allowed ('debug' was unexpected) (at $)
+server.json5:6:3: error[schema] Additional properties are not allowed ('debug' was unexpected) (at $.debug)
 ```
 
 It comes with `cargo install jsonvet-cli` only. The PyPI wheels, and so the hook and the Action,
@@ -215,7 +215,8 @@ and the config file do not take `schema`, and exit 2 if given it. The limits:
 - **Errors.** A document lists at most 100 schema errors: the first 100 jsonschema finds, which
   takes an object's keys in sorted order, not file order. They print in file order. Then one more
   line, `... and N more schema errors in this document`, sits at the document's start. SARIF
-  leaves that line out.
+  leaves that line out. `additionalProperties` gives one error per key it does not allow, at
+  that key, and each counts toward the 100.
 - **Messages.** A message quotes the value unless that makes it long; then it says `value`. A
   message, with its path, is cut at 200 bytes and ends in `...`.
 - **Depth.** With `--schema`, a file nested deeper than 512 levels is a syntax error. A file with

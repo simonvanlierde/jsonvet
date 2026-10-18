@@ -942,23 +942,23 @@ mod schema {
         let expected = "\
 strict.json:1:23: error[schema] \"80\" is not of type \"integer\" (at $.port)
 strict.json:2:16: error[schema] 1 is not of type \"string\" (at $.tags[1])
-strict.json:2:20: error[schema] Additional properties are not allowed ('x' was unexpected) (at $)
+strict.json:2:20: error[schema] Additional properties are not allowed ('x' was unexpected) (at $.x)
 i.json:1:23: error[schema] \"80\" is not of type \"integer\" (at $.port)
 i.json:2:16: error[schema] 1 is not of type \"string\" (at $.tags[1])
-i.json:2:20: error[schema] Additional properties are not allowed ('x' was unexpected) (at $)
+i.json:2:20: error[schema] Additional properties are not allowed ('x' was unexpected) (at $.x)
 c.jsonc:1:31: error[schema] \"80\" is not of type \"integer\" (at $.port)
 c.jsonc:2:16: error[schema] 1 is not of type \"string\" (at $.tags[1])
-c.jsonc:2:20: error[schema] Additional properties are not allowed ('x' was unexpected) (at $)
+c.jsonc:2:20: error[schema] Additional properties are not allowed ('x' was unexpected) (at $.x)
 w.hujson:1:23: error[schema] \"80\" is not of type \"integer\" (at $.port)
 w.hujson:2:16: error[schema] 1 is not of type \"string\" (at $.tags[1])
-w.hujson:2:21: error[schema] Additional properties are not allowed ('x' was unexpected) (at $)
+w.hujson:2:21: error[schema] Additional properties are not allowed ('x' was unexpected) (at $.x)
 f.json5:1:26: error[schema] \"80\" is not of type \"integer\" (at $.port)
 f.json5:2:14: error[schema] 1 is not of type \"string\" (at $.tags[1])
-f.json5:2:21: error[schema] Additional properties are not allowed ('x' was unexpected) (at $)
+f.json5:2:21: error[schema] Additional properties are not allowed ('x' was unexpected) (at $.x)
 l.jsonl:2:1: error[schema] \"name\" is a required property (at $)
 l.jsonl:2:10: error[schema] \"80\" is not of type \"integer\" (at $.port)
 l.jsonl:2:30: error[schema] 1 is not of type \"string\" (at $.tags[1])
-l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexpected) (at $)
+l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexpected) (at $.x)
 ";
         assert_eq!(out, expected);
 
@@ -1463,26 +1463,27 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
     }
 
     #[test]
-    fn a_message_listing_many_keys_is_cut_short() {
+    fn each_unexpected_key_is_one_error_up_to_the_cap() {
         let members: Vec<String> = (0..1_000).map(|i| format!("\"k{i}\": {i}")).collect();
-        let dir = workdir(&[
-            (
-                "schema.json",
-                r#"{"properties": {"a": true}, "additionalProperties": false}"#,
-            ),
-            ("many.json", &format!("{{{}}}", members.join(", "))),
-        ]);
-        let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "schema.json", "many.json"]);
-        assert_eq!(code, 1);
-        assert_eq!(out.lines().count(), 1);
-        assert!(out.len() < 300, "{out}");
-        assert!(
-            out.starts_with(
-                "many.json:1:2: error[schema] Additional properties are not allowed ('k0', 'k1',"
-            ),
-            "{out}"
-        );
-        assert!(out.ends_with("...\n"), "{out}");
+        let file = format!("{{{}}}", members.join(", "));
+        for schema in [
+            r#"{"properties": {"a": true}, "additionalProperties": false}"#,
+            r#"{"additionalProperties": false}"#,
+        ] {
+            let dir = workdir(&[("schema.json", schema), ("many.json", &file)]);
+            let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "schema.json", "many.json"]);
+            assert_eq!(code, 1);
+            let lines: Vec<&str> = out.lines().collect();
+            assert_eq!(lines.len(), 101, "{schema}");
+            assert_eq!(
+                lines[0],
+                "many.json:1:2: error[schema] Additional properties are not allowed ('k0' was unexpected) (at $.k0)"
+            );
+            assert_eq!(
+                lines[100],
+                "many.json:1:1: error[schema] ... and 900 more schema errors in this document"
+            );
+        }
     }
 
     #[test]
@@ -1582,6 +1583,12 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
                 r#"{"properties": {"a": true}, "unevaluatedProperties": false}"#,
             ),
             ("names.json", r#"{"propertyNames": {"maxLength": 1}}"#),
+            // jsonschema reports this once, as a false schema at the first value.
+            ("closed.json", r#"{"additionalProperties": false}"#),
+            (
+                "patterns.json",
+                r#"{"patternProperties": {"^[ab]$": true}, "additionalProperties": false}"#,
+            ),
             // jsonschema lists unexpected keys sorted, so `b` comes first there.
             ("o.json", "{\"z\": 1,\n \"a\": 0, \"b\": 2}"),
             ("n.json", "{\"a\": 0,\n \"long\": 1}"),
@@ -1590,7 +1597,20 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
             (
                 "additional.json",
                 "o.json",
-                "o.json:1:2: error[schema] Additional properties are not allowed ('b', 'z' were unexpected) (at $)\n",
+                "o.json:1:2: error[schema] Additional properties are not allowed ('z' was unexpected) (at $.z)\n\
+                 o.json:2:10: error[schema] Additional properties are not allowed ('b' was unexpected) (at $.b)\n",
+            ),
+            (
+                "closed.json",
+                "o.json",
+                "o.json:1:2: error[schema] Additional properties are not allowed ('z' was unexpected) (at $.z)\n\
+                 o.json:2:2: error[schema] Additional properties are not allowed ('a' was unexpected) (at $.a)\n\
+                 o.json:2:10: error[schema] Additional properties are not allowed ('b' was unexpected) (at $.b)\n",
+            ),
+            (
+                "patterns.json",
+                "o.json",
+                "o.json:1:2: error[schema] Additional properties are not allowed ('z' was unexpected) (at $.z)\n",
             ),
             (
                 "unevaluated.json",
@@ -1634,7 +1654,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         assert_eq!(
             out,
             "d.json:2:13: error[schema] \"x\" is not of type \"integer\" (at $.a.b)\n\
-             d.json:2:18: error[schema] Additional properties are not allowed ('c' was unexpected) (at $.a)\n"
+             d.json:2:18: error[schema] Additional properties are not allowed ('c' was unexpected) (at $.a.c)\n"
         );
         // An unexpected key repeated in one object is placed at its first copy.
         let dir = workdir(&[
@@ -1655,7 +1675,8 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
             jsonvet(&dir, &args),
             (
                 1,
-                "d.json:1:2: error[schema] Additional properties are not allowed ('a', 'b' were unexpected) (at $)\n"
+                "d.json:1:2: error[schema] Additional properties are not allowed ('b' was unexpected) (at $.b)\n\
+                 d.json:1:8: error[schema] Additional properties are not allowed ('a' was unexpected) (at $.a)\n"
                     .to_owned()
             )
         );
