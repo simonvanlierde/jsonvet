@@ -776,6 +776,30 @@ fn sarif_keeps_25000_results_and_counts_the_rest() {
     assert_eq!(err, format!("jsonvet: {text}\n"));
 }
 
+/// Assert that `err` is a usage error with no raw newline before `::`, which GitHub Actions reads
+/// as a workflow command, and no escape character.
+fn assert_escaped(err: &str) {
+    assert!(err.starts_with("jsonvet: "), "{err}");
+    assert!(!err.contains("\n::") && !err.contains('\u{1b}'), "{err:?}");
+}
+
+#[test]
+fn usage_errors_show_control_characters_escaped() {
+    let dir = workdir(&[("ok.json", "{}")]);
+    for arg in [
+        "--format=\n::error title=pwn::x.json",
+        "--dialect=\n::error::x",
+        "--dialect=\u{1b}[31m",
+        "--error=\n::error::x",
+        "--max-warnings=\u{1b}]0;x",
+        "--strcit\n::error::x",
+    ] {
+        let (code, out, err) = jsonvet_stderr(&dir, &[arg, "ok.json"]);
+        assert_eq!((code, out.as_str()), (2, ""), "{arg:?}");
+        assert_escaped(&err);
+    }
+}
+
 /// Run jsonvet in `dir` with GitHub annotations off; return its exit code, stdout and stderr.
 fn jsonvet_stderr(dir: &Path, args: &[&str]) -> (i32, String, String) {
     run_jsonvet(dir, args, false)
@@ -1018,6 +1042,29 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
             lines[101],
             "l.jsonl:3:1: error[schema] ... and 1 more schema errors in this document"
         );
+    }
+
+    #[test]
+    fn schema_load_errors_show_control_characters_escaped() {
+        let dir = workdir(&[
+            ("ok.json", "{}"),
+            ("nl.json", r#"{"$ref": "urn:\n::error title=pwned::x"}"#),
+            (
+                "esc.json",
+                r#"{"$ref": "x:\u001b]0;TITLE\u0007\u001b[31mRED"}"#,
+            ),
+            ("two\n::error::x.json", "{} {}"),
+        ]);
+        for schema in [
+            "nl.json",
+            "esc.json",
+            "two\n::error::x.json",
+            "gone\u{1b}[31m.json",
+        ] {
+            let (code, out, err) = jsonvet_stderr(&dir, &["--schema", schema, "ok.json"]);
+            assert_eq!((code, out.as_str()), (2, ""), "{schema:?}");
+            assert_escaped(&err);
+        }
     }
 
     #[test]

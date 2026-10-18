@@ -101,12 +101,17 @@ fn run_with(
     annotate: bool,
     out: impl Write,
 ) -> Result<u8, String> {
-    let args =
-        match args::parse(args).map_err(|e| format!("{e}\n\nRun `jsonvet --help` for usage."))? {
-            Command::Help => return print(out, args::HELP),
-            Command::Version => return print(out, concat!("jsonvet ", env!("CARGO_PKG_VERSION"))),
-            Command::Check(args) => args,
-        };
+    // Usage errors quote arguments and the schema file, which can hold a newline or an escape.
+    let args = match args::parse(args).map_err(|e| {
+        format!(
+            "{}\n\nRun `jsonvet --help` for usage.",
+            output::printable(&e)
+        )
+    })? {
+        Command::Help => return print(out, args::HELP),
+        Command::Version => return print(out, concat!("jsonvet ", env!("CARGO_PKG_VERSION"))),
+        Command::Check(args) => args,
+    };
     let from_file = match &args.config {
         ConfigSource::None => Settings::default(),
         ConfigSource::File(path) => settings::load(path)?,
@@ -124,7 +129,8 @@ fn run_with(
         .schema
         .as_deref()
         .map(|path| Schema::load(path, &settings))
-        .transpose()?;
+        .transpose()
+        .map_err(|e| output::printable(&e))?;
 
     let mut printer = Printer::new(out, args.format, annotate);
     let mut counts = Counts::default();
