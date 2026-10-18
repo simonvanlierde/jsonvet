@@ -7,6 +7,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). B
 version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
+### Fixed
+- A duplicate key with a combining mark or a symbol such as U+093E or U+24B6 in its name is now
+  quoted in the path (`$["a\u093e"]`), as check-json5 1.4.1 does. It was printed bare.
 
 ## [3.0.0] - unreleased
 

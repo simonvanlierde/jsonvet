@@ -41,7 +41,7 @@ OBJECTS = [
     "{{{a}: 1, // c\n  '{b}': {{x: 1, x: 2}},\n  {a}: 5,\n}}",
     '[{{"{a}": 1}}, {{"{b}": 2, "{b}": 3}}]',
 ]
-KEYS = ["a", "b c", "ünï", "$x", "1st", 'q\\"', "\\u0061", "\\ud800", "\\udbff"]
+KEYS = ["a", "b c", "ünï", "$x", "1st", 'q\\"', "\\u0061", "\\ud800", "\\udbff", "a\\u093e"]
 
 # Corpus files that meet a deliberate difference listed in docs/design.md.
 KNOWN = {

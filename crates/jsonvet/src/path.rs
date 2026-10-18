@@ -174,15 +174,21 @@ fn decode(mut key: &[u8]) -> Vec<Result<char, u32>> {
     }
 }
 
-/// Python's `[A-Za-z_$][\w$]*`, where `\w` takes any Unicode letter or digit, and no surrogate.
+/// Python's `[A-Za-z_$][\w$]*`, where `\w` takes a character whose general category is a letter
+/// or a number, and no surrogate. `char::is_alphanumeric` is wider: it adds marks and symbols
+/// such as U+093E and U+24B6.
 fn is_identifier(chars: &[Result<char, u32>]) -> bool {
+    use unicode_properties::GeneralCategoryGroup::{Letter, Number};
+    use unicode_properties::UnicodeGeneralCategory;
     let mut chars = chars.iter();
     chars
         .next()
         .is_some_and(|c| matches!(c, Ok(c) if c.is_ascii_alphabetic() || *c == '_' || *c == '$'))
-        && chars.all(|c| matches!(c, Ok(c) if c.is_alphanumeric() || *c == '_' || *c == '$'))
+        && chars.all(|c| {
+            matches!(c, Ok(c) if *c == '_' || *c == '$'
+                || matches!(c.general_category_group(), Letter | Number))
+        })
 }
-
 /// Quote a key as `json.dumps` does with its defaults: non-ASCII as lowercase `\uXXXX` escapes.
 fn quote(out: &mut String, chars: &[Result<char, u32>]) {
     out.push('"');
@@ -235,6 +241,11 @@ mod tests {
         assert_eq!(rendered("q\"\\\n"), "$[\"q\\\"\\\\\\n\"]");
         assert_eq!(rendered("😀"), "$[\"\\ud83d\\ude00\"]");
         assert_eq!(rendered(""), "$[\"\"]");
+        // Marks and symbols are not `\w` in Python, numbers like U+00B2 are.
+        assert_eq!(rendered("a\u{093E}"), "$[\"a\\u093e\"]");
+        assert_eq!(rendered("a\u{24B6}"), "$[\"a\\u24b6\"]");
+        assert_eq!(rendered("a\u{0345}"), "$[\"a\\u0345\"]");
+        assert_eq!(rendered("a\u{00B2}"), "$.a\u{00B2}");
         let mut path = "$".to_owned();
         push_key(&mut path, b"a\xED\xA0\x80b");
         assert_eq!(path, "$[\"a\\ud800b\"]");
