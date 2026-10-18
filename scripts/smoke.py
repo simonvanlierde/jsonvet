@@ -37,9 +37,12 @@ def main() -> int:
             if uv_run("--with", package, command, str(dup)) != 1:
                 print(f"{command} did not report the duplicate key", file=sys.stderr)
                 return 1
+        # A file with no other problem, so exit 1 can only come from the schema.
+        clean = Path(tmp) / "clean.json"
+        clean.write_text('{"a": 1}\n')
         schema = Path(tmp) / "schema.json"
         schema.write_text('{"required": ["b"]}\n')
-        if uv_run("--with", package, "jsonvet", "--schema", str(schema), str(dup)) != PROBLEM_FOUND:
+        if uv_run("--with", package, "jsonvet", "--schema", str(schema), str(clean)) != PROBLEM_FOUND:
             print("jsonvet --schema did not report the missing key", file=sys.stderr)
             return 1
     if uv_run("--with", package, "jsonvet", "--version"):
