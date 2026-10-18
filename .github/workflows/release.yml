@@ -132,7 +132,7 @@ jobs:
           path: compat-dist/
 
   # Install each wheel a hosted runner can run from what the matrix built, and run it, before
-  # anything uploads. The other targets are cross-built and published untested.
+  # anything uploads. The musl and macOS x86-64 wheels are cross-built and published untested.
   smoke:
     needs: [wheels, build-sdists]
     strategy:
@@ -142,6 +142,8 @@ jobs:
           - {os: ubuntu-latest, wheel: wheels-ubuntu-latest-x86_64-auto}
           - {os: macos-latest, wheel: wheels-macos-latest-aarch64-apple-darwin-native}
           - {os: windows-latest, wheel: wheels-windows-latest-x86_64-pc-windows-msvc-native}
+          - {os: ubuntu-24.04-arm, wheel: wheels-ubuntu-latest-aarch64-auto}
+          - {os: windows-11-arm, wheel: wheels-windows-latest-aarch64-pc-windows-msvc-native}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
