@@ -42,6 +42,7 @@ pub use path::{PathStep, json_path};
 pub use problem::{Problem, Related, RelatedKind};
 pub use report::{Location, Report};
 pub use rule::{Config, Rule, Severity, UnknownRule};
+pub use unicode::is_hidden;
 
 /// Check one text and return every problem in it, in document order. Checking stops at the
 /// first syntax error; problems found before it stay in the report.

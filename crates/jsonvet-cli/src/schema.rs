@@ -761,10 +761,7 @@ mod tests {
             ("/x/", "$.x[\"\"]"),
             ("/0", "$[\"0\"]"),
             ("/0/1", "$[\"0\"][1]"),
-            (
-                "/0/1/a~1b~0c.d\"\u{e9}",
-                "$[\"0\"][1][\"a/b~c.d\\\"\\u00e9\"]",
-            ),
+            ("/0/1/a~1b~0c.d\"\u{e9}", "$[\"0\"][1][\"a/b~c.d\\\"é\"]"),
         ];
         for (pointer, path) in cases {
             assert_eq!(json_path(&value, pointer), path, "{pointer}");

@@ -8,6 +8,7 @@ use std::io::{self, Write};
 use jsonvet::{Location, Problem, RelatedKind, Report, Severity};
 
 use crate::sarif;
+pub(crate) use jsonvet::is_hidden;
 
 /// The output format, from `--format`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -43,26 +44,6 @@ pub(crate) fn escape_utf16(out: &mut String, c: char) {
     for unit in c.encode_utf16(&mut [0; 2]) {
         let _ = write!(out, "\\u{unit:04x}");
     }
-}
-
-/// Characters that reorder or hide text without showing themselves: Unicode's `Bidi_Control`
-/// set (as `is_bidi_control` in jsonvet, which is not public), the soft hyphen, the Mongolian
-/// vowel separator, the zero-width space, joiners and marks U+200B to U+200F, the line and
-/// paragraph separators, the word joiner and invisible operators U+2060 to U+2064, the byte
-/// order mark, and the tag characters U+E0000 to U+E007F.
-pub(crate) fn is_hidden(c: char) -> bool {
-    matches!(
-        c,
-        '\u{ad}'
-            | '\u{61c}'
-            | '\u{180e}'
-            | '\u{200b}'..='\u{200f}'
-            | '\u{2028}'..='\u{202e}'
-            | '\u{2060}'..='\u{2064}'
-            | '\u{2066}'..='\u{2069}'
-            | '\u{feff}'
-            | '\u{e0000}'..='\u{e007f}'
-    )
 }
 
 /// A file name as it starts an output line. A name starting with `::`, after any leading

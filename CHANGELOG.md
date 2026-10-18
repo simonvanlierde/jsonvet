@@ -10,18 +10,20 @@ version for a new option or output, the patch version for a fix.
 
 ## [3.0.0] - unreleased
 
-Three changes below are **Breaking**. To upgrade, set `rev: v3.0.0` (or
+Four changes below are **Breaking**. To upgrade, set `rev: v3.0.0` (or
 `uses: simonvanlierde/jsonvet@v3`), then:
 
 1. If you run jsonvet from a directory other than the one holding `jsonvet.toml` (or the
    `pyproject.toml` with `[tool.jsonvet]`), or pass absolute paths, write its `dialects` patterns
    relative to that file's directory.
 2. If a script passes an option jsonvet does not know, expect exit 2 instead of exit 1.
-3. Rust library users: treat `Rule::ALL` and `Dialect::ALL` as slices, add a `_` arm to a `match`
+3. If a script matches paths in the output, match non-ASCII keys as written, not as `\u`
+   escapes.
+4. Rust library users: treat `Rule::ALL` and `Dialect::ALL` as slices, add a `_` arm to a `match`
    on `Severity`, build a `Location` from `Location::START` instead of a struct literal, and read
    the text of `UnknownRule` and `UnknownDialect` with `id()` and `name()`.
 
-Hook and command users who do neither of the first two need no other change.
+Hook and command users who do none of the first three need no other change.
 
 ### Added
 
@@ -59,6 +61,11 @@ Hook and command users who do neither of the first two need no other change.
   to the directory of that file, not the working directory. Running from a subdirectory or with
   absolute paths now picks the same dialect. Patterns given with `--dialect` or `--strict` still
   match the path as typed.
+- **Breaking:** non-ASCII keys in paths print as written, not as `\u` escapes:
+  `$["日本"]`, not `$["\u65e5\u672c"]`, and an emoji key prints as itself, not as a surrogate
+  pair. This covers duplicate-key paths and the `(at ...)` paths of schema errors. Control and
+  invisible characters, `…` and lone surrogates such as `\ud800` stay escaped. Update scripts
+  that match paths.
 - **Breaking:** an unknown option, long such as `--x` or short such as `-x`, that is not an
   existing file is a usage error (exit 2, "unknown option"), not a missing file (exit 1). An
   existing file named like `--x.json`, `-x.json` or `--dialect=json` is still checked as a file:
@@ -68,9 +75,9 @@ Hook and command users who do neither of the first two need no other change.
   `Severity` and `Location` are `#[non_exhaustive]`, so later minor releases can add rules,
   dialects, severities and position fields. The text inside `UnknownRule` and `UnknownDialect` is
   private; read it with `UnknownRule::id()` and `UnknownDialect::name()`.
-- Library: `parse`, `Event`, `EventKind`, `json_path` and `PathStep` are public only for the
-  `jsonvet-cli` crate. They are hidden from the docs, are not part of the API and may change in
-  any release.
+- Library: `parse`, `Event`, `EventKind`, `json_path`, `PathStep` and `is_hidden` are public
+  only for the `jsonvet-cli` crate. They are hidden from the docs, are not part of the API and
+  may change in any release.
 - Directories, devices and FIFOs are reported as `not a regular file` under the rule `unreadable`
   (exit 1). A symlink to a regular file is still checked.
 - A duplicate-key path longer than 256 bytes keeps as many segments from each end as fit, with

@@ -9,4 +9,4 @@ json5 "{a: 1,\r a: 2}"
 json5 "{a: 1,\u{2028} a: 2}"
        2:2 error[duplicate-key] duplicate key $.a (from 1:2)
 json5 "{\"é😀\": 1, \"é😀\": 2}"
-       1:11 error[duplicate-key] duplicate key $["\u00e9\ud83d\ude00"] (from 1:2)
+       1:11 error[duplicate-key] duplicate key $["é😀"] (from 1:2)

@@ -11,7 +11,8 @@ jsonvet 2.0 replaces check-json5 1.4 in place. These stay the same:
   `.json`, `.json5`, `.geojson`, `.jsonld`, `.webmanifest` and `.babelrc` files, and for any other
   extension) and strict JSON through `--strict`;
 - the exit code: 0 when every file passes, 1 when any fails, 2 on a usage error;
-- what a duplicate-key report says: the position of the repeated key and its JSONPath;
+- what a duplicate-key report says: the position of the repeated key and its JSONPath (but see
+  below for non-ASCII keys);
 - the meaning of `--strict GLOB`, now an alias for `--dialect json:GLOB`, with `--strict '!GLOB'`
   mapping to `--dialect auto:GLOB`.
 
@@ -26,6 +27,9 @@ These change, and the changelog marks them **Breaking**:
 - *since 3.0*, a duplicate-key JSONPath longer than 256 bytes is shortened. jsonvet keeps the
   segments that fit in 128 bytes at each end, with `…` between them, so a path is at most 259
   bytes. 1.4 and 2.0 printed the whole path;
+- *since 3.0*, a quoted key in a JSONPath keeps non-ASCII text as written: `$["日本"]`, not
+  `$["\u65e5\u672c"]`. Control and invisible characters, `…` and lone surrogates such as
+  `\ud800` stay escaped;
 - *since 3.0*, a missing file whose name starts with `-`, such as `--x` or `-x`, is an unknown
   option and exits 2. 1.4.1 and 2.0 exit 1;
 - the hook also checks `.jsonl` and `.ndjson` files;
@@ -53,6 +57,8 @@ key (in JSON5 mode), the depth-10,000 file, and a file with a syntax error after
 (in both modes). The differences below are intended, and the corpus can still meet them:
 
 - Lines end at a lone CR, U+2028 and U+2029 in jsonvet, so positions after one of them differ.
+- *Since 3.0*, a quoted key in a JSONPath keeps non-ASCII text as written, such as `$["日本"]`.
+  1.4 and 2.0 wrote `$["\u65e5\u672c"]`.
 - Raw U+2028 and U+2029 inside strings pass in jsonvet, as the JSON5 spec allows. 1.4's JSON5
   path rejected them.
 - Nesting deeper than 10,000 levels is a syntax error in jsonvet (`Config::max_depth` changes

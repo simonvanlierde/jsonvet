@@ -1448,7 +1448,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         let dir = workdir(&[("schema.json", &schema), ("e.json", &file)]);
         let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "schema.json", "e.json"]);
         assert_eq!(code, 1);
-        let quoted = "[\"a/b~c.d\\\"\\u00e9\"]";
+        let quoted = "[\"a/b~c.d\\\"é\"]";
         assert_eq!(
             out,
             format!(

@@ -1,8 +1,11 @@
-//! JSONPath rendering, matching check-json5 1.4: `$.key` for identifier-like keys,
-//! `$["other key"]` otherwise, with the key quoted as Python's `json.dumps` quotes it.
+//! JSONPath rendering, as check-json5 1.4 wrote it: `$.key` for identifier-like keys,
+//! `$["other key"]` otherwise. Unlike 1.4's `json.dumps`, a quoted key keeps non-ASCII text as
+//! written.
 
 use std::borrow::Cow;
 use std::fmt::Write;
+
+use crate::unicode::is_hidden;
 
 /// One step from a container to a child.
 #[derive(Clone, Debug)]
@@ -14,8 +17,8 @@ pub(crate) enum Segment<'a> {
 
 /// Past this many bytes, a path keeps only the segments that fit in `MAX_PATH / 2` bytes at
 /// each end, with `…` in place of the rest. A segment longer than that is cut, so a long key
-/// still shows its start or its end. A full path never holds `…`: quoted keys escape
-/// non-ASCII, and `…` cannot be part of an unquoted key.
+/// still shows its start or its end. A full path never holds `…`: quoted keys escape it, and
+/// it cannot be part of an unquoted key.
 pub(crate) const MAX_PATH: usize = 256;
 
 /// The JSONPath made of `count` segments, root first, each as [`rendered`] gives it, cut as
@@ -189,7 +192,9 @@ fn is_identifier(chars: &[Result<char, u32>]) -> bool {
         && chars.all(|c| matches!(c, Ok(c) if c.is_alphanumeric() || *c == '_' || *c == '$'))
 }
 
-/// Quote a key as `json.dumps` does with its defaults: non-ASCII as lowercase `\uXXXX` escapes.
+/// Quote a key as JSON: `\"`, `\\`, the short escapes for control characters, and lowercase
+/// `\uXXXX` for other control characters, hidden ones (see [`is_hidden`]), `…` and lone
+/// surrogates. Any other character is kept as written.
 fn quote(out: &mut String, chars: &[Result<char, u32>]) {
     out.push('"');
     for c in chars {
@@ -208,13 +213,13 @@ fn quote(out: &mut String, chars: &[Result<char, u32>]) {
             '\t' => out.push_str("\\t"),
             '\u{8}' => out.push_str("\\b"),
             '\u{c}' => out.push_str("\\f"),
-            c if c.is_ascii() && !c.is_ascii_control() => out.push(c),
-            c => {
+            c if c.is_control() || is_hidden(c) || c == '…' => {
                 let mut units = [0u16; 2];
                 for unit in c.encode_utf16(&mut units) {
                     let _ = write!(out, "\\u{unit:04x}");
                 }
             }
+            c => out.push(c),
         }
     }
     out.push('"');
@@ -231,15 +236,21 @@ mod tests {
     }
 
     #[test]
-    fn keys_render_as_check_json5_rendered_them() {
+    fn keys_render_as_check_json5_rendered_them_but_keep_non_ascii() {
         assert_eq!(rendered("server"), "$.server");
         assert_eq!(rendered("$ref"), "$.$ref");
         assert_eq!(rendered("café"), "$.café");
         assert_eq!(rendered("1st"), "$[\"1st\"]");
         assert_eq!(rendered("b c"), "$[\"b c\"]");
-        assert_eq!(rendered("ünicode"), "$[\"\\u00fcnicode\"]");
+        assert_eq!(rendered("ünicode"), "$[\"ünicode\"]");
+        assert_eq!(rendered("日本 語"), "$[\"日本 語\"]");
         assert_eq!(rendered("q\"\\\n"), "$[\"q\\\"\\\\\\n\"]");
-        assert_eq!(rendered("😀"), "$[\"\\ud83d\\ude00\"]");
+        assert_eq!(rendered("😀"), "$[\"😀\"]");
+        // Control, hidden and the cut mark `…` stay escaped, past U+FFFF as a surrogate pair.
+        assert_eq!(
+            rendered("a\u{7f}\u{85}\u{202e}\u{ad}…\u{e0041}"),
+            "$[\"a\\u007f\\u0085\\u202e\\u00ad\\u2026\\udb40\\udc41\"]"
+        );
         assert_eq!(rendered(""), "$[\"\"]");
         let mut path = "$".to_owned();
         push_key(&mut path, b"a\xED\xA0\x80b");
