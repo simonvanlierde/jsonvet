@@ -43,7 +43,7 @@ cargo deny.
   fails when `conformance/results/versions.json` disagrees with the pinned parsers
   (`run.py --check`), as it does after a pin bump until someone re-runs the matrix. After a pin
   change, run `just matrix-lock` first. Details: [conformance/README.md](conformance/README.md).
-- **Fuzzing.** `just fuzz check` (or `diff_serde_json`, `diff_json5`) runs a target for 20
+- **Fuzzing.** `just fuzz check` (or `diff_serde_json`, `diff_json5`, `parse`) runs a target for 20
   minutes. CI runs each target for 30 seconds on a pull request that touches the library, and for
   20 minutes after a parser change on `main` and once a week. It needs a nightly toolchain and
   cargo-fuzz. Coverage stops growing within about two hours per target. A new json5 version in

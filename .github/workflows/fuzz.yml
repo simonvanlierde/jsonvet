@@ -24,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [check, diff_serde_json, diff_json5]
+        target: [check, diff_serde_json, diff_json5, parse]
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
