@@ -43,6 +43,7 @@ fn reports_and_exit_codes() {
         ("bom.json", "\u{FEFF}{}"),
     ]);
     assert_eq!(jsonvet(&dir, &["ok.json"]), (0, String::new()));
+    assert_eq!(jsonvet_stderr(&dir, &[]), (0, String::new(), String::new()));
     assert_eq!(
         jsonvet(&dir, &["ok.json", "dup.json", "gone.json"]),
         (
@@ -247,6 +248,10 @@ fn help_version_and_the_check_json5_name() {
         .output()
         .expect("run check-json5");
     assert_eq!(out.status.code(), Some(1));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        jsonvet(&dir, &["dup.json"]).1
+    );
     fs::create_dir(dir.join("folder.json")).expect("create a folder");
     assert_eq!(
         jsonvet(&dir, &["folder.json"]),
@@ -435,6 +440,24 @@ fn config_file_and_its_search() {
 }
 
 #[test]
+fn config_severities_take_the_warn_and_off_aliases() {
+    let dir = workdir(&[
+        (
+            "jsonvet.toml",
+            "dialects = [{ files = \"*.json\", dialect = \"json\" }]\nrules = { duplicate-key = \"warn\", byte-order-mark = \"off\" }\n",
+        ),
+        ("x.json", "\u{FEFF}{\"a\": 1, \"a\": 2}"),
+    ]);
+    assert_eq!(
+        jsonvet(&dir, &["x.json"]),
+        (
+            0,
+            "x.json:1:11: warning[duplicate-key] duplicate key $.a (first at 1:3)\n".to_owned()
+        )
+    );
+}
+
+#[test]
 fn config_globs_are_relative_to_the_config_file() {
     let toml = "dialects = [{ files = \"data/*.json\", dialect = \"json\" }]\n";
     let pyproject = format!("[tool.jsonvet]\n{toml}");
@@ -547,8 +570,10 @@ fn sarif_holds_every_problem_and_keeps_the_exit_codes() {
         ("open.json", "[1, /* x"),
     ]);
     let run = |args: &[&str]| {
-        // SARIF replaces the workflow annotations, even in GitHub Actions.
-        let (code, out, _) = run_jsonvet(&dir, args, true);
+        // SARIF replaces the workflow annotations, even in GitHub Actions. With no results
+        // dropped, nothing goes to stderr.
+        let (code, out, err) = run_jsonvet(&dir, args, true);
+        assert_eq!(err, "", "{args:?}");
         let sarif: serde_json::Value = serde_json::from_str(&out).expect("JSON output");
         (code, sarif)
     };
