@@ -127,6 +127,8 @@ jobs:
   # pre-commit and prek install this repository, and its placeholder setup.py pins the jsonvet wheel. Until that version is on PyPI, the wheel built here stands in for it,
   # through pip's and uv's find-links settings.
   hook:
+    # The OS alone, without the container image: the ruleset requires `hook (ubuntu-latest)`.
+    name: hook (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
