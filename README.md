@@ -110,10 +110,10 @@ and `*` also matches `/`. A glob compares exact code points, with no Unicode nor
 a `\` in a path is read as `/`. A glob on the command line matches the path as you typed it, so
 it is relative to the working directory. pre-commit runs from the repository root.
 
-pre-commit passes file names with no `--` before them. So an argument that starts with one `-` is
-a file name, apart from `-h` and `-V`. An unknown `--name` is a file name when that file exists,
-and otherwise a usage error (`unknown option`). Put `--` before the file names to be sure:
-`jsonvet -- --x.json`.
+pre-commit passes file names with no `--` before them. So an unknown `-x` or `--name`, or a known
+option with a value such as `--dialect=json`, is a file name when a file of exactly that name
+exists. Otherwise an unknown one is a usage error (`unknown option`). Put `--` before the file
+names to be sure: `jsonvet -- --x.json`.
 
 Exit status: 0 when no file has an error, 1 when one does, 2 for a usage error. With no files,
 jsonvet exits 0. A file that does not exist or cannot be read prints `name: error: <reason>`, with

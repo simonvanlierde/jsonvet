@@ -26,8 +26,8 @@ These change, and the changelog marks them **Breaking**:
 - *since 3.0*, a duplicate-key JSONPath longer than 256 bytes is shortened. jsonvet keeps the
   segments that fit in 128 bytes at each end, with `…` between them, so a path is at most 259
   bytes. 1.4 and 2.0 printed the whole path;
-- *since 3.0*, a missing file whose name starts with `--`, such as `--x`, is an unknown option and
-  exits 2. 1.4.1 and 2.0 exit 1;
+- *since 3.0*, a missing file whose name starts with `-`, such as `--x` or `-x`, is an unknown
+  option and exits 2. 1.4.1 and 2.0 exit 1;
 - the hook also checks `.jsonl` and `.ndjson` files;
 - `.jsonc`, `.code-workspace` and `.code-snippets` files are checked as JSONC, and `.hujson` and
   `.jwcc` files as JWCC. 1.4 read every file as JSON5, so JSON5-only syntax in those files, such

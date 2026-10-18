@@ -59,9 +59,11 @@ Hook and command users who do neither of the first two need no other change.
   to the directory of that file, not the working directory. Running from a subdirectory or with
   absolute paths now picks the same dialect. Patterns given with `--dialect` or `--strict` still
   match the path as typed.
-- **Breaking:** an unknown `--option` that is not an existing file is a usage error (exit 2,
-  "unknown option"), not a missing file (exit 1). An existing file named like `--x.json` is still
-  checked.
+- **Breaking:** an unknown option, long such as `--x` or short such as `-x`, that is not an
+  existing file is a usage error (exit 2, "unknown option"), not a missing file (exit 1). An
+  existing file named like `--x.json`, `-x.json` or `--dialect=json` is still checked as a file:
+  an argument is a file whenever a file of exactly that name exists, apart from `-h`, `-V`,
+  `--help`, `--version` and a known option without `=`.
 - **Breaking** (library): `Rule::ALL` and `Dialect::ALL` are slices, not fixed-size arrays.
   `Severity` and `Location` are `#[non_exhaustive]`, so later minor releases can add rules,
   dialects, severities and position fields. The text inside `UnknownRule` and `UnknownDialect` is

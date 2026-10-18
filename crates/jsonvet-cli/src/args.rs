@@ -83,11 +83,14 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
     let mut schema = None;
     loop {
         // lexopt reads a non-UTF-8 argument that starts with `-` lossily. No option has such a
-        // name, so it is a file, kept as given.
-        if let Some(file) = parser
-            .try_raw_args()
-            .and_then(|mut raw| raw.next_if(|arg| arg.to_str().is_none()))
-        {
+        // name, so it is a file, kept as given. An existing file named like `--dialect=json`
+        // is a file too, as pre-commit puts file names after the options with no `--`.
+        if let Some(file) = parser.try_raw_args().and_then(|mut raw| {
+            raw.next_if(|arg| match arg.to_str() {
+                None => true,
+                Some(arg) => arg.starts_with("--") && arg.contains('=') && exists(arg),
+            })
+        }) {
             files.push(file);
             continue;
         }
@@ -128,15 +131,16 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
             Long("no-config") => config = ConfigSource::None,
             Long("schema") => schema = Some(PathBuf::from(value(&mut parser)?)),
             Value(file) => files.push(file),
-            // pre-commit puts file names after the options with no `--`, so a name like
-            // `-x.json`, `-h.json` or an existing `--y.json` is a file, not an option.
+            // pre-commit puts file names after the options with no `--`, so an existing file
+            // named like `-x.json`, `-h.json` or `--y.json` is a file, not an option.
             Short(c) => {
                 let rest = rest(&mut parser);
-                match (c, rest.is_empty()) {
+                let file = match (c, rest.is_empty()) {
                     ('h', true) => return Ok(Command::Help),
                     ('V', true) => return Ok(Command::Version),
-                    _ => files.push(joined(&format!("-{c}"), "", &rest)),
-                }
+                    _ => joined(&format!("-{c}"), "", &rest),
+                };
+                files.push(on_disk(file)?);
             }
             Long(name) => {
                 let name = name.to_owned();
@@ -147,11 +151,7 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
                     (_, true) => format!("--{name}").into(),
                     _ => joined(&format!("--{name}"), "=", &rest),
                 };
-                // A name that is not on disk is a mistyped option, such as `--strcit`.
-                if std::fs::symlink_metadata(&file).is_err() {
-                    return Err(format!("unknown option `{}`", file.to_string_lossy()));
-                }
-                files.push(file);
+                files.push(on_disk(file)?);
             }
         }
     }
@@ -163,6 +163,20 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
         format,
         schema,
     }))
+}
+
+fn exists(path: impl AsRef<std::path::Path>) -> bool {
+    std::fs::symlink_metadata(path).is_ok()
+}
+
+/// An argument jsonvet has no option for: a file if one has that name, or else a mistyped
+/// option, such as `--strcit` or `-q`.
+fn on_disk(file: OsString) -> Result<OsString, String> {
+    if exists(&file) {
+        Ok(file)
+    } else {
+        Err(format!("unknown option `{}`", file.to_string_lossy()))
+    }
 }
 
 fn value(parser: &mut lexopt::Parser) -> Result<String, String> {
@@ -214,20 +228,22 @@ mod tests {
 
     #[test]
     fn files_that_look_like_options_stay_files() {
-        let args = check(&[
+        let args = check(&["--", "-dash.json", "--y.json", "--dialect=json", "a.json"]);
+        assert_eq!(
+            args.files,
+            ["-dash.json", "--y.json", "--dialect=json", "a.json"]
+        );
+        // An unknown `-x` or `--name`, or a known `--name=value`, is a file only when it exists;
+        // tests/cli.rs covers that case.
+        for unknown in [
+            "--strcit",
+            "--help=x",
+            "--x.json",
+            "-q",
             "-dash.json",
             "-h.json",
             "-x=a.json",
-            "--",
-            "--y.json",
-            "a.json",
-        ]);
-        assert_eq!(
-            args.files,
-            ["-dash.json", "-h.json", "-x=a.json", "--y.json", "a.json"]
-        );
-        // An unknown `--name` is a file only when it exists; tests/cli.rs covers that case.
-        for unknown in ["--strcit", "--help=x", "--x.json"] {
+        ] {
             assert_eq!(
                 parse(["a.json", unknown].iter().map(Into::into)).err(),
                 Some(format!("unknown option `{unknown}`"))

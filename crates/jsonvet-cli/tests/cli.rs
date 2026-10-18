@@ -342,6 +342,28 @@ fn an_unknown_option_is_a_usage_error_unless_it_is_a_file() {
         run(&["--", "--x.json"]),
         (1, found.to_owned(), String::new())
     );
+    // Short options follow the same rule.
+    let (code, out, err) = run(&["-q", "bad.json"]);
+    assert_eq!((code, out.as_str()), (2, ""));
+    assert!(err.starts_with("jsonvet: unknown option `-q`\n"), "{err}");
+    fs::write(dir.join("-q"), "[1,").expect("write file");
+    let found = "-q:1:4: error[syntax] expected a value, found the end of the file\n";
+    assert_eq!(run(&["-q"]), (1, found.to_owned(), String::new()));
+}
+
+#[test]
+fn a_file_named_like_an_option_with_a_value_is_a_file() {
+    // Read as an option, the name would check a.json as strict JSON and fail its comment.
+    let dir = workdir(&[
+        ("a.json", "{\"a\": 1 // c\n}\n"),
+        ("--dialect=json:*.json", "{}"),
+    ]);
+    assert_eq!(
+        jsonvet(&dir, &["--dialect=json:*.json", "a.json"]),
+        (0, String::new())
+    );
+    fs::remove_file(dir.join("--dialect=json:*.json")).expect("remove file");
+    assert_eq!(jsonvet(&dir, &["--dialect=json:*.json", "a.json"]).0, 1);
 }
 
 #[test]
@@ -793,6 +815,7 @@ fn usage_errors_show_control_characters_escaped() {
         "--error=\n::error::x",
         "--max-warnings=\u{1b}]0;x",
         "--strcit\n::error::x",
+        "-q\n::error::x",
     ] {
         let (code, out, err) = jsonvet_stderr(&dir, &[arg, "ok.json"]);
         assert_eq!((code, out.as_str()), (2, ""), "{arg:?}");
