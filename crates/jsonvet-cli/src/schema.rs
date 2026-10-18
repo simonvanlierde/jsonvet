@@ -1,7 +1,7 @@
 //! `--schema`: each file's values checked against one JSON Schema, every error placed at the
 //! value it is about.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::ops::Range;
 use std::path::Path;
 
@@ -39,6 +39,11 @@ const MAX_MESSAGE: usize = 200;
 /// How deep a schema may nest, counting each local `$ref` followed as one more level; real
 /// schemas stay well under it.
 const MAX_SCHEMA_DEPTH: usize = 128;
+
+/// How many objects and arrays a schema may hold once each local `$ref` is replaced by what it
+/// points at. jsonschema may check every one of them for one value, so `$ref`s that each point
+/// twice at the next schema, 24 levels deep, took 12.9 s and 11.4 GB.
+const MAX_SCHEMA_SIZE: usize = 5_000_000;
 
 /// The keys whose value points at another schema.
 const REF_KEYS: [&str; 3] = ["$ref", "$dynamicRef", "$recursiveRef"];
@@ -81,18 +86,23 @@ impl Schema {
         }
         // jsonschema also validates recursively through each `$ref`, so a long chain of them
         // takes the stack or hours, however shallow the schema is.
-        if let Some((path, key)) = Reach::new(&document.value).too_deep() {
+        if let Some(Over { path, key, size }) = Reach::new(&document.value).over() {
             let offset = place(
                 &events[document.events.clone()],
                 &[(path, vec![key.to_owned()])],
             )[0];
-            return Err(at(
-                offset,
-                &format!(
+            let problem = if size {
+                format!(
+                    "this `{key}` takes the schema past {MAX_SCHEMA_SIZE} objects and arrays, \
+                     counting what each `$ref` points at every time it is followed"
+                )
+            } else {
+                format!(
                     "this `{key}` leads more than {MAX_SCHEMA_DEPTH} levels deep, counting each \
                      `$ref` followed as a level"
-                ),
-            ));
+                )
+            };
+            return Err(at(offset, &problem));
         }
         // Offline: a `$ref` to anything outside the schema file fails here.
         let options = jsonschema::options()
@@ -355,10 +365,10 @@ fn place(events: &[Event<'_>], targets: &[(Vec<String>, Vec<String>)]) -> Vec<us
         .collect()
 }
 
-/// How deep a schema reaches when its local `$ref`s are followed: `#` with a JSON Pointer or an
-/// anchor (`$anchor`, `$dynamicAnchor`, or an `$id` of `#name`), or a URI naming an `$id` in the
-/// file. A `$ref` back to a schema on the way to it is recursion, which jsonschema handles: it
-/// adds nothing.
+/// How deep and how big a schema gets when its local `$ref`s are followed: `#` with a JSON
+/// Pointer or an anchor (`$anchor`, `$dynamicAnchor`, or an `$id` of `#name`), or a URI naming an
+/// `$id` in the file. A `$ref` back to a schema on the way to it is recursion, which jsonschema
+/// handles: it adds nothing.
 // shortcut: a URI matches an `$id` by its text or last path segments, not by full RFC 3986
 // resolution against each base, and a relative `#` reference resolves against the root; a
 // missed match only undercounts. Resolve as jsonschema's `referencing` crate does if one slips by.
@@ -366,10 +376,12 @@ struct Reach<'v> {
     root: &'v Value,
     anchors: HashMap<&'v str, (&'v Value, Vec<String>)>,
     ids: Vec<(&'v str, &'v Value, Vec<String>)>,
-    /// The levels at and under each schema already measured, by address.
-    height: HashMap<*const Value, usize>,
-    /// The schemas on the way to the current one.
-    open: HashSet<*const Value>,
+    /// The levels at and under each schema already measured, and its objects and arrays with
+    /// every `$ref` followed, by address. Only for a schema measured without skipping a `$ref`
+    /// back to a schema above it, as that one is shorter where the skipped schema is not open.
+    measured: HashMap<*const Value, Measure>,
+    /// The schemas on the way to the current one, with their levels.
+    open: HashMap<*const Value, usize>,
     /// Where the current schema is in the file.
     path: Vec<String>,
     /// Where each `$ref` on the way is: its object's path and the key.
@@ -382,8 +394,8 @@ impl<'v> Reach<'v> {
             root,
             anchors: HashMap::new(),
             ids: Vec::new(),
-            height: HashMap::new(),
-            open: HashSet::new(),
+            measured: HashMap::new(),
+            open: HashMap::new(),
             path: Vec::new(),
             refs: Vec::new(),
         };
@@ -455,43 +467,61 @@ impl<'v> Reach<'v> {
         Some((value, path))
     }
 
-    /// Where a `$ref` leads past [`MAX_SCHEMA_DEPTH`] levels, as its object's path and key.
-    fn too_deep(mut self) -> Option<(Vec<String>, &'static str)> {
+    /// Where a `$ref` leads past [`MAX_SCHEMA_DEPTH`] levels or [`MAX_SCHEMA_SIZE`] objects
+    /// and arrays.
+    fn over(mut self) -> Option<Over> {
         self.visit(self.root, 1).err()
     }
 
-    /// The levels at and under `value`, which is `level` levels deep, or where that is too many.
-    fn visit(
-        &mut self,
-        value: &'v Value,
-        level: usize,
-    ) -> Result<usize, (Vec<String>, &'static str)> {
+    /// Where the current `$ref` is, for an error about it.
+    fn over_here(&self, size: bool) -> Over {
+        // Containers alone stay within the parser's depth limit, so a `$ref` is on the way.
+        let (path, key) = self.refs.last().cloned().unwrap_or((Vec::new(), "$ref"));
+        Over { path, key, size }
+    }
+
+    /// `value`, which is `level` levels deep, measured, or where it is too deep or too big.
+    fn visit(&mut self, value: &'v Value, level: usize) -> Result<Visit, Over> {
         if !(value.is_object() || value.is_array()) {
-            return Ok(0);
+            return Ok(Visit {
+                measure: Measure::default(),
+                cut: usize::MAX,
+            });
         }
         let address: *const Value = value;
-        let known = self.height.get(&address).copied();
-        if level + known.unwrap_or(1) - 1 > MAX_SCHEMA_DEPTH {
-            // Containers alone stay within the parser's depth limit, so a `$ref` is on the way.
-            return Err(self.refs.last().cloned().unwrap_or((Vec::new(), "$ref")));
+        let known = self.measured.get(&address).copied();
+        if level + known.map_or(1, |m| m.height) - 1 > MAX_SCHEMA_DEPTH {
+            return Err(self.over_here(false));
         }
-        if let Some(height) = known {
-            return Ok(height);
+        if let Some(measure) = known {
+            return Ok(Visit {
+                measure,
+                cut: usize::MAX,
+            });
         }
-        self.open.insert(address);
-        let mut below = 0;
+        self.open.insert(address, level);
+        let mut below = Visit {
+            measure: Measure { height: 0, size: 1 },
+            cut: usize::MAX,
+        };
         match value {
             Value::Array(items) => {
                 for (i, item) in items.iter().enumerate() {
                     self.path.push(i.to_string());
-                    below = below.max(self.visit(item, level + 1)?);
+                    let child = self.visit(item, level + 1)?;
+                    if below.add(child) {
+                        return Err(self.over_here(true));
+                    }
                     self.path.pop();
                 }
             }
             Value::Object(members) => {
                 for (key, member) in members {
                     self.path.push(key.clone());
-                    below = below.max(self.visit(member, level + 1)?);
+                    let child = self.visit(member, level + 1)?;
+                    if below.add(child) {
+                        return Err(self.over_here(true));
+                    }
                     self.path.pop();
                 }
                 for key in REF_KEYS {
@@ -502,12 +532,16 @@ impl<'v> Reach<'v> {
                     else {
                         continue;
                     };
-                    if self.open.contains(&std::ptr::from_ref(target)) {
+                    if let Some(&open) = self.open.get(&std::ptr::from_ref(target)) {
+                        below.cut = below.cut.min(open);
                         continue;
                     }
                     self.refs.push((self.path.clone(), key));
                     let here = std::mem::replace(&mut self.path, path);
-                    below = below.max(self.visit(target, level + 1)?);
+                    let child = self.visit(target, level + 1)?;
+                    if below.add(child) {
+                        return Err(self.over_here(true));
+                    }
                     self.path = here;
                     self.refs.pop();
                 }
@@ -515,9 +549,49 @@ impl<'v> Reach<'v> {
             _ => {}
         }
         self.open.remove(&address);
-        self.height.insert(address, below + 1);
-        Ok(below + 1)
+        below.measure.height += 1;
+        // A skipped `$ref` back to `value` itself is skipped wherever `value` is reached.
+        if below.cut >= level {
+            below.cut = usize::MAX;
+            self.measured.insert(address, below.measure);
+        }
+        Ok(below)
     }
+}
+
+/// A schema's levels, counting each `$ref` followed as one, and its objects and arrays with each
+/// `$ref` replaced by what it points at.
+#[derive(Clone, Copy, Default)]
+struct Measure {
+    height: usize,
+    size: usize,
+}
+
+/// A schema measured, and the level of the highest schema above it that a skipped `$ref` points
+/// back at, or `usize::MAX`.
+#[derive(Clone, Copy)]
+struct Visit {
+    measure: Measure,
+    cut: usize,
+}
+
+impl Visit {
+    /// Take in a schema under this one, and say whether this one is now past
+    /// [`MAX_SCHEMA_SIZE`].
+    fn add(&mut self, child: Visit) -> bool {
+        self.measure.height = self.measure.height.max(child.measure.height);
+        self.measure.size = self.measure.size.saturating_add(child.measure.size);
+        self.cut = self.cut.min(child.cut);
+        self.measure.size > MAX_SCHEMA_SIZE
+    }
+}
+
+/// Where a schema is too deep or, with `size`, too big: the path of the `$ref`'s object and the
+/// key.
+struct Over {
+    path: Vec<String>,
+    key: &'static str,
+    size: bool,
 }
 
 /// An open container while the events are folded into values, with an object's current key.
@@ -772,8 +846,9 @@ mod tests {
     fn ref_chains_count_through_arrays_and_from_each_place_they_are_reached() {
         let too_deep = |schema: &Value| {
             Reach::new(schema)
-                .too_deep()
-                .map(|(path, key)| (path.join("/"), key))
+                .over()
+                .filter(|over| !over.size)
+                .map(|over| (over.path.join("/"), over.key))
         };
         // `$defs/long` is first reached near the root, then again under 100 levels of `allOf`.
         let long = nested(60, json!({"type": "integer"}));
@@ -796,6 +871,52 @@ mod tests {
         }
         let schema = json!({"$defs": defs, "$ref": "#/$defs/d%250"});
         assert!(too_deep(&schema).is_some());
+    }
+
+    /// `x{i}`'s `additionalProperties` goes through `y{i}` back to `x{i}`, and its `allOf`, 60
+    /// levels deep, ends in a `$ref` to `y{i-1}`: `k` such pairs.
+    fn cycles(k: usize) -> Value {
+        let mut defs = serde_json::Map::new();
+        for i in 0..k {
+            let end = match i {
+                0 => json!({"type": "integer"}),
+                _ => json!({"$ref": format!("#/$defs/y{}", i - 1)}),
+            };
+            defs.insert(
+                format!("x{i}"),
+                json!({"additionalProperties": {"$ref": format!("#/$defs/y{i}")}, "allOf": [nested(120, end)]}),
+            );
+            defs.insert(format!("y{i}"), json!({"$ref": format!("#/$defs/x{i}")}));
+        }
+        json!({"$defs": defs, "$ref": format!("#/$defs/y{}", k - 1)})
+    }
+
+    #[test]
+    fn a_height_measured_while_a_ref_back_up_was_skipped_is_not_reused() {
+        // `y0` is first measured inside `x1`'s `allOf`, while `y1` and `x1` are open and the
+        // `$ref` back to them is skipped. From the root, `y1` to `y0` is 2 + 122 + 122 levels.
+        let over = Reach::new(&cycles(2)).over().map(|over| over.size);
+        assert_eq!(over, Some(false));
+        assert!(Reach::new(&cycles(1)).over().is_none());
+    }
+
+    #[test]
+    fn a_schema_too_big_once_its_refs_are_followed_is_caught() {
+        // Each `d{i}` points twice at `d{i+1}`, so following the `$ref`s doubles it 24 times.
+        let fan_out = |levels: usize, keyword: &str| {
+            let mut defs = serde_json::Map::new();
+            for i in 0..levels {
+                let next = json!({"$ref": format!("#/$defs/d{}", i + 1)});
+                defs.insert(format!("d{i}"), json!({keyword: [next.clone(), next]}));
+            }
+            defs.insert(format!("d{levels}"), json!({"type": "string"}));
+            json!({"$defs": defs, "$ref": "#/$defs/d0"})
+        };
+        for keyword in ["anyOf", "allOf"] {
+            let over = Reach::new(&fan_out(24, keyword)).over();
+            assert!(over.is_some_and(|over| over.size && over.key == "$ref"));
+            assert!(Reach::new(&fan_out(16, keyword)).over().is_none());
+        }
     }
 
     /// Any JSON value, with numbers `serde_json` reads exactly without its `float_roundtrip`

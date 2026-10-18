@@ -231,8 +231,10 @@ and the config file do not take `schema`, and exit 2 if given it. The limits:
   2020-12. A `$ref` must point inside the file: jsonvet fetches nothing, from the network or from
   disk. A schema jsonvet cannot read or use is a usage error (exit 2). That covers a `$ref` to
   another file, and nesting deeper than 128 levels, where each `$ref` followed counts as a level.
-  A `$ref` back to a schema it is inside, as in `{"items": {"$ref": "#"}}`, is recursion and is
-  fine.
+  It also covers a schema of more than 5,000,000 objects and arrays once each `$ref` is replaced
+  by what it points at, every time it is followed. SchemaStore's 1.6 MB
+  `azure-pipelines.json` comes to about 2,560,000. A `$ref` back to a schema it is inside, as in
+  `{"items": {"$ref": "#"}}`, is recursion and is fine: it is not followed again.
 
 Why each limit exists: [docs/design.md](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#rules).
 

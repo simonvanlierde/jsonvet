@@ -28,8 +28,9 @@ Hook and command users who do neither of the first two need no other change.
 - `--schema FILE` checks each file against one JSON Schema. Each error comes under the rule
   `schema`, at the line and column of its value, in every dialect and output format, and ends
   with the value's JSONPath. Schema errors are always errors. A `$ref` must stay inside the
-  schema file: jsonvet fetches nothing. The limits on depth, error count, message length, regex
-  backtracking and memory are in the
+  schema file: jsonvet fetches nothing. A schema nested deeper than 128 levels, or holding more
+  than 5,000,000 objects and arrays, counting each `$ref` followed, is a usage error. The limits
+  on depth, size, error count, message length, regex backtracking and memory are in the
   [README](https://github.com/simonvanlierde/jsonvet#json-schema).
 - `--schema` comes with `cargo install jsonvet-cli`, where it grows the binary from about 0.6 MB
   to about 5 MB on Linux x86-64. The PyPI wheels, which the hook and the GitHub Action install,

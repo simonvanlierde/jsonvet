@@ -1054,6 +1054,37 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
     }
 
     #[test]
+    fn a_schema_whose_refs_double_at_each_level_is_a_usage_error() {
+        // 24 levels of `anyOf` with two `$ref`s to the next level: 2^24 paths to the string.
+        let defs: Vec<String> = (0..24)
+            .map(|i| {
+                let next = format!("{{\"$ref\": \"#/$defs/d{}\"}}", i + 1);
+                format!("\"d{i}\": {{\"anyOf\": [{next}, {next}]}}")
+            })
+            .collect();
+        let schema = format!(
+            "{{\"$ref\": \"#/$defs/d0\", \"$defs\": {{{}, \"d24\": {{\"type\": \"string\"}}}}}}",
+            defs.join(", ")
+        );
+        let dir = workdir(&[("ok.json", "{}"), ("fan.json", &schema)]);
+        let start = std::time::Instant::now();
+        let (code, out, err) = jsonvet_stderr(&dir, &["--schema", "fan.json", "ok.json"]);
+        assert!(
+            start.elapsed().as_secs_f64() < 1.0,
+            "took {:?}",
+            start.elapsed()
+        );
+        assert_eq!((code, out.as_str()), (2, ""));
+        assert!(
+            err.ends_with(
+                "this `$ref` takes the schema past 5000000 objects and arrays, counting what each \
+                 `$ref` points at every time it is followed\n"
+            ),
+            "{err}"
+        );
+    }
+
+    #[test]
     fn schema_errors_in_a_large_file() {
         // 100,000 records, every 10,000th with a string port: about 3 MB.
         let mut text = String::from("[\n");

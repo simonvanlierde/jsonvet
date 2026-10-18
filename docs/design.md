@@ -160,8 +160,13 @@ The limits are listed in the [README](../README.md#json-schema). Why each exists
   64 MB stack at once against a 512-level array. A `$ref` back to a schema on the way to it is
   recursion and adds nothing. The error lands at the `$ref` that crosses the line. A `$ref`
   jsonvet can follow inside the file is a JSON Pointer, an anchor, or a URI naming an `$id` there.
-- **Not covered yet.** jsonschema is exponential in a schema where each level `$ref`s the next
-  twice: 24 levels take 0.25 s, and each level doubles it.
+- **Schema size.** jsonschema may check every schema a value reaches, so a schema where each level
+  `$ref`s the next twice doubles the work per level, well under the depth cap: 24 levels took
+  12.9 s and 11.4 GB for one `{}`. jsonvet counts the objects and arrays with each `$ref` replaced
+  by what it points at, and stops at 5,000,000. That lets 18 such levels through (about 3.9
+  million, 1 s and 340 MB) and SchemaStore's 1.6 MB `azure-pipelines.json` (about 2.56 million).
+  A schema measured while a `$ref` back up to a schema above it was skipped is measured again
+  wherever it is reached, as it can be deeper there.
 - **Regex backtracking.** Schema regexes with back-references or lookaround run on fancy-regex,
   which backtracks. With the cap, `^(a|a)*\1b` over 5,000 strings takes under a second, not
   minutes. `patternProperties` (and `additionalProperties` beside it) count an over-cap key as not
