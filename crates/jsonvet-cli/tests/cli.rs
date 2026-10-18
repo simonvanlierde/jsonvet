@@ -1476,14 +1476,16 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
             );
             assert_eq!((code, out.as_str()), (2, ""), "{flag}");
             assert!(
-                err.starts_with("jsonvet: unknown rule `schema`;"),
+                err.starts_with(
+                    "jsonvet: the `schema` rule is always an error and cannot be set\n"
+                ),
                 "{flag}: {err}"
             );
         }
         let (code, _, err) = jsonvet_stderr(&dir, &["--schema", "schema.json", "ok.json"]);
         assert_eq!(code, 2);
         assert!(
-            err.contains("jsonvet.toml: unknown rule `schema`;"),
+            err.contains("jsonvet.toml: the `schema` rule is always an error and cannot be set\n"),
             "{err}"
         );
     }

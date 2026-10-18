@@ -56,6 +56,15 @@ pub(crate) fn parse_severity(name: &str) -> Result<Severity, String> {
     }
 }
 
+/// A rule id from the command line or a settings file. `schema` is no [`Rule`]: its errors
+/// cannot be turned down, so it gets its own message rather than "unknown rule".
+pub(crate) fn parse_rule(id: &str) -> Result<Rule, String> {
+    if cfg!(feature = "schema") && id == crate::sarif::SCHEMA {
+        return Err("the `schema` rule is always an error and cannot be set".to_owned());
+    }
+    id.parse().map_err(|e| format!("{e}"))
+}
+
 /// Dialect patterns and rule severities, merged from every source in order.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Settings {
@@ -162,7 +171,7 @@ pub(crate) fn load(path: &Path) -> Result<Settings, String> {
         match (key.as_str(), value) {
             ("rules", Value::Table(rules)) => {
                 for (id, severity) in rules {
-                    let rule: Rule = id.parse().map_err(|e| in_file(&e))?;
+                    let rule = parse_rule(id).map_err(|e| in_file(&e))?;
                     let severity = severity
                         .as_str()
                         .ok_or_else(|| in_file(&format!("`rules.{id}` must be a string")))?;

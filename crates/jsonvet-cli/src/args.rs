@@ -3,11 +3,10 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use jsonvet::Rule;
 use lexopt::prelude::*;
 
 use crate::output::Format;
-use crate::settings::{DialectPattern, Settings, parse_severity};
+use crate::settings::{DialectPattern, Settings, parse_rule, parse_severity};
 
 pub(crate) const HELP: &str = "\
 Check JSON, I-JSON, JSONC, JWCC (HuJSON), JSON5 and JSON Lines files for syntax errors,
@@ -110,7 +109,7 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
             }
             Long(severity @ ("error" | "warn" | "ignore")) => {
                 let severity = parse_severity(severity)?;
-                let rule: Rule = value(&mut parser)?.parse().map_err(|e| format!("{e}"))?;
+                let rule = parse_rule(&value(&mut parser)?)?;
                 settings.rules.push((rule, severity));
             }
             Long("max-warnings") => {
