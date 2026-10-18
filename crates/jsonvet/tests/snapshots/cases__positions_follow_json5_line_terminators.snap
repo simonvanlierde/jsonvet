@@ -1,6 +1,6 @@
 ---
 source: crates/jsonvet/tests/cases.rs
-expression: "snapshot(&[(Json5, \"{a: 1,\\r\\n a: 2}\"), (Json5, \"{a: 1,\\r a: 2}\"),\n(Json5, \"{a: 1,\\u{2028} a: 2}\"), (Json5, \"{\\\"é😀\\\": 1, \\\"é😀\\\": 2}\"),])"
+expression: "snapshot(&[(Json5, \"{a: 1,\\r\\n a: 2}\"), (Json5, \"{a: 1,\\r a: 2}\"),\n(Json5, \"{a: 1,\\u{2028} a: 2}\"), (Json, separator), (Jsonc, separator),\n(Jwcc, separator), (Json5, separator),\n(JsonLines, \"{\\\"s\\\": \\\"\\u{2028}\\\", \\\"s\\\": 2}\\n{\\\"t\\\": 1, \\\"t\\\": 2}\\n\"),\n(Json5, \"{\\\"é😀\\\": 1, \\\"é😀\\\": 2}\"),])"
 ---
 json5 "{a: 1,\r\n a: 2}"
        2:2 error[duplicate-key] duplicate key $.a (from 1:2)
@@ -8,5 +8,16 @@ json5 "{a: 1,\r a: 2}"
        2:2 error[duplicate-key] duplicate key $.a (from 1:2)
 json5 "{a: 1,\u{2028} a: 2}"
        2:2 error[duplicate-key] duplicate key $.a (from 1:2)
+json "{\"s\": \"a\u{2028}b\u{2029}\",\n \"s\": 2}"
+       2:2 error[duplicate-key] duplicate key $.s (from 1:2)
+jsonc "{\"s\": \"a\u{2028}b\u{2029}\",\n \"s\": 2}"
+       2:2 error[duplicate-key] duplicate key $.s (from 1:2)
+jwcc "{\"s\": \"a\u{2028}b\u{2029}\",\n \"s\": 2}"
+       2:2 error[duplicate-key] duplicate key $.s (from 1:2)
+json5 "{\"s\": \"a\u{2028}b\u{2029}\",\n \"s\": 2}"
+       4:2 error[duplicate-key] duplicate key $.s (from 1:2)
+jsonl "{\"s\": \"\u{2028}\", \"s\": 2}\n{\"t\": 1, \"t\": 2}\n"
+       1:12 error[duplicate-key] duplicate key $.s (from 1:2)
+       2:10 error[duplicate-key] duplicate key $.t (from 2:2)
 json5 "{\"é😀\": 1, \"é😀\": 2}"
        1:11 error[duplicate-key] duplicate key $["é😀"] (from 1:2)

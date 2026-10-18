@@ -6,14 +6,17 @@
 
 use jsonvet::{Config, Dialect, Rule, Severity, check};
 
-/// Line and column the slow way: count terminators and characters from the start.
-pub(crate) fn recount(text: &str, offset: usize) -> (usize, usize) {
+/// Line and column the slow way: count terminators and characters from the start. U+2028 and
+/// U+2029 end a line in JSON5 only.
+pub(crate) fn recount(text: &str, offset: usize, dialect: Dialect) -> (usize, usize) {
+    let json5 = dialect == Dialect::Json5;
     let (mut line, mut column) = (1, 1);
     // A CR followed by LF is one line end, even when the offset points at the LF.
     for (i, c) in text.char_indices().take_while(|&(i, _)| i < offset) {
         match c {
             '\r' if text[i + 1..].starts_with('\n') => column += 1,
-            '\n' | '\r' | '\u{2028}' | '\u{2029}' => (line, column) = (line + 1, 1),
+            '\n' | '\r' => (line, column) = (line + 1, 1),
+            '\u{2028}' | '\u{2029}' if json5 => (line, column) = (line + 1, 1),
             _ => column += 1,
         }
     }
@@ -52,7 +55,7 @@ pub(crate) fn report_violation(text: &str, config: &Config) -> Result<(), String
             ));
         }
         let at = report.location(offset);
-        if (at.line, at.column) != recount(text, offset) {
+        if (at.line, at.column) != recount(text, offset, dialect) {
             return Err(format!("{dialect}: wrong location for offset {offset}"));
         }
     }

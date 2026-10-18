@@ -293,9 +293,10 @@ One change can fail a file that passed: `.jsonc`, `.code-workspace` and `.code-s
 are now checked as JSONC, and `.hujson` and `.jwcc` files as JWCC. 1.4.1 read every file as
 JSON5, so JSON5-only syntax such as `{'a': 1, b: 2}` passed there. To keep the old verdict, pass
 `--dialect json5:GLOB` or add a `dialects` entry to the config file. The output line, the
-syntax-error wording, positions after a lone CR or U+2028, the new `.jsonl` and `.ndjson` files
-and the removed Python module are in the
-[CHANGELOG](https://github.com/simonvanlierde/jsonvet/blob/main/CHANGELOG.md) under 2.0.0.
+syntax-error wording, positions after a lone CR (or after U+2028 in JSON5), the new `.jsonl` and
+`.ndjson` files and the removed Python module are in the
+[CHANGELOG](https://github.com/simonvanlierde/jsonvet/blob/main/CHANGELOG.md) under 2.0.0 and
+3.0.0.
 
 ## How it is tested
 

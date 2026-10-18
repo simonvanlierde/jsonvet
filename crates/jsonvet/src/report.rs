@@ -13,6 +13,8 @@ pub struct Report<'a> {
     text: &'a str,
     problems: Vec<Problem>,
     line_starts: OnceCell<Vec<usize>>,
+    /// Whether U+2028 and U+2029 end a line, as only in JSON5.
+    json5: bool,
     /// Whether the text is all ASCII, where a column is a byte count.
     ascii: OnceCell<bool>,
     /// The furthest location found so far, as (offset, line, column). A later offset on the
@@ -26,8 +28,9 @@ pub struct Report<'a> {
     counted: Cell<usize>,
 }
 
-/// A 1-based line and column. Lines end at LF, CR, CRLF, U+2028 and U+2029, as JSON5 defines
-/// them; columns count Unicode code points from the start of the line.
+/// A 1-based line and column. Lines end at LF, CR and CRLF, and in JSON5 also at U+2028 and
+/// U+2029, which JSON5 counts as line terminators and the other dialects as ordinary
+/// characters; columns count Unicode code points from the start of the line.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub struct Location {
@@ -43,13 +46,15 @@ impl Location {
 }
 
 impl<'a> Report<'a> {
-    pub(crate) fn new(text: &'a str, mut problems: Vec<Problem>) -> Self {
+    /// `json5`: whether U+2028 and U+2029 end a line.
+    pub(crate) fn new(text: &'a str, mut problems: Vec<Problem>, json5: bool) -> Self {
         // Stable, so problems at the same offset keep the order they were found in.
         problems.sort_by_key(Problem::offset);
         Report {
             text,
             problems,
             line_starts: OnceCell::new(),
+            json5,
             ascii: OnceCell::new(),
             furthest: Cell::new((0, 1, 1)),
             checkpoints: RefCell::new(vec![(0, 0)]),
@@ -76,7 +81,9 @@ impl<'a> Report<'a> {
     /// An offset past the end is treated as the end.
     pub fn location(&self, offset: usize) -> Location {
         let offset = offset.min(self.text.len());
-        let starts = self.line_starts.get_or_init(|| line_starts(self.text));
+        let starts = self
+            .line_starts
+            .get_or_init(|| line_starts(self.text, self.json5));
         let line = starts.partition_point(|&s| s <= offset);
         let start = starts[line - 1];
         if *self.ascii.get_or_init(|| self.text.is_ascii()) {
@@ -128,12 +135,16 @@ impl<'a> Report<'a> {
 /// The distance between character-count checkpoints, in bytes.
 const CHUNK: usize = 4096;
 
-/// The byte offset where each line starts, the first being 0.
-fn line_starts(text: &str) -> Vec<usize> {
+/// The byte offset where each line starts, the first being 0. With `json5`, U+2028 and U+2029
+/// also end a line.
+fn line_starts(text: &str, json5: bool) -> Vec<usize> {
     let bytes = text.as_bytes();
     let mut starts = vec![0];
     let mut i = 0;
-    while let Some(found) = memchr::memchr3(b'\n', b'\r', 0xE2, &bytes[i..]) {
+    // 0xE2 starts U+2028 and U+2029 in UTF-8; outside JSON5, `\n` stands in as a byte already
+    // searched for.
+    let third = if json5 { 0xE2 } else { b'\n' };
+    while let Some(found) = memchr::memchr3(b'\n', b'\r', third, &bytes[i..]) {
         let at = i + found;
         match bytes[at] {
             b'\r' if bytes.get(at + 1) == Some(&b'\n') => {
@@ -157,16 +168,16 @@ mod tests {
 
     #[test]
     fn every_json5_line_terminator_starts_a_line() {
-        assert_eq!(
-            line_starts("a\nb\r\nc\rd\u{2028}e\u{2029}f"),
-            vec![0, 2, 5, 7, 11, 15]
-        );
-        assert_eq!(line_starts("no breaks, but é and ★"), vec![0]);
+        let text = "a\nb\r\nc\rd\u{2028}e\u{2029}f";
+        assert_eq!(line_starts(text, true), vec![0, 2, 5, 7, 11, 15]);
+        // Elsewhere U+2028 and U+2029 are ordinary characters.
+        assert_eq!(line_starts(text, false), vec![0, 2, 5, 7]);
+        assert_eq!(line_starts("no breaks, but é and ★", true), vec![0]);
     }
 
     #[test]
     fn locations_agree_in_any_order() {
-        let report = Report::new("aé★b\ncdé", Vec::new());
+        let report = Report::new("aé★b\ncdé", Vec::new(), true);
         let at = |offset| report.location(offset);
         let expected = [
             (6, (1, 4)),
@@ -184,7 +195,7 @@ mod tests {
     fn checkpoints_land_on_character_boundaries() {
         // Byte 4096 falls inside an `é`, so the first checkpoint moves to the next character.
         let text = format!("a{}", "\u{e9}".repeat(5000));
-        let report = Report::new(&text, Vec::new());
+        let report = Report::new(&text, Vec::new(), true);
         for k in (0..5000).rev().step_by(97) {
             let at = report.location(1 + 2 * k);
             assert_eq!(

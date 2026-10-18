@@ -139,7 +139,7 @@ json5/whitespace-only.json -> 1
     json5/whitespace-only.json:2:2: error[syntax] expected a value, found the end of the file
 jsonc/comments.json -> 0
 jsonc/line-comment-not-ended-by-u2028.json -> 1
-    jsonc/line-comment-not-ended-by-u2028.json:2:4: error[syntax] expected a value, found the end of the file
+    jsonc/line-comment-not-ended-by-u2028.json:1:13: error[syntax] expected a value, found the end of the file
 jsonc/trailing-comma.json -> 1
     jsonc/trailing-comma.json:2:1: error[syntax] trailing comma before `}` is not allowed in jsonc
 jsonl/blank-line.jsonl -> 1

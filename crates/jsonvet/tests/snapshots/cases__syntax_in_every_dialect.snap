@@ -137,7 +137,7 @@ json5 "\"\u{2028}\""
 json5 "[1, // c\u{2028} 2]"
        ok
 jsonc "[1, // c\u{2028} 2]"
-       2:4 error[syntax] expected a value, found the end of the file
+       1:13 error[syntax] expected a value, found the end of the file
 jsonc "[1, // c\r2]"
        ok
 jwcc "[1, // c\r2]"
@@ -147,7 +147,7 @@ jwcc "[1, // c\r\n2]"
 jwcc "[1] // c\r"
        ok
 jwcc "[1, // c\u{2028} 2]"
-       2:4 error[syntax] expected a value, found the end of the file
+       1:13 error[syntax] expected a value, found the end of the file
 json5 "\u{a0}[\u{3000}1\u{feff}]\u{2029}"
        ok
 json "[\u{a0}1]"

@@ -22,8 +22,8 @@ These change, and the changelog marks them **Breaking**:
   Python's;
 - the output line, which gains a severity and a rule id;
 - the importable Python module, which is gone: the wheel brings only the commands;
-- line ends: a line ends at every JSON5 line terminator, so positions differ from 1.4 in files
-  that use a lone CR, U+2028 or U+2029;
+- line ends: a line also ends at a lone CR, and in JSON5 at U+2028 and U+2029, so positions
+  differ from 1.4 after one of them. In 2.0, U+2028 and U+2029 ended a line in every dialect;
 - *since 3.0*, a duplicate-key JSONPath longer than 256 bytes is shortened. jsonvet keeps the
   segments that fit in 128 bytes at each end, with `…` between them, so a path is at most 259
   bytes. 1.4 and 2.0 printed the whole path;
@@ -56,7 +56,8 @@ files. Those are 381 files whose unquoted key starts with a `\u` escape that can
 key (in JSON5 mode), the depth-10,000 file, and a file with a syntax error after a duplicate key
 (in both modes). The differences below are intended, and the corpus can still meet them:
 
-- Lines end at a lone CR, U+2028 and U+2029 in jsonvet, so positions after one of them differ.
+- Lines end at a lone CR in jsonvet, and in JSON5 also at U+2028 and U+2029, so positions after
+  one of them differ.
 - *Since 3.0*, a quoted key in a JSONPath keeps non-ASCII text as written, such as `$["日本"]`.
   1.4 and 2.0 wrote `$["\u65e5\u672c"]`.
 - Raw U+2028 and U+2029 inside strings pass in jsonvet, as the JSON5 spec allows. 1.4's JSON5
@@ -102,8 +103,10 @@ The [README](../README.md#dialects) has the table of what each dialect adds and 
 default to it. `.json` defaults to JSON5, as in 1.4. `auto` means "the default for this file's
 extension".
 
-Lines end at LF, CR, CRLF, U+2028 and U+2029, as the JSON5 spec defines them. Columns count
-Unicode code points from the start of the line, starting at 1.
+Lines end at LF, CR and CRLF. In JSON5 they also end at U+2028 and U+2029, which the JSON5 spec
+counts as line terminators. The other dialects treat both as ordinary characters, so they do not
+start a line there. Columns count Unicode code points from the
+start of the line, starting at 1.
 
 ## Rules
 

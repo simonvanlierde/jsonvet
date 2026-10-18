@@ -225,11 +225,22 @@ fn json_lines_positions_do_not_depend_on_the_line_ending() {
 
 #[test]
 fn positions_follow_json5_line_terminators() {
-    use Dialect::Json5;
+    use Dialect::{Json, Json5, JsonLines, Jsonc, Jwcc};
+    // A raw U+2028 in a string ends a line in JSON5 only, so the duplicate is on line 2
+    // elsewhere and on line 4 in JSON5, after both.
+    let separator = "{\"s\": \"a\u{2028}b\u{2029}\",\n \"s\": 2}";
     insta::assert_snapshot!(snapshot(&[
         (Json5, "{a: 1,\r\n a: 2}"),
         (Json5, "{a: 1,\r a: 2}"),
         (Json5, "{a: 1,\u{2028} a: 2}"),
+        (Json, separator),
+        (Jsonc, separator),
+        (Jwcc, separator),
+        (Json5, separator),
+        (
+            JsonLines,
+            "{\"s\": \"\u{2028}\", \"s\": 2}\n{\"t\": 1, \"t\": 2}\n"
+        ),
         (Json5, "{\"é😀\": 1, \"é😀\": 2}"),
     ]));
 }

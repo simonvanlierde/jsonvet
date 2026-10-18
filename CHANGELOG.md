@@ -83,6 +83,9 @@ Hook and command users who do none of the first three need no other change.
 - A duplicate-key path longer than 256 bytes keeps as many segments from each end as fit, with
   `…` in place of the rest. A single segment too long to fit is cut. So a path is at most 259
   bytes (256 and the `…`). Shorter paths print as before.
+- U+2028 and U+2029 end a line only in JSON5, whose spec counts them as line terminators. In
+  JSON, I-JSON, JSONC, JWCC and JSON Lines, lines end at LF, CRLF and a lone CR only, so
+  positions after a raw U+2028 in a string no longer move down a line.
 - A JSON Lines syntax error at the end of a line says "found the end of the line" instead of
   "found U+000A".
 - The `--dialect` help says that files with any other extension are checked as JSON5, and that
