@@ -68,6 +68,9 @@ Hook and command users who do neither of the first two need no other change.
   `Severity` and `Location` are `#[non_exhaustive]`, so later minor releases can add rules,
   dialects, severities and position fields. The text inside `UnknownRule` and `UnknownDialect` is
   private; read it with `UnknownRule::id()` and `UnknownDialect::name()`.
+- Library: `parse`, `Event`, `EventKind`, `json_path` and `PathStep` are public only for the
+  `jsonvet-cli` crate. They are hidden from the docs, are not part of the API and may change in
+  any release.
 - Directories, devices and FIFOs are reported as `not a regular file` under the rule `unreadable`
   (exit 1). A symlink to a regular file is still checked.
 - A duplicate-key path longer than 256 bytes keeps as many segments from each end as fit, with
@@ -98,6 +101,9 @@ Hook and command users who do neither of the first two need no other change.
 - In JSON Lines files with CRLF line endings, an error at the end of a line gets the same column
   as with LF.
 - `jsonvet … | head` exits with the verdict instead of printing "Broken pipe" and exiting 2.
+- A file name such as `-x=a.json` keeps its `=`: 2.0 opened `-xa.json`. A file name that starts
+  with `-` and is not valid UTF-8 is opened as given: 2.0 put U+FFFD in place of the bad bytes
+  of some, such as `--x<0xff>.json`, and reported no such file.
 
 ### Security
 
