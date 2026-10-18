@@ -55,7 +55,8 @@ cargo deny.
   files; CI runs 5,000 cases with a new seed each run.
 - **Public API.** `cargo semver-checks` reports library API changes on a pull request. It does not
   block the merge.
-- **Speed claims.** Measure with `just bench`: hyperfine without a shell, warm, 20 runs.
+- **Speed claims.** Measure with `just bench`: hyperfine without a shell, warm, 20 runs. Take the
+  numbers on a quiet machine, not a loaded one, and report the median.
 
 ## Releasing
 
