@@ -899,20 +899,39 @@ mod tests {
 
     #[test]
     fn a_schema_too_big_once_its_refs_are_followed_is_caught() {
-        // Each `d{i}` points twice at `d{i+1}`, so following the `$ref`s doubles it 24 times.
-        let fan_out = |levels: usize, keyword: &str| {
+        // Each `d{i}` points twice at `d{i+1}`, so following the `$ref`s doubles it 24 times:
+        // through an array, through an object's members, and through two reference keywords.
+        type Shape = fn(String) -> Value;
+        let fan_out = |levels: usize, shape: Shape| {
             let mut defs = serde_json::Map::new();
             for i in 0..levels {
-                let next = json!({"$ref": format!("#/$defs/d{}", i + 1)});
-                defs.insert(format!("d{i}"), json!({keyword: [next.clone(), next]}));
+                defs.insert(format!("d{i}"), shape(format!("#/$defs/d{}", i + 1)));
             }
             defs.insert(format!("d{levels}"), json!({"type": "string"}));
             json!({"$defs": defs, "$ref": "#/$defs/d0"})
         };
-        for keyword in ["anyOf", "allOf"] {
-            let over = Reach::new(&fan_out(24, keyword)).over();
-            assert!(over.is_some_and(|over| over.size && over.key == "$ref"));
-            assert!(Reach::new(&fan_out(16, keyword)).over().is_none());
+        let shapes: [(Shape, &str); 4] = [
+            (
+                |next| json!({"anyOf": [{"$ref": next}, {"$ref": next}]}),
+                "$ref",
+            ),
+            (
+                |next| json!({"allOf": [{"$ref": next}, {"$ref": next}]}),
+                "$ref",
+            ),
+            (
+                |next| json!({"properties": {"a": {"$ref": next}, "b": {"$ref": next}}}),
+                "$ref",
+            ),
+            (
+                |next| json!({"$ref": next, "$dynamicRef": next}),
+                "$dynamicRef",
+            ),
+        ];
+        for (shape, key) in shapes {
+            let over = Reach::new(&fan_out(24, shape)).over();
+            assert!(over.is_some_and(|over| over.size && over.key == key));
+            assert!(Reach::new(&fan_out(16, shape)).over().is_none());
         }
     }
 
