@@ -1101,14 +1101,14 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
                 "esc.json",
                 r#"{"$ref": "x:\u001b]0;TITLE\u0007\u001b[31mRED"}"#,
             ),
-            ("two\n::error::x.json", "{} {}"),
         ]);
-        for schema in [
-            "nl.json",
-            "esc.json",
-            "two\n::error::x.json",
-            "gone\u{1b}[31m.json",
-        ] {
+        let mut schemas = vec!["nl.json", "esc.json", "gone\u{1b}[31m.json"];
+        // Windows refuses a file name with a newline or `:`.
+        if cfg!(unix) {
+            fs::write(dir.join("two\n::error::x.json"), "{} {}").expect("write file");
+            schemas.push("two\n::error::x.json");
+        }
+        for schema in schemas {
             let (code, out, err) = jsonvet_stderr(&dir, &["--schema", schema, "ok.json"]);
             assert_eq!((code, out.as_str()), (2, ""), "{schema:?}");
             assert_escaped(&err);
