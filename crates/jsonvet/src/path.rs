@@ -88,8 +88,8 @@ pub(crate) fn rendered(segment: &Segment<'_>) -> String {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum PathStep<'a> {
-    /// A member of an object, by its key.
-    Key(&'a str),
+    /// A member of an object, by its key as WTF-8, as in [`EventKind::Key`](crate::EventKind::Key).
+    Key(&'a [u8]),
     /// An element of an array, by its index from 0.
     Index(usize),
 }
@@ -103,8 +103,8 @@ pub enum PathStep<'a> {
 /// use jsonvet::{json_path, PathStep};
 ///
 /// assert_eq!(json_path([]), "$");
-/// let steps = [PathStep::Key("a"), PathStep::Index(0), PathStep::Key("")];
-/// assert_eq!(json_path(steps), "$.a[0][\"\"]");
+/// let steps = [PathStep::Key(b"a"), PathStep::Index(0), PathStep::Key(b"\xED\xA0\x80")];
+/// assert_eq!(json_path(steps), "$.a[0][\"\\ud800\"]");
 /// ```
 ///
 /// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
@@ -112,7 +112,7 @@ pub enum PathStep<'a> {
 pub fn json_path<'a>(steps: impl IntoIterator<Item = PathStep<'a>>) -> String {
     let segments: Vec<String> = std::iter::once("$".to_owned())
         .chain(steps.into_iter().map(|step| match step {
-            PathStep::Key(key) => rendered(&Segment::Key(Cow::Borrowed(key.as_bytes()))),
+            PathStep::Key(key) => rendered(&Segment::Key(Cow::Borrowed(key))),
             PathStep::Index(i) => rendered(&Segment::Index(i)),
         }))
         .collect();
@@ -141,6 +141,19 @@ pub(crate) fn push_key(path: &mut String, key: &[u8]) {
         quote(path, &chars);
         path.push(']');
     }
+}
+
+/// A key from [`EventKind::Key`](crate::EventKind::Key) as text, with U+FFFD for each lone
+/// surrogate, as `serde_json` reads it.
+///
+/// ```
+/// assert_eq!(jsonvet::key_text(b"a\xED\xA0\x80"), "a\u{FFFD}");
+/// ```
+///
+/// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
+#[doc(hidden)]
+pub fn key_text(key: &[u8]) -> Cow<'_, str> {
+    text(Cow::Borrowed(key))
 }
 
 /// A decoded string or key as text, with U+FFFD for each lone surrogate.

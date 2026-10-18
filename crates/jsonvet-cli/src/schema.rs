@@ -1,13 +1,14 @@
 //! `--schema`: each file's values checked against one JSON Schema, every error placed at the
 //! value it is about.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ops::Range;
 use std::path::Path;
 
 use jsonschema::error::ValidationErrorKind;
 use jsonschema::{PatternOptions, ReferencingError, ValidationError, Validator};
-use jsonvet::{Event, EventKind, PathStep, Severity};
+use jsonvet::{Event, EventKind, PathStep, Severity, key_text};
 use percent_encoding::percent_decode_str;
 use serde_json::{Map, Number, Value};
 
@@ -23,8 +24,6 @@ struct Document {
 
 const NOT_A_NUMBER: &str =
     "NaN, Infinity and numbers beyond a double's range have no JSON Schema value";
-// shortcut: two copies of one key holding U+FFFD or a lone surrogate also land here, though they
-// were already the same; tell them apart by the key's source text if that is ever reported.
 const SAME_KEYS: &str =
     "this key and an earlier one in the object are the same once lone surrogates become U+FFFD";
 
@@ -87,7 +86,7 @@ impl Schema {
         // jsonschema also validates recursively through each `$ref`, so a long chain of them
         // takes the stack or hours, however shallow the schema is.
         if let Some(Over { path, key, size }) = Reach::new(&document.value).over() {
-            let offset = place(
+            let (offset, _) = place(
                 &events[document.events.clone()],
                 &[(path, vec![key.to_owned()])],
             )[0];
@@ -123,7 +122,7 @@ impl Schema {
                  schemas"
             ));
         }
-        let offset = locate(&events[document.events], std::slice::from_ref(&error))[0];
+        let (offset, _) = locate(&events[document.events], std::slice::from_ref(&error))[0];
         Err(at(offset, &error))
     }
 
@@ -149,8 +148,7 @@ impl Schema {
             let mut placed: Vec<(usize, String, bool)> = locate(events, &found)
                 .into_iter()
                 .zip(&found)
-                .map(|(offset, error)| {
-                    let at = json_path(&document.value, error.instance_path().as_str());
+                .map(|((offset, at), error)| {
                     (offset, cut(format!("{} (at {at})", message(error))), false)
                 })
                 .collect();
@@ -168,24 +166,6 @@ impl Schema {
         }
         errors
     }
-}
-
-/// The JSONPath of the value at the JSON Pointer `pointer` in `value`, written as duplicate-key
-/// paths are. The pointer alone cannot tell the index `0` from the key `"0"`, so each segment
-/// is read as an index only where the value it steps into is an array.
-// shortcut: a key holding a lone surrogate is written with U+FFFD here and with the surrogate's
-// escape in a duplicate-key path; carry the key's source text if that is ever reported.
-fn json_path(value: &Value, pointer: &str) -> String {
-    let segments: Vec<String> = segments(pointer).collect();
-    let mut value = Some(value);
-    jsonvet::json_path(segments.iter().map(|segment| {
-        if let (Some(Value::Array(items)), Ok(i)) = (value, segment.parse::<usize>()) {
-            value = items.get(i);
-            return PathStep::Index(i);
-        }
-        value = value.and_then(|v| v.get(segment));
-        PathStep::Key(segment)
-    }))
 }
 
 /// The unescaped segments of the JSON Pointer `pointer`: `~1` is `/` and `~0` is `~`, in that
@@ -242,16 +222,19 @@ fn cut(mut message: String) -> String {
 
 /// The values some errors are about, as a tree of JSON Pointer segments, with the offset of
 /// each value and, for an object member, of its key.
-struct Wanted(Vec<Node>);
+struct Wanted<'e>(Vec<Node<'e>>);
 
 #[derive(Default)]
-struct Node {
+struct Node<'e> {
     children: HashMap<String, usize>,
     /// The value's offset, and for an object member, its key's offset and its object's.
     at: (usize, Option<(usize, usize)>),
+    /// The step to the value as written: an index, or the key's source text, which keeps lone
+    /// surrogates that the pointer holds as U+FFFD.
+    step: Option<PathStep<'e>>,
 }
 
-impl Wanted {
+impl Wanted<'_> {
     /// The node for `key` under `node`, added if new.
     fn child(&mut self, node: usize, key: &str) -> usize {
         if let Some(&child) = self.0[node].children.get(key) {
@@ -264,15 +247,16 @@ impl Wanted {
     }
 }
 
-/// In an open container: an array's next index, or an object's current key and its offset.
-type Slot<'e> = Result<usize, (&'e str, usize)>;
+/// In an open container: an array's next index, or an object's current key as text and as
+/// written, and its offset.
+type Slot<'e> = Result<usize, (Cow<'e, str>, &'e [u8], usize)>;
 
 /// An open container: its node if any error is inside it, its offset, and its next index or key.
 type Container<'e> = (Option<usize>, usize, Slot<'e>);
 
 /// Where each error is, found in one walk over its document's events: its value; for unexpected
-/// properties, the first such key; for a property name, that key.
-fn locate(events: &[Event<'_>], errors: &[ValidationError<'_>]) -> Vec<usize> {
+/// properties, the first such key; for a property name, that key. With it, the value's path.
+fn locate(events: &[Event<'_>], errors: &[ValidationError<'_>]) -> Vec<(usize, String)> {
     let targets: Vec<(Vec<String>, Vec<String>)> = errors
         .iter()
         .map(|error| {
@@ -293,19 +277,22 @@ fn locate(events: &[Event<'_>], errors: &[ValidationError<'_>]) -> Vec<usize> {
 }
 
 /// Where each target is, found in one walk over its document's events: given as a value's path
-/// and keys in it, the first of those keys found, or else the value.
-fn place(events: &[Event<'_>], targets: &[(Vec<String>, Vec<String>)]) -> Vec<usize> {
+/// and keys in it, the first of those keys found, or else the value. With it, the value's
+/// JSONPath, written as duplicate-key paths are.
+fn place(events: &[Event<'_>], targets: &[(Vec<String>, Vec<String>)]) -> Vec<(usize, String)> {
     let mut wanted = Wanted(vec![Node::default()]);
-    // For each target, its value's node and the nodes of its keys.
-    let nodes: Vec<(usize, Vec<usize>)> = targets
+    // For each target, the nodes on the way to its value and the nodes of its keys.
+    let nodes: Vec<(Vec<usize>, Vec<usize>)> = targets
         .iter()
         .map(|(path, keys)| {
+            let mut way = Vec::with_capacity(path.len());
             let mut node = 0;
             for segment in path {
                 node = wanted.child(node, segment);
+                way.push(node);
             }
             let keys = keys.iter().map(|key| wanted.child(node, key)).collect();
-            (node, keys)
+            (way, keys)
         })
         .collect();
 
@@ -313,7 +300,7 @@ fn place(events: &[Event<'_>], targets: &[(Vec<String>, Vec<String>)]) -> Vec<us
     for event in events {
         match (&event.kind, stack.last_mut()) {
             (EventKind::Key(key), Some((_, _, slot))) => {
-                *slot = Err((key, event.offset));
+                *slot = Err((key_text(key), &**key, event.offset));
                 continue;
             }
             (EventKind::End, _) => {
@@ -323,19 +310,20 @@ fn place(events: &[Event<'_>], targets: &[(Vec<String>, Vec<String>)]) -> Vec<us
             _ => {}
         }
         let node = match stack.last_mut() {
-            None => Some((0, None)),
+            None => Some((0, None, None)),
             Some((parent, _, Ok(index))) => {
                 *index += 1;
-                let key = *index - 1;
+                let i = *index - 1;
                 parent
-                    .and_then(|p| wanted.0[p].children.get(&key.to_string()))
-                    .map(|&n| (n, None))
+                    .and_then(|p| wanted.0[p].children.get(&i.to_string()))
+                    .map(|&n| (n, Some(PathStep::Index(i)), None))
             }
-            Some((parent, object, Err((key, offset)))) => parent
-                .and_then(|p| wanted.0[p].children.get(*key))
-                .map(|&n| (n, Some((*offset, *object)))),
+            Some((parent, object, Err((key, raw, offset)))) => parent
+                .and_then(|p| wanted.0[p].children.get(key.as_ref()))
+                .map(|&n| (n, Some(PathStep::Key(raw)), Some((*offset, *object)))),
         };
-        if let Some((node, key)) = node {
+        if let Some((node, step, key)) = node {
+            wanted.0[node].step = step;
             let at = &mut wanted.0[node].at;
             // A later duplicate key's value overwrites, as it does in the folded value, but the
             // key stays at its first copy in that object.
@@ -345,10 +333,12 @@ fn place(events: &[Event<'_>], targets: &[(Vec<String>, Vec<String>)]) -> Vec<us
             }
         }
         let node = node
-            .map(|(n, _)| n)
+            .map(|(n, ..)| n)
             .filter(|&n| !wanted.0[n].children.is_empty());
         match event.kind {
-            EventKind::ObjectStart => stack.push((node, event.offset, Err(("", 0)))),
+            EventKind::ObjectStart => {
+                stack.push((node, event.offset, Err((Cow::Borrowed(""), &[], 0))));
+            }
             EventKind::ArrayStart => stack.push((node, event.offset, Ok(0))),
             _ => {}
         }
@@ -356,11 +346,21 @@ fn place(events: &[Event<'_>], targets: &[(Vec<String>, Vec<String>)]) -> Vec<us
 
     nodes
         .into_iter()
-        .map(|(node, keys)| {
-            keys.iter()
+        .zip(targets)
+        .map(|((way, keys), (path, _))| {
+            let node = way.last().copied().unwrap_or(0);
+            let offset = keys
+                .iter()
                 .filter_map(|&key| wanted.0[key].at.1.map(|(offset, _)| offset))
                 .min()
-                .unwrap_or(wanted.0[node].at.0)
+                .unwrap_or(wanted.0[node].at.0);
+            // Every value an error is about is in the events, so each step is found.
+            let steps = way.iter().zip(path).map(|(&n, segment)| {
+                wanted.0[n]
+                    .step
+                    .unwrap_or(PathStep::Key(segment.as_bytes()))
+            });
+            (offset, jsonvet::json_path(steps))
         })
         .collect()
 }
@@ -594,28 +594,33 @@ struct Over {
     size: bool,
 }
 
-/// An open container while the events are folded into values, with an object's current key.
-enum Open {
+/// An open container while the events are folded into values, with an object's current key
+/// (as text, its offset, and as written) and, as written, each earlier key holding U+FFFD.
+enum Open<'e> {
     Array(Vec<Value>),
-    Object(Map<String, Value>, (String, usize)),
+    Object(Map<String, Value>, (String, usize, &'e [u8]), Vec<&'e [u8]>),
 }
 
 /// Fold events into documents: one, or one per line in JSON Lines.
 fn documents(events: &[Event<'_>]) -> Vec<Document> {
     let mut documents = Vec::new();
     let mut first_event = 0;
-    let mut stack: Vec<Open> = Vec::new();
+    let mut stack: Vec<Open<'_>> = Vec::new();
     let mut unchecked = None;
     for (i, event) in events.iter().enumerate() {
         let value = match &event.kind {
             EventKind::Key(key) => {
-                if let Some(Open::Object(_, current)) = stack.last_mut() {
-                    *current = (key.to_string(), event.offset);
+                if let Some(Open::Object(_, current, _)) = stack.last_mut() {
+                    *current = (key_text(key).into_owned(), event.offset, &**key);
                 }
                 continue;
             }
             EventKind::ObjectStart => {
-                stack.push(Open::Object(Map::new(), (String::new(), 0)));
+                stack.push(Open::Object(
+                    Map::new(),
+                    (String::new(), 0, &[]),
+                    Vec::new(),
+                ));
                 continue;
             }
             EventKind::ArrayStart => {
@@ -624,7 +629,7 @@ fn documents(events: &[Event<'_>]) -> Vec<Document> {
             }
             EventKind::End => match stack.pop() {
                 Some(Open::Array(items)) => Value::Array(items),
-                Some(Open::Object(members, _)) => Value::Object(members),
+                Some(Open::Object(members, ..)) => Value::Object(members),
                 None => continue,
             },
             EventKind::Null => Value::Null,
@@ -643,11 +648,21 @@ fn documents(events: &[Event<'_>]) -> Vec<Document> {
                 unchecked: unchecked.take(),
             }),
             Some(Open::Array(items)) => items.push(value),
-            Some(Open::Object(members, (key, offset))) => {
+            Some(Open::Object(members, (key, offset, raw), seen)) => {
                 let key = std::mem::take(key);
-                // Real duplicates are the duplicate-key rule's; lone surrogates are not.
-                if key.contains('\u{FFFD}') && members.contains_key(&key) {
-                    unchecked.get_or_insert((*offset, SAME_KEYS));
+                // Real duplicates are the duplicate-key rule's; keys that only become the same
+                // once lone surrogates are U+FFFD are not.
+                if key.contains('\u{FFFD}') {
+                    match seen
+                        .iter()
+                        .find(|earlier| key_text(earlier) == key.as_str())
+                    {
+                        Some(earlier) if earlier != raw => {
+                            unchecked.get_or_insert((*offset, SAME_KEYS));
+                        }
+                        Some(_) => {}
+                        None => seen.push(raw),
+                    }
                 }
                 members.insert(key, value);
             }
@@ -695,7 +710,9 @@ fn number(text: &str) -> Option<Value> {
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_MESSAGE, Reach, cut, documents, fits, json_path, locate, message, number};
+    use super::{
+        MAX_MESSAGE, Reach, cut, documents, fits, locate, message, number, place, segments,
+    };
     use jsonvet::{Config, Dialect};
     use proptest::prelude::*;
     use serde_json::{Value, json};
@@ -749,12 +766,18 @@ mod tests {
         let errors: Vec<_> = validator.iter_errors(&documents[0].value).collect();
         let pointers: Vec<_> = errors.iter().map(|e| e.instance_path().as_str()).collect();
         assert_eq!(pointers, ["/a", "/b\u{e9}~1~0"]);
-        assert_eq!(locate(&events, &errors), [44, 34]);
+        let located: Vec<_> = locate(&events, &errors)
+            .into_iter()
+            .map(|(o, _)| o)
+            .collect();
+        assert_eq!(located, [44, 34]);
     }
 
     #[test]
     fn pointers_become_the_paths_duplicate_key_writes() {
-        let value = json!({"": 1, "0": [true, {"a/b~c.d\"\u{e9}": 2}], "x": {"": 3}});
+        let text = r#"{"": 1, "0": [true, {"a/b~c.d\"\u00e9": 2}], "x": {"": 3}, "\ud800": 4}"#;
+        let (_, events) = jsonvet::parse(text, &Config::new(Dialect::Json));
+        let events = events.unwrap_or_default();
         let cases = [
             ("", "$"),
             ("/", "$[\"\"]"),
@@ -762,9 +785,11 @@ mod tests {
             ("/0", "$[\"0\"]"),
             ("/0/1", "$[\"0\"][1]"),
             ("/0/1/a~1b~0c.d\"\u{e9}", "$[\"0\"][1][\"a/b~c.d\\\"é\"]"),
+            ("/\u{FFFD}", "$[\"\\ud800\"]"),
         ];
         for (pointer, path) in cases {
-            assert_eq!(json_path(&value, pointer), path, "{pointer}");
+            let target = (segments(pointer).collect(), Vec::new());
+            assert_eq!(place(&events, &[target])[0].1, path, "{pointer}");
         }
     }
 

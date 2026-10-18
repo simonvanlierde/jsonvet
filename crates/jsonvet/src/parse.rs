@@ -470,12 +470,12 @@ impl<'a> Parser<'a> {
         // its event uncopied.
         if !track_keys {
             if self.events.is_some() {
-                self.emit(start, EventKind::Key(path::text(key)));
+                self.emit(start, EventKind::Key(key));
             }
             return Ok(());
         }
         if self.events.is_some() {
-            self.emit(start, EventKind::Key(path::text(key.clone())));
+            self.emit(start, EventKind::Key(key.clone()));
         }
         self.check_duplicate(start, &key);
         if let Some(frame) = self.stack.last_mut() {

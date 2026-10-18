@@ -16,8 +16,10 @@ pub struct Event<'a> {
     pub kind: EventKind<'a>,
 }
 
-/// The token an [`Event`] stands for. Strings and keys come decoded; a lone surrogate escape
-/// becomes U+FFFD.
+/// The token an [`Event`] stands for. Strings come decoded, with U+FFFD for a lone surrogate
+/// escape. Keys come decoded as WTF-8, which keeps each lone surrogate: see [`key_text`].
+///
+/// [`key_text`]: crate::key_text
 ///
 /// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
 #[doc(hidden)]
@@ -30,8 +32,9 @@ pub enum EventKind<'a> {
     ArrayStart,
     /// The `}` or `]` that closes the innermost open container.
     End,
-    /// An object member's key.
-    Key(Cow<'a, str>),
+    /// An object member's key, as WTF-8: UTF-8, except that a lone surrogate escape such as
+    /// `\ud800` is kept as its own three bytes (`ED A0 80`).
+    Key(Cow<'a, [u8]>),
     /// `null`.
     Null,
     /// `true` or `false`.

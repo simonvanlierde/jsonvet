@@ -1398,6 +1398,28 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
     }
 
     #[test]
+    fn a_lone_surrogate_key_has_one_path_in_schema_and_duplicate_key_errors() {
+        let dir = workdir(&[
+            (
+                "schema.json",
+                r#"{"properties": {"\ud800": {"type": "string"}}}"#,
+            ),
+            ("one.json", r#"{"\ud800": 1}"#),
+            ("two.json", r#"{"\ud800":1,"\ud800":2}"#),
+        ]);
+        let (code, out, _) =
+            jsonvet_stderr(&dir, &["--schema", "schema.json", "one.json", "two.json"]);
+        assert_eq!(code, 1);
+        // The same key twice is the duplicate-key rule's, not a pair the schema cannot tell apart.
+        assert_eq!(
+            out,
+            "one.json:1:12: error[schema] 1 is not of type \"string\" (at $[\"\\ud800\"])\n\
+             two.json:1:13: error[duplicate-key] duplicate key $[\"\\ud800\"] (first at 1:2)\n\
+             two.json:1:22: error[schema] 2 is not of type \"string\" (at $[\"\\ud800\"])\n"
+        );
+    }
+
+    #[test]
     fn a_message_listing_many_keys_is_cut_short() {
         let members: Vec<String> = (0..1_000).map(|i| format!("\"k{i}\": {i}")).collect();
         let dir = workdir(&[
