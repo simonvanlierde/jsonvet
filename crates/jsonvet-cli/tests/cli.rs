@@ -600,7 +600,6 @@ fn sarif_holds_every_problem_and_keeps_the_exit_codes() {
             "byte-order-mark",
             "missing-final-newline",
             "unreadable",
-            #[cfg(feature = "schema")]
             "schema",
         ]
     );
@@ -871,8 +870,7 @@ fn run_jsonvet(dir: &Path, args: &[&str], annotate: bool) -> (i32, String, Strin
     )
 }
 
-/// `--schema`, in builds with the `schema` feature.
-#[cfg(feature = "schema")]
+/// `--schema`.
 mod schema {
     use std::fmt::Write as _;
 
@@ -1732,25 +1730,4 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
             "{stdout}"
         );
     }
-}
-
-#[cfg(not(feature = "schema"))]
-#[test]
-fn a_build_without_schema_says_how_to_get_it() {
-    let dir = workdir(&[("schema.json", "{}"), ("ok.json", "{}")]);
-    let (code, out, err) = jsonvet_stderr(&dir, &["--schema", "schema.json", "ok.json"]);
-    assert_eq!((code, out.as_str()), (2, ""));
-    assert_eq!(
-        err,
-        "jsonvet: --schema is not in this build. The PyPI wheels, which the pre-commit hook and \
-         the GitHub Action install, leave it out. `cargo install jsonvet-cli` builds jsonvet \
-         with it.\n"
-    );
-    // One help text for both builds; the exit status is what tells them apart.
-    let (code, help) = jsonvet(&dir, &["--help"]);
-    assert_eq!(code, 0);
-    assert!(
-        help.contains("--schema FILE             Also check"),
-        "{help}"
-    );
 }

@@ -59,7 +59,7 @@ pub(crate) fn parse_severity(name: &str) -> Result<Severity, String> {
 /// A rule id from the command line or a settings file. `schema` is no [`Rule`]: its errors
 /// cannot be turned down, so it gets its own message rather than "unknown rule".
 pub(crate) fn parse_rule(id: &str) -> Result<Rule, String> {
-    if cfg!(feature = "schema") && id == crate::sarif::SCHEMA {
+    if id == crate::sarif::SCHEMA {
         return Err("the `schema` rule is always an error and cannot be set".to_owned());
     }
     id.parse().map_err(|e| format!("{e}"))

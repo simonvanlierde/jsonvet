@@ -46,9 +46,8 @@ JSONC:
 It checks files by name: `.json`, `.jsonc`, `.json5`, `.jsonl`, `.ndjson`, `.geojson`, `.jsonld`,
 `.hujson`, `.jwcc`, `.code-workspace`, `.code-snippets`, `.webmanifest` and `.babelrc`.
 
-The hook and the Action install a prebuilt binary from PyPI, so they need no Rust. That binary
-has no [`--schema`](#json-schema). In GitHub Actions each problem also becomes an annotation on
-the pull request.
+The hook and the Action install a prebuilt binary from PyPI, so they need no Rust. In GitHub
+Actions each problem also becomes an annotation on the pull request.
 
 ## Use it as a GitHub Action
 
@@ -78,9 +77,9 @@ pip installs `jsonvet==X.Y.Z` from PyPI without a hash check.
 ## Use it from the command line
 
 ```bash
-uvx jsonvet config/*.json        # from PyPI, without installing; no --schema
-pip install jsonvet              # as a Python package; no --schema
-cargo install jsonvet-cli        # from source, with --schema
+uvx jsonvet config/*.json        # from PyPI, without installing
+pip install jsonvet              # as a Python package
+cargo install jsonvet-cli        # from source
 ```
 
 The Rust library is the `jsonvet` crate:
@@ -201,9 +200,14 @@ server.json5:3:9: error[schema] "80" is not of type "integer" (at $.port)
 server.json5:6:3: error[schema] Additional properties are not allowed ('debug' was unexpected) (at $.debug)
 ```
 
-It comes with `cargo install jsonvet-cli` only. The PyPI wheels, and so the hook and the Action,
-leave it out: it makes the binary about 5 MB instead of 0.6 MB. There `--schema` exits with status
-2 and says why. The exit status is the contract, not the wording.
+In the hook, give each schema its own entry, with `files` naming the files it covers:
+
+```yaml
+    - id: jsonvet
+      name: jsonvet (server schema)
+      files: ^config/server\.json5$
+      args: [--schema, schemas/server.schema.json]
+```
 
 Each message ends with the JSONPath of the value, written as duplicate-key paths are: `$` is the
 root, `$.tags[1]` an array element, `$[""]` the empty key. The rule id `schema` and the position

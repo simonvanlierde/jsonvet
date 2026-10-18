@@ -11,37 +11,8 @@ mod args;
 mod glob;
 mod output;
 mod sarif;
-#[cfg(feature = "schema")]
 mod schema;
 mod settings;
-
-/// A build without the `schema` feature, such as the Python wheels, still takes `--schema`, and
-/// says why it cannot use it.
-#[cfg(not(feature = "schema"))]
-mod schema {
-    use std::path::Path;
-
-    use jsonvet::Event;
-
-    use crate::settings::Settings;
-
-    const NO_SCHEMA: &str = "--schema is not in this build. The PyPI wheels, which the \
-        pre-commit hook and the GitHub Action install, leave it out. `cargo install jsonvet-cli` \
-        builds jsonvet with it.";
-
-    /// No schema can be loaded, so none exists.
-    pub(crate) enum Schema {}
-
-    impl Schema {
-        pub(crate) fn load(_: &Path, _: &Settings) -> Result<Schema, String> {
-            Err(NO_SCHEMA.to_owned())
-        }
-
-        pub(crate) fn errors(&self, _: &[Event<'_>]) -> Vec<(usize, String, bool)> {
-            match *self {}
-        }
-    }
-}
 
 use args::{Command, ConfigSource};
 use output::Printer;
@@ -60,8 +31,6 @@ const SCHEMA_MAX_DEPTH: usize = 512;
 const STACK: usize = 64 << 20;
 
 /// Run the command with the process's arguments and environment, and return its exit code.
-/// `--schema` needs the `schema` feature, on by default; without it, `--schema` exits with
-/// status 2.
 pub fn run() -> ExitCode {
     on_big_stack(run_here)
 }

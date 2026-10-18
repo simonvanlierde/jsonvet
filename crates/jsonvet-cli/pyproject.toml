@@ -23,6 +23,3 @@ Changelog = "https://github.com/simonvanlierde/jsonvet/blob/main/CHANGELOG.md"
 
 [tool.maturin]
 bindings = "bin"
-# Without `--schema`: it would make the wheel about seven times larger. `cargo install
-# jsonvet-cli` has it.
-no-default-features = true

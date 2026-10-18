@@ -37,10 +37,9 @@ Hook and command users who do none of the first three need no other change.
   match needs more than 5,000 backtracking steps is an error, so `patternProperties` cannot let
   it pass unchecked. `additionalProperties` gives one error per key it does not allow, at that
   key, also for `"additionalProperties": false` on its own.
-- `--schema` comes with `cargo install jsonvet-cli`, where it grows the binary from about 0.6 MB
-  to about 5 MB on Linux x86-64. The PyPI wheels, which the hook and the GitHub Action install,
-  leave it out and stay at about 0.65 MB. There `--schema` exits with status 2 and says how to get
-  it. Building the crate with `--no-default-features` leaves it out too.
+- `--schema` is in every build: the PyPI wheels, so the pre-commit hook and the GitHub Action,
+  and `cargo install jsonvet-cli`. It grows the binary from about 0.7 MB to about 5 MB on Linux
+  x86-64.
 - `--format sarif` prints one SARIF 2.1.0 document instead of text lines, for GitHub code
   scanning. A duplicate key also points at its first copy, and a file that cannot be read is a
   result under the rule `unreadable`. Exit codes and `--max-warnings` work as with text. It keeps

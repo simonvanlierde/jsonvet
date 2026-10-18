@@ -8,8 +8,7 @@ the git hooks with [prek](https://github.com/j178/prek). `just --list` shows eve
 
 Run `just check` before you open a pull request. It runs CI's Linux `lint` and `test` jobs:
 formatting, clippy, rustdoc, cargo deny, ruff, the tests with doctests, the version check and the
-conformance page diff. Clippy and the CLI tests run twice, once without the `schema` feature as
-the PyPI wheels are built. The page diff fails while `README.md` or `docs/conformance.md` has
+conformance page diff. The page diff fails while `README.md` or `docs/conformance.md` has
 unstaged edits. CI also runs the msrv, differential, hook, packaging, action-script, action and
 semver jobs. `just msrv` and `just differential` run two of them.
 

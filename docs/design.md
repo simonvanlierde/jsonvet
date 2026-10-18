@@ -150,12 +150,11 @@ problems use one path style. A pointer reads the same for `[0]` and `["0"]`, so 
 as an index only where the value it steps into is an array. Schema errors follow the file's other
 problems. A file with a syntax error has no events, so it gets none.
 
-`--schema` is the cargo feature `schema`, on by default, so `cargo install jsonvet-cli` has it.
-The PyPI wheels leave it out (`no-default-features` in `pyproject.toml`): jsonschema and its regex
-engines take the binary from about 0.6 MB to about 5 MB, and every hook and Action install
-downloads it. Without the feature, `--schema` still parses, so it exits 2 with a message naming
-`cargo install jsonvet-cli` and does not read the next argument as a file. One help text serves
-both builds, and CI tests and lints both.
+Every build has `--schema`, the PyPI wheels too, so the hook and the Action can use it.
+jsonschema and its regex engines take the binary from about 0.7 MB to about 5 MB on Linux
+x86-64, still smaller than prek's or ruff's wheel, and a plain check starts no slower. It adds
+about 70 crates, whose code runs only with `--schema`. One build means one help text and one
+set of tests.
 
 The limits are listed in the [README](../README.md#json-schema). Why each exists:
 
@@ -202,8 +201,7 @@ typed, as in 1.4.
 ```text
 crates/jsonvet/        library: the parser, rules and positions. Depends on memchr and unicode-properties.
 crates/jsonvet-cli/    binaries jsonvet and check-json5: arguments, config, output, and --schema
-                       (jsonschema, serde_json) behind the default feature `schema`. Built into
-                       the PyPI wheels by maturin, without that feature (pyproject.toml).
+                       (jsonschema, serde_json). Built into the PyPI wheels by maturin.
 compat/check-json5/    the check-json5 package on PyPI: depends on jsonvet, nothing else
 setup.py               placeholder that pre-commit installs: pins the jsonvet wheel
 action.yml             the GitHub Action: installs the jsonvet wheel from PyPI and runs it

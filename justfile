@@ -16,7 +16,6 @@ setup:
 lint:
     cargo fmt --all --check
     cargo clippy --workspace --all-targets --locked -- -D warnings
-    cargo clippy -p jsonvet-cli --all-targets --locked --no-default-features -- -D warnings
     RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
     cargo deny check
     prek run ruff-check ruff-format --all-files --show-diff-on-failure
@@ -28,7 +27,6 @@ lint:
 test:
     cargo nextest run --workspace --locked
     cargo test --workspace --doc --locked
-    cargo nextest run -p jsonvet-cli --no-default-features --locked
 
 # ci.yml `differential`: jsonvet against check-json5 1.4.1 on generated files (CI samples 5,000).
 differential CASES="5000" SEED="7":
@@ -42,7 +40,6 @@ check: lint test
 # ci.yml `msrv`: the oldest Rust the crates support (`rust-version` in Cargo.toml).
 msrv:
     cargo +1.88 check --workspace --lib --bins --locked
-    cargo +1.88 check -p jsonvet-cli --lib --bins --locked --no-default-features
 
 # Re-run the conformance matrix (needs docker), then render docs/conformance.md and the README block.
 matrix:
