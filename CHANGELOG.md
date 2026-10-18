@@ -10,74 +10,74 @@ version for a new option or output, the patch version for a fix.
 
 ## [3.0.0] - unreleased
 
-This is a major release because of the three **Breaking** changes below. To upgrade, set
-`rev: v3.0.0` (or `uses: simonvanlierde/jsonvet@v3`), then:
+Three changes below are **Breaking**. To upgrade, set `rev: v3.0.0` (or
+`uses: simonvanlierde/jsonvet@v3`), then:
 
-1. If you run jsonvet from another directory than the one holding `jsonvet.toml` or the
-   `pyproject.toml` with `[tool.jsonvet]`, or pass absolute paths, write its `dialects`
-   patterns relative to that file's directory.
+1. If you run jsonvet from a directory other than the one holding `jsonvet.toml` (or the
+   `pyproject.toml` with `[tool.jsonvet]`), or pass absolute paths, write its `dialects` patterns
+   relative to that file's directory.
 2. If a script passes an option jsonvet does not know, expect exit 2 instead of exit 1.
-3. Rust library users: treat `Rule::ALL` and `Dialect::ALL` as slices, add a `_` arm to a
-   `match` on `Severity`, build a `Location` from `Location::START` instead of a struct literal,
-   and read the text of `UnknownRule` and `UnknownDialect` with `id()` and `name()`.
+3. Rust library users: treat `Rule::ALL` and `Dialect::ALL` as slices, add a `_` arm to a `match`
+   on `Severity`, build a `Location` from `Location::START` instead of a struct literal, and read
+   the text of `UnknownRule` and `UnknownDialect` with `id()` and `name()`.
 
 Hook and command users who do neither of the first two need no other change.
 
 ### Added
 
+- `--schema FILE` checks each file against one JSON Schema. Each error comes under the rule
+  `schema`, at the line and column of its value, in every dialect and output format, and ends
+  with the value's JSONPath. Schema errors are always errors. A `$ref` must stay inside the
+  schema file: jsonvet fetches nothing. The limits on depth, error count, message length, regex
+  backtracking and memory are in the
+  [README](https://github.com/simonvanlierde/jsonvet#json-schema).
+- `--schema` comes with `cargo install jsonvet-cli`, where it grows the binary from about 0.6 MB
+  to about 5 MB on Linux x86-64. The PyPI wheels, which the hook and the GitHub Action install,
+  leave it out and stay at about 0.65 MB. There `--schema` exits with status 2 and says how to get
+  it. Building the crate with `--no-default-features` leaves it out too.
 - `--format sarif` prints one SARIF 2.1.0 document instead of text lines, for GitHub code
   scanning. A duplicate key also points at its first copy, and a file that cannot be read is a
-  result under the rule `unreadable`. Exit codes and `--max-warnings` work as before. It keeps
+  result under the rule `unreadable`. Exit codes and `--max-warnings` work as with text. It keeps
   the first 25,000 results, the most GitHub keeps in full, and counts the rest.
-- A GitHub Action: `uses: simonvanlierde/jsonvet@v3` checks the repository's tracked JSON files,
-  apart from symlinks and submodules, or the `files` you give it (`**` matches at any depth on
-  every runner). With `sarif:` it also writes a SARIF file for code scanning, and fails with a
+- A GitHub Action, `uses: simonvanlierde/jsonvet@v3`. It checks the repository's tracked JSON
+  files, apart from symlinks and submodules, or the `files` you give it (`**` matches at any depth
+  on every runner). With `sarif:` it also writes a SARIF file for code scanning, and fails with a
   message when the installed jsonvet cannot. It installs jsonvet from PyPI and runs on Linux,
-  macOS and Windows runners. Its `version` input takes `X.Y.Z` (with an optional pre- or
-  post-release suffix such as `rc1` or `.post1`), `X.*`, `X.Y.*` or `latest`. The `v3` tag moves
-  to each new 3.x release once its wheels are on PyPI.
+  macOS and Windows runners. Its `version` input takes
+  `X.Y.Z` (with an optional suffix such as `rc1` or `.post1`), `X.*`, `X.Y.*` or `latest`. The
+  `v3` tag moves to each new 3.x release once its wheels are on PyPI.
 - Library: `Rule::description()`, `Problem::related()` with `Related` and `RelatedKind` (what the
   second position points at), `Problem::path()` (a duplicate key's JSONPath),
   `Dialect::EXTENSIONS`, `Dialect::FILE_NAMES` and `Location::START`.
 - A `CITATION.cff`, and a Zenodo DOI for each release from this one on, so jsonvet and its
   conformance matrix can be cited.
-- `--schema FILE` checks each file against one JSON Schema and reports each error under the rule
-  `schema`, at the line and column of the value it is about, in every dialect and output format.
-  Each message ends with the value's JSONPath. A `$ref` must stay inside the schema file: jsonvet
-  fetches nothing. Schema errors are always errors. The limits on depth, error count, message
-  length, regex backtracking and memory are in the
-  [README](https://github.com/simonvanlierde/jsonvet#json-schema).
-- `--schema` comes with `cargo install jsonvet-cli`, where the binary grows from about 0.6 MB to
-  about 5 MB on Linux x86-64. The PyPI wheels, which the hook and the GitHub Action install, are
-  built without it and stay at about 0.65 MB; there `--schema` exits with status 2 and says how to
-  get it. Building the crate with `--no-default-features` leaves it out too.
 
 ### Changed
 
 - **Breaking:** `dialects` patterns in `jsonvet.toml` or `[tool.jsonvet]` match the path relative
-  to the directory of that file, not the working directory, so running from a subdirectory or with
-  absolute paths picks the same dialect. Patterns given with `--dialect` or `--strict` still match
-  the path as typed.
+  to the directory of that file, not the working directory. Running from a subdirectory or with
+  absolute paths now picks the same dialect. Patterns given with `--dialect` or `--strict` still
+  match the path as typed.
 - **Breaking:** an unknown `--option` that is not an existing file is a usage error (exit 2,
-  "unknown option") instead of a missing file (exit 1). An existing file named like `--x.json` is
-  still checked.
-- **Breaking** (library): `Rule::ALL` and `Dialect::ALL` are slices, not fixed-size arrays, and
+  "unknown option"), not a missing file (exit 1). An existing file named like `--x.json` is still
+  checked.
+- **Breaking** (library): `Rule::ALL` and `Dialect::ALL` are slices, not fixed-size arrays.
   `Severity` and `Location` are `#[non_exhaustive]`, so later minor releases can add rules,
   dialects, severities and position fields. The text inside `UnknownRule` and `UnknownDialect` is
   private; read it with `UnknownRule::id()` and `UnknownDialect::name()`.
 - Directories, devices and FIFOs are reported as `not a regular file` under the rule `unreadable`
   (exit 1). A symlink to a regular file is still checked.
 - A duplicate-key path longer than 256 bytes keeps as many segments from each end as fit, with
-  `…` in place of the rest, and a single segment too long to fit is cut, so a path is at most
-  259 bytes (256 and the `…`). Shorter paths print as before.
+  `…` in place of the rest. A single segment too long to fit is cut. So a path is at most 259
+  bytes (256 and the `…`). Shorter paths print as before.
 - A JSON Lines syntax error at the end of a line says "found the end of the line" instead of
   "found U+000A".
 - The `--dialect` help says that files with any other extension are checked as JSON5, and that
   extensions match in lower case only.
 - The `check-json5` hook id, the `check-json5` command and `--strict` keep working through 3.x,
   not only until 3.0.
-- Unquoted JSON5 keys follow Unicode 17, up from 16, so they may use the letters it added, such
-  as the 4,298 ideographs of CJK Extension J.
+- Unquoted JSON5 keys follow Unicode 17, up from 16, so they may use the letters it added, such as
+  the 4,298 ideographs of CJK Extension J.
 
 ### Deprecated
 
@@ -88,11 +88,10 @@ Hook and command users who do neither of the first two need no other change.
 - In JWCC (HuJSON) files, a `//` comment ends only at a line feed, as the JWCC text says. A lone
   carriage return no longer ends it, so `[1, // c` + CR + `2]` fails as it should.
 - A FIFO no longer hangs a run, and a symlink to `/dev/zero` no longer fills memory.
-- A deep document full of duplicate keys could print hundreds of megabytes; the output now grows
+- A deep document full of duplicate keys could print hundreds of megabytes. The output now grows
   only with the number of duplicates.
-- Finding the column of a problem on a long single line is no longer quadratic, with or without
-  non-ASCII text on it, so a minified file with many duplicate keys takes milliseconds instead
-  of seconds.
+- Finding a problem's column on a long single line is no longer quadratic, with or without
+  non-ASCII text on it. A minified file with many duplicate keys takes milliseconds, not seconds.
 - In JSON Lines files with CRLF line endings, an error at the end of a line gets the same column
   as with LF.
 - `jsonvet … | head` exits with the verdict instead of printing "Broken pipe" and exiting 2.
@@ -103,11 +102,11 @@ Hook and command users who do neither of the first two need no other change.
   `##[command]` form, which could hide or forge annotations. A name starting with `::` prints as
   `./::…`, and the `[` after `##` is escaped.
 - Control characters, Unicode bidi controls, zero-width characters (U+200B to U+200F), the line
-  and paragraph separators and the byte order mark in file names, in messages and in errors that
-  quote a config file print as escapes such as `\u001b` and `\u202e`, so a file cannot send
-  terminal escape sequences, hide part of the line or reorder it.
+  and paragraph separators and the byte order mark print as escapes such as `\u001b` and
+  `\u202e`. This covers file names, messages and errors that quote a config file. So a file
+  cannot send terminal escape sequences, hide part of the line or reorder it.
 - Library: a syntax error that shows the character it found prints a bidi control as a code
-  point, such as `U+202E`, as it already did for control characters, so `Display` output cannot
+  point, such as `U+202E`, as it already did for control characters. So `Display` output cannot
   reorder the line either.
 
 ## [2.0.0] - 2026-10-13
