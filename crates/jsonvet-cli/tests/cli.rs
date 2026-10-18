@@ -1301,8 +1301,51 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
             "r.json:1:1: error[schema] ... and 400 more schema errors in this document\n"
         ));
         assert!(out.starts_with(
-            "r.json:1:2: error[schema] Error executing regex: Max limit for backtracking count exceeded (at $[0])\n"
-        ));
+            "r.json:1:2: error[schema] this string could not be checked against the pattern \"^(a|a)*\\1b\": matching it takes more than 5000 backtracking steps (at $[0])\n"
+        ), "{out}");
+    }
+
+    #[test]
+    fn a_key_too_costly_to_match_against_pattern_properties_fails_the_file() {
+        let key = format!("{}!", "a".repeat(30));
+        let dir = workdir(&[
+            // jsonschema counts a match past the backtrack limit as no match, and the `|!`
+            // branch makes the true answer a match.
+            (
+                "slow.json",
+                r#"{"patternProperties": {"^(a|a)*\\1b|!": false}}"#,
+            ),
+            // No back-reference or lookaround: fancy-regex hands it to the linear regex crate.
+            (
+                "linear.json",
+                r#"{"patternProperties": {"^(a+)+$": false}}"#,
+            ),
+            (
+                "normal.json",
+                r#"{"patternProperties": {"^a": {"type": "integer"}, "^x": {"type": "string"}}}"#,
+            ),
+            ("k.json", &format!("{{\"x\": \"s\", \"{key}\": 1}}")),
+        ]);
+        let start = std::time::Instant::now();
+        let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "slow.json", "k.json"]);
+        assert!(
+            start.elapsed().as_secs_f64() < 1.0,
+            "took {:?}",
+            start.elapsed()
+        );
+        assert_eq!(code, 1);
+        assert_eq!(
+            out,
+            format!(
+                "k.json:1:12: error[schema] this key could not be checked against the pattern \
+                 \"^(a|a)*\\1b|!\": matching it takes more than 5000 backtracking steps \
+                 (at $[\"{key}\"])\n"
+            )
+        );
+        for schema in ["linear.json", "normal.json"] {
+            let (code, out, _) = jsonvet_stderr(&dir, &["--schema", schema, "k.json"]);
+            assert_eq!((code, out.as_str()), (0, ""), "{schema}");
+        }
     }
 
     #[test]

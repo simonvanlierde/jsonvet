@@ -181,9 +181,13 @@ The limits are listed in the [README](../README.md#json-schema). Why each exists
 - **Regex backtracking.** Schema regexes with back-references or lookaround run on fancy-regex,
   which backtracks. With the cap, `^(a|a)*\1b` over 5,000 strings takes under a second, not
   minutes. `patternProperties` (and `additionalProperties` beside it) count an over-cap key as not
-  matching, because jsonschema 0.58 drops the regex error there (`is_match(..).unwrap_or(false)`).
-  A pre-check of every `patternProperties` regex in the schema would close it. Until then it is a
-  known limit.
+  matching, because jsonschema 0.58 drops the regex error there (`is_match(..).unwrap_or(false)`),
+  and so does `pattern` under `not`, `if` or `oneOf`. So jsonvet tries every `patternProperties`
+  regex, and every `pattern` under `propertyNames`, on every key, and every `pattern` on every
+  string, with the same cap. An over-cap match is an error at that key or string. Trying each
+  regex everywhere, not only where the schema applies it, keeps the check short but can fail a
+  string the regex never checks. With three lookaround patterns, a 5.9 MB file takes 241 ms
+  instead of 105 ms.
 
 ## Configuration
 

@@ -2,7 +2,7 @@
 //! value it is about.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::ops::Range;
 use std::path::Path;
 
@@ -51,7 +51,61 @@ const REF_KEYS: [&str; 3] = ["$ref", "$dynamicRef", "$recursiveRef"];
 /// for a lookaround over the whole string, so a string over a few thousand characters can hit it.
 const BACKTRACK_LIMIT: usize = 5_000;
 
-pub(crate) struct Schema(Validator);
+pub(crate) struct Schema {
+    validator: Validator,
+    /// `{"pattern": p}` for each regex in the schema tried on keys: `patternProperties` and a
+    /// `pattern` under `propertyNames`.
+    key_patterns: Vec<(String, Validator)>,
+    /// `{"pattern": p}` for each `pattern` in the schema, tried on strings.
+    string_patterns: Vec<(String, Validator)>,
+}
+
+/// Whether `error` says a regex match ran past [`BACKTRACK_LIMIT`].
+fn backtracked(error: &ValidationError<'_>) -> bool {
+    match error.kind() {
+        ValidationErrorKind::BacktrackLimitExceeded { .. } => true,
+        ValidationErrorKind::PropertyNames { error } => backtracked(error),
+        _ => false,
+    }
+}
+
+/// The regexes in `schema`: those tried on keys, and every `pattern`, tried on strings.
+fn patterns<'v>(
+    schema: &'v Value,
+    names: bool,
+    keys: &mut BTreeSet<&'v str>,
+    strings: &mut BTreeSet<&'v str>,
+) {
+    match schema {
+        Value::Object(members) => {
+            for (key, member) in members {
+                match (key.as_str(), member) {
+                    ("patternProperties", Value::Object(regexes)) => {
+                        keys.extend(regexes.keys().map(String::as_str));
+                    }
+                    ("pattern", Value::String(regex)) => {
+                        strings.insert(regex);
+                        if names {
+                            keys.insert(regex);
+                        }
+                    }
+                    _ => {}
+                }
+                patterns(member, names || key == "propertyNames", keys, strings);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                patterns(item, names, keys, strings);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// A key or string a regex could not be matched on: the value's path, the key if it is a key,
+/// and the regex.
+type Unmatched<'s> = (Vec<String>, Option<String>, &'s str);
 
 impl Schema {
     /// Read and compile the schema at `path`, in its dialect under `settings`. Any problem
@@ -110,7 +164,25 @@ impl Schema {
             // of a million lets one 30-byte string take 30 ms.
             .with_pattern_options(PatternOptions::fancy_regex().backtrack_limit(BACKTRACK_LIMIT));
         let error = match options.build(&document.value) {
-            Ok(validator) => return Ok(Schema(validator)),
+            Ok(validator) => {
+                let (mut keys, mut strings) = (BTreeSet::new(), BTreeSet::new());
+                patterns(&document.value, false, &mut keys, &mut strings);
+                // A regex jsonschema could not compile already failed the build above.
+                let compile = |regexes: BTreeSet<&str>| {
+                    regexes
+                        .into_iter()
+                        .filter_map(|regex| {
+                            let schema = serde_json::json!({ "pattern": regex });
+                            Some((regex.to_owned(), options.build(&schema).ok()?))
+                        })
+                        .collect()
+                };
+                return Ok(Schema {
+                    validator,
+                    key_patterns: compile(keys),
+                    string_patterns: compile(strings),
+                });
+            }
             Err(error) => error,
         };
         // A failed `$ref` has no instance path to place it by.
@@ -139,9 +211,21 @@ impl Schema {
                 ));
                 continue;
             }
-            let mut all = self.0.iter_errors(&document.value);
-            let found: Vec<ValidationError<'_>> = all.by_ref().take(MAX_ERRORS).collect();
-            if found.is_empty() {
+            // jsonschema counts a regex that runs past the backtrack limit as not matching, so
+            // `patternProperties` and any `pattern` under `not` or `if` would pass silently.
+            // Every key and string is tried here instead, and jsonschema's own errors for it,
+            // which this repeats, are dropped.
+            // shortcut: each regex is tried on every key or string, not only where the schema
+            // applies it; follow the schema's applicators if that fails a file wrongly.
+            let mut unmatched = Vec::new();
+            self.unmatched(&document.value, &mut Vec::new(), &mut unmatched);
+            let mut all = self
+                .validator
+                .iter_errors(&document.value)
+                .filter(|error| !backtracked(error));
+            let room = MAX_ERRORS.saturating_sub(unmatched.len());
+            let found: Vec<ValidationError<'_>> = all.by_ref().take(room).collect();
+            if found.is_empty() && unmatched.is_empty() {
                 continue;
             }
             let events = &events[document.events];
@@ -152,10 +236,36 @@ impl Schema {
                     (offset, cut(format!("{} (at {at})", message(error))), false)
                 })
                 .collect();
+            let shown = &unmatched[..unmatched.len().min(MAX_ERRORS)];
+            // For a key, its own offset and the path of its value.
+            let targets: Vec<(Vec<String>, Vec<String>)> = shown
+                .iter()
+                .flat_map(|(path, key, _)| {
+                    let mut value = path.clone();
+                    value.extend(key.clone());
+                    [
+                        (path.clone(), key.iter().cloned().collect()),
+                        (value, Vec::new()),
+                    ]
+                })
+                .collect();
+            let spots = place(events, &targets);
+            for ((_, key, regex), spot) in shown.iter().zip(spots.chunks(2)) {
+                let what = if key.is_some() { "key" } else { "string" };
+                let at = &spot[1].1;
+                placed.push((
+                    spot[0].0,
+                    cut(format!(
+                        "this {what} could not be checked against the pattern \"{regex}\": \
+                         matching it takes more than {BACKTRACK_LIMIT} backtracking steps (at {at})"
+                    )),
+                    false,
+                ));
+            }
             // Stable, so errors at one value keep the schema's order.
             placed.sort_by_key(|(offset, ..)| *offset);
             errors.append(&mut placed);
-            let more = all.count();
+            let more = all.count() + unmatched.len() - shown.len();
             if more > 0 {
                 errors.push((
                     events[0].offset,
@@ -165,6 +275,53 @@ impl Schema {
             }
         }
         errors
+    }
+
+    /// The keys and strings in `value`, which is at `path`, that a regex in the schema could
+    /// not be matched on within [`BACKTRACK_LIMIT`].
+    fn unmatched<'s>(
+        &'s self,
+        value: &Value,
+        path: &mut Vec<String>,
+        out: &mut Vec<Unmatched<'s>>,
+    ) {
+        let fails = |regex: &Validator, value: &Value| {
+            regex
+                .validate(value)
+                .is_err_and(|error| backtracked(&error))
+        };
+        match value {
+            Value::Object(members) => {
+                for (key, member) in members {
+                    if !self.key_patterns.is_empty() {
+                        let name = Value::String(key.clone());
+                        for (regex, validator) in &self.key_patterns {
+                            if fails(validator, &name) {
+                                out.push((path.clone(), Some(key.clone()), regex));
+                            }
+                        }
+                    }
+                    path.push(key.clone());
+                    self.unmatched(member, path, out);
+                    path.pop();
+                }
+            }
+            Value::Array(items) => {
+                for (i, item) in items.iter().enumerate() {
+                    path.push(i.to_string());
+                    self.unmatched(item, path, out);
+                    path.pop();
+                }
+            }
+            Value::String(_) => {
+                for (regex, validator) in &self.string_patterns {
+                    if fails(validator, value) {
+                        out.push((path.clone(), None, regex));
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 }
 

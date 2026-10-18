@@ -228,8 +228,9 @@ and the config file do not take `schema`, and exit 2 if given it. The limits:
   most for many small records such as JSON Lines. Without `--schema`, memory stays near the
   file's size.
 - **Regexes.** A pattern with a back-reference or lookaround may backtrack 5,000 times per string.
-  Past that, `pattern` reports an error, but `patternProperties` and an `additionalProperties`
-  next to it treat the key as not matching.
+  A key or string that needs more is an error at that key or string: the pattern could not be
+  checked. jsonvet tries each `patternProperties` pattern on every key, and each `pattern` on
+  every string, so this error can name a string the pattern does not apply to.
 - **The schema file.** It may be in any dialect. Its `$schema` picks the draft, from draft 4 to
   2020-12. A `$ref` must point inside the file: jsonvet fetches nothing, from the network or from
   disk. A schema jsonvet cannot read or use is a usage error (exit 2). That covers a `$ref` to
