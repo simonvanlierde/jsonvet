@@ -119,11 +119,13 @@ JSON by hand.
 
 File names and messages come from the files you check, so jsonvet escapes anything that could
 break the line or a terminal. A control character prints as `\u001b`, with CR and LF as `\r` and
-`\n`. A bidirectional control or invisible character (U+061C, U+200B to U+200F, U+2028 to U+202E,
-U+2066 to U+2069, U+FEFF) prints as `\u202e`. A name that starts with `::`, after any white space,
-prints as `./::…`, and a `[` straight after `##` prints as `\u005b`. So no line looks like a
-GitHub workflow command, old (`##[command]`) or new (`::command`). An annotation's `file=` value
-holds the real name, percent-encoded as GitHub requires.
+`\n`. A bidirectional control or invisible character (U+00AD, U+061C, U+180E, U+200B to U+200F,
+U+2028 to U+202E, U+2060 to U+2064, U+2066 to U+2069, U+FEFF, U+E0000 to U+E007F) prints as
+`\u202e`, past U+FFFF as a UTF-16 pair such as `\udb40\udc01`. SARIF strings escape the same
+characters the same way. A name that starts with `::`, after any white space, prints as `./::…`,
+and a `[` straight after `##` prints as `\u005b`. So no line looks like a GitHub workflow
+command, old (`##[command]`) or new (`::command`). An annotation's `file=` value holds the real
+name, percent-encoded as GitHub requires.
 
 ### `--schema`
 

@@ -104,11 +104,12 @@ Hook and command users who do neither of the first two need no other change.
 - File names and messages can no longer start a GitHub Actions workflow command or hold the older
   `##[command]` form, which could hide or forge annotations. A name starting with `::` prints as
   `./::…`, and the `[` after `##` is escaped.
-- Control characters, Unicode bidi controls, zero-width characters (U+200B to U+200F), the line
-  and paragraph separators and the byte order mark print as escapes such as `\u001b` and
-  `\u202e`. This covers file names, messages, and usage errors that quote a config file, a
-  command-line argument or the schema file. So a file cannot send terminal escape sequences,
-  hide part of the line or reorder it.
+- Control characters, Unicode bidi controls, zero-width characters (U+200B to U+200F), the soft
+  hyphen, U+180E, U+2060 to U+2064, the line and paragraph separators, the byte order mark and
+  the tag characters U+E0000 to U+E007F print as escapes such as `\u001b` and `\u202e`. This
+  covers file names, messages, and usage errors that quote a config file, a command-line
+  argument or the schema file, and the same characters in SARIF strings. So a file cannot send
+  terminal escape sequences, hide part of the line or reorder it.
 - Library: a syntax error that shows the character it found prints a bidi control as a code
   point, such as `U+202E`, as it already did for control characters. So `Display` output cannot
   reorder the line either.

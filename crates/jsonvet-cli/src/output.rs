@@ -29,9 +29,7 @@ pub(crate) fn printable(value: &str) -> String {
         match c {
             '\r' => shown.push_str("\\r"),
             '\n' => shown.push_str("\\n"),
-            c if c.is_control() || is_hidden(c) => {
-                let _ = write!(shown, "\\u{:04x}", u32::from(c));
-            }
+            c if c.is_control() || is_hidden(c) => escape_utf16(&mut shown, c),
             '[' if shown.ends_with("##") => shown.push_str("\\u005b"),
             c => shown.push(c),
         }
@@ -39,17 +37,31 @@ pub(crate) fn printable(value: &str) -> String {
     shown
 }
 
+/// Write `c` as `\uXXXX`, or as two of them, a UTF-16 surrogate pair, past U+FFFF, as JSON
+/// writes it.
+pub(crate) fn escape_utf16(out: &mut String, c: char) {
+    for unit in c.encode_utf16(&mut [0; 2]) {
+        let _ = write!(out, "\\u{unit:04x}");
+    }
+}
+
 /// Characters that reorder or hide text without showing themselves: Unicode's `Bidi_Control`
-/// set (as `is_bidi_control` in jsonvet, which is not public), the zero-width space, joiners
-/// and marks U+200B to U+200F, the line and paragraph separators, and the byte order mark.
-fn is_hidden(c: char) -> bool {
+/// set (as `is_bidi_control` in jsonvet, which is not public), the soft hyphen, the Mongolian
+/// vowel separator, the zero-width space, joiners and marks U+200B to U+200F, the line and
+/// paragraph separators, the word joiner and invisible operators U+2060 to U+2064, the byte
+/// order mark, and the tag characters U+E0000 to U+E007F.
+pub(crate) fn is_hidden(c: char) -> bool {
     matches!(
         c,
-        '\u{61c}'
+        '\u{ad}'
+            | '\u{61c}'
+            | '\u{180e}'
             | '\u{200b}'..='\u{200f}'
             | '\u{2028}'..='\u{202e}'
+            | '\u{2060}'..='\u{2064}'
             | '\u{2066}'..='\u{2069}'
             | '\u{feff}'
+            | '\u{e0000}'..='\u{e007f}'
     )
 }
 
@@ -256,6 +268,20 @@ mod tests {
             printable("x\u{202e}y\u{200b}\u{feff}\u{2028}"),
             "x\\u202ey\\u200b\\ufeff\\u2028"
         );
+    }
+
+    #[test]
+    fn soft_hyphens_word_joiners_and_tag_characters_are_hidden() {
+        assert_eq!(
+            printable("a\u{ad}b\u{180e}c\u{2060}d\u{2064}e"),
+            "a\\u00adb\\u180ec\\u2060d\\u2064e"
+        );
+        // Past U+FFFF, as a UTF-16 surrogate pair, the way JSON writes it.
+        assert_eq!(
+            printable("\u{e0000}x\u{e007f}"),
+            "\\udb40\\udc00x\\udb40\\udc7f"
+        );
+        assert_eq!(printable("\u{e0080}\u{2065}é"), "\u{e0080}\u{2065}é");
     }
 
     #[test]
