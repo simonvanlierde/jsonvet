@@ -1324,24 +1324,32 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
                 "normal.json",
                 r#"{"patternProperties": {"^a": {"type": "integer"}, "^x": {"type": "string"}}}"#,
             ),
+            // Under `not`, jsonschema's own check of a key name fails open too.
+            (
+                "names.json",
+                r#"{"propertyNames": {"not": {"pattern": "^(a|a)*\\1b|!"}}}"#,
+            ),
             ("k.json", &format!("{{\"x\": \"s\", \"{key}\": 1}}")),
         ]);
-        let start = std::time::Instant::now();
-        let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "slow.json", "k.json"]);
-        assert!(
-            start.elapsed().as_secs_f64() < 1.0,
-            "took {:?}",
-            start.elapsed()
-        );
-        assert_eq!(code, 1);
-        assert_eq!(
-            out,
-            format!(
-                "k.json:1:12: error[schema] this key could not be checked against the pattern \
-                 \"^(a|a)*\\1b|!\": matching it takes more than 5000 backtracking steps \
-                 (at $[\"{key}\"])\n"
-            )
-        );
+        for schema in ["slow.json", "names.json"] {
+            let start = std::time::Instant::now();
+            let (code, out, _) = jsonvet_stderr(&dir, &["--schema", schema, "k.json"]);
+            assert!(
+                start.elapsed().as_secs_f64() < 1.0,
+                "took {:?}",
+                start.elapsed()
+            );
+            assert_eq!(code, 1, "{schema}");
+            assert_eq!(
+                out,
+                format!(
+                    "k.json:1:12: error[schema] this key could not be checked against the pattern \
+                     \"^(a|a)*\\1b|!\": matching it takes more than 5000 backtracking steps \
+                     (at $[\"{key}\"])\n"
+                ),
+                "{schema}"
+            );
+        }
         for schema in ["linear.json", "normal.json"] {
             let (code, out, _) = jsonvet_stderr(&dir, &["--schema", schema, "k.json"]);
             assert_eq!((code, out.as_str()), (0, ""), "{schema}");
