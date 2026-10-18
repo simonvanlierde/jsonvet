@@ -73,6 +73,11 @@ got=$(cd "$repo" && list_files "" python3 && printf '%s\n' "${files[@]}")
 got=$(cd "$repo" && list_files "**/*.json  **/b.jsonc missing*.json untracked.json" python3 && printf '%s\n' "${files[@]}")
 want=$'a.json\nuntracked.json\nnested/deep/b.jsonc\nmissing*.json'
 [[ "$got" == "$want" ]] || fail "files input: got [$got], want [$want]"
+# A symlinked directory named in a pattern is not entered either; the pattern stays as given.
+# A symlink as the last segment is a file name, kept.
+got=$(cd "$repo" && list_files "out/*.json link.json" python3 && printf '%s\n' "${files[@]}")
+want=$'out/*.json\nlink.json'
+[[ "$got" == "$want" ]] || fail "symlinked directory: got [$got], want [$want]"
 
 # SARIF: the output must be a SARIF 2.1.0 document, whatever the exit code says.
 fake() {
