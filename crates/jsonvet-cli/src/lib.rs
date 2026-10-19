@@ -99,6 +99,7 @@ fn run_with(
         Command::Check(args) => args,
     };
     let settings = from_file(&args.config)?.overridden_by(args.settings);
+    let files = expand(args.files, &settings)?;
     let schema = args
         .schema
         .as_deref()
@@ -122,11 +123,10 @@ fn run_with(
     // order given. A chunk ends once its files hold CHUNK_BYTES, so memory stays near that.
     // shortcut: each chunk waits for its slowest file before the next starts; hand files out
     // one at a time across chunks if one big file among many small ones holds a run up.
-    let mut rest = &args.files[..];
+    let mut rest = &files[..];
     let written = loop {
         if rest.is_empty() {
-            let line =
-                (summary && !args.files.is_empty()).then(|| counts.summary(args.files.len()));
+            let line = (summary && !files.is_empty()).then(|| counts.summary(files.len()));
             break line
                 .map_or(Ok(()), |line| printer.text_line(&line))
                 .and_then(|()| printer.finish());
@@ -187,6 +187,35 @@ fn run_with(
     }
     let too_many_warnings = args.max_warnings.is_some_and(|max| counts.warnings > max);
     Ok(u8::from(counts.errors > 0 || too_many_warnings))
+}
+
+/// The files to check: each argument as given, except that a directory stands for the files under
+/// it that jsonvet checks by default, in sorted order. The walk skips hidden files and what
+/// `.gitignore`, `.ignore` and the `exclude` setting name, as ripgrep would.
+fn expand(args: Vec<OsString>, settings: &Settings) -> Result<Vec<OsString>, String> {
+    let mut files = Vec::with_capacity(args.len());
+    for arg in args {
+        if arg == STDIN || !Path::new(&arg).is_dir() {
+            files.push(arg);
+            continue;
+        }
+        let start = files.len();
+        // The filter must own what it reads.
+        let settings = settings.clone();
+        let walk = ignore::WalkBuilder::new(&arg)
+            .filter_entry(move |entry| !settings.excluded(entry.path()))
+            .build();
+        for entry in walk {
+            let entry = entry.map_err(|e| output::printable(&format!("cannot walk: {e}")))?;
+            if entry.file_type().is_some_and(|t| t.is_file())
+                && Dialect::for_path(entry.path()).is_some()
+            {
+                files.push(entry.into_path().into_os_string());
+            }
+        }
+        files[start..].sort_unstable();
+    }
+    Ok(files)
 }
 
 /// The settings from the config file `config` names, or none.

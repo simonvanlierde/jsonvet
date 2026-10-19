@@ -68,11 +68,14 @@ pub(crate) fn parse_rule(id: &str) -> Result<Rule, String> {
     id.parse().map_err(|e| format!("{e}"))
 }
 
-/// Dialect patterns and rule severities, merged from every source in order.
+/// Dialect patterns, rule severities and excluded paths, merged from every source in order.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Settings {
     pub(crate) dialects: Vec<DialectPattern>,
     pub(crate) rules: Vec<(Rule, Severity)>,
+    /// Patterns for paths a directory walk skips, each with the absolute directory of the
+    /// config file it comes from, which it is relative to.
+    pub(crate) exclude: Vec<(String, String)>,
 }
 
 impl Settings {
@@ -80,7 +83,16 @@ impl Settings {
     pub(crate) fn overridden_by(mut self, later: Settings) -> Settings {
         self.dialects.extend(later.dialects);
         self.rules.extend(later.rules);
+        self.exclude.extend(later.exclude);
         self
+    }
+
+    /// Whether a directory walk skips `path`, a file or a folder.
+    pub(crate) fn excluded(&self, path: &Path) -> bool {
+        let absolute = std::cell::OnceCell::new();
+        self.exclude
+            .iter()
+            .any(|(pattern, base)| in_base(pattern, base, &path.to_string_lossy(), &absolute))
     }
 
     /// The checking config for one file: the last matching dialect pattern wins.
@@ -92,13 +104,7 @@ impl Settings {
         let matches = |rule: &DialectPattern| match (&rule.files, &rule.base) {
             (None, _) => true,
             (Some(pattern), None) => glob::matches(pattern, path),
-            // A file outside the config file's directory matches none of its patterns.
-            (Some(pattern), Some(base)) => absolute
-                .get_or_init(|| std::path::absolute(path).ok())
-                .as_deref()
-                .map(Path::to_string_lossy)
-                .and_then(|absolute| glob::relative(&absolute, base))
-                .is_some_and(|relative| glob::matches(pattern, &relative)),
+            (Some(pattern), Some(base)) => in_base(pattern, base, path, &absolute),
         };
         let dialect = self
             .dialects
@@ -118,6 +124,23 @@ impl Settings {
                 config.rule(rule, severity)
             })
     }
+}
+
+/// Whether `pattern` matches `path` relative to the directory `base`. A path outside `base`
+/// matches none of its patterns. `absolute` caches `path` made absolute, which asks the system
+/// for the working directory.
+fn in_base(
+    pattern: &str,
+    base: &str,
+    path: &str,
+    absolute: &std::cell::OnceCell<Option<PathBuf>>,
+) -> bool {
+    absolute
+        .get_or_init(|| std::path::absolute(path).ok())
+        .as_deref()
+        .map(Path::to_string_lossy)
+        .and_then(|absolute| glob::relative(&absolute, base))
+        .is_some_and(|relative| glob::matches(pattern, &relative))
 }
 
 /// The config file for a run started in `start`: the first `jsonvet.toml`, or `pyproject.toml`
@@ -154,8 +177,9 @@ fn has_jsonvet_table(text: &str) -> bool {
 
 /// Read a config file: a `jsonvet.toml`, or the `[tool.jsonvet]` table of a `pyproject.toml`.
 /// It holds `rules`, a table of rule id to severity, and `dialects`, an array of tables with a
-/// `files` glob, relative to the config file's directory, and a `dialect`. Any other key is an
-/// error, so a typo is never ignored.
+/// `files` glob, relative to the config file's directory, and a `dialect`; and `exclude`, an
+/// array of globs, relative to the same directory, for paths a directory walk skips. Any other
+/// key is an error, so a typo is never ignored.
 pub(crate) fn load(path: &Path) -> Result<Settings, String> {
     // A key or value from the file shows escaped, so it cannot start a line of its own on stderr.
     let in_file = |e: &dyn std::fmt::Display| printable(&format!("{}: {e}", path.display()));
@@ -213,13 +237,28 @@ pub(crate) fn load(path: &Path) -> Result<Settings, String> {
                     settings.dialects.push(pattern);
                 }
             }
+            ("exclude", DeValue::Array(patterns)) => {
+                for pattern in patterns {
+                    let text = pattern.get_ref().as_str().ok_or_else(|| {
+                        at(
+                            pattern.span().start,
+                            &"`exclude` must be an array of strings",
+                        )
+                    })?;
+                    // Without a base there is nothing for the pattern to be relative to.
+                    if let Some(base) = &base {
+                        settings.exclude.push((text.to_owned(), base.clone()));
+                    }
+                }
+            }
+            ("exclude", _) => return Err(at(here, &"`exclude` must be an array of strings")),
             ("rules", _) => return Err(at(here, &"`rules` must be a table")),
             ("dialects", _) => return Err(at(here, &"`dialects` must be an array of tables")),
             (key_text, _) => {
-                let hint = jsonvet::did_you_mean(key_text, ["rules", "dialects"]);
+                let hint = jsonvet::did_you_mean(key_text, ["rules", "dialects", "exclude"]);
                 return Err(at(
                     key.span().start,
-                    &format!("unknown key `{key_text}`{hint}; expected rules or dialects"),
+                    &format!("unknown key `{key_text}`{hint}; expected rules, dialects or exclude"),
                 ));
             }
         }

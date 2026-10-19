@@ -14,7 +14,9 @@ duplicate keys and the rules of each dialect.
 
 Usage: jsonvet [OPTIONS] [FILE]...
 
-A FILE of - reads standard input.
+A FILE of - reads standard input. A directory stands for the files under it with an extension
+or name jsonvet checks by default, skipping hidden files, what .gitignore and .ignore name, and
+the exclude setting. A file named on the command line is always checked.
 
 Options:
       --dialect DIALECT[:GLOB]  Check files matching GLOB (every file, without one) as DIALECT:

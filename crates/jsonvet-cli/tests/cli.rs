@@ -256,7 +256,8 @@ fn help_version_and_the_check_json5_name() {
     fs::create_dir(dir.join("folder.json")).expect("create a folder");
     assert_eq!(
         jsonvet(&dir, &["folder.json"]),
-        (1, "folder.json: error: not a regular file\n".to_owned())
+        (0, String::new()),
+        "a folder is walked, and this one is empty"
     );
 }
 
@@ -565,7 +566,7 @@ fn pyproject_tool_table_and_bad_configs() {
         // A key holding a newline stays on the line, so it cannot forge a workflow command.
         (
             "forged.toml:1:1",
-            "unknown key `\\n::error::x`; expected rules or dialects",
+            "unknown key `\\n::error::x`; expected rules, dialects or exclude",
         ),
         // A typo gets its line and column, and the name it is closest to.
         (
@@ -576,7 +577,7 @@ fn pyproject_tool_table_and_bad_configs() {
         ),
         (
             "key.toml:2:3",
-            "unknown key `rule` (did you mean `rules`?); expected rules or dialects",
+            "unknown key `rule` (did you mean `rules`?); expected rules, dialects or exclude",
         ),
         (
             "severity.toml:2:10",
@@ -2042,6 +2043,141 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
                 "many.json:1:1: error[schema] ... and 999900 more schema errors in this document\n"
             ),
             "{stdout}"
+        );
+    }
+}
+
+/// Directory arguments: walked like ripgrep walks them, with the `exclude` setting.
+mod directories {
+    use std::fs;
+
+    use super::{jsonvet, jsonvet_stderr, workdir};
+
+    const DUP: &str = "{\"a\": 1, \"a\": 2}";
+
+    fn dup(path: &str) -> String {
+        format!("{path}:1:10: error[duplicate-key] duplicate key $.a (first at 1:2)\n")
+    }
+
+    #[test]
+    fn a_directory_is_walked_in_sorted_order_for_known_file_types_only() {
+        let dir = workdir(&[
+            ("b.json", DUP),
+            ("a/z.jsonc", DUP),
+            ("a/y.json5", DUP),
+            ("notes.txt", "not json"),
+            ("README.md", "# not json"),
+            ("Makefile", "all:"),
+        ]);
+        assert_eq!(
+            jsonvet(&dir, &["."]),
+            (
+                1,
+                [dup("./a/y.json5"), dup("./a/z.jsonc"), dup("./b.json")].concat()
+            )
+        );
+        assert_eq!(
+            jsonvet(&dir, &["a"]),
+            (1, [dup("a/y.json5"), dup("a/z.jsonc")].concat())
+        );
+    }
+
+    #[test]
+    fn a_walk_skips_ignored_and_hidden_files_but_a_named_file_is_checked() {
+        let dir = workdir(&[
+            (".gitignore", "build/\nskip.json\n"),
+            (".ignore", "also-skip.json\n"),
+            ("build/out.json", DUP),
+            ("skip.json", DUP),
+            ("also-skip.json", DUP),
+            (".hidden/x.json", DUP),
+            (".babelrc", DUP),
+            ("kept.json", DUP),
+        ]);
+        assert_eq!(jsonvet(&dir, &["."]), (1, dup("./kept.json")));
+        assert_eq!(
+            jsonvet(&dir, &["skip.json", "build/out.json", ".babelrc"]),
+            (
+                1,
+                [dup("skip.json"), dup("build/out.json"), dup(".babelrc")].concat()
+            )
+        );
+    }
+
+    #[test]
+    fn exclude_applies_to_walked_files_not_named_ones() {
+        let dir = workdir(&[
+            (
+                "jsonvet.toml",
+                "exclude = [\"vendor\", \"data/*.jsonl\", \"gen-*.json\"]\n",
+            ),
+            ("vendor/x.json", DUP),
+            ("sub/vendor/x.json", DUP),
+            ("data/a.jsonl", "{\"a\": 1, \"a\": 2}\n"),
+            ("data/a.json", DUP),
+            ("sub/gen-1.json", DUP),
+            ("sub/kept.json", DUP),
+        ]);
+        assert_eq!(
+            jsonvet(&dir, &["."]),
+            (1, [dup("./data/a.json"), dup("./sub/kept.json")].concat())
+        );
+        // Patterns are relative to the config file, wherever the run starts.
+        assert_eq!(jsonvet(&dir.join("sub"), &["."]), (1, dup("./kept.json")));
+        assert_eq!(jsonvet(&dir, &["vendor/x.json"]), (1, dup("vendor/x.json")));
+        // A directory named on the command line is walked even when excluded.
+        assert_eq!(jsonvet(&dir, &["vendor"]), (1, dup("vendor/x.json")));
+    }
+
+    #[test]
+    fn exclude_must_be_a_list_of_strings() {
+        let dir = workdir(&[
+            ("a.toml", "exclude = \"vendor\"\n"),
+            ("b.toml", "exclude = [1]\n"),
+        ]);
+        let (code, out, err) = jsonvet_stderr(&dir, &["--config", "a.toml", "."]);
+        assert_eq!((code, out.as_str()), (2, ""));
+        assert_eq!(
+            err,
+            "jsonvet: a.toml:1:11: `exclude` must be an array of strings\n"
+        );
+        let (code, _, err) = jsonvet_stderr(&dir, &["--config", "b.toml", "."]);
+        assert_eq!(code, 2);
+        assert_eq!(
+            err,
+            "jsonvet: b.toml:1:12: `exclude` must be an array of strings\n"
+        );
+    }
+
+    #[test]
+    fn files_and_directories_mix_in_the_order_given() {
+        let dir = workdir(&[("d/a.json", DUP), ("d/b.json", DUP), ("top.json", DUP)]);
+        assert_eq!(
+            jsonvet(&dir, &["top.json", "d", "top.json"]),
+            (
+                1,
+                [
+                    dup("top.json"),
+                    dup("d/a.json"),
+                    dup("d/b.json"),
+                    dup("top.json")
+                ]
+                .concat()
+            )
+        );
+    }
+
+    #[test]
+    fn an_empty_directory_checks_nothing_and_a_missing_path_is_reported() {
+        let dir = workdir(&[]);
+        fs::create_dir(dir.join("empty")).expect("create a folder");
+        assert_eq!(
+            jsonvet_stderr(&dir, &["empty"]),
+            (0, String::new(), String::new())
+        );
+        assert_eq!(
+            jsonvet(&dir, &["empty", "gone"]),
+            (1, "gone: error: no such file\n".to_owned())
         );
     }
 }

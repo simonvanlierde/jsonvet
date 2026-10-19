@@ -21,6 +21,24 @@ The details behind the [README](../README.md). Why things work this way is in
 
 `jsonvet --help` prints the same list with more detail.
 
+## Folders
+
+A folder on the command line stands for the files under it that jsonvet checks by default: those
+with an extension or name from the README's dialect table. Other files are skipped without a
+word, so `jsonvet .` does not check `README.md` as JSON5. The walk works as ripgrep's does:
+
+- It skips hidden files and folders, such as `.vscode/` and `.babelrc`, and what `.gitignore`
+  (inside a git repository), `.ignore` and git's global and `info/exclude` files name.
+- It skips paths the `exclude` setting names. A pattern that matches a folder skips everything
+  under it.
+- It does not follow symlinks.
+- It lists the files under each folder in sorted order, so output is stable. Arguments keep the
+  order you give them.
+
+A file or folder you name is always checked, even when an ignore file or `exclude` names it. So
+`exclude` has no effect on the pre-commit hook or the GitHub Action, which name each file: use
+the hook's own `exclude:` and the Action's `files` input there.
+
 ## Output
 
 Each problem is one line: `file:line:col: severity[rule] message`. When stdout is a terminal,
@@ -57,8 +75,8 @@ output line can drive a terminal or pass for a GitHub workflow command. The exac
 |    1 | a file has an error, or a file cannot be read            |
 |    2 | a usage error, such as an unknown option or a bad schema |
 
-jsonvet reads regular files only, and follows a symlink to one. A directory, device, FIFO or
-socket prints `error: not a regular file`. The hook (`types: [text]`) skips tracked symlinks and
+jsonvet reads regular files only, and follows a symlink to one. A device, FIFO or socket prints
+`error: not a regular file`; a directory is walked (see [Folders](#folders)). The hook (`types: [text]`) skips tracked symlinks and
 submodules.
 
 When the output pipe closes early, as in `jsonvet … | head -1`, jsonvet stops quietly. It exits
@@ -200,10 +218,10 @@ jsonvet reads `jsonvet.toml`, or a `[tool.jsonvet]` table in `pyproject.toml`. I
 working directory and its parents, and stops at the repository root. Options on the command line
 win. `--config FILE` reads that file instead, and `--no-config` reads none.
 
-The file takes two keys, `rules` and `dialects`. Any other key, at the top or in a `dialects`
-entry, is a usage error, so a typo never goes unnoticed. The error names the line and column in
-the file, and the closest known name: `jsonvet.toml:2:1: unknown rule `duplicate-keys` (did you
-mean `duplicate-key`?); …`.
+The file takes three keys, `rules`, `dialects` and `exclude`. Any other key, at the top or in a
+`dialects` entry, is a usage error, so a typo never goes unnoticed. The error names the line and
+column in the file, and the closest known name: `jsonvet.toml:2:1: unknown rule
+`duplicate-keys` (did you mean `duplicate-key`?); …`.
 
 ```toml
 [rules]
@@ -212,6 +230,13 @@ byte-order-mark = "error"
 [[dialects]]
 files = ".vscode/*.json"
 dialect = "jwcc"
+```
+
+`exclude` is an array of globs, relative to the config file's directory like the others, for
+paths a folder walk skips (see [Folders](#folders)):
+
+```toml
+exclude = ["node_modules", "tests/fixtures/*"]
 ```
 
 ## GitHub Action

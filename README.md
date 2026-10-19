@@ -64,6 +64,7 @@ request. It runs on Linux, macOS and Windows runners. Its optional inputs are in
 
 ```bash
 uvx jsonvet config/*.json        # run it from PyPI without installing
+uvx jsonvet .                    # check every JSON-like file under a folder
 pip install jsonvet              # install it as a Python package
 cargo install jsonvet-cli        # build it from source
 cargo binstall jsonvet-cli       # download the binary from the GitHub release
@@ -75,8 +76,10 @@ the `jsonvet` binary for Linux (glibc and musl), macOS and Windows, on x86-64 an
 To check that a file came from this repository's release workflow, see
 [SECURITY.md](https://github.com/simonvanlierde/jsonvet/blob/main/SECURITY.md#verifying-a-release).
 
-It exits 0 when no file has an error, 1 when one does, and 2 for a usage error. `jsonvet --help`
-lists every option.
+A folder stands for the files under it with an extension or name from the dialect table below,
+skipping hidden files and what `.gitignore` names, as ripgrep does. A file you name is always
+checked. It exits 0 when no file has an error, 1 when one does, and 2 for a usage error.
+`jsonvet --help` lists every option.
 
 ### Rust library
 
@@ -134,6 +137,9 @@ dialects = [
   { files = ".vscode/*.json", dialect = "jsonc" },
   { files = "package.json", dialect = "json" },
 ]
+
+# Skipped when jsonvet walks a folder; files named on the command line are still checked.
+exclude = ["node_modules", "tests/fixtures/*"]
 ```
 
 jsonvet looks for it in the working directory and its parents, up to the repository root. Options

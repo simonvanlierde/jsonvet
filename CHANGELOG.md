@@ -10,6 +10,11 @@ version for a new option or output, the patch version for a fix.
 
 ### Added
 
+- A folder as an argument checks the files under it with an extension or name jsonvet knows,
+  in sorted order. The walk skips hidden files and what `.gitignore` and `.ignore` name, as
+  ripgrep does. Files named on the command line are checked as before. Before, a folder was
+  reported as `not a regular file`.
+- An `exclude` setting: globs, relative to the config file, for paths a folder walk skips.
 - `-` as a file reads standard input, and `--stdin-filename PATH` names it for the output, the
   dialect and the settings. With `--stdin-filename` and no file, jsonvet reads standard input.
 - `--list-rules` lists the rules with their default severity in each dialect, and
