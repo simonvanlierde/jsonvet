@@ -30,6 +30,8 @@ exclude_re = [
   "glob.rs:\\d+:28: replace \\+ with \\* in wildcard",
   # Speed only: a number with a `.` or exponent fails the integer parse anyway.
   "schema.rs:.* replace match guard integer with true in number",
+  # Speed only: a valid document has no errors to collect either way.
+  "schema.rs:.* replace match guard self.validator.is_valid\\(value\\) with false in Schema::errors",
   # A character-count checkpoint moved to the boundary before instead of after.
   "report.rs:.* replace \\+= with -= in Report<'a>::chars_before",
   # No byte matches two of the per-byte tests, so XOR and OR agree there; the OR with `stop` is
