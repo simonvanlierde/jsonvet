@@ -13,6 +13,7 @@ The details behind the [README](../README.md). Why things work this way is in
 --max-warnings N
 --format text|sarif        text lines (the default), or one SARIF 2.1.0 document on stdout
 --schema FILE              also check every file against the JSON Schema in FILE
+--stdin-filename PATH      the name standard input (`-`) goes by
 --config FILE, --no-config
 ```
 
@@ -48,6 +49,21 @@ submodules.
 
 When the output pipe closes early, as in `jsonvet … | head -1`, jsonvet stops quietly. It exits
 with the verdict for the files it has checked.
+
+## Standard input
+
+`-` as a file reads standard input: `cat a.json | jsonvet -`. Output names it `-`, and it is
+checked as JSON5, the default for an unknown extension. `--stdin-filename PATH` names it `PATH`
+instead, in the output and when picking its dialect and settings, so
+`jsonvet --stdin-filename tsconfig.json -` checks it as a `.json` file. With `--stdin-filename`
+and no file, jsonvet reads standard input without the `-`.
+
+Empty input is checked like an empty file, which is a syntax error. `-` can be given only once;
+to check a file named `-`, pass `./-`.
+
+jsonvet does not read standard input unless you ask, as ruff, Biome and taplo do. A run with no
+files and input piped in, such as `echo '{}' | jsonvet`, checks nothing and exits 0, but it
+says on stderr to pass `-`.
 
 ## File names that look like options
 

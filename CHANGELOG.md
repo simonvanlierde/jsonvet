@@ -10,6 +10,8 @@ version for a new option or output, the patch version for a fix.
 
 ### Added
 
+- `-` as a file reads standard input, and `--stdin-filename PATH` names it for the output, the
+  dialect and the settings. With `--stdin-filename` and no file, jsonvet reads standard input.
 - `SECURITY.md`: how to report a file that crashes or hangs jsonvet, privately through GitHub.
 
 ### Changed
@@ -24,6 +26,9 @@ version for a new option or output, the patch version for a fix.
 
 ### Fixed
 
+- `jsonvet -` no longer fails with `no such file`; it reads standard input. A run with no files
+  and input piped in still checks nothing, but now says on stderr to pass `-`, where it used to
+  pass in silence.
 - `jsonvet --help` no longer says that `--schema` is missing from the PyPI wheels. It has been in
   them since 3.0.0.
 - The Action no longer passes when the repository is not checked out: with the default `files`

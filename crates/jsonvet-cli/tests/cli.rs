@@ -800,6 +800,81 @@ fn a_file_that_cannot_be_read_says_why() {
 }
 
 /// SARIF strings escape a `[` only where it follows `##`.
+/// Run jsonvet in `dir` with `input` on its standard input; return its exit code, stdout and
+/// stderr.
+fn jsonvet_stdin(dir: &Path, args: &[&str], input: &str) -> (i32, String, String) {
+    use std::io::Write as _;
+    use std::process::Stdio;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
+        .args(args)
+        .current_dir(dir)
+        .env_remove("GITHUB_ACTIONS")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run jsonvet");
+    let mut stdin = child.stdin.take().expect("a stdin pipe");
+    stdin.write_all(input.as_bytes()).expect("write stdin");
+    drop(stdin);
+    let out = child.wait_with_output().expect("wait for jsonvet");
+    (
+        out.status.code().expect("an exit code"),
+        String::from_utf8(out.stdout).expect("UTF-8 output"),
+        String::from_utf8(out.stderr).expect("UTF-8 errors"),
+    )
+}
+
+#[test]
+fn a_dash_reads_standard_input() {
+    let dir = workdir(&[(
+        "jsonvet.toml",
+        "dialects = [{ dialect = \"json\", files = \"*.cfg\" }]\n",
+    )]);
+    let dup = "{\"a\":1,\"a\":2}\n";
+    assert_eq!(
+        jsonvet_stdin(&dir, &["-"], dup),
+        (
+            1,
+            "-:1:8: error[duplicate-key] duplicate key $.a (first at 1:2)\n".to_owned(),
+            String::new()
+        )
+    );
+    // Standard input with no name is checked as json5, the default for an unknown extension.
+    let single = "{'a': 1}\n";
+    assert_eq!(jsonvet_stdin(&dir, &["-"], single).0, 0);
+    let (code, out, _) = jsonvet_stdin(&dir, &["--stdin-filename", "x.jsonc", "-"], single);
+    assert_eq!(code, 1);
+    assert!(out.starts_with("x.jsonc:1:2: error[syntax]"), "{out}");
+    // With no file, --stdin-filename reads standard input; config globs match its name.
+    let (code, out, _) = jsonvet_stdin(&dir, &["--stdin-filename=sub/a.cfg"], "{,}");
+    assert_eq!(code, 1);
+    assert!(out.starts_with("sub/a.cfg:1:2: error[syntax]"), "{out}");
+    // Empty input is an empty file: a syntax error, not a pass.
+    assert_eq!(
+        jsonvet_stdin(&dir, &["-"], ""),
+        (
+            1,
+            "-:1:1: error[syntax] expected a value, found the end of the file\n".to_owned(),
+            String::new()
+        )
+    );
+    assert_eq!(jsonvet_stdin(&dir, &["-", "-"], "{}").0, 2);
+}
+
+#[test]
+fn piped_input_with_no_file_warns_and_passes() {
+    let dir = workdir(&[]);
+    assert_eq!(
+        jsonvet_stdin(&dir, &[], "{\"a\":1,\"a\":2}"),
+        (
+            0,
+            String::new(),
+            "jsonvet: no files given; to check standard input, pass `-` as the file\n".to_owned()
+        )
+    );
+}
+
 #[test]
 fn sarif_keeps_other_brackets() {
     let dir = workdir(&[("a.json", "[{\"a\": 1, \"a\": 2}]")]);

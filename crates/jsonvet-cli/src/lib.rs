@@ -1,7 +1,7 @@
 //! The jsonvet command line, shared by the `jsonvet` and `check-json5` binaries.
 
 use std::ffi::{OsStr, OsString};
-use std::io::{self, BufWriter, Write};
+use std::io::{self, BufWriter, IsTerminal, Read, Write};
 use std::path::Path;
 use std::process::ExitCode;
 
@@ -16,7 +16,7 @@ mod sarif;
 mod schema;
 mod settings;
 
-use args::{Command, ConfigSource};
+use args::{Command, ConfigSource, STDIN};
 use output::Printer;
 use schema::Schema;
 use settings::Settings;
@@ -86,19 +86,7 @@ fn run_with(
         Command::Version => return print(out, concat!("jsonvet ", env!("CARGO_PKG_VERSION"))),
         Command::Check(args) => args,
     };
-    let from_file = match &args.config {
-        ConfigSource::None => Settings::default(),
-        ConfigSource::File(path) => settings::load(path)?,
-        ConfigSource::Search => {
-            let cwd = std::env::current_dir()
-                .map_err(|e| format!("cannot read the working directory: {e}"))?;
-            match settings::discover(&cwd) {
-                Some(path) => settings::load(&path)?,
-                None => Settings::default(),
-            }
-        }
-    };
-    let settings = from_file.overridden_by(args.settings);
+    let settings = from_file(&args.config)?.overridden_by(args.settings);
     let schema = args
         .schema
         .as_deref()
@@ -106,6 +94,18 @@ fn run_with(
         .transpose()
         .map_err(|e| output::printable(&e))?;
 
+    if args.files.is_empty() && stdin_is_piped() {
+        eprintln!("jsonvet: no files given; to check standard input, pass `-` as the file");
+    }
+    // Standard input goes by its `--stdin-filename`, for settings and in the output.
+    let stdin_name = args.stdin_filename.unwrap_or_else(|| STDIN.into());
+    let shown = |file: &OsStr| -> OsString {
+        if file == STDIN {
+            stdin_name.clone()
+        } else {
+            file.to_owned()
+        }
+    };
     let mut printer = Printer::new(out, args.format, annotate);
     let mut counts = Counts::default();
     let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
@@ -121,7 +121,11 @@ fn run_with(
         let bytes = AtomicUsize::new(0);
         let full = || bytes.load(Ordering::Relaxed) >= CHUNK_BYTES;
         let texts = parallel(rest, threads, full, |file| {
-            let text = read(Path::new(file));
+            let text = if file == STDIN {
+                read_stdin()
+            } else {
+                read(Path::new(file))
+            };
             bytes.fetch_add(text.as_ref().map_or(0, String::len), Ordering::Relaxed);
             text
         });
@@ -133,7 +137,8 @@ fn run_with(
             threads,
             || false,
             |(file, text)| {
-                let name = file.to_string_lossy();
+                let name = shown(file);
+                let name = name.to_string_lossy();
                 text.as_deref()
                     .map(|text| check(&name, text, &settings, schema.as_ref()))
             },
@@ -142,12 +147,16 @@ fn run_with(
             .iter()
             .zip(checked)
             .try_for_each(|(file, checked)| match checked {
-                Ok((report, schema_errors)) => {
-                    print_file(file, &report, &schema_errors, &mut printer, &mut counts)
-                }
+                Ok((report, schema_errors)) => print_file(
+                    &shown(file),
+                    &report,
+                    &schema_errors,
+                    &mut printer,
+                    &mut counts,
+                ),
                 Err(message) => {
                     counts.errors += 1;
-                    printer.unreadable(file, message)
+                    printer.unreadable(&shown(file), message)
                 }
             });
         if outcome.is_err() {
@@ -163,6 +172,20 @@ fn run_with(
     }
     let too_many_warnings = args.max_warnings.is_some_and(|max| counts.warnings > max);
     Ok(u8::from(counts.errors > 0 || too_many_warnings))
+}
+
+/// The settings from the config file `config` names, or none.
+fn from_file(config: &ConfigSource) -> Result<Settings, String> {
+    let path = match config {
+        ConfigSource::None => None,
+        ConfigSource::File(path) => Some(path.clone()),
+        ConfigSource::Search => {
+            let cwd = std::env::current_dir()
+                .map_err(|e| format!("cannot read the working directory: {e}"))?;
+            settings::discover(&cwd)
+        }
+    };
+    path.map_or_else(|| Ok(Settings::default()), |path| settings::load(&path))
 }
 
 #[derive(Default)]
@@ -274,12 +297,46 @@ fn read(path: &Path) -> Result<String, String> {
         }
     });
     match read {
-        Ok(Some(bytes)) => String::from_utf8(bytes)
-            .map_err(|e| format!("not valid UTF-8 (byte {})", e.utf8_error().valid_up_to())),
+        Ok(Some(bytes)) => utf8(bytes),
         Ok(None) => Err("not a regular file".to_owned()),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Err("no such file".to_owned()),
         Err(e) => Err(format!("cannot read: {e}")),
     }
+}
+
+/// Standard input's text, or why it has none. Empty input is an empty file.
+fn read_stdin() -> Result<String, String> {
+    let mut bytes = Vec::new();
+    match io::stdin().lock().read_to_end(&mut bytes) {
+        Ok(_) => utf8(bytes),
+        Err(e) => Err(format!("cannot read: {e}")),
+    }
+}
+
+fn utf8(bytes: Vec<u8>) -> Result<String, String> {
+    String::from_utf8(bytes)
+        .map_err(|e| format!("not valid UTF-8 (byte {})", e.utf8_error().valid_up_to()))
+}
+
+/// Whether standard input is a pipe or a file, as in `echo '{}' | jsonvet`: not a terminal,
+/// and on Unix not a device such as `/dev/null`, which CI jobs and hooks often leave it as.
+fn stdin_is_piped() -> bool {
+    let stdin = io::stdin();
+    if stdin.is_terminal() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::fd::AsFd;
+        use std::os::unix::fs::FileTypeExt;
+        let meta = stdin
+            .as_fd()
+            .try_clone_to_owned()
+            .and_then(|fd| std::fs::File::from(fd).metadata());
+        meta.is_ok_and(|meta| meta.is_file() || meta.file_type().is_fifo())
+    }
+    #[cfg(not(unix))]
+    true
 }
 
 fn print(mut out: impl Write, text: &str) -> Result<u8, String> {
