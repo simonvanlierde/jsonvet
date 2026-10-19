@@ -279,6 +279,9 @@ jobs:
           merge-multiple: true
           path: dist/
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          # A rerun after a partial upload skips the files PyPI already has.
+          skip-existing: true
 
   # Uploaded last, so it never points at a jsonvet wheel that is not on PyPI yet.
   publish-check-json5:
@@ -295,6 +298,9 @@ jobs:
           name: check-json5
           path: dist/
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          # A rerun after a partial upload skips the files PyPI already has.
+          skip-existing: true
 
   # `--no-verify` packages and uploads without compiling, so this job, which holds the token,
   # runs no build scripts. CI and the smoke job have already built this commit. jsonvet goes
