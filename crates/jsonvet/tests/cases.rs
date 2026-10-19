@@ -483,3 +483,21 @@ fn line_comments_end_where_each_dialect_says() {
         }
     }
 }
+
+/// A word shows whole only where it starts and ends at a token boundary; otherwise the message
+/// names the one character, as it would without the word scan.
+#[test]
+fn words_show_whole_only_between_token_boundaries() {
+    let first = |dialect, text: &str| check(text, &Config::new(dialect)).problems()[0].to_string();
+    assert_eq!(
+        first(Dialect::Json, "[trueish]"),
+        "expected `,` or `]`, found `i`"
+    );
+    assert_eq!(
+        first(Dialect::Json, "[Trué]"),
+        "expected a value, found `T`"
+    );
+    // 10 MB of letters: one bounded look, not a scan of the whole run.
+    let long = format!("[{}]", "a".repeat(10_000_000));
+    assert_eq!(first(Dialect::Json, &long), "expected a value, found `a`");
+}

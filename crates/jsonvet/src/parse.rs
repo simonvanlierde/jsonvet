@@ -255,18 +255,20 @@ impl<'a> Parser<'a> {
     }
 
     /// The word starting at `at`, for a message to show whole: an ASCII letter, then ASCII
-    /// letters, digits and `_`, at most 32 bytes. `None` when no letter is there.
+    /// letters, digits and `_`, at most 32 bytes. `None` when no letter is there, or when the
+    /// run does not start and end at a token boundary, as in the `ish` of `trueish` or the
+    /// `Tru` of `Trué`.
     fn word_at(&self, at: usize) -> Option<&'a str> {
+        let part = |b: &u8| b.is_ascii_alphanumeric() || *b == b'_';
         let rest = self.bytes.get(at..)?;
-        if !rest.first()?.is_ascii_alphabetic() {
+        if !rest.first()?.is_ascii_alphabetic()
+            || at.checked_sub(1).is_some_and(|i| part(&self.bytes[i]))
+        {
             return None;
         }
-        let len = rest
-            .iter()
-            .take_while(|b| b.is_ascii_alphanumeric() || **b == b'_')
-            .count();
+        let len = rest.iter().take(33).take_while(|b| part(b)).count();
         // shortcut: a longer word shows as its first letter only; fine for typos of literals.
-        (len <= 32).then(|| &self.text[at..at + len])
+        (len <= 32 && rest.get(len).is_none_or(u8::is_ascii)).then(|| &self.text[at..at + len])
     }
 
     /// Turn an end of file inside an open object or array, where the document's structure
