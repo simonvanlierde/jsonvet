@@ -10,7 +10,22 @@ version for a new option or output, the patch version for a fix.
 
 ### Added
 
+- `-` as a file reads standard input, and `--stdin-filename PATH` names it for the output, the
+  dialect and the settings. With `--stdin-filename` and no file, jsonvet reads standard input.
+- `--list-rules` lists the rules with their default severity in each dialect, and
+  `--explain RULE` explains one, with a bad and a good example. A mistyped rule gets a
+  suggestion, such as `did you mean duplicate-key?`.
+- SARIF output gives each rule its help text and a link to its section of docs/usage.md, so
+  GitHub code scanning shows them on each alert.
+- When stdout is a terminal, text output ends with a count, such as `3 errors in 2 of 5 files`.
+  Piped output, as in the hook and in CI, is unchanged.
 - `SECURITY.md`: how to report a file that crashes or hangs jsonvet, privately through GitHub.
+- Each GitHub release has the `jsonvet` binary for eight targets (Linux glibc and musl, macOS and
+  Windows, on x86-64 and ARM64) as `jsonvet-<target>.tar.gz` or `.zip`, with a `SHA256SUMS` file
+  and a CycloneDX SBOM of its dependencies.
+- `cargo binstall jsonvet-cli` downloads that binary instead of compiling it.
+- Build provenance attestations for the wheels, the sdist and the release files, which
+  `gh attestation verify` checks. `SECURITY.md` shows how.
 
 ### Changed
 
@@ -27,6 +42,7 @@ version for a new option or output, the patch version for a fix.
 
 ### Fixed
 
+- `jsonvet -` no longer fails with `no such file`; it reads standard input.
 - `jsonvet --help` no longer says that `--schema` is missing from the PyPI wheels. It has been in
   them since 3.0.0.
 - The Action no longer passes when the repository is not checked out: with the default `files`

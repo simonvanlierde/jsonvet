@@ -24,3 +24,18 @@ rather not be named.
 
 Fixes go into the newest release only, currently 3.x. The `check-json5` package on PyPI installs
 the same code, so it gets the same fixes.
+
+## Verifying a release
+
+Every file a release builds has a build provenance attestation: the PyPI wheels and sdist, the
+binary archives on the GitHub release, and its SBOM. It records that the file came from this
+repository's `release.yml`, for that tag. With the [GitHub CLI](https://cli.github.com/):
+
+```bash
+gh attestation verify jsonvet-x86_64-unknown-linux-gnu.tar.gz --repo simonvanlierde/jsonvet
+```
+
+The same works on a wheel downloaded from PyPI (`pip download jsonvet --no-deps`). PyPI also
+shows the wheels' own PEP 740 attestations on each file's page.
+`sha256sum --check --ignore-missing SHA256SUMS` checks downloaded archives against the release's
+checksums. Releases up to 3.0.0 have no attestations.

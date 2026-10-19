@@ -270,6 +270,13 @@ and Windows, plus the oldest supported Rust (1.88). Each layer exists for one re
 ## Publishing
 
 A release publishes to PyPI and crates.io from `release.yml`, with trusted publishing on both.
+A pushed `vX.Y.Z` tag starts it, not a published GitHub release: the release is immutable, so the
+workflow drafts it, attaches the binary archives, the SBOM and `SHA256SUMS`, and publishes it after
+the packages are up. The archives hold the binary from each wheel, not a second build, so PyPI and
+the GitHub release ship the same bytes. Each file gets a build provenance attestation, and the
+PyPI upload adds PEP 740 attestations. The binaries are not built with `cargo auditable`: maturin
+cannot run it without a cargo wrapper inside every build container, so the SBOM lists the
+dependencies instead.
 The `check-json5` package uploads after the `jsonvet` wheels, and `jsonvet-cli` after the
 `jsonvet` crate. crates.io only allows trusted publishing for a crate that already exists, so
 2.0.0 went up by hand.

@@ -16,6 +16,21 @@ categories.workspace = true
 name = "jsonvet"
 path = "src/main.rs"
 
+# cargo binstall downloads the binary from the GitHub release instead of compiling it. The asset
+# names come from scripts/release-archives.py.
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/jsonvet-{ target }.tar.gz"
+bin-dir = "{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/jsonvet-{ target }.zip"
+pkg-fmt = "zip"
+
+[package.metadata.binstall.overrides.aarch64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/jsonvet-{ target }.zip"
+pkg-fmt = "zip"
+
 [dependencies]
 jsonvet = { path = "../jsonvet", version = "=3.0.0" }
 # No default features: they fetch remote `$ref`s over HTTP and read them from disk.

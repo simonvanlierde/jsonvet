@@ -14,6 +14,8 @@ duplicate keys and the rules of each dialect.
 
 Usage: jsonvet [OPTIONS] [FILE]...
 
+A FILE of - reads standard input.
+
 Options:
       --dialect DIALECT[:GLOB]  Check files matching GLOB (every file, without one) as DIALECT:
                                 json, i-json, jsonc, jwcc, json5, jsonl, or auto for the file
@@ -29,14 +31,19 @@ Options:
                                 document, for GitHub code scanning.
       --schema FILE             Also check each file against the JSON Schema in FILE, reported
                                 under the rule schema. Limits: docs/usage.md in the repository.
+      --stdin-filename PATH     Name standard input PATH in the output, and pick its dialect
+                                and settings by PATH. With no FILE, check standard input.
       --config FILE             Read settings from FILE instead of searching for one.
       --no-config               Do not read a settings file.
+      --list-rules              List the rules, with their default severities, and exit.
+      --explain RULE            Explain RULE, with an example, and exit.
   -h, --help                    Print this help.
   -V, --version                 Print the version.
 
 Rules: syntax, duplicate-key, invalid-number, invalid-code-point, byte-order-mark,
-missing-final-newline. With --schema, errors also come under the rule schema; they are always
-errors, and --error, --warn, --ignore and settings files do not take schema.
+missing-final-newline (--list-rules says more). With --schema, errors also come under the rule
+schema; they are always errors, and --error, --warn, --ignore and settings files do not take
+schema.
 
 Settings come from jsonvet.toml, or [tool.jsonvet] in pyproject.toml, found in the working
 directory or a parent up to the repository root. Options on the command line win.
@@ -60,6 +67,8 @@ pub(crate) struct Args {
     pub(crate) config: ConfigSource,
     pub(crate) format: Format,
     pub(crate) schema: Option<PathBuf>,
+    /// The name standard input goes by, from `--stdin-filename`.
+    pub(crate) stdin_filename: Option<OsString>,
 }
 
 #[derive(Debug)]
@@ -67,6 +76,9 @@ pub(crate) enum Command {
     Check(Args),
     Help,
     Version,
+    ListRules,
+    /// `--explain`'s text for the rule.
+    Explain(String),
 }
 
 pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command, String> {
@@ -79,6 +91,7 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
     let mut config = ConfigSource::Search;
     let mut format = Format::Text;
     let mut schema = None;
+    let mut stdin_filename = None;
     loop {
         // lexopt reads a non-UTF-8 argument that starts with `-` lossily. No option has such a
         // name, so it is a file, kept as given. An existing file named like `--dialect=json`
@@ -127,7 +140,14 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
             }
             Long("config") => config = ConfigSource::File(PathBuf::from(value(&mut parser)?)),
             Long("no-config") => config = ConfigSource::None,
+            Long("list-rules") => return Ok(Command::ListRules),
+            Long("explain") => {
+                return crate::rules::explain(&value(&mut parser)?).map(Command::Explain);
+            }
             Long("schema") => schema = Some(PathBuf::from(value(&mut parser)?)),
+            Long("stdin-filename") => {
+                stdin_filename = Some(parser.value().map_err(|e| e.to_string())?);
+            }
             Value(file) => files.push(file),
             // pre-commit puts file names after the options with no `--`, so an existing file
             // named like `-x.json`, `-h.json` or `--y.json` is a file, not an option.
@@ -153,6 +173,12 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
             }
         }
     }
+    if files.iter().filter(|file| *file == STDIN).count() > 1 {
+        return Err("`-` (standard input) can be given only once".to_owned());
+    }
+    if files.is_empty() && stdin_filename.is_some() {
+        files.push(STDIN.into());
+    }
     Ok(Command::Check(Args {
         files,
         settings,
@@ -160,8 +186,12 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
         config,
         format,
         schema,
+        stdin_filename,
     }))
 }
+
+/// The file name that stands for standard input.
+pub(crate) const STDIN: &str = "-";
 
 fn exists(path: impl AsRef<std::path::Path>) -> bool {
     std::fs::symlink_metadata(path).is_ok()
@@ -215,6 +245,8 @@ mod tests {
             .filter(|name| !words.contains(&name.as_str()))
             .collect();
         assert!(missing.is_empty(), "not in the help: {missing:?}");
+        let wide: Vec<&str> = HELP.lines().filter(|l| l.chars().count() > 96).collect();
+        assert!(wide.is_empty(), "help lines over 96 columns: {wide:?}");
     }
 
     fn check(args: &[&str]) -> super::Args {
