@@ -6,3 +6,5 @@
 # everyone who runs the test benefits from these saved cases.
 cc 75a7775cae8e991ba55690cceb9a7d42f5612b4061cee35d808ae39541f7da60 # shrinks to text = "[\r\n", dialect = JsonLines
 cc 3006738a7331faad4cc2234da8c51b81f9cba6bab5faa6308462c462e969ca91 # shrinks to text = "/*\u{2028}", dialect = Jsonc
+cc 1dc2e0aab9f7d53b9605b4f031e689756d53d63b88fe5ce788a3aaa7c5b12de4 # shrinks to text = "\u{feff}{\"a\":1}\n{\"a\":1}", events = false
+cc 79b1164efc008a309cbef67c058c25cff75d4339e6a075b7945476e6c5d934c9 # shrinks to text = "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[// x\n[]", events = false

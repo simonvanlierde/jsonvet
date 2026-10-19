@@ -89,6 +89,15 @@ Ryzen 7 H 255 under Linux. Both tools give the same verdict in every case:
 fast. Other JSON5 syntax went to a pure-Python parser, and so did the second pass that finds a
 duplicate key's position. jsonvet does everything in one pass of one parser.
 
+A JSON Lines file of 1 MB or more is cut at newlines into one part for each core its chunk of
+files leaves free, and the parts are checked at once. A newline inside a JSON string must be
+escaped, and JSON Lines has no comments, so every raw newline ends a record. Each part counts
+offsets from the start of the file, problems stop at the first syntax error as in one pass, and
+the output is the same. With `hyperfine` on the same machine, 78 MB of nested records took 264 ms
+before and 89 ms after (3.0x). 100 MB of records that are mostly one long string took 83 ms
+before and 64 ms after: the string scan is already fast, and reading the file (19 ms for `cat`)
+stays on one thread.
+
 ## Dialects
 
 One parser covers six dialects; the [README](../README.md#dialects) has the table. JSON, JSONC,

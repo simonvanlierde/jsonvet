@@ -36,6 +36,8 @@ version for a new option or output, the patch version for a fix.
   output is unchanged and in the order the files were given. Memory now covers the files
   checked together: about 64 MB of text, or one file per core when files are larger than that.
 - Strings are scanned 16 bytes at a time: files of long strings check up to 1.8x faster.
+- A JSON Lines file of 1 MB or more is split at newlines and checked on the cores its chunk leaves
+  free: 78 MB of nested records check 3x faster on 12 cores. The output is unchanged.
 
 ### Fixed
 

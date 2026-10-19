@@ -7,8 +7,44 @@ mod common;
 use std::fmt::Write as _;
 
 use common::{nesting_violations, report_violation, strict};
-use jsonvet::{Config, Dialect, EventKind, Rule, check, parse};
+use jsonvet::{
+    Config, Dialect, EventKind, Rule, Severity, check, join_lines, line_parts, parse, parse_lines,
+};
 use proptest::prelude::*;
+
+/// JSON Lines text whose lines mostly parse, so problems sit on either side of a part's cut:
+/// duplicate keys, unsafe numbers, lone surrogates, blank lines, a byte order mark, any line ends.
+fn json_lines() -> impl Strategy<Value = String> {
+    let line = prop::sample::select(vec![
+        "{\"a\":1}",
+        "{\"a\":1,\"a\":2}",
+        "[9007199254740993]",
+        "[1e999]",
+        "\"\\ud800\"",
+        " [ [[[[[[[[1]]]]]]]] ] ",
+        "true",
+        "",
+        "{",
+        "\u{FEFF}1",
+    ]);
+    let end = prop::sample::select(vec!["\n", "\r\n", "\r"]);
+    (
+        any::<bool>(),
+        prop::collection::vec((line, end), 0..24),
+        any::<bool>(),
+    )
+        .prop_map(|(bom, lines, last)| {
+            let mut text = String::from(if bom { "\u{FEFF}" } else { "" });
+            for (line, end) in &lines {
+                text.push_str(line);
+                text.push_str(end);
+            }
+            if !last && text.ends_with('\n') {
+                text.pop();
+            }
+            text
+        })
+}
 
 /// JSON-ish token soup, so most inputs get past the first byte, mixed with arbitrary text for
 /// the rest.
@@ -291,7 +327,42 @@ proptest! {
     }
 
     #[test]
+    fn json_lines_checked_in_parts_report_what_one_pass_does(
+        text in prop_oneof![json_lines(), soup()],
+        events in any::<bool>(),
+    ) {
+        let config = Config::new(Dialect::JsonLines)
+            .rule(Rule::InvalidNumber, Severity::Error)
+            .max_depth(8);
+        let (whole, whole_events) = parse(&text, &config);
+        for parts in 1..=8 {
+            let ranges = line_parts(&text, parts);
+            prop_assert_eq!(ranges.first().map(|r| r.start), Some(0));
+            prop_assert_eq!(ranges.last().map(|r| r.end), Some(text.len()));
+            prop_assert!(text.is_empty() || ranges.iter().all(|r| !r.is_empty()), "{:?}", ranges);
+            let lines = ranges
+                .into_iter()
+                .map(|lines| parse_lines(&text, lines, &config, events))
+                .collect();
+            let (report, joined) = join_lines(&text, lines);
+            prop_assert_eq!(report.problems(), whole.problems(), "{} parts", parts);
+            if events {
+                prop_assert_eq!(&joined, &whole_events, "{} parts", parts);
+            }
+        }
+    }
+
+    #[test]
     fn dialects_nest(text in soup()) {
         prop_assert_eq!(nesting_violations(&text), Vec::<String>::new());
     }
+}
+
+#[test]
+fn json_lines_parts_are_cut_at_the_first_newline_past_each_share() {
+    let text = "[1]\n".repeat(8);
+    assert_eq!(line_parts(&text, 4), [0..8, 8..16, 16..24, 24..32]);
+    // A share that ends inside a line cuts after that line; past the last newline, no part.
+    assert_eq!(line_parts("[10]\n[2]\n[3]", 3), [0..5, 5..9, 9..12]);
+    assert_eq!(line_parts("[1]\n[2]", 4), [0..4, 4..7]);
 }

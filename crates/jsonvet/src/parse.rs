@@ -38,11 +38,24 @@ pub(crate) fn check<'a>(
     config: &Config,
     events: bool,
 ) -> (Vec<Problem>, Vec<Event<'a>>) {
+    check_lines(text, 0..text.len(), config, events)
+}
+
+/// Check the lines of a JSON Lines `text` in `lines`, which starts at a line's start and ends
+/// after a newline or at the end, as [`check`] would within the whole text: offsets count from
+/// the start of `text`, and a byte order mark counts only at its start.
+pub(crate) fn check_lines<'a>(
+    text: &'a str,
+    lines: std::ops::Range<usize>,
+    config: &Config,
+    events: bool,
+) -> (Vec<Problem>, Vec<Event<'a>>) {
     let dialect = config.dialect();
+    let text = &text[..lines.end];
     let mut parser = Parser {
         text,
         bytes: text.as_bytes(),
-        pos: 0,
+        pos: lines.start,
         dialect,
         json5: dialect.json5(),
         json_lines: dialect == Dialect::JsonLines,
@@ -54,7 +67,9 @@ pub(crate) fn check<'a>(
         stack: Vec::new(),
         events: events.then(Vec::new),
     };
-    parser.byte_order_mark(config.severity(Rule::ByteOrderMark));
+    if lines.start == 0 {
+        parser.byte_order_mark(config.severity(Rule::ByteOrderMark));
+    }
     let outcome = if parser.json_lines {
         parser.json_lines(config.severity(Rule::MissingFinalNewline))
     } else {

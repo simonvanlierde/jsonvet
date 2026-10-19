@@ -74,6 +74,86 @@ pub fn parse<'a>(text: &'a str, config: &Config) -> (Report<'a>, Option<Vec<Even
     )
 }
 
+/// Up to `parts` ranges of a JSON Lines text, in order and covering it, each ending after a
+/// newline or at the end: [`parse_lines`] checks each on its own, on any thread, and
+/// [`join_lines`] puts them back together. A raw newline cannot sit inside a JSON string, and
+/// JSON Lines has no comments, so it always ends a line.
+///
+/// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
+#[doc(hidden)]
+pub fn line_parts(text: &str, parts: usize) -> Vec<std::ops::Range<usize>> {
+    let mut ranges = Vec::new();
+    let mut start = 0;
+    for i in 1..parts {
+        // The first newline at or after the share's last byte, and never at or before `start`.
+        let from = (text.len() / parts * i).max(start + 1) - 1;
+        let Some(newline) = text.as_bytes()[from..].iter().position(|&b| b == b'\n') else {
+            break;
+        };
+        let end = from + newline + 1;
+        ranges.push(start..end);
+        start = end;
+    }
+    if start < text.len() || ranges.is_empty() {
+        ranges.push(start..text.len());
+    }
+    ranges
+}
+
+/// The problems and events of some lines of a JSON Lines text, from [`parse_lines`].
+#[doc(hidden)]
+pub struct Lines<'a> {
+    problems: Vec<Problem>,
+    events: Vec<Event<'a>>,
+    syntax_error: bool,
+}
+
+/// Check the `lines` of a JSON Lines `text`, one of its [`line_parts`], as [`parse`] would
+/// within the whole text, with or without `events`.
+///
+/// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
+#[doc(hidden)]
+pub fn parse_lines<'a>(
+    text: &'a str,
+    lines: std::ops::Range<usize>,
+    config: &Config,
+    events: bool,
+) -> Lines<'a> {
+    debug_assert_eq!(config.dialect(), Dialect::JsonLines);
+    let (problems, events) = parse::check_lines(text, lines, config, events);
+    let syntax_error = problems.iter().any(|p| p.rule() == Rule::Syntax);
+    Lines {
+        problems,
+        events,
+        syntax_error,
+    }
+}
+
+/// The report and events of a JSON Lines `text` from its [`line_parts`] checked in order, the
+/// same as [`parse`] gives for the whole text: problems end at the first syntax error, and there
+/// are no events after one.
+///
+/// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
+#[doc(hidden)]
+pub fn join_lines<'a>(
+    text: &'a str,
+    parts: Vec<Lines<'a>>,
+) -> (Report<'a>, Option<Vec<Event<'a>>>) {
+    let mut problems = Vec::new();
+    let mut events = Some(Vec::new());
+    for mut part in parts {
+        problems.append(&mut part.problems);
+        if part.syntax_error {
+            events = None;
+            break;
+        }
+        if let Some(events) = &mut events {
+            events.append(&mut part.events);
+        }
+    }
+    (Report::new(text, problems, false), events)
+}
+
 /// Guards on the public API: each example must fail to compile.
 ///
 /// A `Location` cannot be built outside the crate, so fields can be added:

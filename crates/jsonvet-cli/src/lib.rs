@@ -7,7 +7,7 @@ use std::process::ExitCode;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use jsonvet::{Report, Severity};
+use jsonvet::{Dialect, Report, Severity};
 
 mod args;
 mod glob;
@@ -35,6 +35,10 @@ const STACK: usize = 64 << 20;
 
 /// How many bytes of file text a run reads before it checks and prints them.
 const CHUNK_BYTES: usize = 64 << 20;
+
+/// From this size, a JSON Lines file is split at newlines and its parts checked on the cores
+/// its chunk leaves free.
+const SPLIT_BYTES: usize = 1 << 20;
 
 /// Run the command with the process's arguments and environment, and return its exit code.
 pub fn run() -> ExitCode {
@@ -141,6 +145,7 @@ fn run_with(
         let chunk;
         (chunk, rest) = rest.split_at(texts.len());
         let jobs: Vec<_> = chunk.iter().zip(&texts).collect();
+        let parts = (threads / jobs.len()).max(1);
         let checked = parallel(
             &jobs,
             threads,
@@ -149,7 +154,7 @@ fn run_with(
                 let name = shown(file);
                 let name = name.to_string_lossy();
                 text.as_deref()
-                    .map(|text| check(&name, text, &settings, schema.as_ref()))
+                    .map(|text| check(&name, text, &settings, schema.as_ref(), parts))
             },
         );
         let outcome = chunk
@@ -270,15 +275,41 @@ fn parallel<T: Sync, U: Send>(
     done.into_iter().map(|(_, result)| result).collect()
 }
 
+/// The parts to check a text in `dialect` in, on up to `parts` threads: more than one only for
+/// JSON Lines of [`SPLIT_BYTES`] or more.
+fn split(text: &str, dialect: Dialect, parts: usize) -> Vec<std::ops::Range<usize>> {
+    let split = dialect == Dialect::JsonLines && parts > 1 && text.len() >= SPLIT_BYTES;
+    jsonvet::line_parts(text, if split { parts } else { 1 })
+}
+
 /// Check a file's text, named by its lossy UTF-8 form for glob matching, and against `schema`
-/// if there is one: the report and the schema errors.
+/// if there is one, on up to `parts` threads: the report and the schema errors.
 fn check<'t>(
     name: &str,
     text: &'t str,
     settings: &Settings,
     schema: Option<&Schema>,
+    parts: usize,
 ) -> (Report<'t>, Vec<(usize, String, bool)>) {
     let config = settings.config_for(name);
+    let ranges = split(text, config.dialect(), parts);
+    if ranges.len() > 1 {
+        let config = match schema {
+            Some(_) => config.max_depth(SCHEMA_MAX_DEPTH),
+            None => config,
+        };
+        let lines = parallel(
+            &ranges,
+            parts,
+            || false,
+            |lines| jsonvet::parse_lines(text, lines.clone(), &config, schema.is_some()),
+        );
+        let (report, events) = jsonvet::join_lines(text, lines);
+        let errors = schema
+            .zip(events)
+            .map_or_else(Vec::new, |(schema, events)| schema.errors(&events));
+        return (report, errors);
+    }
     match schema {
         Some(schema) => {
             let (report, events) = jsonvet::parse(text, &config.max_depth(SCHEMA_MAX_DEPTH));
@@ -369,9 +400,60 @@ fn print(mut out: impl Write, text: &str) -> Result<u8, String> {
 
 #[cfg(test)]
 mod tests {
+    use std::fmt::Write as _;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use super::parallel;
+    use jsonvet::Dialect;
+
+    use super::{SPLIT_BYTES, Schema, Settings, check, parallel, split};
+
+    #[test]
+    fn only_json_lines_of_the_split_size_is_split_one_part_per_thread() {
+        let line = "[1]\n".repeat(SPLIT_BYTES / 4);
+        assert_eq!(split(&line, Dialect::JsonLines, 8).len(), 8);
+        assert_eq!(split(&line, Dialect::JsonLines, 1).len(), 1);
+        assert_eq!(split(&line, Dialect::Json, 8).len(), 1);
+        assert_eq!(split(&line[4..], Dialect::JsonLines, 8).len(), 1);
+    }
+
+    #[test]
+    fn a_large_json_lines_file_checked_in_parts_reports_what_one_pass_does() {
+        // Problems in every part: duplicate keys, and strings the schema wants as integers.
+        let pad = "x".repeat(500);
+        let mut text = String::from("\u{FEFF}");
+        for i in 0..4_000 {
+            let _ = match i % 7 {
+                0 => writeln!(text, "{{\"a\": {i}, \"a\": 1}}"),
+                1 => write!(text, "{{\"a\": \"{i}\", \"p\": \"{pad}\"}}\r\n"),
+                _ => writeln!(text, "{{\"a\": {i}, \"p\": \"{pad}\"}}"),
+            };
+        }
+        assert!(text.len() > SPLIT_BYTES);
+        let deep = format!("{}{}\n", "[".repeat(600), "]".repeat(600));
+        let texts = [
+            text.clone(),
+            format!("{text}{{\"a\": 1\n{text}"),
+            format!("{text}{deep}{text}"),
+        ];
+        let dir = std::env::temp_dir().join(format!("jsonvet-split-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a temporary directory");
+        let path = dir.join("schema.json");
+        std::fs::write(&path, r#"{"properties": {"a": {"type": "integer"}}}"#).expect("written");
+        let settings = Settings::default();
+        let schema = Schema::load(&path, &settings).expect("a schema");
+        let _ = std::fs::remove_dir_all(&dir);
+        for text in &texts {
+            for schema in [None, Some(&schema)] {
+                let (whole, whole_errors) = check("x.jsonl", text, &settings, schema, 1);
+                let (split, split_errors) = check("x.jsonl", text, &settings, schema, 8);
+                assert_ne!(whole.problems(), &[]);
+                assert_eq!(split.problems(), whole.problems());
+                assert_eq!(split_errors, whole_errors);
+            }
+        }
+        let (_, errors) = check("x.jsonl", &texts[0], &settings, Some(&schema), 8);
+        assert_eq!(errors.len(), 572);
+    }
 
     #[test]
     fn parallel_keeps_the_order_and_stops_after_a_prefix() {

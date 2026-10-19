@@ -24,6 +24,9 @@ exclude_re = [
   "glob.rs:\\d+:28: replace \\+ with \\* in wildcard",
   # Speed only: a number with a `.` or exponent fails the integer parse anyway.
   "schema.rs:.* replace match guard integer with true in number",
+  # Speed only: one part is the whole text either way, and the parts path gives the same report.
+  "jsonvet-cli/src/lib.rs:.* replace > with >= in split",
+  "jsonvet-cli/src/lib.rs:.* replace > with < in check",
   # A character-count checkpoint moved to the boundary before instead of after.
   "report.rs:.* replace \\+= with -= in Report<'a>::chars_before",
   # No byte matches two of the per-byte tests, so XOR and OR agree there; the OR with `stop` is
