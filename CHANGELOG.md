@@ -10,7 +10,8 @@ version for a new option or output, the patch version for a fix.
 
 ## [3.0.0] - 2026-10-18
 
-Four changes below are **Breaking**. To upgrade, set `rev: v3.0.0` (or
+3.0 checks files against a JSON Schema, with each error at its line and column, writes SARIF
+for GitHub code scanning, and ships as a GitHub Action. Four changes below are **Breaking**. To upgrade, set `rev: v3.0.0` (or
 `uses: simonvanlierde/jsonvet@v3`), then:
 
 1. If you run jsonvet from a directory other than the one holding `jsonvet.toml` (or the
@@ -48,9 +49,9 @@ Hook and command users who do none of the first three need no other change.
   files, apart from symlinks and submodules, or the `files` you give it (`**` matches at any depth
   on every runner). With `sarif:` it also writes a SARIF file for code scanning, and fails with a
   message when the installed jsonvet cannot. It installs jsonvet from PyPI and runs on Linux,
-  macOS and Windows runners. Its `version` input takes
-  `X.Y.Z` (with an optional suffix such as `rc1` or `.post1`), `X.*`, `X.Y.*` or `latest`. The
-  `v3` tag moves to each new 3.x release once its wheels are on PyPI.
+  macOS and Windows runners. Its `version` input takes `X.Y.Z` (with an optional suffix such as
+  `rc1` or `.post1`), `X.*`, `X.Y.*` or `latest`. The `v3` tag moves to each new 3.x release once
+  its wheels are on PyPI.
 - Library: `Rule::description()`, `Problem::related()` with `Related` and `RelatedKind` (what the
   second position points at), `Problem::path()` (a duplicate key's JSONPath),
   `Dialect::EXTENSIONS`, `Dialect::FILE_NAMES` and `Location::START`.
@@ -103,8 +104,8 @@ Hook and command users who do none of the first three need no other change.
 
 ### Fixed
 
-- A key with a combining mark or a symbol such as U+093E or U+24B6 in its name is now quoted in
-  the path, `$["…"]` instead of `$.…`, as check-json5 1.4.1 does.
+- A key with a combining mark or a symbol such as U+093E or U+24B6 in its name now goes in
+  brackets and quotes in the path, as check-json5 1.4.1 does. 2.0 printed it after a dot.
 - In JWCC (HuJSON) files, a `//` comment ends only at a line feed, as the JWCC text says. A lone
   carriage return no longer ends it, so `[1, // c` + CR + `2]` fails as it should.
 - A FIFO no longer hangs a run, and a symlink to `/dev/zero` no longer fills memory.

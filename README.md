@@ -20,6 +20,9 @@ events.jsonl:12:1: error[syntax] blank line; JSON Lines needs a value on every l
 A file jsonvet cannot read gets a line with no position and no rule, such as
 `gone.json: error: no such file`; in SARIF it is a result under the rule `unreadable`.
 
+With [`--schema`](#json-schema) it also checks each file against a JSON Schema, and each error
+gets the same file, line and column.
+
 It runs as a pre-commit or prek hook, a GitHub Action, a command and a Rust library. Up to 1.4 it
 was check-json5, a Python hook. 2.0 rewrote it in Rust with the same verdicts (see
 [Coming from check-json5](#coming-from-check-json5)).

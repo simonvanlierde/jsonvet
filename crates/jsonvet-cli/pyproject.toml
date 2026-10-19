@@ -5,7 +5,7 @@ build-backend = "maturin"
 
 [project]
 name = "jsonvet"
-description = "Checks JSON, I-JSON, JSONC, JWCC (HuJSON), JSON5 and JSON Lines files for syntax errors and duplicate keys."
+description = "Checks JSON, I-JSON, JSONC, JWCC (HuJSON), JSON5 and JSON Lines files for syntax errors, duplicate keys and JSON Schema errors, with exact positions."
 readme = "../../README.md"
 license = "MIT"
 dynamic = ["version"]
