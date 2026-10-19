@@ -24,8 +24,6 @@ exclude_re = [
   "glob.rs:\\d+:28: replace \\+ with \\* in wildcard",
   # Speed only: a number with a `.` or exponent fails the integer parse anyway.
   "schema.rs:.* replace match guard integer with true in number",
-  # The stub for a build without the schema feature, which the run does not compile.
-  "lib.rs:\\d+:13: replace schema::Schema::(load|errors) ",
   # A character-count checkpoint moved to the boundary before instead of after.
   "report.rs:.* replace \\+= with -= in Report<'a>::chars_before",
   # Any other false schema is reported at its own value, which the comparison after the guard
