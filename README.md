@@ -208,7 +208,7 @@ checked as JSONC, and `.hujson` and `.jwcc` files as JWCC. To keep the old verdi
 jsonvet runs the json5-tests suite, edge-case snapshots, property tests, fuzzing, mutation testing
 and a comparison with check-json5 1.4.1, on Linux, macOS and Windows. A
 [conformance matrix](https://github.com/simonvanlierde/jsonvet/blob/main/docs/conformance.md)
-runs the same files against 17 other parsers in four languages:
+runs the same files against 18 other parsers in four languages:
 
 <!-- conformance:start -->
 
@@ -218,9 +218,9 @@ runs the same files against 17 other parsers in four languages:
 | JSONC | 9 | `js-jsonc-parser` 100%, `jsonvet-jsonc` 100%, `go-tidwall-jsonc` 89%, `js-strip-json-comments` 89%, `rs-jsonc-parser` 78% |
 | JWCC (HuJSON) | 10 | `jsonvet-jwcc` 100%, `go-hujson` 90% |
 | JSON Lines | 11 | `jsonvet-jsonl` 100%, `py-jsonlines` 82%, `go-json-stream` 64%, `rs-serde-json-stream` 64% |
-| Strict JSON (baseline) | 129 | `js-json-parse` 100%, `jsonvet-json` 100%, `rs-serde-json` 98%, `py-json` 96% |
+| Strict JSON (baseline) | 129 | `js-json-parse` 100%, `jsonvet-json` 100%, `rs-serde-json` 98%, `py-json` 96%, `py-jiter` 95% |
 
-Run on 2026-10-14. The full grid, and where each expected verdict comes from: [docs/conformance.md](https://github.com/simonvanlierde/jsonvet/blob/main/docs/conformance.md).
+Run on 2026-10-19. The full grid, and where each expected verdict comes from: [docs/conformance.md](https://github.com/simonvanlierde/jsonvet/blob/main/docs/conformance.md).
 
 <!-- conformance:end -->
 

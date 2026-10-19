@@ -8,6 +8,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+import jiter
 import json5
 import jsonlines
 import pyjson5
@@ -31,29 +32,34 @@ def read_jsonlines(path: str) -> None:
             pass
 
 
-# Each parser takes a path and the file's text, and raises one of its error types to reject.
-PARSERS: dict[str, tuple[Callable[[str, str], object], tuple[type[Exception], ...]]] = {
-    "py-json": (lambda _, text: json.loads(text), (json.JSONDecodeError,)),
-    "py-json5": (lambda _, text: json5.loads(text), (ValueError,)),
-    "py-pyjson5": (lambda _, text: pyjson5.loads(text), (pyjson5.Json5DecoderException,)),
+def text(data: bytes) -> str:
+    """Decode as strict UTF-8 for the parsers that take text; verdict() counts a failure as a reject."""
+    return data.decode("utf-8")
+
+
+# Each parser takes a path and the file's bytes, and raises one of its error types to reject.
+PARSERS: dict[str, tuple[Callable[[str, bytes], object], tuple[type[Exception], ...]]] = {
+    "py-json": (lambda _, data: json.loads(text(data)), (json.JSONDecodeError,)),
+    "py-json5": (lambda _, data: json5.loads(text(data)), (ValueError,)),
+    "py-pyjson5": (lambda _, data: pyjson5.loads(text(data)), (pyjson5.Json5DecoderException,)),
     "py-jsonlines": (lambda path, _: read_jsonlines(path), (jsonlines.InvalidLineError,)),
+    "py-jiter": (lambda _, data: jiter.from_json(data), (ValueError,)),
     # Variants with duplicate detection on, for the duplicate-key table only.
     "py-json-dupes": (
-        lambda _, text: json.loads(text, object_pairs_hook=no_duplicates),
+        lambda _, data: json.loads(text(data), object_pairs_hook=no_duplicates),
         (json.JSONDecodeError, DuplicateKeyError),
     ),
-    "py-json5-dupes": (lambda _, text: json5.loads(text, allow_duplicate_keys=False), (ValueError,)),
+    "py-json5-dupes": (lambda _, data: json5.loads(text(data), allow_duplicate_keys=False), (ValueError,)),
+    "py-jiter-dupes": (lambda _, data: jiter.from_json(data, catch_duplicate_keys=True), (ValueError,)),
 }
 
 
-def verdict(path: str, parse: Callable[[str, str], object], errors: tuple[type[Exception], ...]) -> str:
+def verdict(path: str, parse: Callable[[str, bytes], object], errors: tuple[type[Exception], ...]) -> str:
     """Parse one file and name the outcome."""
     try:
-        text = Path(path).read_bytes().decode("utf-8")
+        parse(path, Path(path).read_bytes())
     except UnicodeDecodeError:
-        return "reject"  # not UTF-8, so the parser never sees it
-    try:
-        parse(path, text)
+        return "reject"  # not UTF-8, so a text parser never sees it
     except errors:
         return "reject"
     except Exception:  # noqa: BLE001 - any other exception type is a crash by definition

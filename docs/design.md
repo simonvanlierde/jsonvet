@@ -256,7 +256,7 @@ and Windows, plus the oldest supported Rust (1.88). Each layer exists for one re
   pass or fail.
 - **Corpus:** one file per case keeps every edge case, survey finding and fuzz finding from
   coming back. One reviewed snapshot pins every exit code and output line.
-- **Conformance matrix:** the same files through 17 other parsers in four languages, in
+- **Conformance matrix:** the same files through 18 other parsers in four languages, in
   [docs/conformance.md](conformance.md).
 - **Differential:** the promise to 1.4 is a verdict match, so it is checked against 1.4 itself.
 - **Fuzzing:** finds panics, offsets inside a character, and disagreements with serde_json and the

@@ -1,6 +1,6 @@
 {
-  "date": "2026-10-14",
-  "seconds": 22,
+  "date": "2026-10-19",
+  "seconds": 23,
   "images": {
     "node": "node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392",
     "python": "python:3.13-slim@sha256:70729b46c69b4f1e97c4822c1af3df53a1476cf5ddc6c087c0c10bc3a5678c2f",
@@ -12,7 +12,7 @@
     "python": "3.13.16",
     "go": "go1.26.9",
     "rust": "1.99.0",
-    "jsonvet": "2.0.0 (ff876f1)"
+    "jsonvet": "3.0.0 (5d71175)"
   },
   "parsers": {
     "js-json5": {
@@ -79,6 +79,14 @@
         "jsonl"
       ]
     },
+    "py-jiter": {
+      "language": "python",
+      "package": "jiter",
+      "version": "0.17.0",
+      "uses": [
+        "json"
+      ]
+    },
     "py-json-dupes": {
       "language": "python",
       "package": "",
@@ -91,6 +99,14 @@
       "language": "python",
       "package": "json5",
       "version": "0.17.3",
+      "uses": [
+        "dupes"
+      ]
+    },
+    "py-jiter-dupes": {
+      "language": "python",
+      "package": "jiter",
+      "version": "0.17.0",
       "uses": [
         "dupes"
       ]
@@ -170,7 +186,7 @@
     "jsonvet-json": {
       "language": "jsonvet",
       "package": "jsonvet",
-      "version": "2.0.0 (ff876f1)",
+      "version": "3.0.0 (5d71175)",
       "uses": [
         "json"
       ]
@@ -178,7 +194,7 @@
     "jsonvet-json5": {
       "language": "jsonvet",
       "package": "jsonvet",
-      "version": "2.0.0 (ff876f1)",
+      "version": "3.0.0 (5d71175)",
       "uses": [
         "json5"
       ]
@@ -186,7 +202,7 @@
     "jsonvet-jsonc": {
       "language": "jsonvet",
       "package": "jsonvet",
-      "version": "2.0.0 (ff876f1)",
+      "version": "3.0.0 (5d71175)",
       "uses": [
         "jsonc"
       ]
@@ -194,7 +210,7 @@
     "jsonvet-jwcc": {
       "language": "jsonvet",
       "package": "jsonvet",
-      "version": "2.0.0 (ff876f1)",
+      "version": "3.0.0 (5d71175)",
       "uses": [
         "jwcc"
       ]
@@ -202,7 +218,7 @@
     "jsonvet-jsonl": {
       "language": "jsonvet",
       "package": "jsonvet",
-      "version": "2.0.0 (ff876f1)",
+      "version": "3.0.0 (5d71175)",
       "uses": [
         "jsonl"
       ]
@@ -210,7 +226,7 @@
     "jsonvet-dupes": {
       "language": "jsonvet",
       "package": "jsonvet",
-      "version": "2.0.0 (ff876f1)",
+      "version": "3.0.0 (5d71175)",
       "uses": [
         "dupes"
       ]

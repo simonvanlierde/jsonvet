@@ -2,5 +2,6 @@
 json5==0.17.3
 pyjson5==2.0.1
 jsonlines==4.0.0
+jiter==0.17.0
 # jsonlines needs attrs.
 attrs==26.1.0
