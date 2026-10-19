@@ -1,7 +1,8 @@
 # jsonvet design
 
-This document records what jsonvet promises and how it is built. jsonvet 2.0 rewrote check-json5
-1.4 (Python) in Rust. Items marked *since 3.0* changed after 2.0.0.
+What jsonvet promises, and why it is built the way it is. jsonvet 2.0 rewrote check-json5 1.4
+(Python) in Rust. Items marked *since 3.0* changed after 2.0.0. For how to use it, see the
+[reference](usage.md).
 
 ## The contract with 1.4
 
@@ -54,12 +55,9 @@ each of JSON5 and strict mode: 20,000 generated, the 114 json5-tests cases and t
 files. Of the 40,368 runs, every verdict and duplicate-key report matches except 385 runs on 383
 files. Those are 381 files whose unquoted key starts with a `\u` escape that cannot start a
 key (in JSON5 mode), the depth-10,000 file, and a file with a syntax error after a duplicate key
-(in both modes). The differences below are intended, and the corpus can still meet them:
+(in both modes). Besides the line ends and the non-ASCII paths in the list above, these
+differences are intended:
 
-- Lines end at a lone CR in jsonvet, and in JSON5 also at U+2028 and U+2029, so positions after
-  one of them differ.
-- *Since 3.0*, a quoted key in a JSONPath keeps non-ASCII text as written, such as `$["日本"]`.
-  1.4 and 2.0 wrote `$["\u65e5\u672c"]`.
 - Raw U+2028 and U+2029 inside strings pass in jsonvet, as the JSON5 spec allows. 1.4's JSON5
   path rejected them.
 - Nesting deeper than 10,000 levels is a syntax error in jsonvet (`Config::max_depth` changes
@@ -93,32 +91,29 @@ duplicate key's position. jsonvet does everything in one pass of one parser.
 
 ## Dialects
 
-One parser covers six dialects. JSON, JSONC, JWCC and JSON5 each add syntax to the one before. A
-file that passes in one passes in the next, with one exception: a `//` comment ends at a different
-place in each. JWCC ends it at LF only, JSONC also at a lone CR, and JSON5 also at U+2028 and
-U+2029. So `new-lines/comment-cr.json5` passes as JSONC and fails as JWCC. I-JSON is JSON with
-stricter content rules, and JSON Lines is one JSON value per line.
+One parser covers six dialects; the [README](../README.md#dialects) has the table. JSON, JSONC,
+JWCC and JSON5 each add syntax to the one before, so a file that passes in one passes in the next.
 
-The [README](../README.md#dialects) has the table of what each dialect adds and which extensions
-default to it. `.json` defaults to JSON5, as in 1.4. `auto` means "the default for this file's
-extension".
+The one exception is where a `//` comment ends. JWCC ends it at LF only, JSONC also at a lone CR,
+and JSON5 also at U+2028 and U+2029. So `new-lines/comment-cr.json5` passes as JSONC and fails as
+JWCC.
 
-Lines end at LF, CR and CRLF. In JSON5 they also end at U+2028 and U+2029, which the JSON5 spec
-counts as line terminators. The other dialects treat both as ordinary characters, so they do not
-start a line there. Columns count Unicode code points from the
-start of the line, starting at 1.
+Lines end at LF, CR and CRLF. In JSON5 they also end at U+2028 and U+2029, because the JSON5 spec
+counts them as line terminators. The other dialects treat both as ordinary characters.
+
+`.json` defaults to JSON5, as in 1.4. `auto` means "the default for this file's extension".
 
 ## Rules
 
-Every problem belongs to a rule, and each rule has a default severity per dialect. `--warn`,
-`--error` and `--ignore` change it. An ignored rule is not checked at all. The
-[README](../README.md#rules) lists the rules and their defaults.
+Every problem belongs to a rule, and each rule has a default severity per dialect. The
+[README](../README.md#rules) lists them.
 
-`invalid-number` and `invalid-code-point` are the I-JSON rules, off outside `i-json`. RFC 7493
-leaves two cases open, and these rules do not flag them: a number that underflows to zero
-(`1e-400`), and an integer written with a fraction or an exponent past 2⁵³
-(`9007199254740993.0`). `i-json` reports an overflow, and an integer written as digits alone past
-±(2⁵³ − 1).
+`invalid-number` and `invalid-code-point` are the I-JSON rules, off outside `i-json`. They report
+an overflow, and an integer written as digits alone past ±(2⁵³ − 1). RFC 7493 leaves two cases
+open, and these rules do not flag them:
+
+- a number that underflows to zero (`1e-400`);
+- an integer written with a fraction or an exponent past 2⁵³ (`9007199254740993.0`).
 
 In GitHub Actions each problem is also printed as a `::warning` or `::error` annotation.
 `--format sarif` prints one SARIF 2.1.0 document instead, with no annotations. jsonvet writes its
@@ -191,10 +186,9 @@ The limits are listed in the [reference](usage.md#json-schema-limits). Why each 
 ## Configuration
 
 jsonvet reads `jsonvet.toml`, or a `[tool.jsonvet]` table in `pyproject.toml`. It looks in the
-working directory and its parents, and stops at the first directory that has a `.git` entry, so
-it never uses a stray file above the repository. The [README](../README.md#configuration) has the
-format and how globs match. A pattern given with `--dialect` or `--strict` matches the path as
-typed, as in 1.4.
+working directory and its parents. It stops at the first directory that has a `.git` entry, so
+it never uses a stray file above the repository. A pattern given with `--dialect` or `--strict`
+matches the path as typed, as in 1.4. The [reference](usage.md#globs) has the glob rules.
 
 ## Architecture
 
@@ -263,11 +257,8 @@ and Windows, plus the oldest supported Rust (1.88). Each layer exists for one re
   API.
 - **Properties:** proptest checks laws no single case shows: no input panics, and every location
   lies on a character boundary and matches a naive recount.
-- **Mutations:** show which behaviour no test pins. `.cargo/mutants.toml` lists the mutants that
-  survive, each of which changes no behaviour: speed-only branches, OR of bits that never overlap,
-  a match arm the fallback repeats, a Windows-only branch, a loop guard the loop body always stops
-  first, a character-count checkpoint moved to the boundary before instead of after, and the
-  no-schema stub the run does not compile.
+- **Mutations:** show which behaviour no test pins. The mutants that survive change no behaviour,
+  such as speed-only branches. `.cargo/mutants.toml` lists each one with its reason.
 
 ## Publishing
 
@@ -278,15 +269,18 @@ The `check-json5` package uploads after the `jsonvet` wheels, and `jsonvet-cli` 
 
 ## Dependencies and pins
 
-Every version in the repository falls in one of five groups. `.github/renovate.json5` encodes
-them.
+Every version in the repository falls in one of five groups, and `.github/renovate.json5`
+encodes them.
 
-- **Bumped monthly**, in one Renovate pull request after a release is 7 days old, with majors in
-  their own. This covers the workspace crates (ranges in `Cargo.toml`, versions in `Cargo.lock`,
-  which also gets indirect dependencies refreshed), the fuzz crate's dependencies, GitHub Actions
-  (pinned by commit, version in a comment), pre-commit hook revisions, and the CI tools: ruff,
-  pre-commit and prek through `uvx`, the cargo tools through `install-action`, uv, and the maturin
-  that builds the wheels.
+- **Bumped monthly**, in one Renovate pull request once a release is 7 days old. Majors get their
+  own pull request. This covers:
+  - the workspace crates: ranges in `Cargo.toml`, versions in `Cargo.lock`, which also refreshes
+    indirect dependencies;
+  - the fuzz crate's dependencies;
+  - GitHub Actions, pinned by commit with the version in a comment;
+  - pre-commit hook revisions;
+  - the CI tools: ruff, pre-commit and prek through `uvx`, the cargo tools through
+    `install-action`, uv, and the maturin that builds the wheels.
   - The fuzz crate pins json5 exactly, because the `diff_json5` target compares with it. A bump
     changes `fuzz/`, which runs the fuzz workflow.
   - ruff is pinned in one place, the `rev` in `.pre-commit-config.yaml`, and CI runs its hooks.
@@ -296,10 +290,13 @@ them.
   lock files, and its images, pinned by tag and digest. CI's `conformance/run.py --check` fails
   until `results/versions.json` matches the pins, so the pull request cannot merge until someone
   re-runs the matrix. The lock files are never refreshed on their own.
-- **Fixed:** `check-json5==1.4.1` on Python 3.13 in `scripts/`, the reference the contract is
-  checked against; `rust-version = "1.88"` and the MSRV job, raised by hand when a dependency or a
-  language feature needs it; and jsonvet's own version in `setup.py` and `compat/`, which a
-  release commit sets by hand and `scripts/check-versions.py` checks against the tag.
+- **Fixed:**
+  - `check-json5==1.4.1` on Python 3.13 in `scripts/`, the reference the contract is checked
+    against;
+  - `rust-version = "1.88"` and the MSRV job, raised by hand when a dependency or a language
+    feature needs it;
+  - jsonvet's own version in `setup.py` and `compat/`. A release commit sets it by hand, and
+    `scripts/check-versions.py` checks it against the tag.
 - **Pinned to the release:** the images and the Rust that build the release wheels, by digest and
   version, so a wheel does not change with an upstream image. This is an exception to the next
   group.

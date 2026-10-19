@@ -1,8 +1,7 @@
 # jsonvet reference
 
-The fine print behind the [README](../README.md): every option, how globs and file names work, the
-exit status, the GitHub Action's inputs, and the limits of `--schema`. Why the rules are as they
-are is in [design.md](design.md).
+The details behind the [README](../README.md). Why things work this way is in
+[design.md](design.md).
 
 ## Options
 
@@ -19,16 +18,36 @@ are is in [design.md](design.md).
 
 `jsonvet --help` prints the same list with more detail.
 
-## Globs
+## Output
 
-A glob without `/` matches the file name at any depth. A glob with `/` matches the whole path, and
-`*` also matches `/`.
+Each problem is one line: `file:line:col: severity[rule] message`.
 
-A glob compares exact code points, with no Unicode normalization. A `\` in a path is read as `/`.
+- Lines and columns count from 1. Columns count Unicode code points, and a byte order mark is
+  column 1.
+- A duplicate key gets its JSONPath and the position of the first copy. `$` is the root,
+  `$.tags[1]` an array element, `$[""]` the empty key.
+- A file jsonvet cannot read gets a line with no position and no rule, such as
+  `gone.json: error: no such file`. It always fails the run, and you cannot change that.
+- In GitHub Actions, each problem is also printed as an annotation.
 
-A glob on the command line matches the path as you typed it, so it is relative to the working
-directory. pre-commit runs from the repository root. A glob in a config file is relative to the
-directory that holds that file (see [Configuration](../README.md#configuration)).
+jsonvet escapes control, bidirectional and invisible characters in file names and messages. So no
+output line can drive a terminal or pass for a GitHub workflow command. The exact forms are in
+[design.md](design.md#output).
+
+## Exit status and files
+
+| Exit | When                                                     |
+| ---: | -------------------------------------------------------- |
+|    0 | no file has an error, or there were no files             |
+|    1 | a file has an error, or a file cannot be read            |
+|    2 | a usage error, such as an unknown option or a bad schema |
+
+jsonvet reads regular files only, and follows a symlink to one. A directory, device, FIFO or
+socket prints `error: not a regular file`. The hook (`types: [text]`) skips tracked symlinks and
+submodules.
+
+When the output pipe closes early, as in `jsonvet … | head -1`, jsonvet stops quietly. It exits
+with the verdict for the files it has checked.
 
 ## File names that look like options
 
@@ -38,27 +57,38 @@ exactly that name exists. Otherwise an unknown option is a usage error (`unknown
 
 To be sure, put `--` before the file names: `jsonvet -- --x.json`.
 
-## Exit status and files
+## Dialects
 
-| Exit | When                                                       |
-| ---: | ---------------------------------------------------------- |
-|    0 | no file has an error, or there were no files               |
-|    1 | a file has an error, or a file cannot be read              |
-|    2 | a usage error, such as an unknown option or a bad schema   |
+- Extensions match in lower case only, so `DATA.JSONL` is checked as JSON5, not JSON Lines.
+- JSONC, JWCC and JSON5 each add syntax to the one before, except where a `//` comment ends.
+  JWCC ends it at LF only, JSONC also at a lone CR, and JSON5 also at U+2028 and U+2029.
+- In `i-json`, lone surrogates, noncharacters and numbers that a double cannot hold are errors.
 
-A file that does not exist or cannot be read prints `name: error: <reason>`, with no line or
-column. In SARIF it is a result under the rule `unreadable`.
+## Rules and severities
 
-jsonvet reads regular files only, and follows a symlink to one. A directory, device, FIFO or
-socket prints `error: not a regular file`. The hook (`types: [text]`) skips tracked symlinks and
-submodules.
+A severity is `error`, `warning` (or `warn`), or `ignore` (or `off`). An ignored rule is not
+checked at all. Warnings fail a run only when there are more than `--max-warnings N`.
 
-When the output pipe closes early, as in `jsonvet … | head -1`, jsonvet stops quietly. It exits
-with the verdict for the files it has checked.
+## Globs
 
-jsonvet escapes control, bidirectional and invisible characters in file names and messages, so no
-output line can drive a terminal or pass for a GitHub workflow command. The exact forms are in
-[design.md](design.md#output).
+- A glob without `/` matches the file name at any depth.
+- A glob with `/` matches the whole path, and `*` also matches `/`.
+- A glob compares exact code points, with no Unicode normalization. A `\` in a path is read as
+  `/`.
+- On the command line, a glob matches the path as you typed it, so it is relative to the working
+  directory. pre-commit runs from the repository root.
+- In a config file, a glob is relative to the directory that holds the file. So `data/*.json` in
+  the root's `jsonvet.toml` matches `data/x.json` when jsonvet runs in the root, in `data/`, or
+  with an absolute path. A file outside that directory matches none of its globs.
+
+## Configuration file
+
+jsonvet reads `jsonvet.toml`, or a `[tool.jsonvet]` table in `pyproject.toml`. It looks in the
+working directory and its parents, and stops at the repository root. Options on the command line
+win. `--config FILE` reads that file instead, and `--no-config` reads none.
+
+The file takes two keys, `rules` and `dialects`. Any other key, at the top or in a `dialects`
+entry, is a usage error, so a typo never goes unnoticed.
 
 ## GitHub Action
 
@@ -68,7 +98,7 @@ All inputs are optional:
 | --------- | ------------------------------------------------------------------------------------------- |
 | `files`   | paths or globs to check, separated by spaces; by default every tracked file the hook checks |
 | `args`    | extra options, separated by spaces, such as `--strict package.json`                         |
-| `sarif`   | also write a SARIF file to this path (see [GitHub code scanning](../README.md#github-code-scanning)) |
+| `sarif`   | also write a SARIF file to this path, besides the usual log and annotations                 |
 | `version` | the jsonvet version to install: `X.Y.Z` (also with a suffix such as `rc1` or `.post1`), `X.*`, `X.Y.*` or `latest` |
 
 In `files`, `**` matches folders at any depth on every runner. The Action skips symlinks, and by
@@ -82,19 +112,39 @@ commit. The step log names the version it installed.
 Pinning the Action does not pin the wheel's bytes: pip installs `jsonvet==X.Y.Z` from PyPI without
 a hash check.
 
+## SARIF
+
+`--format sarif` prints one SARIF 2.1.0 document instead of text lines:
+
+```bash
+jsonvet --format sarif $(git ls-files '*.json') > jsonvet.sarif
+```
+
+- Each problem is a result with its rule, severity, message and position. A duplicate key also
+  points at the first copy. A file jsonvet cannot read is a result under the rule `unreadable`.
+- The exit status and `--max-warnings` work as with text. No annotations are printed.
+- GitHub keeps only 5,000 results of a run with more than 25,000. So jsonvet writes the first
+  25,000, and counts the rest in a tool notification and on stderr.
+
+Uploading needs `github/codeql-action/upload-sarif` and the `security-events: write` permission.
+The README has a [workflow](../README.md#github-code-scanning).
+
 ## JSON Schema limits
 
 These hold for `--schema`. Why each one exists is in [design.md](design.md#--schema).
 
+- **Severity.** Schema errors are always errors, in text, annotations and SARIF. `--error`,
+  `--warn`, `--ignore` and the config file do not take `schema`, and exit 2 if you give it to
+  them.
 - **Errors.** A document lists at most 100 schema errors. They are the first 100 that jsonschema
   finds, and it takes an object's keys in sorted order, not file order. They print in file order.
   Then one more line, `... and N more schema errors in this document`, sits at the document's
   start. SARIF leaves that line out. `additionalProperties` gives one error per key it does not
   allow, at that key, and each one counts toward the 100.
-- **Messages.** A message quotes the value unless that makes it long; then it says `value`. A
-  message, with its path, is cut at 200 bytes and ends in `...`. The wording comes from the
-  jsonschema crate and may change between releases. The rule id `schema` and the position are
-  stable.
+- **Messages.** Each message ends with the JSONPath of the value, as duplicate keys do. A message
+  quotes the value unless that makes it long; then it says `value`. A message, with its path, is
+  cut at 200 bytes and ends in `...`. The wording comes from the jsonschema crate and may change
+  between releases. The rule id `schema` and the position are stable.
 - **Depth.** With `--schema`, a file nested deeper than 512 levels is a syntax error. A file with a
   syntax error gets no schema errors.
 - **Values.** Each line of a JSON Lines file is checked on its own. `NaN`, `Infinity` and numbers
@@ -120,3 +170,13 @@ These hold for `--schema`. Why each one exists is in [design.md](design.md#--sch
 
   A `$ref` back to a schema it is inside, as in `{"items": {"$ref": "#"}}`, is recursion and is
   fine: jsonvet does not follow it again.
+
+## Coming from check-json5
+
+The `check-json5` hook id, the `check-json5` command, `--strict` and the `check-json5` package on
+PyPI (which now installs jsonvet) keep working through 3.x.
+
+Besides the dialect change in the README, the output line, the syntax-error wording, positions
+after a lone CR or U+2028, the new `.jsonl` and `.ndjson` files and the removed Python module
+changed. The CHANGELOG has them under 2.0.0 and 3.0.0, and
+[design.md](design.md#the-contract-with-14) has the full list.
