@@ -11,7 +11,9 @@ version for a new option or output, the patch version for a fix.
 ## [3.0.0] - 2026-10-18
 
 3.0 checks files against a JSON Schema, with each error at its line and column, writes SARIF
-for GitHub code scanning, and ships as a GitHub Action. Four changes below are **Breaking**. To upgrade, set `rev: v3.0.0` (or
+for GitHub code scanning, and ships as a GitHub Action.
+
+Four changes below are **Breaking**. To upgrade, set `rev: v3.0.0` (or
 `uses: simonvanlierde/jsonvet@v3`), then:
 
 1. If you run jsonvet from a directory other than the one holding `jsonvet.toml` (or the
