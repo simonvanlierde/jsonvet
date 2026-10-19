@@ -28,4 +28,7 @@ exclude_re = [
   "lib.rs:\\d+:13: replace schema::Schema::(load|errors) ",
   # A character-count checkpoint moved to the boundary before instead of after.
   "report.rs:.* replace \\+= with -= in Report<'a>::chars_before",
+  # Any other false schema is reported at its own value, which the comparison after the guard
+  # turns away.
+  "schema.rs:.* replace match guard error .* with true in unexpected",
 ]

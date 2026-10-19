@@ -1355,6 +1355,70 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
     }
 
     #[test]
+    fn costly_patterns_are_found_in_arrays_and_tried_on_keys_only_under_property_names() {
+        let slow = format!("{}!", "a".repeat(30));
+        let pattern = r#""^(a|a)*\\1b|!""#;
+        let dir = workdir(&[
+            (
+                "names.json",
+                &format!("{{\"propertyNames\": {{\"pattern\": {pattern}}}}}"),
+            ),
+            (
+                "all.json",
+                &format!("{{\"allOf\": [{{\"pattern\": {pattern}}}]}}"),
+            ),
+            (
+                "items.json",
+                &format!("{{\"items\": {{\"pattern\": {pattern}}}}}"),
+            ),
+            ("k.json", &format!("{{\"{slow}\": 1}}")),
+            ("s.json", &format!("\"{slow}\"")),
+        ]);
+        let message = |what: &str, at: &str| {
+            format!(
+                "error[schema] this {what} could not be checked against the pattern \
+                 \"^(a|a)*\\1b|!\": matching it takes more than 5000 backtracking steps (at {at})\n"
+            )
+        };
+        // jsonschema's own error for the key, which says the same, is dropped.
+        let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "names.json", "k.json"]);
+        assert_eq!(code, 1);
+        assert_eq!(
+            out,
+            format!("k.json:1:2: {}", message("key", &format!("$[\"{slow}\"]")))
+        );
+        let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "all.json", "s.json"]);
+        assert_eq!(code, 1);
+        assert_eq!(out, format!("s.json:1:1: {}", message("string", "$")));
+        let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "items.json", "k.json"]);
+        assert_eq!((code, out.as_str()), (0, ""));
+    }
+
+    #[test]
+    fn a_costly_pattern_error_takes_one_of_the_100_places() {
+        let numbers: Vec<String> = (0..150).map(|i| i.to_string()).collect();
+        let dir = workdir(&[
+            (
+                "schema.json",
+                r#"{"items": {"type": "string", "pattern": "^(a|a)*\\1b"}}"#,
+            ),
+            (
+                "n.json",
+                &format!("[\"{}!\", {}]", "a".repeat(30), numbers.join(",")),
+            ),
+        ]);
+        let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "schema.json", "n.json"]);
+        assert_eq!(code, 1);
+        assert_eq!(out.lines().count(), 101);
+        assert!(
+            out.ends_with(
+                "n.json:1:1: error[schema] ... and 51 more schema errors in this document\n"
+            ),
+            "{out}"
+        );
+    }
+
+    #[test]
     fn past_100_errors_text_counts_the_rest_and_sarif_leaves_the_count_out() {
         let numbers: Vec<String> = (0..101).map(|i| i.to_string()).collect();
         let dir = workdir(&[
