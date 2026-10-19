@@ -280,7 +280,9 @@ These hold for `--schema`. Why each one exists is in [design.md](design.md#--sch
   a usage error.
 - **Memory.** jsonvet holds each file's values in memory: 14 to 27 times the file's size, the most
   for many small records such as JSON Lines. Without `--schema`, memory stays near the file's
-  size.
+  size. A top-level array that fails everywhere takes no more than a valid one when only `items`
+  checks its elements, as in `{"type": "array", "items": {"$ref": "#/$defs/record"}}`. Otherwise
+  each error takes about 340 bytes until the first 100 are picked: 1.7 GB for 5,000,000 errors.
 - **Regexes.** A pattern with a back-reference or lookaround may backtrack 5,000 times per string.
   A key or string that needs more is an error at that key or string: the pattern could not be
   checked. jsonvet tries each `patternProperties` pattern on every key, and each `pattern` on

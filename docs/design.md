@@ -177,7 +177,13 @@ The limits are listed in the [reference](usage.md#json-schema-limits). Why each 
   the main thread. The threads that check files in parallel get the same stack, and any that
   cannot start leave their files to the others.
 - **Memory.** Folded values take 14 to 27 times the file's size, the most for many small records
-  such as JSON Lines.
+  such as JSON Lines. jsonschema collects every error before handing out the first, so a 10 MB
+  array of 5,000,000 failing numbers took 2.0 GB, against 0.37 GB when it passes. When nothing
+  but `items` checks a top-level array's elements, and every `$ref` points into `$defs` or
+  `definitions`, jsonvet checks the schema without `items` on the whole array, then `items` on
+  one element at a time: 0.37 GB both ways, with the same output. jsonschema runs `contains`
+  after `items` and every other keyword before it, so the errors keep that order. Any other
+  schema is checked in one pass.
 - **Schema depth and `$ref` chains.** Without the check, 1,000 `allOf` and `$ref` hops overflow the
   64 MB stack at once against a 512-level array. A `$ref` back to a schema on the way to it is
   recursion and adds nothing. The error lands at the `$ref` that crosses the line. A `$ref`
