@@ -174,7 +174,11 @@ mod tests {
         let usage = include_str!("../../../docs/usage.md");
         for id in ids() {
             assert!(!explanation(id).is_empty(), "{id}");
-            assert!(usage.contains(&format!("\n### {id}\n")), "{id} in usage.md");
+            // lines(), not "\n", because a Windows checkout may have CRLF line endings.
+            assert!(
+                usage.lines().any(|l| l == format!("### {id}")),
+                "{id} in usage.md"
+            );
             assert!(explain(id).is_ok(), "{id}");
         }
     }
