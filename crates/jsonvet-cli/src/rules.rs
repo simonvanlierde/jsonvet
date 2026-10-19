@@ -67,8 +67,8 @@ pub(crate) fn explanation(id: &str) -> &'static str {
         }
         SCHEMA => {
             "A value the JSON Schema given with --schema rejects, such as a missing required \
-             key or a string where the schema wants a number. --error, --warn, --ignore and \
-             settings files do not take this rule."
+             key or a string where the schema wants a number. Always an error: --error, --warn, \
+             --ignore and settings files do not take this rule."
         }
         UNREADABLE => {
             "jsonvet could not check the file at all: it does not exist, is a directory, \
@@ -169,16 +169,27 @@ fn distance(a: &str, b: &str) -> usize {
 mod tests {
     use super::{defaults, distance, explain, explanation, ids, unknown};
 
+    /// Each paragraph of a rule's explanation, words only, is in its section of usage.md,
+    /// which may add a sentence on the default.
     #[test]
-    fn every_rule_has_help_and_a_docs_section() {
+    fn every_rule_has_help_that_its_docs_section_holds() {
         let usage = include_str!("../../../docs/usage.md");
+        let words = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
         for id in ids() {
-            assert!(!explanation(id).is_empty(), "{id}");
             // lines(), not "\n", because a Windows checkout may have CRLF line endings.
-            assert!(
-                usage.lines().any(|l| l == format!("### {id}")),
-                "{id} in usage.md"
-            );
+            let section: Vec<&str> = usage
+                .lines()
+                .skip_while(|l| *l != format!("### {id}"))
+                .skip(1)
+                .take_while(|l| !l.starts_with('#'))
+                .filter(|l| !l.starts_with("```"))
+                .collect();
+            assert!(!section.is_empty(), "{id} in usage.md");
+            let section = words(&section.join("\n")).replace('`', "");
+            assert!(!explanation(id).is_empty(), "{id}");
+            for paragraph in explanation(id).split("\n\n") {
+                assert!(section.contains(&words(paragraph)), "{id}: {paragraph}");
+            }
             assert!(explain(id).is_ok(), "{id}");
         }
     }
