@@ -83,9 +83,13 @@ A release changes the version in these places, in one commit on a branch:
 `uv run scripts/check-versions.py` fails when any of them disagrees, or when the CHANGELOG has no
 heading for the version. Renovate owns the dependency pins, so do not bump those by hand.
 
-After the pull request merges, publish a GitHub release for the tag `vX.Y.Z`. That runs
-`release.yml`. It checks the tag against the versions and builds the wheels. Then it publishes
-the wheels to PyPI, the `check-json5` package, and the crates to crates.io, all by trusted
-publishing. Once the wheels are on PyPI, the `major-tag` job moves the `v<major>` tag (`v3`),
-which `uses: simonvanlierde/jsonvet@v3` follows. It moves the tag only when the new tag is the
-newest `vX.*.*`, so a patch to an older minor leaves it alone. It skips pre-releases.
+After the pull request merges, tag the merge commit and push the tag:
+`git tag vX.Y.Z <sha> && git push origin vX.Y.Z`. Do not create the GitHub release by hand. The
+tag runs `release.yml`. It checks the tag against the versions and builds the wheels, the binary
+archives and the SBOM, attests them, and drafts the GitHub release with the archives attached and
+the version's CHANGELOG section as notes. Then it publishes the wheels to PyPI, the `check-json5`
+package, and the crates to crates.io, all by trusted publishing, and publishes the release last.
+The release is immutable, so it cannot take files after that. A tag with a `-` (`v3.1.0-rc.1`)
+makes a pre-release. Once the wheels are on PyPI, the `major-tag` job moves the `v<major>` tag
+(`v3`), which `uses: simonvanlierde/jsonvet@v3` follows. It moves the tag only when the new tag is
+the newest `vX.*.*`, so a patch to an older minor leaves it alone. It skips pre-releases.

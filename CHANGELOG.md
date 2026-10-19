@@ -11,6 +11,12 @@ version for a new option or output, the patch version for a fix.
 ### Added
 
 - `SECURITY.md`: how to report a file that crashes or hangs jsonvet, privately through GitHub.
+- Each GitHub release has the `jsonvet` binary for eight targets (Linux glibc and musl, macOS and
+  Windows, on x86-64 and ARM64) as `jsonvet-<target>.tar.gz` or `.zip`, with a `SHA256SUMS` file
+  and a CycloneDX SBOM of its dependencies.
+- `cargo binstall jsonvet-cli` downloads that binary instead of compiling it.
+- Build provenance attestations for the wheels, the sdist and the release files, which
+  `gh attestation verify` checks. `SECURITY.md` shows how.
 
 ### Changed
 
