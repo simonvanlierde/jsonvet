@@ -22,6 +22,16 @@ version for a new option or output, the patch version for a fix.
 
 - `jsonvet --help` no longer says that `--schema` is missing from the PyPI wheels. It has been in
   them since 3.0.0.
+- The Action no longer passes when the repository is not checked out: with the default `files`
+  input it fails and says to run `actions/checkout`. It warns when it finds no JSON files.
+- The Action runs Python isolated, so a `json.py`, `glob.py` or `venv/` folder in your
+  repository never runs in place of Python's own.
+- A `files` glob in the Action that also matched a folder failed that folder as not a regular
+  file. Globs now match files only.
+- `--schema` takes linear time on an object with many keys holding U+FFFD or lone surrogates. It
+  was quadratic: 40,000 such keys took over a minute.
+- `--dialect jsonl` with `--schema` no longer reads the schema as JSON Lines, which rejected any
+  schema written over several lines.
 
 ## [3.0.0] - 2026-10-18
 
