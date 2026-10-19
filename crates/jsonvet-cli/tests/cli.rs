@@ -1447,6 +1447,21 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
     }
 
     #[test]
+    fn many_keys_with_lone_surrogates_take_linear_time() {
+        let keys: Vec<String> = (0..20_000)
+            .map(|i| format!("\"\\ud800{i}\": {i}"))
+            .collect();
+        let dir = workdir(&[
+            ("schema.json", r#"{"type": "object"}"#),
+            ("k.json", &format!("{{{}}}", keys.join(","))),
+        ]);
+        let start = std::time::Instant::now();
+        let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "schema.json", "k.json"]);
+        assert!(start.elapsed().as_secs() < 2, "took {:?}", start.elapsed());
+        assert_eq!((code, out.as_str()), (0, ""));
+    }
+
+    #[test]
     fn a_lone_surrogate_key_has_one_path_in_schema_and_duplicate_key_errors() {
         let dir = workdir(&[
             (
