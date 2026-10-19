@@ -176,7 +176,7 @@ jobs:
   # CycloneDX SBOM of jsonvet-cli's dependencies on every target. Built here, so the job that signs
   # and uploads them runs no project code.
   release-files:
-    needs: [versions, wheels]
+    needs: wheels
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -254,6 +254,12 @@ jobs:
           test -s notes.md || { echo "CHANGELOG.md has no section for $TAG"; exit 1; }
           prerelease=()
           [[ "$TAG" == *-* ]] && prerelease=(--prerelease)
+          # A draft can share its tag with another, so a rerun would add a second one, and a failed
+          # upload leaves its draft behind. Replace a leftover draft; refuse a published release.
+          case $(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null) in
+            true) gh release delete "$TAG" --yes ;;
+            false) echo "$TAG is already released"; exit 1 ;;
+          esac
           gh release create "$TAG" --draft --verify-tag --title "$TAG" --notes-file notes.md \
             "${prerelease[@]}" release/*
 
