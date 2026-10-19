@@ -98,6 +98,26 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo check --workspace --lib --bins --locked
 
+  # Paths that were once quadratic stay linear, by valgrind's instruction counts at n and 10n:
+  # crates/jsonvet-cli/tests/scaling.rs. The diff_json5 fuzz target builds on stable without
+  # cargo-fuzz, which is enough to time json5 in it.
+  scaling:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - run: sudo apt-get update && sudo apt-get install -y valgrind
+      - run: cargo build --release --manifest-path fuzz/Cargo.toml --bin diff_json5
+      - run: cargo test --release --locked -p jsonvet-cli --test scaling -- --ignored
+        env:
+          JSONVET_DIFF_JSON5: ${{ github.workspace }}/fuzz/target/release/diff_json5
+
   # jsonvet against check-json5 1.4.1, file by file; see docs/design.md.
   differential:
     runs-on: ubuntu-latest
