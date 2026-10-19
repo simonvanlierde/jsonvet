@@ -966,7 +966,7 @@ fn list_rules_and_explain() {
     let (code, out, err) = jsonvet_stderr(&dir, &["--explain=duplicat-key"]);
     assert_eq!((code, out.as_str()), (2, ""));
     assert!(
-        err.starts_with("jsonvet: unknown rule `duplicat-key`; did you mean `duplicate-key`?"),
+        err.starts_with("jsonvet: unknown rule `duplicat-key` (did you mean `duplicate-key`?)"),
         "{err}"
     );
 }

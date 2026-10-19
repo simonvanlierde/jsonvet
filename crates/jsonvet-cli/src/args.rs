@@ -82,6 +82,17 @@ pub(crate) enum Command {
     Explain(String),
 }
 
+fn parse_format(name: &str) -> Result<Format, String> {
+    match name {
+        "text" => Ok(Format::Text),
+        "sarif" => Ok(Format::Sarif),
+        _ => {
+            let hint = jsonvet::did_you_mean(name, ["text", "sarif"]);
+            Err(format!("--format takes text or sarif, not `{name}`{hint}"))
+        }
+    }
+}
+
 pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command, String> {
     let mut parser = lexopt::Parser::from_args(args);
     // Otherwise `-x=a.json` would come back as `-x` and `a.json`, losing the `=`.
@@ -132,16 +143,7 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
                         .map_err(|_| format!("--max-warnings takes a number, not `{n}`"))?,
                 );
             }
-            Long("format") => {
-                format = match value(&mut parser)?.as_str() {
-                    "text" => Format::Text,
-                    "sarif" => Format::Sarif,
-                    other => {
-                        let hint = jsonvet::did_you_mean(other, ["text", "sarif"]);
-                        return Err(format!("--format takes text or sarif, not `{other}`{hint}"));
-                    }
-                }
-            }
+            Long("format") => format = parse_format(&value(&mut parser)?)?,
             Long("config") => config = ConfigSource::File(PathBuf::from(value(&mut parser)?)),
             Long("no-config") => config = ConfigSource::None,
             Long("list-rules") => return Ok(Command::ListRules),
