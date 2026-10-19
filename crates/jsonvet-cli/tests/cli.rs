@@ -603,6 +603,17 @@ fn sarif_holds_every_problem_and_keeps_the_exit_codes() {
             "schema",
         ]
     );
+    // Code scanning shows each rule's help and links its section of docs/usage.md.
+    assert_eq!(
+        rules[1]["helpUri"],
+        "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#duplicate-key"
+    );
+    assert!(rules.iter().all(|r| {
+        r["help"]["text"].as_str().is_some_and(|t| t.len() > 40)
+            && r["fullDescription"]["text"]
+                .as_str()
+                .is_some_and(|t| t.ends_with('.'))
+    }));
     assert!(rules.iter().all(|r| {
         !r["shortDescription"]["text"]
             .as_str()
@@ -860,6 +871,29 @@ fn a_dash_reads_standard_input() {
         )
     );
     assert_eq!(jsonvet_stdin(&dir, &["-", "-"], "{}").0, 2);
+}
+
+#[test]
+fn list_rules_and_explain() {
+    let dir = workdir(&[]);
+    let (code, out) = jsonvet(&dir, &["--list-rules"]);
+    assert_eq!(code, 0);
+    assert!(
+        out.starts_with("syntax (error)\n    the first syntax error"),
+        "{out}"
+    );
+    let (code, out) = jsonvet(&dir, &["--explain", "duplicate-key"]);
+    assert_eq!(code, 0);
+    assert!(
+        out.contains("Bad:  {\"port\": 80, \"port\": 8080}"),
+        "{out}"
+    );
+    let (code, out, err) = jsonvet_stderr(&dir, &["--explain=duplicat-key"]);
+    assert_eq!((code, out.as_str()), (2, ""));
+    assert!(
+        err.starts_with("jsonvet: unknown rule `duplicat-key`; did you mean `duplicate-key`?"),
+        "{err}"
+    );
 }
 
 #[test]

@@ -12,6 +12,7 @@ use jsonvet::{Report, Severity};
 mod args;
 mod glob;
 mod output;
+mod rules;
 mod sarif;
 mod schema;
 mod settings;
@@ -84,6 +85,8 @@ fn run_with(
     })? {
         Command::Help => return print(out, args::HELP),
         Command::Version => return print(out, concat!("jsonvet ", env!("CARGO_PKG_VERSION"))),
+        Command::ListRules => return print(out, &rules::list()),
+        Command::Explain(text) => return print(out, &text),
         Command::Check(args) => args,
     };
     let settings = from_file(&args.config)?.overridden_by(args.settings);

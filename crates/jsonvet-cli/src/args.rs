@@ -35,11 +35,13 @@ Options:
                                 and settings by PATH. With no FILE, check standard input.
       --config FILE             Read settings from FILE instead of searching for one.
       --no-config               Do not read a settings file.
+      --list-rules              List the rules, with their default severities, and exit.
+      --explain RULE            Explain RULE, with an example, and exit.
   -h, --help                    Print this help.
   -V, --version                 Print the version.
 
 Rules: syntax, duplicate-key, invalid-number, invalid-code-point, byte-order-mark,
-missing-final-newline. With --schema, errors also come under the rule schema; they are always
+missing-final-newline (--list-rules says more). With --schema, errors also come under the rule schema; they are always
 errors, and --error, --warn, --ignore and settings files do not take schema.
 
 Settings come from jsonvet.toml, or [tool.jsonvet] in pyproject.toml, found in the working
@@ -73,6 +75,9 @@ pub(crate) enum Command {
     Check(Args),
     Help,
     Version,
+    ListRules,
+    /// `--explain`'s text for the rule.
+    Explain(String),
 }
 
 pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command, String> {
@@ -134,6 +139,10 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
             }
             Long("config") => config = ConfigSource::File(PathBuf::from(value(&mut parser)?)),
             Long("no-config") => config = ConfigSource::None,
+            Long("list-rules") => return Ok(Command::ListRules),
+            Long("explain") => {
+                return crate::rules::explain(&value(&mut parser)?).map(Command::Explain);
+            }
             Long("schema") => schema = Some(PathBuf::from(value(&mut parser)?)),
             Long("stdin-filename") => {
                 stdin_filename = Some(parser.value().map_err(|e| e.to_string())?);
