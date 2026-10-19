@@ -34,6 +34,7 @@ mod path;
 mod problem;
 mod report;
 mod rule;
+mod suggest;
 mod unicode;
 
 pub use dialect::{Dialect, UnknownDialect};
@@ -42,6 +43,7 @@ pub use path::{PathStep, json_path, key_text};
 pub use problem::{Problem, Related, RelatedKind};
 pub use report::{Location, Report};
 pub use rule::{Config, Rule, Severity, UnknownRule};
+pub use suggest::did_you_mean;
 pub use unicode::is_hidden;
 
 /// Check one text and return every problem in it, in document order. Checking stops at the

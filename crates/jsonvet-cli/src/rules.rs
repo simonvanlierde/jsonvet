@@ -134,40 +134,18 @@ pub(crate) fn explain(id: &str) -> Result<String, String> {
 
 /// The error for an unknown rule id, naming the closest one when it is a likely typo.
 pub(crate) fn unknown(id: &str) -> String {
-    let closest = ids()
-        .map(|known| (distance(id, known), known))
-        .min()
-        .filter(|&(d, _)| d <= 3);
-    match closest {
-        Some((_, known)) => format!("unknown rule `{id}`; did you mean `{known}`?"),
-        None => format!(
+    match jsonvet::did_you_mean(id, ids()) {
+        hint if hint.is_empty() => format!(
             "unknown rule `{id}`; expected one of {}",
             ids().collect::<Vec<_>>().join(", ")
         ),
+        hint => format!("unknown rule `{id}`{hint}"),
     }
-}
-
-/// How many one-character insertions, deletions and substitutions turn `a` into `b`.
-fn distance(a: &str, b: &str) -> usize {
-    let b: Vec<char> = b.chars().collect();
-    let mut row: Vec<usize> = (0..=b.len()).collect();
-    for (i, ca) in a.chars().enumerate() {
-        let mut diagonal = row[0];
-        row[0] = i + 1;
-        for (j, &cb) in b.iter().enumerate() {
-            let next = (diagonal + usize::from(ca != cb))
-                .min(row[j] + 1)
-                .min(row[j + 1] + 1);
-            diagonal = row[j + 1];
-            row[j + 1] = next;
-        }
-    }
-    row[b.len()]
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{defaults, distance, explain, explanation, ids, unknown};
+    use super::{defaults, explain, explanation, ids, unknown};
 
     /// Each paragraph of a rule's explanation, words only, is in its section of usage.md,
     /// which may add a sentence on the default.
@@ -207,11 +185,9 @@ mod tests {
 
     #[test]
     fn an_unknown_rule_suggests_the_closest() {
-        assert_eq!(distance("kitten", "sitting"), 3);
-        assert_eq!(distance("", "ab"), 2);
         assert_eq!(
             unknown("duplicate-keys"),
-            "unknown rule `duplicate-keys`; did you mean `duplicate-key`?"
+            "unknown rule `duplicate-keys` (did you mean `duplicate-key`?)"
         );
         assert!(unknown("nope-nope-nope").contains("expected one of syntax,"));
         assert!(explain("bom").is_err());

@@ -11,29 +11,29 @@ i-json/lone-surrogate.json -> 1
 i-json/unsafe-integer.json -> 1
     i-json/unsafe-integer.json:1:7: error[invalid-number] integer beyond ±(2^53 − 1) cannot be represented exactly
 json/bare-infinity.json -> 1
-    json/bare-infinity.json:1:7: error[syntax] NaN and Infinity are not allowed in json
+    json/bare-infinity.json:1:7: error[syntax] NaN and Infinity are not allowed in json; the json5 dialect allows this
 json/bom.json -> 0
     json/bom.json:1:1: warning[byte-order-mark] byte order mark at the start of the file
 json/comment.json -> 1
-    json/comment.json:1:1: error[syntax] comments are not allowed in json
+    json/comment.json:1:1: error[syntax] comments are not allowed in json; the jsonc dialect allows this
 json/duplicate-key.json -> 1
     json/duplicate-key.json:1:10: error[duplicate-key] duplicate key $.a (first at 1:2)
 json/infinity-runs-on.json -> 1
-    json/infinity-runs-on.json:1:1: error[syntax] NaN and Infinity are not allowed in json
+    json/infinity-runs-on.json:1:1: error[syntax] NaN and Infinity are not allowed in json; the json5 dialect allows this
 json/leading-zero.json -> 1
-    json/leading-zero.json:1:2: error[syntax] expected the end of the file, found `1`
+    json/leading-zero.json:1:1: error[syntax] leading zeros are not allowed
 json/lone-surrogates-are-distinct-keys.json -> 0
 json/nan-and-infinity.json -> 1
-    json/nan-and-infinity.json:1:7: error[syntax] NaN and Infinity are not allowed in json
+    json/nan-and-infinity.json:1:7: error[syntax] NaN and Infinity are not allowed in json; the json5 dialect allows this
 json/nan-runs-on.json -> 1
-    json/nan-runs-on.json:1:2: error[syntax] NaN and Infinity are not allowed in json
+    json/nan-runs-on.json:1:2: error[syntax] NaN and Infinity are not allowed in json; the json5 dialect allows this
 json/negative-infinity-runs-on.json -> 1
-    json/negative-infinity-runs-on.json:1:2: error[syntax] NaN and Infinity are not allowed in json
+    json/negative-infinity-runs-on.json:1:2: error[syntax] NaN and Infinity are not allowed in json; the json5 dialect allows this
 json/plain.json -> 0
 json/trailing-comma-after-comment.json -> 1
-    json/trailing-comma-after-comment.json:1:10: error[syntax] comments are not allowed in json
+    json/trailing-comma-after-comment.json:1:10: error[syntax] comments are not allowed in json; the jsonc dialect allows this
 json/unquoted-key.json -> 1
-    json/unquoted-key.json:1:2: error[syntax] unquoted keys are not allowed in json
+    json/unquoted-key.json:1:2: error[syntax] unquoted keys are not allowed in json; the json5 dialect allows this
 json5/bare-key-against-comment.json -> 1
     json5/bare-key-against-comment.json:1:13: error[duplicate-key] duplicate key $.a (first at 1:2)
 json5/bom.json -> 0
@@ -139,9 +139,9 @@ json5/whitespace-only.json -> 1
     json5/whitespace-only.json:2:2: error[syntax] expected a value, found the end of the file
 jsonc/comments.json -> 0
 jsonc/line-comment-not-ended-by-u2028.json -> 1
-    jsonc/line-comment-not-ended-by-u2028.json:1:13: error[syntax] expected a value, found the end of the file
+    jsonc/line-comment-not-ended-by-u2028.json:1:13: error[syntax] unclosed `[`: expected a value, found the end of the file (opened at 1:1)
 jsonc/trailing-comma.json -> 1
-    jsonc/trailing-comma.json:2:1: error[syntax] trailing comma before `}` is not allowed in jsonc
+    jsonc/trailing-comma.json:2:1: error[syntax] trailing comma before `}` is not allowed in jsonc; the jwcc and json5 dialects allow this
 jsonl/blank-line.jsonl -> 1
     jsonl/blank-line.jsonl:2:1: error[syntax] blank line; JSON Lines needs a value on every line
 jsonl/crlf-duplicate.jsonl -> 1
@@ -154,5 +154,5 @@ jsonl/valid.jsonl -> 0
 jsonl/value-across-lines.jsonl -> 1
     jsonl/value-across-lines.jsonl:1:6: error[syntax] expected a value, found the end of the line
 jwcc/single-quotes.json -> 1
-    jwcc/single-quotes.json:1:2: error[syntax] single-quoted strings are not allowed in jwcc
+    jwcc/single-quotes.json:1:2: error[syntax] single-quoted strings are not allowed in jwcc; the json5 dialect allows this
 jwcc/trailing-comma-and-comment.json -> 0

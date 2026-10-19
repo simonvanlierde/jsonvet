@@ -14,7 +14,7 @@ version for a new option or output, the patch version for a fix.
   dialect and the settings. With `--stdin-filename` and no file, jsonvet reads standard input.
 - `--list-rules` lists the rules with their default severity in each dialect, and
   `--explain RULE` explains one, with a bad and a good example. A mistyped rule gets a
-  suggestion, such as `did you mean duplicate-key?`.
+  suggestion, such as ``(did you mean `duplicate-key`?)``.
 - SARIF output gives each rule its help text and a link to its section of docs/usage.md, so
   GitHub code scanning shows them on each alert.
 - When stdout is a terminal, text output ends with a count, such as `3 errors in 2 of 5 files`.
@@ -26,6 +26,29 @@ version for a new option or output, the patch version for a fix.
 - `cargo binstall jsonvet-cli` downloads that binary instead of compiling it.
 - Build provenance attestations for the wheels, the sdist and the release files, which
   `gh attestation verify` checks. `SECURITY.md` shows how.
+- Clearer syntax errors. Verdicts, exit codes and duplicate-key reports are unchanged:
+  - A missing comma says `missing `,`` and points just after the value before it, not at the next
+    key.
+  - An object or array still open at the end of the file says which one and where it opened:
+    `unclosed `{`: expected `,` or `}`, found the end of the file (opened at 1:1)`. SARIF adds
+    the opening bracket as a related location.
+  - A bad word shows whole, with a hint for other languages' literals:
+    `expected a value, found `True`; did you mean `true`?`. This also fixes JSON5's
+    `{"a": None}`, which said ``expected `NaN`, found `o` ``.
+  - A number such as `01` says `leading zeros are not allowed`.
+  - Syntax that a stricter dialect rejects names the dialect that allows it:
+    `comments are not allowed in json; the jsonc dialect allows this`, and for a trailing comma
+    `the jwcc and json5 dialects allow this`.
+- A file with a UTF-16 or UTF-32 byte order mark says `file is UTF-16 (LE); jsonvet reads UTF-8`
+  instead of `not valid UTF-8 (byte 0)`.
+- An unknown rule, key, severity or dialect in the configuration file gets its line and column
+  and the closest known name: `jsonvet.toml:2:1: unknown rule `duplicate-keys` (did you mean
+  `duplicate-key`?)`. Unknown values for `--dialect`, `--format`, `--error`, `--warn` and
+  `--ignore` get the same hint, also for a wrong case such as `--format SARIF`.
+- `jsonvet --help`, the reference and the unknown-dialect error list the dialect aliases
+  `ijson`, `hujson`, `ndjson` and `json-lines`, which jsonvet already accepted.
+- Library: `RelatedKind::Opened`, the related location of an unclosed object or array, and
+  `Dialect::ALIASES`.
 
 ### Changed
 

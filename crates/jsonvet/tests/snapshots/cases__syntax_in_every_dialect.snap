@@ -1,6 +1,6 @@
 ---
 source: crates/jsonvet/tests/cases.rs
-expression: "snapshot(&[(Json, \"\"), (Json, \"   \"), (Json, r#\"{\"a\": 1}\"#),\n(Json, \"[1, 2,]\"), (Jwcc, \"[1, 2,]\"), (Json, r#\"{\"a\": 1,}\"#), (Json, \"[,]\"),\n(Json5, \"[,]\"), (Json5, \"[1,,]\"), (Json5, \"{,}\"), (Json, \"{a: 1}\"),\n(Json5, \"{a: 1, $b: 2, _c: 3, ünï: 4}\"), (Json5, \"{\\u{1885}: 1}\"),\n(Json5, \"{\\\\u1885: 1}\"), (Json5, \"{a\\u{1885}: 1}\"), (Json5, \"{a\\u{B7}: 1}\"),\n(Json5, \"{\\u{E33}: 1, \\u{2E2F}: 2}\"), (Json5, \"{\\u{3308C}: 1}\"),\n(Json, \"['x']\"), (Json, \"{'a': 1}\"), (Json, \"{1: 2}\"), (Json5, \"{abc\"),\n(Json5, r\"{a\\x61: 1}\"), (Json5, \"['x', \\\"y\\\"]\"), (Json, \"// c\\n1\"),\n(Jsonc, \"// c\\n1\"), (Jsonc, \"/* open\"), (Json, \"[1 2]\"), (Json, r#\"{\"a\" 1}\"#),\n(Json, r#\"{\"a\":1 \"b\":2}\"#), (Json, \"1 2\"), (Json, \"[1]x\"), (Json, \"nul\"),\n(Json, \"nux\"), (Json, \"nullx\"), (Json, \"[1}\"), (Json, r#\"{\"a\": 1]\"#),\n(Json, \"NaN\"), (Json, \"-Infinity\"),\n(Json5, \"[NaN, +Infinity, -Infinity, +NaN]\"), (Json, \"01\"), (Json, \"1.\"),\n(Json, \".5\"), (Json, \"+1\"), (Json, \"0x1F\"),\n(Json5, \"[0x1F, -0x10, .5, 5., +1, 1e3, 1E-3]\"), (Json5, \"0x\"), (Json5, \"1e\"),\n(Json5, \".\"), (Json, \"-\"), (Json, \"\\\"abc\"),\n(Json, r#\"\"\\\" \\\\ \\/ \\b \\f \\n \\r \\t \\u0041\"\"#), (Json, \"\\\"a\\nb\\\"\"),\n(Json, \"\\\"a\\tb\\\"\"), (Json5, \"\\\"a\\tb\\\"\"), (Json, r#\"\"\\q\"\"#),\n(Json5, r#\"\"\\q\"\"#), (Json5, r#\"\"\\1\"\"#), (Json5, r#\"\"\\9\"\"#),\n(Json5, r#\"\"\\01\"\"#), (Json5, r#\"\"\\0\"\"#), (Json5, r#\"\"\\x4\"\"#),\n(Json, r#\"\"\\u12x4\"\"#), (Json5, \"\\\"a\\\\\\nb\\\"\"), (Json5, \"\\\"a\\\\\\r\\nb\\\"\"),\n(Json5, \"\\\"\\u{2028}\\\"\"), (Json5, \"[1, // c\\u{2028} 2]\"),\n(Jsonc, \"[1, // c\\u{2028} 2]\"), (Jsonc, \"[1, // c\\r2]\"),\n(Jwcc, \"[1, // c\\r2]\"), (Jwcc, \"[1, // c\\r\\n2]\"), (Jwcc, \"[1] // c\\r\"),\n(Jwcc, \"[1, // c\\u{2028} 2]\"), (Json5, \"\\u{A0}[\\u{3000}1\\u{FEFF}]\\u{2029}\"),\n(Json, \"[\\u{A0}1]\"), (Json5, \"[\\u{B}1\\u{C}]\"), (Json, \"[\\u{B}1]\"),])"
+expression: "snapshot(&[(Json, \"\"), (Json, \"   \"), (Json, r#\"{\"a\": 1}\"#),\n(Json, \"[1, 2,]\"), (Jwcc, \"[1, 2,]\"), (Json, r#\"{\"a\": 1,}\"#), (Json, \"[,]\"),\n(Json5, \"[,]\"), (Json5, \"[1,,]\"), (Json5, \"{,}\"), (Json, \"{a: 1}\"),\n(Json5, \"{a: 1, $b: 2, _c: 3, ünï: 4}\"), (Json5, \"{\\u{1885}: 1}\"),\n(Json5, \"{\\\\u1885: 1}\"), (Json5, \"{a\\u{1885}: 1}\"), (Json5, \"{a\\u{B7}: 1}\"),\n(Json5, \"{\\u{E33}: 1, \\u{2E2F}: 2}\"), (Json5, \"{\\u{3308C}: 1}\"),\n(Json, \"['x']\"), (Json, \"{'a': 1}\"), (Json, \"{1: 2}\"), (Json5, \"{abc\"),\n(Json5, r\"{a\\x61: 1}\"), (Json5, \"['x', \\\"y\\\"]\"), (Json, \"// c\\n1\"),\n(Jsonc, \"// c\\n1\"), (Jsonc, \"/* open\"), (Json, \"[1 2]\"), (Json, r#\"{\"a\" 1}\"#),\n(Json, r#\"{\"a\":1 \"b\":2}\"#), (Json, \"1 2\"), (Json, \"[1]x\"), (Json, \"nul\"),\n(Json, \"nux\"), (Json, \"nullx\"), (Json, \"[1}\"), (Json, r#\"{\"a\": 1]\"#),\n(Json, \"{\\n  \\\"a\\\": 1\\n  \\\"b\\\": 2\\n}\"), (Jsonc, \"[1 /* c */ 2]\"),\n(Json5, \"{a: 1 b: 2}\"), (Json, \"[1 x]\"), (Json, \"{\\\"a\\\": [1, {\\\"b\\\": 2\"),\n(Json, \"[1,\"), (Json, \"{\\\"a\\\"\"), (Json, \"[1e\"), (Json, r#\"{\"a\": True}\"#),\n(Json, \"[False, None, NULL, undefined, nil]\"), (Json5, r#\"{\"a\": None}\"#),\n(Json5, \"[Nope]\"), (Json, \"[nulL]\"), (Json, r#\"{\"a\" True}\"#), (Json5, \"01\"),\n(Json, \"[-007]\"), (Json, \"NaN\"), (Json, \"-Infinity\"),\n(Json5, \"[NaN, +Infinity, -Infinity, +NaN]\"), (Json, \"01\"), (Json, \"1.\"),\n(Json, \".5\"), (Json, \"+1\"), (Json, \"0x1F\"),\n(Json5, \"[0x1F, -0x10, .5, 5., +1, 1e3, 1E-3]\"), (Json5, \"0x\"), (Json5, \"1e\"),\n(Json5, \".\"), (Json, \"-\"), (Json, \"\\\"abc\"),\n(Json, r#\"\"\\\" \\\\ \\/ \\b \\f \\n \\r \\t \\u0041\"\"#), (Json, \"\\\"a\\nb\\\"\"),\n(Json, \"\\\"a\\tb\\\"\"), (Json5, \"\\\"a\\tb\\\"\"), (Json, r#\"\"\\q\"\"#),\n(Json5, r#\"\"\\q\"\"#), (Json5, r#\"\"\\1\"\"#), (Json5, r#\"\"\\9\"\"#),\n(Json5, r#\"\"\\01\"\"#), (Json5, r#\"\"\\0\"\"#), (Json5, r#\"\"\\x4\"\"#),\n(Json, r#\"\"\\u12x4\"\"#), (Json5, \"\\\"a\\\\\\nb\\\"\"), (Json5, \"\\\"a\\\\\\r\\nb\\\"\"),\n(Json5, \"\\\"\\u{2028}\\\"\"), (Json5, \"[1, // c\\u{2028} 2]\"),\n(Jsonc, \"[1, // c\\u{2028} 2]\"), (Jsonc, \"[1, // c\\r2]\"),\n(Jwcc, \"[1, // c\\r2]\"), (Jwcc, \"[1, // c\\r\\n2]\"), (Jwcc, \"[1] // c\\r\"),\n(Jwcc, \"[1, // c\\u{2028} 2]\"), (Json5, \"\\u{A0}[\\u{3000}1\\u{FEFF}]\\u{2029}\"),\n(Json, \"[\\u{A0}1]\"), (Json5, \"[\\u{B}1\\u{C}]\"), (Json, \"[\\u{B}1]\"),])"
 ---
 json ""
        1:1 error[syntax] expected a value, found the end of the file
@@ -9,11 +9,11 @@ json "   "
 json "{\"a\": 1}"
        ok
 json "[1, 2,]"
-       1:7 error[syntax] trailing comma before `]` is not allowed in json
+       1:7 error[syntax] trailing comma before `]` is not allowed in json; the jwcc and json5 dialects allow this
 jwcc "[1, 2,]"
        ok
 json "{\"a\": 1,}"
-       1:9 error[syntax] trailing comma before `}` is not allowed in json
+       1:9 error[syntax] trailing comma before `}` is not allowed in json; the jwcc and json5 dialects allow this
 json "[,]"
        1:2 error[syntax] expected a value, found `,`
 json5 "[,]"
@@ -23,7 +23,7 @@ json5 "[1,,]"
 json5 "{,}"
        1:2 error[syntax] expected a key, found `,`
 json "{a: 1}"
-       1:2 error[syntax] unquoted keys are not allowed in json
+       1:2 error[syntax] unquoted keys are not allowed in json; the json5 dialect allows this
 json5 "{a: 1, $b: 2, _c: 3, ünï: 4}"
        ok
 json5 "{\u{1885}: 1}"
@@ -39,29 +39,29 @@ json5 "{ำ: 1, ⸯ: 2}"
 json5 "{𳂌: 1}"
        ok
 json "['x']"
-       1:2 error[syntax] single-quoted strings are not allowed in json
+       1:2 error[syntax] single-quoted strings are not allowed in json; the json5 dialect allows this
 json "{'a': 1}"
-       1:2 error[syntax] single-quoted strings are not allowed in json
+       1:2 error[syntax] single-quoted strings are not allowed in json; the json5 dialect allows this
 json "{1: 2}"
        1:2 error[syntax] expected a key, found `1`
 json5 "{abc"
-       1:5 error[syntax] expected `:`, found the end of the file
+       1:5 error[syntax] unclosed `{`: expected `:`, found the end of the file (from 1:1)
 json5 "{a\\x61: 1}"
        1:3 error[syntax] invalid escape `\x`
 json5 "['x', \"y\"]"
        ok
 json "// c\n1"
-       1:1 error[syntax] comments are not allowed in json
+       1:1 error[syntax] comments are not allowed in json; the jsonc dialect allows this
 jsonc "// c\n1"
        ok
 jsonc "/* open"
        1:8 error[syntax] unterminated block comment (from 1:1)
 json "[1 2]"
-       1:4 error[syntax] expected `,` or `]`, found `2`
+       1:3 error[syntax] missing `,`
 json "{\"a\" 1}"
        1:6 error[syntax] expected `:`, found `1`
 json "{\"a\":1 \"b\":2}"
-       1:8 error[syntax] expected `,` or `}`, found `"`
+       1:7 error[syntax] missing `,`
 json "1 2"
        1:3 error[syntax] expected the end of the file, found `2`
 json "[1]x"
@@ -69,29 +69,61 @@ json "[1]x"
 json "nul"
        1:4 error[syntax] expected `null`, found the end of the file
 json "nux"
-       1:3 error[syntax] expected `null`, found `x`
+       1:1 error[syntax] expected a value, found `nux`
 json "nullx"
        1:5 error[syntax] expected the end of the file, found `x`
 json "[1}"
        1:3 error[syntax] expected `,` or `]`, found `}`
 json "{\"a\": 1]"
        1:8 error[syntax] expected `,` or `}`, found `]`
+json "{\n  \"a\": 1\n  \"b\": 2\n}"
+       2:9 error[syntax] missing `,`
+jsonc "[1 /* c */ 2]"
+       1:3 error[syntax] missing `,`
+json5 "{a: 1 b: 2}"
+       1:6 error[syntax] missing `,`
+json "[1 x]"
+       1:4 error[syntax] expected `,` or `]`, found `x`
+json "{\"a\": [1, {\"b\": 2"
+       1:18 error[syntax] unclosed `{`: expected `,` or `}`, found the end of the file (from 1:11)
+json "[1,"
+       1:4 error[syntax] unclosed `[`: expected a value, found the end of the file (from 1:1)
+json "{\"a\""
+       1:5 error[syntax] unclosed `{`: expected `:`, found the end of the file (from 1:1)
+json "[1e"
+       1:4 error[syntax] expected a digit, found the end of the file
+json "{\"a\": True}"
+       1:7 error[syntax] expected a value, found `True`; did you mean `true`?
+json "[False, None, NULL, undefined, nil]"
+       1:2 error[syntax] expected a value, found `False`; did you mean `false`?
+json5 "{\"a\": None}"
+       1:7 error[syntax] expected a value, found `None`; did you mean `null`?
+json5 "[Nope]"
+       1:2 error[syntax] expected a value, found `Nope`
+json "[nulL]"
+       1:2 error[syntax] expected a value, found `nulL`; did you mean `null`?
+json "{\"a\" True}"
+       1:6 error[syntax] expected `:`, found `True`
+json5 "01"
+       1:1 error[syntax] leading zeros are not allowed
+json "[-007]"
+       1:3 error[syntax] leading zeros are not allowed
 json "NaN"
-       1:1 error[syntax] NaN and Infinity are not allowed in json
+       1:1 error[syntax] NaN and Infinity are not allowed in json; the json5 dialect allows this
 json "-Infinity"
-       1:1 error[syntax] NaN and Infinity are not allowed in json
+       1:1 error[syntax] NaN and Infinity are not allowed in json; the json5 dialect allows this
 json5 "[NaN, +Infinity, -Infinity, +NaN]"
        ok
 json "01"
-       1:2 error[syntax] expected the end of the file, found `1`
+       1:1 error[syntax] leading zeros are not allowed
 json "1."
-       1:1 error[syntax] this number form is not allowed in json
+       1:1 error[syntax] this number form is not allowed in json; the json5 dialect allows this
 json ".5"
-       1:1 error[syntax] this number form is not allowed in json
+       1:1 error[syntax] this number form is not allowed in json; the json5 dialect allows this
 json "+1"
-       1:1 error[syntax] this number form is not allowed in json
+       1:1 error[syntax] this number form is not allowed in json; the json5 dialect allows this
 json "0x1F"
-       1:1 error[syntax] this number form is not allowed in json
+       1:1 error[syntax] this number form is not allowed in json; the json5 dialect allows this
 json5 "[0x1F, -0x10, .5, 5., +1, 1e3, 1E-3]"
        ok
 json5 "0x"
@@ -137,17 +169,17 @@ json5 "\"\u{2028}\""
 json5 "[1, // c\u{2028} 2]"
        ok
 jsonc "[1, // c\u{2028} 2]"
-       1:13 error[syntax] expected a value, found the end of the file
+       1:13 error[syntax] unclosed `[`: expected a value, found the end of the file (from 1:1)
 jsonc "[1, // c\r2]"
        ok
 jwcc "[1, // c\r2]"
-       2:3 error[syntax] expected a value, found the end of the file
+       2:3 error[syntax] unclosed `[`: expected a value, found the end of the file (from 1:1)
 jwcc "[1, // c\r\n2]"
        ok
 jwcc "[1] // c\r"
        ok
 jwcc "[1, // c\u{2028} 2]"
-       1:13 error[syntax] expected a value, found the end of the file
+       1:13 error[syntax] unclosed `[`: expected a value, found the end of the file (from 1:1)
 json5 "\u{a0}[\u{3000}1\u{feff}]\u{2029}"
        ok
 json "[\u{a0}1]"
