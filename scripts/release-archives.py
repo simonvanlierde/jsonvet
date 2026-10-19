@@ -47,9 +47,13 @@ def binary_of(wheel: Path) -> tuple[str, bytes]:
     with zipfile.ZipFile(wheel) as whl:
         for name in whl.namelist():
             parts = name.split("/")
-            if len(parts) == 3 and parts[0].endswith(".data") and parts[1] == "scripts":  # noqa: PLR2004
-                if parts[2] in {"jsonvet", "jsonvet.exe"}:
-                    return parts[2], whl.read(name)
+            if (
+                len(parts) == 3  # noqa: PLR2004
+                and parts[0].endswith(".data")
+                and parts[1] == "scripts"
+                and parts[2] in {"jsonvet", "jsonvet.exe"}
+            ):
+                return parts[2], whl.read(name)
     msg = f"{wheel.name}: no jsonvet binary in its scripts folder"
     raise ValueError(msg)
 
