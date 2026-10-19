@@ -249,6 +249,15 @@ fn positions_follow_json5_line_terminators() {
 }
 
 #[test]
+fn noncharacters_are_found_after_long_plain_runs() {
+    let plain = "a".repeat(20);
+    let text = format!("[\"{plain}é{plain}\u{FFFF}{plain}\u{FDD0}\"]");
+    let report = check(&text, &Config::new(Dialect::IJson));
+    let offsets: Vec<usize> = report.problems().iter().map(|p| p.offset()).collect();
+    assert_eq!(offsets, [44, 67]);
+}
+
+#[test]
 fn hex_numbers_overflow_exactly_where_a_double_does() {
     use jsonvet::{Rule, Severity};
     let config = Config::new(Dialect::Json5).rule(Rule::InvalidNumber, Severity::Error);

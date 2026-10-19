@@ -585,6 +585,10 @@ impl<'a> Parser<'a> {
         self.pos += 1;
         let mut decoded: Option<Vec<u8>> = None;
         let mut run_start = self.pos;
+        // Only where a long plain run can start: here, after an escape and after a non-ASCII
+        // character. Before every byte, it slowed files of short strings by 8%.
+        let ascii_only = self.invalid_code_point.is_on();
+        self.pos += plain_run(&self.bytes[self.pos..], quote, ascii_only);
         loop {
             let Some(b) = self.peek() else {
                 return Err(Fail::inside(
@@ -617,6 +621,7 @@ impl<'a> Parser<'a> {
                         push_wtf8(buffer, code_point);
                     }
                     run_start = self.pos;
+                    self.pos += plain_run(&self.bytes[self.pos..], quote, ascii_only);
                 }
                 b'\n' | b'\r' => {
                     return Err(Fail::inside(self.pos, SyntaxKind::LineBreakInString, start));
@@ -638,6 +643,7 @@ impl<'a> Parser<'a> {
                         );
                     }
                     self.pos += c.len_utf8();
+                    self.pos += plain_run(&self.bytes[self.pos..], quote, ascii_only);
                 }
                 _ => self.pos += 1,
             }
@@ -977,6 +983,29 @@ impl<'a> Parser<'a> {
     }
 }
 
+/// How many bytes at the start of `bytes`, in whole 16-byte blocks, a string can skip: no
+/// `quote`, backslash or control character, and with `ascii_only` no byte past ASCII. The byte
+/// loop decides the rest. The fixed-size blocks let the compiler compare 16 bytes at once
+/// (SSE2, NEON) without `unsafe`.
+#[expect(
+    clippy::needless_bitwise_bool,
+    reason = "no branch per byte, so the block compiles to vector compares"
+)]
+fn plain_run(bytes: &[u8], quote: u8, ascii_only: bool) -> usize {
+    let high = if ascii_only { 0x80 } else { 0 };
+    bytes
+        .as_chunks::<16>()
+        .0
+        .iter()
+        .take_while(|block| {
+            !block.iter().fold(false, |stop, &b| {
+                stop | (b == quote) | (b == b'\\') | (b < 0x20) | (b & high != 0)
+            })
+        })
+        .count()
+        * 16
+}
+
 /// Append a code point as WTF-8 (see [`Key`]): UTF-8, or three bytes for a lone surrogate.
 fn push_wtf8(buffer: &mut Vec<u8>, code_point: u32) {
     match char::from_u32(code_point) {
@@ -986,5 +1015,29 @@ fn push_wtf8(buffer: &mut Vec<u8>, code_point: u32) {
             0x80 | ((code_point >> 6) & 0x3F) as u8,
             0x80 | (code_point & 0x3F) as u8,
         ]),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::plain_run;
+
+    #[test]
+    fn a_plain_run_stops_at_the_block_holding_any_byte_that_needs_a_decision() {
+        let plain = "a".repeat(40);
+        assert_eq!(plain_run(plain.as_bytes(), b'"', true), 32);
+        assert_eq!(plain_run(&plain.as_bytes()[..15], b'"', true), 0);
+        for stop in ["\"", "\\", "\u{1f}", "\u{0}", "é"] {
+            // One stop byte in the second block, and two, which must not cancel out.
+            for stops in [stop.to_owned(), stop.repeat(2)] {
+                let text = format!("{}{stops}{}", "a".repeat(20), "a".repeat(20));
+                assert_eq!(plain_run(text.as_bytes(), b'"', true), 16, "{stops:?}");
+            }
+        }
+        // `'` ends only a single-quoted string; past ASCII is plain unless checked.
+        let text = format!("{}'é{}", "a".repeat(20), "a".repeat(20));
+        assert_eq!(plain_run(text.as_bytes(), b'"', false), 32);
+        assert_eq!(plain_run(text.as_bytes(), b'\'', false), 16);
+        assert_eq!(plain_run(" ".repeat(16).as_bytes(), b'"', true), 16);
     }
 }
