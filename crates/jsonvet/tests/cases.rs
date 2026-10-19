@@ -253,7 +253,11 @@ fn noncharacters_are_found_after_long_plain_runs() {
     let plain = "a".repeat(20);
     let text = format!("[\"{plain}é{plain}\u{FFFF}{plain}\u{FDD0}\"]");
     let report = check(&text, &Config::new(Dialect::IJson));
-    let offsets: Vec<usize> = report.problems().iter().map(|p| p.offset()).collect();
+    let offsets: Vec<usize> = report
+        .problems()
+        .iter()
+        .map(jsonvet::Problem::offset)
+        .collect();
     assert_eq!(offsets, [44, 67]);
 }
 
