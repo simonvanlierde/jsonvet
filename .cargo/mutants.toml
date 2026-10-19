@@ -7,8 +7,14 @@ test_workspace = true
 # Matched by column, not line, so they survive edits elsewhere in the file. Any other mutant
 # that survives fails the weekly run.
 exclude_re = [
-  # Speed only: when the key list becomes an index, and which column-count branch runs.
-  "parse.rs:.* replace > with (==|<|>=) in Frame<'a>::insert",
+  # Speed only: whether a closed object's key table is kept, and which hash bits hashbrown's
+  # tag gets.
+  "parse.rs:.* replace (>|\\*) with .* in Keys<'a>::clear",
+  "parse.rs:.* replace \\* with \\+ in spread",
+  # Only two keys whose 32-bit hashes collide tell these apart, and SipHash's keys come from
+  # the OS, so no test can pick such a pair.
+  "parse.rs:.* replace && with \\|\\| in Keys<'a>::first_or_insert",
+  # Speed only: which column-count branch runs.
   "report.rs:\\d+:26: replace - with \\+ in Report<'a>::location",
   "parse.rs:.* replace match guard self.invalid_code_point.is_on\\(\\) with true in Parser<'a>::string",
   "parse.rs:.* replace match guard decode with true in Parser<'a>::string",

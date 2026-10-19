@@ -238,6 +238,9 @@ Behind that interface:
   stack's size. The frames also hold each object's keys for duplicate detection and give the
   JSONPath of a duplicate key;
 - keys compared by their decoded value, borrowed from the input unless they contain an escape;
+- an object's keys checked by a scan up to 16 keys, then through a hash index. The index uses the
+  standard library's SipHash with keys from the OS, so a crafted file cannot make its keys collide
+  and the check stays linear in the file's size, as [SECURITY.md](../SECURITY.md) promises;
 - line starts found once with memchr, and only when the first location is asked for;
 - in text that is not all ASCII, a count of the code points before every 4 KiB, built only as far
   as a lookup needs, so finding a column counts the characters of at most two chunks.
