@@ -6,6 +6,7 @@
 [![codecov](https://codecov.io/gh/simonvanlierde/jsonvet/branch/main/graph/badge.svg)](https://codecov.io/gh/simonvanlierde/jsonvet)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/simonvanlierde/jsonvet/blob/main/LICENSE)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23461825.svg)](https://doi.org/10.5281/zenodo.23461825)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/simonvanlierde/jsonvet/badge)](https://scorecard.dev/viewer/?uri=github.com/simonvanlierde/jsonvet)
 
 A linter for JSON, I-JSON, JSONC, HuJSON (JWCC), JSON5 and JSON Lines. It finds syntax errors and
 duplicate keys, and tells you the exact line and column:
@@ -65,7 +66,14 @@ request. It runs on Linux, macOS and Windows runners. Its optional inputs are in
 uvx jsonvet config/*.json        # run it from PyPI without installing
 pip install jsonvet              # install it as a Python package
 cargo install jsonvet-cli        # build it from source
+cargo binstall jsonvet-cli       # download the binary from the GitHub release
 ```
+
+Each [GitHub release](https://github.com/simonvanlierde/jsonvet/releases) after 3.0.0 also has
+the `jsonvet` binary for Linux (glibc and musl), macOS and Windows, on x86-64 and ARM64, as
+`jsonvet-<target>.tar.gz` (`.zip` on Windows), with a `SHA256SUMS` file and a CycloneDX SBOM.
+To check that a file came from this repository's release workflow, see
+[SECURITY.md](https://github.com/simonvanlierde/jsonvet/blob/main/SECURITY.md#verifying-a-release).
 
 It exits 0 when no file has an error, 1 when one does, and 2 for a usage error. `jsonvet --help`
 lists every option.
