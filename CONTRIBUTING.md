@@ -15,6 +15,9 @@ first.
 
 CI also runs the msrv, differential, hook, packaging, action-script, action and semver jobs.
 `just msrv` and `just differential` run two of them locally.
+Outside pull requests, `advisories.yml` runs `cargo deny check advisories` every Monday, so a new
+RustSec advisory against `Cargo.lock` fails a run without waiting for a pull request, and
+`scorecard.yml` rates the repository for the OpenSSF Scorecard badge.
 
 User-facing docs live in three places: the README for getting started, `docs/usage.md` for the
 reference, and `docs/design.md` for the reasons. Put a new detail in one of them and link to it
