@@ -156,7 +156,7 @@ x86-64, still smaller than prek's or ruff's wheel, and a plain check starts no s
 about 70 crates, whose code runs only with `--schema`. One build means one help text and one
 set of tests.
 
-The limits are listed in the [README](../README.md#json-schema). Why each exists:
+The limits are listed in the [reference](usage.md#json-schema-limits). Why each exists:
 
 - **File depth.** jsonschema validates recursively. Its memory grows with the square of the depth
   when an error sits deep under a recursive `$ref`: 1.3 GB for a 50 KB file nested 10,000 levels.

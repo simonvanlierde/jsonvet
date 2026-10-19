@@ -28,8 +28,7 @@ Options:
       --format FORMAT           Print problems as text (the default) or as one SARIF 2.1.0
                                 document, for GitHub code scanning.
       --schema FILE             Also check each file against the JSON Schema in FILE, reported
-                                under the rule schema. Not in the PyPI wheels; `cargo install
-                                jsonvet-cli` has it. Limits: see the README.
+                                under the rule schema. Limits: docs/usage.md in the repository.
       --config FILE             Read settings from FILE instead of searching for one.
       --no-config               Do not read a settings file.
   -h, --help                    Print this help.

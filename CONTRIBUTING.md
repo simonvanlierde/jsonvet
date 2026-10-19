@@ -8,9 +8,17 @@ the git hooks with [prek](https://github.com/j178/prek). `just --list` shows eve
 
 Run `just check` before you open a pull request. It runs CI's Linux `lint` and `test` jobs:
 formatting, clippy, rustdoc, cargo deny, ruff, the tests with doctests, the version check and the
-conformance page diff. The page diff fails while `README.md` or `docs/conformance.md` has
-unstaged edits. CI also runs the msrv, differential, hook, packaging, action-script, action and
-semver jobs. `just msrv` and `just differential` run two of them.
+conformance page diff.
+
+The page diff fails while `README.md` or `docs/conformance.md` has unstaged edits, so stage them
+first.
+
+CI also runs the msrv, differential, hook, packaging, action-script, action and semver jobs.
+`just msrv` and `just differential` run two of them locally.
+
+User-facing docs live in three places: the README for getting started, `docs/usage.md` for the
+reference, and `docs/design.md` for the reasons. Put a new detail in one of them and link to it
+from the others.
 
 ## Pull requests
 

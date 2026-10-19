@@ -8,6 +8,17 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
+### Fixed
+
+- `jsonvet --help` no longer says that `--schema` is missing from the PyPI wheels. It has been in
+  them since 3.0.0.
+
+### Changed
+
+- The README is shorter and starts with a quick start. The fine print (globs, exit status, the
+  Action's inputs, the JSON Schema limits) moved to
+  [docs/usage.md](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md).
+
 ## [3.0.0] - 2026-10-18
 
 3.0 checks files against a JSON Schema, with each error at its line and column, writes SARIF
