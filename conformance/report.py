@@ -156,8 +156,10 @@ NOTES = {
     " 2015 allows it; ECMAScript 5.1, which JSON5 cites, does not.",
     f"{C5}line-comment-ends-at-u2028.json": "Go `titanous/json5` does not end a line comment at U+2028, so the"
     " stray `x` after it disappears into the comment.",
-    f"{C5}depth-10000.json": "Python `json5` raises RecursionError and Rust `serde_json5` overflows its stack,"
-    " which aborts the process. `pyjson5` rejects the file at its own nesting limit, which §10 allows.",
+    f"{C5}depth-10000.json": "Python `json5` raises RecursionError. Rust `serde_json5` overflowed its stack"
+    " in the 2026-10-14 run and parsed the file in the 2026-10-19 run, with the same version, compiler and"
+    " 8 MB stack, so its verdict here is not stable. `pyjson5` rejects the file at its own nesting limit,"
+    " which §10 allows.",
     "conformance/extra/jsonc/lone-cr-ends-comment.jsonc": "`strip-json-comments` and Go `tidwall/jsonc` end a"
     " line comment only at LF, so a comment ended by a lone CR swallows the rest of the file.",
     "conformance/extra/jsonc/comment-only.jsonc": "The Rust `jsonc-parser` returns no value and no error for a"
@@ -296,14 +298,19 @@ def duplicates_section(verdicts: dict, snap: dict) -> list[str]:
     """Which parsers can report duplicate keys at all, on the corpus files whose only flaw is one."""
     files = [p for p, (_, dupes) in snap.items() if dupes]
     # Each detecting variant, and the parser run with the same syntax but without detection.
-    variants = {"py-json-dupes": lambda _: "py-json", "py-json5-dupes": lambda _: "py-json5"}
+    variants = {
+        "py-json-dupes": lambda _: "py-json",
+        "py-json5-dupes": lambda _: "py-json5",
+        "py-jiter-dupes": lambda _: "py-jiter",
+    }
     variants["jsonvet-dupes"] = lambda p: "jsonvet-" + ("json" if "/i-json/" in p else p.split("/")[2])
     out = [
         "## Duplicate keys",
         "",
-        "Every spec here lets a parser keep one of the values, and JSON5 §3 also lets it fail. Only three",
+        "Every spec here lets a parser keep one of the values, and JSON5 §3 also lets it fail. Only four",
         "parsers in the matrix can report duplicates: Python's `json` through an `object_pairs_hook`",
-        "that raises, Python `json5` with `allow_duplicate_keys=False`, and jsonvet by default. The",
+        "that raises, Python `json5` with `allow_duplicate_keys=False`, jiter with",
+        "`catch_duplicate_keys=True`, and jsonvet by default. The",
         "others have no switch for it in their sources, and accepted these files wherever their syntax",
         "allowed. A dash means the parser rejects the file's syntax, so the test says nothing.",
         "",
