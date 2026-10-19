@@ -23,4 +23,7 @@ keywords:
   - "json-schema"
   - "linter"
   - "pre-commit"
+  - "pre-commit-hook"
+  - "github-action"
   - "sarif"
+  - "validator"
