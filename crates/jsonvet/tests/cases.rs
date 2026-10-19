@@ -82,6 +82,25 @@ fn syntax_in_every_dialect() {
         (Json, "nullx"),
         (Json, "[1}"),
         (Json, r#"{"a": 1]"#),
+        // A missing comma points just after the value before it, past any comment.
+        (Json, "{\n  \"a\": 1\n  \"b\": 2\n}"),
+        (Jsonc, "[1 /* c */ 2]"),
+        (Json5, "{a: 1 b: 2}"),
+        (Json, "[1 x]"),
+        // An object or array still open at the end names its bracket.
+        (Json, "{\"a\": [1, {\"b\": 2"),
+        (Json, "[1,"),
+        (Json, "{\"a\""),
+        (Json, "[1e"),
+        // A word shows whole, with a hint where it looks like another language's literal.
+        (Json, r#"{"a": True}"#),
+        (Json, "[False, None, NULL, undefined, nil]"),
+        (Json5, r#"{"a": None}"#),
+        (Json5, "[Nope]"),
+        (Json, "[nulL]"),
+        (Json, r#"{"a" True}"#),
+        (Json5, "01"),
+        (Json, "[-007]"),
         // Numbers.
         (Json, "NaN"),
         (Json, "-Infinity"),
@@ -462,5 +481,34 @@ fn line_comments_end_where_each_dialect_says() {
             let passed = check(&text, &Config::new(dialect)).passed();
             assert_eq!(passed, dialects.contains(&dialect), "{dialect} {text:?}");
         }
+    }
+}
+
+/// A word shows whole only where it starts and ends at a token boundary; otherwise the message
+/// names the one character, as it would without the word scan.
+#[test]
+fn words_show_whole_only_between_token_boundaries() {
+    let first = |dialect, text: &str| check(text, &Config::new(dialect)).problems()[0].to_string();
+    assert_eq!(
+        first(Dialect::Json, "[trueish]"),
+        "expected `,` or `]`, found `i`"
+    );
+    assert_eq!(
+        first(Dialect::Json, "[Trué]"),
+        "expected a value, found `T`"
+    );
+    // 10 MB of letters: one bounded look, not a scan of the whole run.
+    let long = format!("[{}]", "a".repeat(10_000_000));
+    assert_eq!(first(Dialect::Json, &long), "expected a value, found `a`");
+}
+
+/// After a sign only a number can follow, so a word there gets no literal hint: `-null` is no
+/// more valid than `-None`.
+#[test]
+fn a_word_after_a_sign_gets_no_literal_hint() {
+    for dialect in [Dialect::Json, Dialect::Json5] {
+        let report = check("[-None]", &Config::new(dialect));
+        let message = report.problems()[0].to_string();
+        assert!(!message.contains("did you mean"), "{dialect}: {message}");
     }
 }

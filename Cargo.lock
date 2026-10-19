@@ -399,6 +399,7 @@ dependencies = [
 name = "jsonvet"
 version = "3.0.0"
 dependencies = [
+ "hashbrown",
  "insta",
  "memchr",
  "proptest",

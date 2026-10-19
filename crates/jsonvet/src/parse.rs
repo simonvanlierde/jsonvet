@@ -3,7 +3,10 @@
 
 use std::borrow::Cow;
 use std::cell::OnceCell;
-use std::collections::HashMap;
+use std::hash::{BuildHasher, RandomState};
+
+use hashbrown::HashTable;
+use hashbrown::hash_table::Entry;
 
 use crate::event::{Event, EventKind};
 use crate::path::{self, Segment};
@@ -65,6 +68,7 @@ pub(crate) fn check_lines<'a>(
         max_depth: config.max_depth,
         problems: Vec::new(),
         stack: Vec::new(),
+        spare_keys: Vec::new(),
         events: events.then(Vec::new),
     };
     if lines.start == 0 {
@@ -75,7 +79,8 @@ pub(crate) fn check_lines<'a>(
     } else {
         parser.document()
     };
-    if let Err(fail) = outcome {
+    if let Err(mut fail) = outcome {
+        parser.unclosed(&mut fail);
         parser.problems.push(Problem {
             offset: fail.offset,
             severity: Severity::Error,
@@ -133,6 +138,8 @@ struct Parser<'a> {
     max_depth: usize,
     problems: Vec<Problem>,
     stack: Vec<Frame<'a>>,
+    /// Emptied key lists from closed objects, reused so each object does not allocate anew.
+    spare_keys: Vec<Keys<'a>>,
     /// The values seen so far, when the caller asked for them.
     events: Option<Vec<Event<'a>>>,
 }
@@ -146,46 +153,102 @@ enum Container {
 /// An open object or array.
 struct Frame<'a> {
     container: Container,
+    /// The offset of its `{` or `[`.
+    opened: usize,
     /// How this container is reached from its parent.
     segment: Segment<'a>,
     /// `segment` as a path shows it, made on the first duplicate inside the container.
     rendered: OnceCell<String>,
-    /// The keys seen so far with the offset of each, for objects.
-    seen_keys: Vec<(Key<'a>, usize)>,
-    /// The same keys, indexed once the object grows past `LINEAR_KEYS`.
-    seen_index: Option<HashMap<Key<'a>, usize>>,
+    /// The keys seen so far, for objects.
+    keys: Keys<'a>,
     /// The current member's key, in an object.
     current_key: Key<'a>,
     /// The current element's position, in an array.
     element_index: usize,
 }
 
-impl<'a> Frame<'a> {
+impl Frame<'_> {
     fn rendered(&self) -> &str {
         self.rendered.get_or_init(|| path::rendered(&self.segment))
     }
+}
 
-    fn first_offset(&self, key: &[u8]) -> Option<usize> {
-        match &self.seen_index {
-            Some(index) => index.get(key).copied(),
-            None => self
-                .seen_keys
-                .iter()
-                .find(|(k, _)| **k == *key)
-                .map(|(_, at)| *at),
+/// An object's keys with the offset of each, in the order they came.
+#[derive(Default)]
+struct Keys<'a> {
+    list: Vec<(Key<'a>, usize)>,
+    /// `(hash, position in list)` per key once the list grows past `LINEAR_KEYS`. With the hash
+    /// at hand a resize never rehashes a key, and a lookup compares keys only when hashes match.
+    index: HashTable<(u32, u32)>,
+    /// std's SipHash, keyed from the OS: without those keys a crafted file cannot make its keys
+    /// collide, so the index stays linear on untrusted input (SECURITY.md).
+    state: RandomState,
+}
+
+impl<'a> Keys<'a> {
+    /// The offset of `key`'s first appearance, or `None` after recording it at `at`.
+    fn first_or_insert(&mut self, key: &Key<'a>, at: usize) -> Option<usize> {
+        let list = &mut self.list;
+        // shortcut: past u32::MAX keys (a 128 GiB list) the check falls back to the linear scan.
+        let position = u32::try_from(list.len())
+            .ok()
+            .filter(|_| list.len() > LINEAR_KEYS);
+        let Some(position) = position else {
+            if let Some((_, first)) = list.iter().find(|(k, _)| k == key) {
+                return Some(*first);
+            }
+            list.push((key.clone(), at));
+            if list.len() == LINEAR_KEYS + 1 {
+                for (i, (k, _)) in (0..).zip(list.iter()) {
+                    let hash = short_hash(&self.state, k);
+                    self.index
+                        .insert_unique(spread(hash), (hash, i), |&(h, _)| spread(h));
+                }
+            }
+            return None;
+        };
+        let hash = short_hash(&self.state, key);
+        let entry = self.index.entry(
+            spread(hash),
+            |&(h, i)| h == hash && list[i as usize].0 == *key,
+            |&(h, _)| spread(h),
+        );
+        match entry {
+            Entry::Occupied(found) => Some(list[found.get().1 as usize].1),
+            Entry::Vacant(vacant) => {
+                vacant.insert((hash, position));
+                list.push((key.clone(), at));
+                None
+            }
         }
     }
 
-    fn insert(&mut self, key: Key<'a>, at: usize) {
-        if let Some(index) = &mut self.seen_index {
-            index.insert(key, at);
-            return;
-        }
-        self.seen_keys.push((key, at));
-        if self.seen_keys.len() > LINEAR_KEYS {
-            self.seen_index = Some(self.seen_keys.drain(..).collect());
+    /// Empty, but keeping the allocations for the next object.
+    fn clear(&mut self) {
+        self.list.clear();
+        // Clearing takes time in the table's capacity, so a big object's table must not pass to
+        // the small ones after it: each would pay to clear it.
+        if self.index.capacity() > 4 * self.index.len() {
+            self.index = HashTable::new();
+        } else {
+            self.index.clear();
         }
     }
+}
+
+/// The low 32 bits of `key`'s hash.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "the low 32 bits are the point"
+)]
+fn short_hash(state: &RandomState, key: &[u8]) -> u32 {
+    state.hash_one(key) as u32
+}
+
+/// `hash` in both halves of a `u64`: hashbrown picks the bucket from the low bits and its 7-bit
+/// tag from the top ones.
+fn spread(hash: u32) -> u64 {
+    u64::from(hash) * 0x1_0000_0001
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -248,7 +311,10 @@ impl<'a> Parser<'a> {
     }
 
     fn unexpected_at(&self, at: usize, expected: &'static str) -> Fail {
-        if at >= self.bytes.len() {
+        if let Some(word) = self.word_at(at) {
+            let word = word.to_owned();
+            Fail::at(at, SyntaxKind::UnexpectedWord { word, expected })
+        } else if at >= self.bytes.len() {
             Fail::at(at, SyntaxKind::UnexpectedEnd { expected })
         } else if self.line_end_at(at).is_some() {
             Fail::at(at, SyntaxKind::UnexpectedLineEnd { expected })
@@ -260,6 +326,43 @@ impl<'a> Parser<'a> {
                     expected,
                 },
             )
+        }
+    }
+
+    /// The word starting at `at`, for a message to show whole: an ASCII letter, then ASCII
+    /// letters, digits and `_`, at most 32 bytes. `None` when no letter is there, or when the
+    /// run does not start and end at a token boundary, as in the `ish` of `trueish` or the
+    /// `Tru` of `Trué`.
+    fn word_at(&self, at: usize) -> Option<&'a str> {
+        let part = |b: &u8| b.is_ascii_alphanumeric() || *b == b'_';
+        let rest = self.bytes.get(at..)?;
+        if !rest.first()?.is_ascii_alphabetic()
+            || at.checked_sub(1).is_some_and(|i| part(&self.bytes[i]))
+        {
+            return None;
+        }
+        let len = rest.iter().take(33).take_while(|b| part(b)).count();
+        // shortcut: a longer word shows as its first letter only; fine for typos of literals.
+        (len <= 32 && rest.get(len).is_none_or(u8::is_ascii)).then(|| &self.text[at..at + len])
+    }
+
+    /// Turn an end of file inside an open object or array, where the document's structure
+    /// needed more, into an error that points back at the bracket still open.
+    fn unclosed(&self, fail: &mut Fail) {
+        let SyntaxKind::UnexpectedEnd { expected } = fail.kind else {
+            return;
+        };
+        let structural = ["a value", "a key", "`:`", "`,` or `}`", "`,` or `]`"];
+        let Some(frame) = self.stack.last() else {
+            return;
+        };
+        if fail.started.is_none() && structural.contains(&expected) {
+            let open = match frame.container {
+                Container::Object => '{',
+                Container::Array => '[',
+            };
+            fail.kind = SyntaxKind::Unclosed { open, expected };
+            fail.started = Some(frame.opened);
         }
     }
 
@@ -303,6 +406,8 @@ impl<'a> Parser<'a> {
     fn document(&mut self) -> Result<(), Fail> {
         let mut state = State::Value;
         loop {
+            // Where the last value ended, before any white space or comment after it.
+            let value_end = self.pos;
             self.trivia()?;
             state = match state {
                 State::ArrayFirst | State::ArrayNext if self.peek() == Some(b']') => {
@@ -321,7 +426,7 @@ impl<'a> Parser<'a> {
                     State::Value
                 }
                 State::Colon => return Err(self.unexpected("`:`")),
-                State::AfterValue => self.after_value()?,
+                State::AfterValue => self.after_value(value_end)?,
                 State::Done => {
                     return match self.peek() {
                         None => Ok(()),
@@ -343,7 +448,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn after_value(&mut self) -> Result<State, Fail> {
+    /// `,` or the closing bracket after a value that ended at `value_end`.
+    fn after_value(&mut self, value_end: usize) -> Result<State, Fail> {
         let object = self
             .stack
             .last()
@@ -362,7 +468,24 @@ impl<'a> Parser<'a> {
             }
             Some(b'}') if object => self.close('}', false),
             Some(b']') if !object => self.close(']', false),
+            Some(b) if self.starts_item(b, object) => {
+                Err(Fail::at(value_end, SyntaxKind::MissingComma))
+            }
             _ => Err(self.unexpected(if object { "`,` or `}`" } else { "`,` or `]`" })),
+        }
+    }
+
+    /// Whether `b`, at the current position, can start the next key in an object or the next
+    /// value in an array, in any dialect: a sign that a `,` is missing before it.
+    fn starts_item(&self, b: u8, object: bool) -> bool {
+        if object {
+            matches!(b, b'"' | b'\'') || self.identifier_start(self.pos)
+        } else {
+            matches!(
+                b,
+                b'{' | b'[' | b'"' | b'\'' | b'-' | b'+' | b'.' | b'0'
+                    ..=b'9' | b't' | b'f' | b'n' | b'I' | b'N'
+            )
         }
     }
 
@@ -375,7 +498,10 @@ impl<'a> Parser<'a> {
         }
         self.emit(self.pos, EventKind::End);
         self.pos += 1;
-        self.stack.pop();
+        if let Some(mut frame) = self.stack.pop() {
+            frame.keys.clear();
+            self.spare_keys.push(frame.keys);
+        }
         Ok(self.state_after_value())
     }
 
@@ -393,10 +519,10 @@ impl<'a> Parser<'a> {
         };
         self.stack.push(Frame {
             container,
+            opened: self.pos,
             segment,
             rendered: OnceCell::new(),
-            seen_keys: Vec::new(),
-            seen_index: None,
+            keys: self.spare_keys.pop().unwrap_or_default(),
             current_key: Key::Borrowed(&[]),
             element_index: 0,
         });
@@ -434,15 +560,15 @@ impl<'a> Parser<'a> {
                 EventKind::Number(&self.text[start..self.pos])
             }
             b't' => {
-                self.literal("`true`")?;
+                self.literal("`true`", "a value")?;
                 EventKind::Bool(true)
             }
             b'f' => {
-                self.literal("`false`")?;
+                self.literal("`false`", "a value")?;
                 EventKind::Bool(false)
             }
             b'n' => {
-                self.literal("`null`")?;
+                self.literal("`null`", "a value")?;
                 EventKind::Null
             }
             _ => return Err(self.unexpected("a value")),
@@ -522,8 +648,8 @@ impl<'a> Parser<'a> {
         let Some(frame) = self.stack.last_mut() else {
             return;
         };
-        match frame.first_offset(key) {
-            None => frame.insert(key.clone(), start),
+        match frame.keys.first_or_insert(key, start) {
+            None => {}
             Some(first) => {
                 let mut last = String::new();
                 path::push_key(&mut last, key);
@@ -820,6 +946,9 @@ impl<'a> Parser<'a> {
         let int_start = self.pos;
         let int_digits = if self.peek() == Some(b'0') {
             self.pos += 1;
+            if self.peek().is_some_and(|b| b.is_ascii_digit()) {
+                return Err(Fail::at(int_start, SyntaxKind::LeadingZero));
+            }
             true
         } else {
             self.skip_digits()
@@ -868,18 +997,39 @@ impl<'a> Parser<'a> {
                 if self.text[self.pos..].starts_with(word.trim_matches('`')) {
                     self.not_allowed(start, "NaN and Infinity are")
                 } else {
-                    self.unexpected("a value")
+                    self.unexpected(self.after_sign(start))
                 },
             );
         }
-        self.literal(word)
+        self.literal(word, self.after_sign(start))
     }
 
-    /// A literal such as `null`. `word` comes in backticks, as an error message shows it.
-    fn literal(&mut self, word: &'static str) -> Result<(), Fail> {
+    /// What a word at the current position stands in for: a value, or after a sign at `start`
+    /// a digit, where no literal hint applies.
+    fn after_sign(&self, start: usize) -> &'static str {
+        if self.pos > start {
+            "a digit"
+        } else {
+            "a value"
+        }
+    }
+
+    /// A literal such as `null`. `word` comes in backticks, as an error message shows it; a
+    /// different word whole in its place shows as found where `instead` was needed.
+    fn literal(&mut self, word: &'static str, instead: &'static str) -> Result<(), Fail> {
+        let start = self.pos;
         for &expected in word.trim_matches('`').as_bytes() {
             if self.peek() != Some(expected) {
-                return Err(self.unexpected(word));
+                // A different word, such as `None` for `NaN`, shows whole; a cut-off `nul` or
+                // `nul]` still says which literal it started.
+                let other = self
+                    .word_at(start)
+                    .is_some_and(|w| start + w.len() > self.pos);
+                return Err(if other {
+                    self.unexpected_at(start, instead)
+                } else {
+                    self.unexpected(word)
+                });
             }
             self.pos += 1;
         }

@@ -263,6 +263,33 @@ fn well_formed() -> impl Strategy<Value = (Dialect, String, Vec<String>)> {
     })
 }
 
+/// Objects in an array, each member's key drawn from 40 names so the larger objects pass the
+/// size where the duplicate check switches to an index. With the `(offset, first offset)` of
+/// every duplicate, found by a plain scan of each object's earlier keys.
+fn objects_with_duplicates() -> impl Strategy<Value = (String, Vec<(usize, usize)>)> {
+    prop::collection::vec(prop::collection::vec(0u8..40, 0..60), 1..4).prop_map(|objects| {
+        let mut text = String::from("[");
+        let mut duplicates = Vec::new();
+        for (n, keys) in objects.iter().enumerate() {
+            text.push_str(if n == 0 { "{" } else { ",{" });
+            let mut seen: Vec<(u8, usize)> = Vec::new();
+            for (i, key) in keys.iter().enumerate() {
+                if i > 0 {
+                    text.push(',');
+                }
+                match seen.iter().find(|(k, _)| k == key) {
+                    Some(&(_, first)) => duplicates.push((text.len(), first)),
+                    None => seen.push((*key, text.len())),
+                }
+                let _ = write!(text, "\"k{key}\":0");
+            }
+            text.push('}');
+        }
+        text.push(']');
+        (text, duplicates)
+    })
+}
+
 /// An event as a [`Piece`] token.
 fn token(kind: &EventKind<'_>) -> String {
     match kind {
@@ -350,6 +377,17 @@ proptest! {
                 prop_assert_eq!(&joined, &whole_events, "{} parts", parts);
             }
         }
+    }
+
+    #[test]
+    fn duplicate_keys_match_a_plain_scan((text, expected) in objects_with_duplicates()) {
+        let report = check(&text, &Config::new(Dialect::Json));
+        let found: Vec<(usize, usize)> = report
+            .problems()
+            .iter()
+            .map(|p| (p.offset(), p.related().map_or(usize::MAX, |r| r.offset)))
+            .collect();
+        prop_assert_eq!(found, expected);
     }
 
     #[test]

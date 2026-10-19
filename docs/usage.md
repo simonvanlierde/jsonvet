@@ -33,6 +33,16 @@ the hook and in CI, has no such line.
   `$.tags[1]` an array element, `$[""]` the empty key.
 - A file jsonvet cannot read gets a line with no position and no rule, such as
   `gone.json: error: no such file`. It always fails the run, and you cannot change that.
+- A syntax error that is about two places also names the second: `(started at 1:10)` for an
+  unterminated string or comment, `(opened at 1:1)` for an object or array still open at the end
+  of the file. A missing `,` points just after the value before it.
+- Some syntax errors end with a hint after a `;`: the dialect that would accept the syntax, as in
+  `comments are not allowed in json; the jsonc dialect allows this`, or `did you mean `true`?` for
+  a word such as `True`. Select a dialect with `--dialect jsonc:GLOB`, or a `dialects` entry in
+  the configuration file.
+- A file that starts with a UTF-16 or UTF-32 byte order mark fails with
+  `file is UTF-16 (LE); jsonvet reads UTF-8`. Any other file that is not UTF-8 fails with
+  `not valid UTF-8 (byte N)`.
 - In GitHub Actions, each problem is also printed as an annotation.
 
 jsonvet escapes control, bidirectional and invisible characters in file names and messages. So no
@@ -79,6 +89,11 @@ To be sure, put `--` before the file names: `jsonvet -- --x.json`.
 ## Dialects
 
 - Extensions match in lower case only, so `DATA.JSONL` is checked as JSON5, not JSON Lines.
+- `--dialect` and the configuration file also take the names `ijson` (for `i-json`), `hujson`
+  (for `jwcc`), and `ndjson` and `json-lines` (for `jsonl`). Dialect names are case-sensitive: `--dialect JSON` is an error that suggests `json`.
+- JSONC rejects trailing commas, as the [JSONC spec](https://jsonc.org/) and Microsoft's
+  reference parser do by default. For files that use them, such as `tsconfig.json` or VS Code's
+  `settings.json`, select `jwcc`, which is JSONC with trailing commas.
 - JSONC, JWCC and JSON5 each add syntax to the one before, except where a `//` comment ends.
   JWCC ends it at LF only, JSONC also at a lone CR, and JSON5 also at U+2028 and U+2029.
 - In `i-json`, lone surrogates, noncharacters and numbers that a double cannot hold are errors.
@@ -186,7 +201,18 @@ working directory and its parents, and stops at the repository root. Options on 
 win. `--config FILE` reads that file instead, and `--no-config` reads none.
 
 The file takes two keys, `rules` and `dialects`. Any other key, at the top or in a `dialects`
-entry, is a usage error, so a typo never goes unnoticed.
+entry, is a usage error, so a typo never goes unnoticed. The error names the line and column in
+the file, and the closest known name: `jsonvet.toml:2:1: unknown rule `duplicate-keys` (did you
+mean `duplicate-key`?); …`.
+
+```toml
+[rules]
+byte-order-mark = "error"
+
+[[dialects]]
+files = ".vscode/*.json"
+dialect = "jwcc"
+```
 
 ## GitHub Action
 

@@ -40,7 +40,9 @@ These change, and the changelog marks them **Breaking**:
   in the config file, keeps the old verdict.
 
 A syntax error points at the first character that cannot continue the document, or at the end of
-the input. Where that differs from 1.4, the difference and its reason are listed below. Any other
+the input. Two point earlier: a missing `,` points just after the value before it, and a number
+with a leading zero at that zero. A word that cannot continue it, such as `True`, is named whole,
+at its first letter. Where that differs from 1.4, the difference and its reason are listed below. Any other
 difference is a bug.
 
 ### Known differences from 1.4
@@ -111,6 +113,11 @@ Lines end at LF, CR and CRLF. In JSON5 they also end at U+2028 and U+2029, becau
 counts them as line terminators. The other dialects treat both as ordinary characters.
 
 `.json` defaults to JSON5, as in 1.4. `auto` means "the default for this file's extension".
+
+JSONC rejects trailing commas, with no option to allow them. The [JSONC spec](https://jsonc.org/)
+says parsers "MAY" accept them, and its reference parser, Microsoft's `jsonc-parser`, and prek's
+`check-jsonc` reject them by default. Files whose own tools accept them, such as VS Code's
+settings and `tsconfig.json`, are JWCC, which `dialects` selects per glob.
 
 ## Rules
 
@@ -234,6 +241,9 @@ Behind that interface:
   stack's size. The frames also hold each object's keys for duplicate detection and give the
   JSONPath of a duplicate key;
 - keys compared by their decoded value, borrowed from the input unless they contain an escape;
+- an object's keys checked by a scan up to 16 keys, then through a hash index. The index uses the
+  standard library's SipHash with keys from the OS, so a crafted file cannot make its keys collide
+  and the check stays linear in the file's size, as [SECURITY.md](../SECURITY.md) promises;
 - line starts found once with memchr, and only when the first location is asked for;
 - in text that is not all ASCII, a count of the code points before every 4 KiB, built only as far
   as a lookup needs, so finding a column counts the characters of at most two chunks.

@@ -39,7 +39,13 @@ impl Problem {
     pub fn related(&self) -> Option<Related> {
         let (offset, kind) = match &self.detail {
             Detail::DuplicateKey { first, .. } => (*first, RelatedKind::FirstOccurrence),
-            Detail::Syntax(s) => (s.started?, RelatedKind::Start),
+            Detail::Syntax(s) => {
+                let kind = match s.kind {
+                    SyntaxKind::Unclosed { .. } => RelatedKind::Opened,
+                    _ => RelatedKind::Start,
+                };
+                (s.started?, kind)
+            }
             _ => return None,
         };
         Some(Related { offset, kind })
@@ -88,6 +94,8 @@ pub enum RelatedKind {
     FirstOccurrence,
     /// The start of the unterminated string or comment a syntax error is about.
     Start,
+    /// The `{` or `[` of the object or array that is still open at the end of the file.
+    Opened,
 }
 
 /// The message, without its position or rule id.
@@ -168,6 +176,24 @@ pub(crate) enum SyntaxKind {
         /// What was needed, as for `UnexpectedEnd`.
         expected: &'static str,
     },
+    /// The text ended inside an object or array, where something else was needed.
+    Unclosed {
+        /// The bracket that opened it: `{` or `[`.
+        open: char,
+        /// What was needed, as for `UnexpectedEnd`.
+        expected: &'static str,
+    },
+    /// No `,` between two members or elements. The error sits just after the first one.
+    MissingComma,
+    /// A word that cannot continue the document here, such as `True`.
+    UnexpectedWord {
+        /// The word: an ASCII letter, then ASCII letters, digits and `_`.
+        word: String,
+        /// What was needed instead, as for `UnexpectedEnd`.
+        expected: &'static str,
+    },
+    /// A number with a `0` before its other integer digits, such as `01`.
+    LeadingZero,
     /// A character that cannot continue the document here.
     Unexpected {
         /// The character found.
@@ -227,17 +253,47 @@ impl fmt::Display for SyntaxError {
             SyntaxKind::UnexpectedLineEnd { expected } => {
                 write!(f, "expected {expected}, found the end of the line")
             }
+            SyntaxKind::Unclosed { open, expected } => {
+                write!(
+                    f,
+                    "unclosed `{open}`: expected {expected}, found the end of the file"
+                )
+            }
+            SyntaxKind::MissingComma => f.write_str("missing `,`"),
+            SyntaxKind::UnexpectedWord { word, expected } => {
+                write!(f, "expected {expected}, found `{word}`")?;
+                // Only where a value goes: after `{"a"`, `True` is no typo for `true`.
+                match literal_for(word).filter(|_| *expected == "a value") {
+                    Some(literal) => write!(f, "; did you mean `{literal}`?"),
+                    None => Ok(()),
+                }
+            }
+            SyntaxKind::LeadingZero => f.write_str("leading zeros are not allowed"),
             SyntaxKind::Unexpected { found, expected } => {
                 write!(f, "expected {expected}, found {}", Shown(*found))
             }
             SyntaxKind::NotAllowed { what, dialect } => {
-                write!(f, "{what} not allowed in {dialect}")
+                write!(f, "{what} not allowed in {dialect}")?;
+                // Comments need only JSONC; everything else NotAllowed covers is JSON5's.
+                let allows = if *what == "comments are" {
+                    "jsonc"
+                } else {
+                    "json5"
+                };
+                match dialect {
+                    Dialect::JsonLines => Ok(()),
+                    _ => write!(f, "; the {allows} dialect allows this"),
+                }
             }
             SyntaxKind::TrailingComma { close, dialect } => {
                 write!(
                     f,
                     "trailing comma before `{close}` is not allowed in {dialect}"
-                )
+                )?;
+                match dialect {
+                    Dialect::JsonLines => Ok(()),
+                    _ => f.write_str("; the jwcc and json5 dialects allow this"),
+                }
             }
             SyntaxKind::UnterminatedString => f.write_str("unterminated string"),
             SyntaxKind::LineBreakInString => f.write_str("line break inside a string"),
@@ -260,6 +316,18 @@ impl fmt::Display for SyntaxError {
             SyntaxKind::TooDeep { limit } => write!(f, "nested deeper than {limit} levels"),
         }
     }
+}
+
+/// The JSON literal a word from another language most likely means, such as `true` for Python's
+/// `True` or `null` for `undefined`, or `None` when the word is that literal or none of them.
+fn literal_for(word: &str) -> Option<&'static str> {
+    let literal = match word.to_ascii_lowercase().as_str() {
+        "true" => "true",
+        "false" => "false",
+        "null" | "none" | "nil" | "undefined" => "null",
+        _ => return None,
+    };
+    (literal != word).then_some(literal)
 }
 
 /// A character as a message shows it: in backticks when printable, as U+XXXX otherwise. Bidi

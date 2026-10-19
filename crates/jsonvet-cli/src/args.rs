@@ -19,7 +19,8 @@ A FILE of - reads standard input.
 Options:
       --dialect DIALECT[:GLOB]  Check files matching GLOB (every file, without one) as DIALECT:
                                 json, i-json, jsonc, jwcc, json5, jsonl, or auto for the file
-                                extension's default. Repeatable; the last match wins.
+                                extension's default. Also accepted: ijson, hujson (jwcc),
+                                ndjson and json-lines (jsonl). Repeatable; the last match wins.
                                 Files with any other extension are checked as json5;
                                 extensions match in lower case only.
       --strict GLOB             Same as --dialect json:GLOB; --strict '!GLOB' means auto:GLOB.
@@ -81,6 +82,17 @@ pub(crate) enum Command {
     Explain(String),
 }
 
+fn parse_format(name: &str) -> Result<Format, String> {
+    match name {
+        "text" => Ok(Format::Text),
+        "sarif" => Ok(Format::Sarif),
+        _ => {
+            let hint = jsonvet::did_you_mean(name, ["text", "sarif"]);
+            Err(format!("--format takes text or sarif, not `{name}`{hint}"))
+        }
+    }
+}
+
 pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command, String> {
     let mut parser = lexopt::Parser::from_args(args);
     // Otherwise `-x=a.json` would come back as `-x` and `a.json`, losing the `=`.
@@ -131,13 +143,7 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
                         .map_err(|_| format!("--max-warnings takes a number, not `{n}`"))?,
                 );
             }
-            Long("format") => {
-                format = match value(&mut parser)?.as_str() {
-                    "text" => Format::Text,
-                    "sarif" => Format::Sarif,
-                    other => return Err(format!("--format takes text or sarif, not `{other}`")),
-                }
-            }
+            Long("format") => format = parse_format(&value(&mut parser)?)?,
             Long("config") => config = ConfigSource::File(PathBuf::from(value(&mut parser)?)),
             Long("no-config") => config = ConfigSource::None,
             Long("list-rules") => return Ok(Command::ListRules),
@@ -308,6 +314,11 @@ mod tests {
         assert_eq!(args.format, Format::Sarif);
         assert_eq!(check(&["x.json"]).format, Format::Text);
         assert!(parse(["--format", "json"].iter().map(Into::into)).is_err());
+        // Value names are case-sensitive, as in clap and ruff, but a wrong case gets a hint.
+        assert_eq!(
+            parse(["--format", "SARIF"].iter().map(Into::into)).err(),
+            Some("--format takes text or sarif, not `SARIF` (did you mean `sarif`?)".to_owned())
+        );
         assert!(parse(["--error", "nope"].iter().map(Into::into)).is_err());
         assert!(parse(["--dialect", "yaml"].iter().map(Into::into)).is_err());
         assert!(parse(["--strict"].iter().map(Into::into)).is_err());

@@ -5,7 +5,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use jsonvet::{Config, Dialect, Rule, Severity};
-use toml::{Table, Value};
+use toml::Spanned;
+use toml::Table;
+use toml::de::{DeTable, DeValue};
 
 use crate::glob;
 use crate::output::printable;
@@ -51,7 +53,8 @@ pub(crate) fn parse_severity(name: &str) -> Result<Severity, String> {
         "warning" | "warn" => Ok(Severity::Warning),
         "ignore" | "off" => Ok(Severity::Off),
         _ => Err(format!(
-            "unknown severity `{name}`; expected error, warning or ignore"
+            "unknown severity `{name}`{}; expected error, warning or ignore",
+            jsonvet::did_you_mean(name, ["error", "warning", "warn", "ignore", "off"])
         )),
     }
 }
@@ -157,74 +160,108 @@ pub(crate) fn load(path: &Path) -> Result<Settings, String> {
     // A key or value from the file shows escaped, so it cannot start a line of its own on stderr.
     let in_file = |e: &dyn std::fmt::Display| printable(&format!("{}: {e}", path.display()));
     let text = fs::read_to_string(path).map_err(|e| in_file(&e))?;
-    let table: Table = text
-        .parse()
-        .map_err(|e: toml::de::Error| in_file(&e.message()))?;
+    // The same, with the line and column of the byte offset `at` after the name.
+    let at = |at: usize, e: &dyn std::fmt::Display| {
+        let before = &text[..at];
+        let line = before.matches('\n').count() + 1;
+        let column = before.rsplit('\n').next().map_or(0, |l| l.chars().count()) + 1;
+        printable(&format!("{}:{line}:{column}: {e}", path.display()))
+    };
+    let table = DeTable::parse(&text).map_err(|e| match e.span() {
+        Some(span) => at(span.start, &e.message()),
+        None => in_file(&e.message()),
+    })?;
+    let table = table.get_ref();
     let file = if path.file_name().is_some_and(|n| n == "pyproject.toml") {
-        match table.get("tool").and_then(|tool| tool.get("jsonvet")) {
-            Some(Value::Table(file)) => file,
-            Some(_) => return Err(in_file(&"`tool.jsonvet` must be a table")),
+        match table
+            .get("tool")
+            .and_then(|tool| tool.get_ref().get("jsonvet"))
+        {
+            Some(file) => match file.get_ref() {
+                DeValue::Table(table) => table,
+                _ => return Err(at(file.span().start, &"`tool.jsonvet` must be a table")),
+            },
             None => return Err(in_file(&"no [tool.jsonvet] table")),
         }
     } else {
-        &table
+        table
     };
     let base = std::path::absolute(path).map_err(|e| in_file(&e))?;
     let base = base.parent().map(|dir| dir.to_string_lossy().into_owned());
     let mut settings = Settings::default();
     for (key, value) in file {
-        match (key.as_str(), value) {
-            ("rules", Value::Table(rules)) => {
+        let here = value.span().start;
+        match (key.get_ref().as_ref(), value.get_ref()) {
+            ("rules", DeValue::Table(rules)) => {
                 for (id, severity) in rules {
-                    let rule = parse_rule(id).map_err(|e| in_file(&e))?;
-                    let severity = severity
-                        .as_str()
-                        .ok_or_else(|| in_file(&format!("`rules.{id}` must be a string")))?;
-                    let severity = parse_severity(severity).map_err(|e| in_file(&e))?;
+                    let rule = parse_rule(id.get_ref()).map_err(|e| at(id.span().start, &e))?;
+                    let severity_at = severity.span().start;
+                    let severity = severity.get_ref().as_str().ok_or_else(|| {
+                        at(
+                            severity_at,
+                            &format!("`rules.{}` must be a string", id.get_ref()),
+                        )
+                    })?;
+                    let severity = parse_severity(severity).map_err(|e| at(severity_at, &e))?;
                     settings.rules.push((rule, severity));
                 }
             }
-            ("dialects", Value::Array(entries)) => {
+            ("dialects", DeValue::Array(entries)) => {
                 for entry in entries {
-                    let mut pattern = dialect_entry(entry).map_err(|e| in_file(&e))?;
+                    let mut pattern = dialect_entry(entry).map_err(|(offset, e)| at(offset, &e))?;
                     pattern.base.clone_from(&base);
                     settings.dialects.push(pattern);
                 }
             }
-            ("rules", _) => return Err(in_file(&"`rules` must be a table")),
-            ("dialects", _) => return Err(in_file(&"`dialects` must be an array of tables")),
-            _ => {
-                return Err(in_file(&format!(
-                    "unknown key `{key}`; expected rules or dialects"
-                )));
+            ("rules", _) => return Err(at(here, &"`rules` must be a table")),
+            ("dialects", _) => return Err(at(here, &"`dialects` must be an array of tables")),
+            (key_text, _) => {
+                let hint = jsonvet::did_you_mean(key_text, ["rules", "dialects"]);
+                return Err(at(
+                    key.span().start,
+                    &format!("unknown key `{key_text}`{hint}; expected rules or dialects"),
+                ));
             }
         }
     }
     Ok(settings)
 }
 
-/// One `dialects` entry: a table with exactly a `files` string and a `dialect` string.
-fn dialect_entry(entry: &Value) -> Result<DialectPattern, String> {
-    let entry = entry
-        .as_table()
-        .ok_or("each `dialects` entry must be a table")?;
-    if let Some(key) = entry
+/// One `dialects` entry: a table with exactly a `files` string and a `dialect` string. An error
+/// comes with the offset it is about.
+fn dialect_entry(entry: &Spanned<DeValue<'_>>) -> Result<DialectPattern, (usize, String)> {
+    let start = entry.span().start;
+    let DeValue::Table(table) = entry.get_ref() else {
+        return Err((start, "each `dialects` entry must be a table".to_owned()));
+    };
+    if let Some(key) = table
         .keys()
-        .find(|k| !matches!(k.as_str(), "files" | "dialect"))
+        .find(|k| !matches!(k.get_ref().as_ref(), "files" | "dialect"))
     {
-        return Err(format!(
-            "unknown key `{key}` in a `dialects` entry; expected files and dialect"
+        let name = key.get_ref();
+        let hint = jsonvet::did_you_mean(name, ["files", "dialect"]);
+        return Err((
+            key.span().start,
+            format!("unknown key `{name}`{hint} in a `dialects` entry; expected files and dialect"),
         ));
     }
     let string = |key: &str| {
-        entry
-            .get(key)
-            .and_then(Value::as_str)
-            .ok_or_else(|| format!("each `dialects` entry needs a `{key}` string"))
+        let value = table.get(key);
+        value
+            .and_then(|v| v.get_ref().as_str().map(|s| (v.span().start, s)))
+            .ok_or_else(|| {
+                let offset = value.map_or(start, |v| v.span().start);
+                (
+                    offset,
+                    format!("each `dialects` entry needs a `{key}` string"),
+                )
+            })
     };
+    let (_, files) = string("files")?;
+    let (dialect_at, dialect) = string("dialect")?;
     Ok(DialectPattern {
-        files: Some(string("files")?.to_owned()),
-        dialect: parse_dialect(string("dialect")?)?,
+        files: Some(files.to_owned()),
+        dialect: parse_dialect(dialect).map_err(|e| (dialect_at, e))?,
         base: None,
     })
 }
