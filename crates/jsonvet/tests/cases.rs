@@ -82,6 +82,25 @@ fn syntax_in_every_dialect() {
         (Json, "nullx"),
         (Json, "[1}"),
         (Json, r#"{"a": 1]"#),
+        // A missing comma points just after the value before it, past any comment.
+        (Json, "{\n  \"a\": 1\n  \"b\": 2\n}"),
+        (Jsonc, "[1 /* c */ 2]"),
+        (Json5, "{a: 1 b: 2}"),
+        (Json, "[1 x]"),
+        // An object or array still open at the end names its bracket.
+        (Json, "{\"a\": [1, {\"b\": 2"),
+        (Json, "[1,"),
+        (Json, "{\"a\""),
+        (Json, "[1e"),
+        // A word shows whole, with a hint where it looks like another language's literal.
+        (Json, r#"{"a": True}"#),
+        (Json, "[False, None, NULL, undefined, nil]"),
+        (Json5, r#"{"a": None}"#),
+        (Json5, "[Nope]"),
+        (Json, "[nulL]"),
+        (Json, r#"{"a" True}"#),
+        (Json5, "01"),
+        (Json, "[-007]"),
         // Numbers.
         (Json, "NaN"),
         (Json, "-Infinity"),

@@ -60,7 +60,8 @@ pub(crate) fn check<'a>(
     } else {
         parser.document()
     };
-    if let Err(fail) = outcome {
+    if let Err(mut fail) = outcome {
+        parser.unclosed(&mut fail);
         parser.problems.push(Problem {
             offset: fail.offset,
             severity: Severity::Error,
@@ -131,6 +132,8 @@ enum Container {
 /// An open object or array.
 struct Frame<'a> {
     container: Container,
+    /// The offset of its `{` or `[`.
+    opened: usize,
     /// How this container is reached from its parent.
     segment: Segment<'a>,
     /// `segment` as a path shows it, made on the first duplicate inside the container.
@@ -233,7 +236,10 @@ impl<'a> Parser<'a> {
     }
 
     fn unexpected_at(&self, at: usize, expected: &'static str) -> Fail {
-        if at >= self.bytes.len() {
+        if let Some(word) = self.word_at(at) {
+            let word = word.to_owned();
+            Fail::at(at, SyntaxKind::UnexpectedWord { word, expected })
+        } else if at >= self.bytes.len() {
             Fail::at(at, SyntaxKind::UnexpectedEnd { expected })
         } else if self.line_end_at(at).is_some() {
             Fail::at(at, SyntaxKind::UnexpectedLineEnd { expected })
@@ -245,6 +251,41 @@ impl<'a> Parser<'a> {
                     expected,
                 },
             )
+        }
+    }
+
+    /// The word starting at `at`, for a message to show whole: an ASCII letter, then ASCII
+    /// letters, digits and `_`, at most 32 bytes. `None` when no letter is there.
+    fn word_at(&self, at: usize) -> Option<&'a str> {
+        let rest = self.bytes.get(at..)?;
+        if !rest.first()?.is_ascii_alphabetic() {
+            return None;
+        }
+        let len = rest
+            .iter()
+            .take_while(|b| b.is_ascii_alphanumeric() || **b == b'_')
+            .count();
+        // shortcut: a longer word shows as its first letter only; fine for typos of literals.
+        (len <= 32).then(|| &self.text[at..at + len])
+    }
+
+    /// Turn an end of file inside an open object or array, where the document's structure
+    /// needed more, into an error that points back at the bracket still open.
+    fn unclosed(&self, fail: &mut Fail) {
+        let SyntaxKind::UnexpectedEnd { expected } = fail.kind else {
+            return;
+        };
+        let structural = ["a value", "a key", "`:`", "`,` or `}`", "`,` or `]`"];
+        let Some(frame) = self.stack.last() else {
+            return;
+        };
+        if fail.started.is_none() && structural.contains(&expected) {
+            let open = match frame.container {
+                Container::Object => '{',
+                Container::Array => '[',
+            };
+            fail.kind = SyntaxKind::Unclosed { open, expected };
+            fail.started = Some(frame.opened);
         }
     }
 
@@ -288,6 +329,8 @@ impl<'a> Parser<'a> {
     fn document(&mut self) -> Result<(), Fail> {
         let mut state = State::Value;
         loop {
+            // Where the last value ended, before any white space or comment after it.
+            let value_end = self.pos;
             self.trivia()?;
             state = match state {
                 State::ArrayFirst | State::ArrayNext if self.peek() == Some(b']') => {
@@ -306,7 +349,7 @@ impl<'a> Parser<'a> {
                     State::Value
                 }
                 State::Colon => return Err(self.unexpected("`:`")),
-                State::AfterValue => self.after_value()?,
+                State::AfterValue => self.after_value(value_end)?,
                 State::Done => {
                     return match self.peek() {
                         None => Ok(()),
@@ -328,7 +371,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn after_value(&mut self) -> Result<State, Fail> {
+    /// `,` or the closing bracket after a value that ended at `value_end`.
+    fn after_value(&mut self, value_end: usize) -> Result<State, Fail> {
         let object = self
             .stack
             .last()
@@ -347,7 +391,24 @@ impl<'a> Parser<'a> {
             }
             Some(b'}') if object => self.close('}', false),
             Some(b']') if !object => self.close(']', false),
+            Some(b) if self.starts_item(b, object) => {
+                Err(Fail::at(value_end, SyntaxKind::MissingComma))
+            }
             _ => Err(self.unexpected(if object { "`,` or `}`" } else { "`,` or `]`" })),
+        }
+    }
+
+    /// Whether `b`, at the current position, can start the next key in an object or the next
+    /// value in an array, in any dialect: a sign that a `,` is missing before it.
+    fn starts_item(&self, b: u8, object: bool) -> bool {
+        if object {
+            matches!(b, b'"' | b'\'') || self.identifier_start(self.pos)
+        } else {
+            matches!(
+                b,
+                b'{' | b'[' | b'"' | b'\'' | b'-' | b'+' | b'.' | b'0'
+                    ..=b'9' | b't' | b'f' | b'n' | b'I' | b'N'
+            )
         }
     }
 
@@ -378,6 +439,7 @@ impl<'a> Parser<'a> {
         };
         self.stack.push(Frame {
             container,
+            opened: self.pos,
             segment,
             rendered: OnceCell::new(),
             seen_keys: Vec::new(),
@@ -805,6 +867,9 @@ impl<'a> Parser<'a> {
         let int_start = self.pos;
         let int_digits = if self.peek() == Some(b'0') {
             self.pos += 1;
+            if self.peek().is_some_and(|b| b.is_ascii_digit()) {
+                return Err(Fail::at(int_start, SyntaxKind::LeadingZero));
+            }
             true
         } else {
             self.skip_digits()
@@ -862,9 +927,19 @@ impl<'a> Parser<'a> {
 
     /// A literal such as `null`. `word` comes in backticks, as an error message shows it.
     fn literal(&mut self, word: &'static str) -> Result<(), Fail> {
+        let start = self.pos;
         for &expected in word.trim_matches('`').as_bytes() {
             if self.peek() != Some(expected) {
-                return Err(self.unexpected(word));
+                // A different word, such as `None` for `NaN`, shows whole; a cut-off `nul` or
+                // `nul]` still says which literal it started.
+                let other = self
+                    .word_at(start)
+                    .is_some_and(|w| start + w.len() > self.pos);
+                return Err(if other {
+                    self.unexpected_at(start, "a value")
+                } else {
+                    self.unexpected(word)
+                });
             }
             self.pos += 1;
         }

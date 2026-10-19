@@ -100,6 +100,7 @@ impl<W: Write> Printer<W> {
         let related = problem.related().map(|related| {
             let labels = match related.kind {
                 RelatedKind::FirstOccurrence => ("first at", "first copy"),
+                RelatedKind::Opened => ("opened at", "opened here"),
                 // NOTE: `RelatedKind` is non-exhaustive; `Start` is the only other kind so far.
                 _ => ("started at", "starts here"),
             };

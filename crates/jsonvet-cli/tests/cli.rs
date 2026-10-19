@@ -134,7 +134,8 @@ fn each_output_path_escapes_names_and_messages() {
         #[cfg(unix)]
         ("::a\n\u{1b}[2J,.json", "[1,"),
     ]);
-    let end = "error[syntax] expected a value, found the end of the file";
+    let end =
+        "error[syntax] unclosed `[`: expected a value, found the end of the file (opened at 1:1)";
     let message = "duplicate key $[\"\\u202a##\\u005bk:%,\"] (first at 1:2)";
     let text = format!("m.json:1:17: error[duplicate-key] {message}\n");
     let cases = [
@@ -154,7 +155,7 @@ fn each_output_path_escapes_names_and_messages() {
             true,
             format!(
                 "./::a\\n\\u001b[2J,.json:1:4: {end}\n\
-                 ::error file=%3A%3Aa\\n\\u001b[2J%2C.json,line=1,col=4,title=jsonvet (syntax)::expected a value, found the end of the file\n"
+                 ::error file=%3A%3Aa\\n\\u001b[2J%2C.json,line=1,col=4,title=jsonvet (syntax)::unclosed `[`: expected a value, found the end of the file (opened at 1:1)\n"
             ),
         ),
         // A message in an annotation.
@@ -295,7 +296,7 @@ fn only_regular_files_are_read() {
         String::from_utf8(out.stdout).expect("UTF-8 output"),
         "zero.json: error: not a regular file\n\
          fifo.json: error: not a regular file\n\
-         link.json:1:4: error[syntax] expected a value, found the end of the file\n"
+         link.json:1:4: error[syntax] unclosed `[`: expected a value, found the end of the file (opened at 1:1)\n"
     );
 }
 
@@ -326,7 +327,7 @@ fn strict_globs_keep_their_1x_meaning() {
         (code, out.as_str()),
         (
             1,
-            "package.json:1:2: error[syntax] comments are not allowed in json\na/package.json:1:2: error[syntax] comments are not allowed in json\n"
+            "package.json:1:2: error[syntax] comments are not allowed in json; the jsonc dialect allows this\na/package.json:1:2: error[syntax] comments are not allowed in json; the jsonc dialect allows this\n"
         )
     );
 }
@@ -341,7 +342,7 @@ fn an_unknown_option_is_a_usage_error_unless_it_is_a_file() {
         err.starts_with("jsonvet: unknown option `--strcit`\n"),
         "{err}"
     );
-    let found = "--x.json:1:4: error[syntax] expected a value, found the end of the file\n";
+    let found = "--x.json:1:4: error[syntax] unclosed `[`: expected a value, found the end of the file (opened at 1:1)\n";
     assert_eq!(run(&["--x.json"]), (1, found.to_owned(), String::new()));
     assert_eq!(
         run(&["--", "--x.json"]),
@@ -352,7 +353,7 @@ fn an_unknown_option_is_a_usage_error_unless_it_is_a_file() {
     assert_eq!((code, out.as_str()), (2, ""));
     assert!(err.starts_with("jsonvet: unknown option `-q`\n"), "{err}");
     fs::write(dir.join("-q"), "[1,").expect("write file");
-    let found = "-q:1:4: error[syntax] expected a value, found the end of the file\n";
+    let found = "-q:1:4: error[syntax] unclosed `[`: expected a value, found the end of the file (opened at 1:1)\n";
     assert_eq!(run(&["-q"]), (1, found.to_owned(), String::new()));
 }
 
@@ -379,7 +380,7 @@ fn help_and_version_letters_in_a_file_name_are_a_file() {
         (code, out.as_str()),
         (
             1,
-            "bad.json:1:4: error[syntax] expected a value, found the end of the file\n"
+            "bad.json:1:4: error[syntax] unclosed `[`: expected a value, found the end of the file (opened at 1:1)\n"
         )
     );
 }
@@ -403,7 +404,7 @@ fn a_file_name_that_is_not_utf8_is_opened_as_given() {
         .env_remove("GITHUB_ACTIONS")
         .output()
         .expect("run jsonvet");
-    let found = ".json:1:4: error[syntax] trailing comma before `]` is not allowed in json\n";
+    let found = ".json:1:4: error[syntax] trailing comma before `]` is not allowed in json; the jwcc and json5 dialects allow this\n";
     assert_eq!(
         String::from_utf8_lossy(&out.stdout),
         format!("caf\u{FFFD}{found}--\u{FFFD}{found}-x\u{FFFD}{found}")
@@ -461,7 +462,7 @@ fn config_severities_take_the_warn_and_off_aliases() {
 fn config_globs_are_relative_to_the_config_file() {
     let toml = "dialects = [{ files = \"data/*.json\", dialect = \"json\" }]\n";
     let pyproject = format!("[tool.jsonvet]\n{toml}");
-    let unquoted = "data/x.json:1:2: error[syntax] unquoted keys are not allowed in json\n";
+    let unquoted = "data/x.json:1:2: error[syntax] unquoted keys are not allowed in json; the json5 dialect allows this\n";
     for config in [
         ("jsonvet.toml", toml),
         ("pyproject.toml", pyproject.as_str()),
@@ -568,6 +569,7 @@ fn sarif_holds_every_problem_and_keeps_the_exit_codes() {
         ("bom.json", "\u{FEFF}{}"),
         ("ok.json", "{}"),
         ("open.json", "[1, /* x"),
+        ("unclosed.json", "{\"a\": [1"),
     ]);
     let run = |args: &[&str]| {
         // SARIF replaces the workflow annotations, even in GitHub Actions. With no results
@@ -671,6 +673,17 @@ fn sarif_holds_every_problem_and_keeps_the_exit_codes() {
     let start = &open["relatedLocations"][0];
     assert_eq!(start["message"]["text"], "starts here");
     assert_eq!(start["physicalLocation"]["region"]["startColumn"], 5);
+
+    // An array still open at the end points back at its `[`.
+    let (_, sarif) = run(&["--format", "sarif", "unclosed.json"]);
+    let unclosed = &sarif["runs"][0]["results"][0];
+    assert_eq!(
+        unclosed["message"]["text"],
+        "unclosed `[`: expected `,` or `]`, found the end of the file (opened at 1:7)"
+    );
+    let opened = &unclosed["relatedLocations"][0];
+    assert_eq!(opened["message"]["text"], "opened here");
+    assert_eq!(opened["physicalLocation"]["region"]["startColumn"], 7);
 }
 
 #[test]
@@ -699,7 +712,9 @@ fn the_last_matching_dialect_wins_and_auto_means_the_extension() {
         ("c.jsonc", "{// c\n}"),
     ]);
     let jsonc = |name: &str| {
-        format!("{name}:1:2: error[syntax] single-quoted strings are not allowed in jsonc\n")
+        format!(
+            "{name}:1:2: error[syntax] single-quoted strings are not allowed in jsonc; the json5 dialect allows this\n"
+        )
     };
     let args = [
         "--dialect",
@@ -734,7 +749,7 @@ fn a_backslash_path_matches_a_slash_pattern() {
         (code, out.as_str()),
         (
             1,
-            "sub\\a.json:1:2: error[syntax] unquoted keys are not allowed in json\n"
+            "sub\\a.json:1:2: error[syntax] unquoted keys are not allowed in json; the json5 dialect allows this\n"
         )
     );
 }
@@ -760,7 +775,7 @@ fn each_extension_has_its_dialect() {
             (
                 1,
                 format!(
-                    "{name}:1:2: error[syntax] single-quoted strings are not allowed in {dialect}\n"
+                    "{name}:1:2: error[syntax] single-quoted strings are not allowed in {dialect}; the json5 dialect allows this\n"
                 )
             )
         );
@@ -1098,7 +1113,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         assert_eq!(code, 1);
         assert_eq!(
             out,
-            "bad.json:1:24: error[syntax] expected a value, found the end of the file\n\
+            "bad.json:1:24: error[syntax] unclosed `[`: expected a value, found the end of the file (opened at 1:21)\n\
              dup.json:1:15: error[duplicate-key] duplicate key $.name (first at 1:2)\n"
         );
     }
@@ -1126,7 +1141,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
             ),
             (
                 "broken.json",
-                "jsonvet: the schema broken.json:1:10: expected a value, found the end of the file\n",
+                "jsonvet: the schema broken.json:1:10: unclosed `{`: expected a value, found the end of the file\n",
             ),
             (
                 "remote.json",
