@@ -41,8 +41,9 @@ Options:
   -V, --version                 Print the version.
 
 Rules: syntax, duplicate-key, invalid-number, invalid-code-point, byte-order-mark,
-missing-final-newline (--list-rules says more). With --schema, errors also come under the rule schema; they are always
-errors, and --error, --warn, --ignore and settings files do not take schema.
+missing-final-newline (--list-rules says more). With --schema, errors also come under the rule
+schema; they are always errors, and --error, --warn, --ignore and settings files do not take
+schema.
 
 Settings come from jsonvet.toml, or [tool.jsonvet] in pyproject.toml, found in the working
 directory or a parent up to the repository root. Options on the command line win.
@@ -244,6 +245,8 @@ mod tests {
             .filter(|name| !words.contains(&name.as_str()))
             .collect();
         assert!(missing.is_empty(), "not in the help: {missing:?}");
+        let wide: Vec<&str> = HELP.lines().filter(|l| l.chars().count() > 96).collect();
+        assert!(wide.is_empty(), "help lines over 96 columns: {wide:?}");
     }
 
     fn check(args: &[&str]) -> super::Args {
