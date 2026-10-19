@@ -102,9 +102,6 @@ fn run_with(
         .transpose()
         .map_err(|e| output::printable(&e))?;
 
-    if args.files.is_empty() && stdin_is_piped() {
-        eprintln!("jsonvet: no files given; to check standard input, pass `-` as the file");
-    }
     // Standard input goes by its `--stdin-filename`, for settings and in the output.
     let stdin_name = args.stdin_filename.unwrap_or_else(|| STDIN.into());
     let shown = |file: &OsStr| -> OsString {
@@ -362,27 +359,6 @@ fn read_stdin() -> Result<String, String> {
 fn utf8(bytes: Vec<u8>) -> Result<String, String> {
     String::from_utf8(bytes)
         .map_err(|e| format!("not valid UTF-8 (byte {})", e.utf8_error().valid_up_to()))
-}
-
-/// Whether standard input is a pipe or a file, as in `echo '{}' | jsonvet`: not a terminal,
-/// and on Unix not a device such as `/dev/null`, which CI jobs and hooks often leave it as.
-fn stdin_is_piped() -> bool {
-    let stdin = io::stdin();
-    if stdin.is_terminal() {
-        return false;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::fd::AsFd;
-        use std::os::unix::fs::FileTypeExt;
-        let meta = stdin
-            .as_fd()
-            .try_clone_to_owned()
-            .and_then(|fd| std::fs::File::from(fd).metadata());
-        meta.is_ok_and(|meta| meta.is_file() || meta.file_type().is_fifo())
-    }
-    #[cfg(not(unix))]
-    true
 }
 
 fn print(mut out: impl Write, text: &str) -> Result<u8, String> {

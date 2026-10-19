@@ -33,9 +33,7 @@ version for a new option or output, the patch version for a fix.
 
 ### Fixed
 
-- `jsonvet -` no longer fails with `no such file`; it reads standard input. A run with no files
-  and input piped in still checks nothing, but now says on stderr to pass `-`, where it used to
-  pass in silence.
+- `jsonvet -` no longer fails with `no such file`; it reads standard input.
 - `jsonvet --help` no longer says that `--schema` is missing from the PyPI wheels. It has been in
   them since 3.0.0.
 - The Action no longer passes when the repository is not checked out: with the default `files`

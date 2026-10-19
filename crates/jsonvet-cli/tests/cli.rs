@@ -897,15 +897,13 @@ fn list_rules_and_explain() {
 }
 
 #[test]
-fn piped_input_with_no_file_warns_and_passes() {
+fn piped_input_with_no_file_is_not_read() {
+    // CI often leaves standard input as a pipe or file with nothing in it, so a run with no
+    // files says nothing, whatever standard input is.
     let dir = workdir(&[]);
     assert_eq!(
         jsonvet_stdin(&dir, &[], "{\"a\":1,\"a\":2}"),
-        (
-            0,
-            String::new(),
-            "jsonvet: no files given; to check standard input, pass `-` as the file\n".to_owned()
-        )
+        (0, String::new(), String::new())
     );
 }
 

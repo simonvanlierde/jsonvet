@@ -65,9 +65,8 @@ and no file, jsonvet reads standard input without the `-`.
 Empty input is checked like an empty file, which is a syntax error. `-` can be given only once;
 to check a file named `-`, pass `./-`.
 
-jsonvet does not read standard input unless you ask, as ruff, Biome and taplo do. A run with no
-files and input piped in, such as `echo '{}' | jsonvet`, checks nothing and exits 0, but it
-says on stderr to pass `-`.
+jsonvet reads standard input only when asked, as ruff, Biome and taplo do. A run with no files,
+such as `echo '{}' | jsonvet`, checks nothing and exits 0.
 
 ## File names that look like options
 
