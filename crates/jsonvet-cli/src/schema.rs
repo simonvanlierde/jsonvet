@@ -7,7 +7,7 @@ use std::ops::Range;
 use std::path::Path;
 
 use jsonschema::error::ValidationErrorKind;
-use jsonschema::{PatternOptions, ReferencingError, ValidationError, Validator};
+use jsonschema::{PatternOptions, ReferencingError, ValidationError, ValidationOptions, Validator};
 use jsonvet::{Dialect, Event, EventKind, PathStep, Severity, key_text};
 use percent_encoding::percent_decode_str;
 use serde_json::{Map, Number, Value};
@@ -51,8 +51,50 @@ const REF_KEYS: [&str; 3] = ["$ref", "$dynamicRef", "$recursiveRef"];
 /// for a lookaround over the whole string, so a string over a few thousand characters can hit it.
 const BACKTRACK_LIMIT: usize = 5_000;
 
+/// The keys of a schema that check nothing themselves, kept beside `items` when it is checked
+/// on its own so that its `$ref`s resolve as before.
+const NOT_CHECKS: [&str; 9] = [
+    "$schema",
+    "$id",
+    "id",
+    "$defs",
+    "definitions",
+    "$anchor",
+    "$dynamicAnchor",
+    "$vocabulary",
+    "$comment",
+];
+
+/// The keywords besides `items` that can check an array's elements, or that change what `items`
+/// checks.
+const ON_ELEMENTS: [&str; 15] = [
+    "prefixItems",
+    "unevaluatedItems",
+    "allOf",
+    "anyOf",
+    "oneOf",
+    "not",
+    "if",
+    "then",
+    "else",
+    "$ref",
+    "$dynamicRef",
+    "$recursiveRef",
+    "dependentSchemas",
+    "dependencies",
+    "extends",
+];
+
+/// Where `items` is moved to when it is checked on its own.
+const ITEMS: &str = "jsonvet-items";
+
 pub(crate) struct Schema {
     validator: Validator,
+    /// For a schema whose elements only `items` checks: the schema without `items`, checked
+    /// once on the whole array, and `items` alone, checked on each element. jsonschema collects
+    /// every error before handing out the first, so a 10 MB array failing everywhere took 2.0 GB
+    /// in one pass; one element at a time, it holds at most one element's errors.
+    split: Option<(Validator, Validator)>,
     /// `{"pattern": p}` for each regex in the schema tried on keys: `patternProperties` and a
     /// `pattern` under `propertyNames`.
     key_patterns: Vec<(String, Validator)>,
@@ -207,6 +249,7 @@ impl Schema {
                 };
                 return Ok(Schema {
                     validator,
+                    split: split(&document.value, &options),
                     key_patterns: compile(keys),
                     string_patterns: compile(strings),
                 });
@@ -222,8 +265,9 @@ impl Schema {
                  schemas"
             ));
         }
-        let (offset, _) = locate(&events[document.events], std::slice::from_ref(&error))[0];
-        Err(at(offset, &error))
+        let error = [(None, error)];
+        let (offset, _) = locate(&events[document.events], &error)[0];
+        Err(at(offset, &error[0].1))
     }
 
     /// The schema errors in one file's values, as (offset, message, summary): each document's
@@ -251,17 +295,43 @@ impl Schema {
             }
             let mut more = keyed.len().saturating_sub(MAX_ERRORS);
             keyed.truncate(MAX_ERRORS);
-            let mut found: Vec<ValidationError<'_>> = Vec::new();
-            let all = self
-                .validator
-                .iter_errors(&document.value)
-                .filter(|error| !backtracked(error));
-            for error in all {
+            let value = &document.value;
+            // Each error, with the element it is on and its index, if not the whole document.
+            // Lazy, so a split schema holds one element's errors at a time.
+            let all: Box<dyn Iterator<Item = (Option<usize>, &Value, ValidationError<'_>)>> =
+                match (&self.split, value) {
+                    _ if self.validator.is_valid(value) => Box::new(std::iter::empty()),
+                    (Some((whole, each)), Value::Array(items)) => {
+                        // jsonschema checks `contains` after `items`, and the rest before.
+                        let (after, before): (Vec<_>, Vec<_>) =
+                            whole.iter_errors(value).partition(|error| {
+                                segments(error.schema_path().as_str()).next().is_some_and(
+                                    |keyword| {
+                                        ["contains", "minContains", "maxContains"]
+                                            .contains(&keyword.as_str())
+                                    },
+                                )
+                            });
+                        let each = items.iter().enumerate().flat_map(move |(i, item)| {
+                            each.iter_errors(item)
+                                .map(move |error| (Some(i), item, error))
+                        });
+                        let whole = |errors: Vec<_>| errors.into_iter().map(|e| (None, value, e));
+                        Box::new(whole(before).chain(each).chain(whole(after)))
+                    }
+                    _ => Box::new(
+                        self.validator
+                            .iter_errors(value)
+                            .map(|error| (None, value, error)),
+                    ),
+                };
+            let mut found: Vec<(Option<usize>, ValidationError<'_>)> = Vec::new();
+            for (index, value, error) in all.filter(|(.., error)| !backtracked(error)) {
                 let room = MAX_ERRORS - keyed.len() - found.len();
-                match unexpected(&document.value, &error) {
+                match unexpected(value, &error) {
                     Some(keys) => {
                         more += keys.len().saturating_sub(room);
-                        let path: Vec<String> = segments(error.instance_path().as_str()).collect();
+                        let path = pointer_path(index, &error);
                         keyed.extend(keys.into_iter().take(room).map(|key| {
                             let message = format!(
                                 "Additional properties are not allowed ('{key}' was unexpected)"
@@ -269,7 +339,7 @@ impl Schema {
                             (path.clone(), Some(key), message)
                         }));
                     }
-                    None if room > 0 => found.push(error),
+                    None if room > 0 => found.push((index, error)),
                     None => more += 1,
                 }
             }
@@ -280,7 +350,7 @@ impl Schema {
             let mut placed: Vec<(usize, String, bool)> = locate(events, &found)
                 .into_iter()
                 .zip(&found)
-                .map(|((offset, at), error)| {
+                .map(|((offset, at), (_, error))| {
                     (offset, cut(format!("{} (at {at})", message(error))), false)
                 })
                 .collect();
@@ -362,6 +432,71 @@ impl Schema {
             _ => {}
         }
     }
+}
+
+/// The schema without `items`, and `items` alone with what its `$ref`s may point at, if nothing
+/// but `items` checks an array's elements. `None` also when either fails to build, as when a
+/// `$ref` points into `items`: the whole schema is then checked in one pass.
+fn split(schema: &Value, options: &ValidationOptions) -> Option<(Validator, Validator)> {
+    let members = schema.as_object()?;
+    let items = members
+        .get("items")
+        .filter(|items| items.is_object() || items.is_boolean())?;
+    if ON_ELEMENTS.iter().any(|key| members.contains_key(*key)) {
+        return None;
+    }
+    // A `$ref` to the root, or into a key one of the two leaves out, would mean another schema.
+    let reach = Reach::new(schema);
+    if !refs_kept(&reach, schema) {
+        return None;
+    }
+    let mut whole = members.clone();
+    whole.remove("items");
+    let mut each: Map<String, Value> = members
+        .iter()
+        .filter(|(key, _)| NOT_CHECKS.contains(&key.as_str()))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
+    each.insert(ITEMS.to_owned(), items.clone());
+    // Under `allOf`, so a draft 7 `$id` beside it still sets the base for `items`' `$ref`s.
+    each.insert(
+        "allOf".to_owned(),
+        serde_json::json!([{ "$ref": format!("#/{ITEMS}") }]),
+    );
+    Some((
+        options.build(&Value::Object(whole)).ok()?,
+        options.build(&Value::Object(each)).ok()?,
+    ))
+}
+
+/// Whether every `$ref` in `value` points into one of [`NOT_CHECKS`] at the root, as the
+/// `$defs` of a schema split by [`split`] are kept in both of its halves.
+fn refs_kept(reach: &Reach<'_>, value: &Value) -> bool {
+    match value {
+        Value::Object(members) => members.iter().all(|(key, member)| {
+            let kept = match (REF_KEYS.contains(&key.as_str()), member) {
+                (true, Value::String(reference)) => {
+                    reach.resolve(reference).is_some_and(|(_, path)| {
+                        path.first()
+                            .is_some_and(|first| NOT_CHECKS.contains(&first.as_str()))
+                    })
+                }
+                _ => true,
+            };
+            kept && refs_kept(reach, member)
+        }),
+        Value::Array(items) => items.iter().all(|item| refs_kept(reach, item)),
+        _ => true,
+    }
+}
+
+/// The segments of `error`'s instance path, under element `index` if it is on one.
+fn pointer_path(index: Option<usize>, error: &ValidationError<'_>) -> Vec<String> {
+    index
+        .map(|i| i.to_string())
+        .into_iter()
+        .chain(segments(error.instance_path().as_str()))
+        .collect()
 }
 
 /// The unescaped segments of the JSON Pointer `pointer`: `~1` is `/` and `~0` is `~`, in that
@@ -452,10 +587,14 @@ type Container<'e> = (Option<usize>, usize, Slot<'e>);
 
 /// Where each error is, found in one walk over its document's events: its value; for unexpected
 /// properties, the first such key; for a property name, that key. With it, the value's path.
-fn locate(events: &[Event<'_>], errors: &[ValidationError<'_>]) -> Vec<(usize, String)> {
+/// Each error is under the element at its index, if it has one.
+fn locate(
+    events: &[Event<'_>],
+    errors: &[(Option<usize>, ValidationError<'_>)],
+) -> Vec<(usize, String)> {
     let targets: Vec<(Vec<String>, Vec<String>)> = errors
         .iter()
-        .map(|error| {
+        .map(|(index, error)| {
             let keys = match error.kind() {
                 ValidationErrorKind::UnevaluatedProperties { unexpected } => unexpected.clone(),
                 ValidationErrorKind::PropertyNames { error } => error
@@ -465,7 +604,7 @@ fn locate(events: &[Event<'_>], errors: &[ValidationError<'_>]) -> Vec<(usize, S
                     .unwrap_or_default(),
                 _ => Vec::new(),
             };
-            (segments(error.instance_path().as_str()).collect(), keys)
+            (pointer_path(*index, error), keys)
         })
         .collect();
     place(events, &targets)
@@ -909,8 +1048,8 @@ fn number(text: &str) -> Option<Value> {
 #[cfg(test)]
 mod tests {
     use super::{
-        MAX_MESSAGE, MAX_SCHEMA_SIZE, Measure, Reach, Visit, cut, documents, fits, locate, message,
-        number, place, segments,
+        MAX_MESSAGE, MAX_SCHEMA_SIZE, Measure, Reach, Schema, Visit, cut, documents, fits, locate,
+        message, number, place, segments, split,
     };
     use jsonvet::{Config, Dialect};
     use proptest::prelude::*;
@@ -973,8 +1112,14 @@ mod tests {
         let schema =
             json!({"properties": {"a": {"type": "integer"}, "b\u{e9}/~": {"type": "integer"}}});
         let validator = jsonschema::validator_for(&schema).expect("a schema");
-        let errors: Vec<_> = validator.iter_errors(&documents[0].value).collect();
-        let pointers: Vec<_> = errors.iter().map(|e| e.instance_path().as_str()).collect();
+        let errors: Vec<_> = validator
+            .iter_errors(&documents[0].value)
+            .map(|e| (None, e))
+            .collect();
+        let pointers: Vec<_> = errors
+            .iter()
+            .map(|(_, e)| e.instance_path().as_str())
+            .collect();
         assert_eq!(pointers, ["/a", "/b\u{e9}~1~0"]);
         let located: Vec<_> = locate(&events, &errors)
             .into_iter()
@@ -1190,7 +1335,102 @@ mod tests {
         })
     }
 
+    /// Schemas that only `items` checks the elements of, and so are split, then ones that are not.
+    fn split_schemas() -> [(Value, bool); 10] {
+        [
+            (
+                json!({"items": {"type": "string"}, "minItems": 2, "uniqueItems": true}),
+                true,
+            ),
+            (
+                json!({
+                    "items": {"$ref": "#/$defs/p"},
+                    "contains": {"type": "null"},
+                    "minContains": 2,
+                    "$defs": {"p": {"properties": {"a": {"type": "integer"}}, "additionalProperties": false}},
+                }),
+                true,
+            ),
+            (
+                json!({
+                    "$schema": "http://json-schema.org/draft-07/schema#",
+                    "$id": "https://example.com/r.json",
+                    "items": {"$ref": "#/definitions/n"},
+                    "definitions": {"n": {"type": ["array", "integer"], "items": {"$ref": "#/definitions/n"}}},
+                }),
+                true,
+            ),
+            (
+                json!({"items": {"additionalProperties": false}, "maxItems": 3}),
+                true,
+            ),
+            (json!({"items": false}), true),
+            (json!({"items": {"$ref": "#"}, "type": "array"}), false),
+            (
+                json!({"items": {"anyOf": [{"$ref": "#"}]}, "type": "array"}),
+                false,
+            ),
+            (
+                json!({"items": {"type": "string"}, "allOf": [{"items": {"minLength": 1}}]}),
+                false,
+            ),
+            (
+                json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "items": [{"type": "string"}]}),
+                false,
+            ),
+            (
+                json!({"items": {"type": "string"}, "$defs": {"a": {"$ref": "#/items"}}, "contains": {"$ref": "#/$defs/a"}}),
+                false,
+            ),
+        ]
+    }
+
+    /// What [`Schema::errors`] returns.
+    type Errors = Vec<(usize, String, bool)>;
+
+    /// `text`'s schema errors under `schema`, checked in one pass and, if it can be, split.
+    fn one_pass_and_split(schema: &Value, text: &str) -> (Errors, Option<Errors>) {
+        let options = jsonschema::options();
+        let checked = |split| {
+            let schema = Schema {
+                validator: options.build(schema).expect("a schema"),
+                split,
+                key_patterns: Vec::new(),
+                string_patterns: Vec::new(),
+            };
+            let (_, events) = jsonvet::parse(text, &Config::new(Dialect::Json));
+            schema.errors(&events.unwrap_or_default())
+        };
+        let parts = split(schema, &options);
+        let split = parts.is_some().then(|| checked(parts));
+        (checked(None), split)
+    }
+
+    #[test]
+    fn a_split_schema_reports_what_one_pass_does_past_the_cap() {
+        // 150 elements, each failing `items`, beside errors about the whole array.
+        let text = format!("[{}]", vec!["{\"a\": 1, \"b\": 1}"; 150].join(","));
+        for (schema, splits) in split_schemas() {
+            let (one_pass, split) = one_pass_and_split(&schema, &text);
+            assert_eq!(split.is_some(), splits, "{schema}");
+            if let Some(split) = split {
+                assert_eq!(split, one_pass, "{schema}");
+            }
+        }
+    }
+
     proptest! {
+        #[test]
+        fn a_split_schema_reports_what_one_pass_does(items in prop::collection::vec(any_json(), 0..6)) {
+            let text = serde_json::to_string(&items).unwrap_or_default();
+            for (schema, _) in split_schemas() {
+                let (one_pass, split) = one_pass_and_split(&schema, &text);
+                if let Some(split) = split {
+                    prop_assert_eq!(split, one_pass, "{}", schema);
+                }
+            }
+        }
+
         #[test]
         fn strict_json_folds_into_what_serde_json_reads(value in any_json(), pretty in any::<bool>()) {
             let text = if pretty {

@@ -1826,4 +1826,38 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
             "{stdout}"
         );
     }
+
+    /// `ulimit -v` caps the address space on Linux only; macOS accepts it and ignores it.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn an_array_failing_everywhere_is_checked_in_bounded_memory() {
+        // 1,000,000 errors: in one jsonschema pass they took 420 MB, more than this cap,
+        // and one element at a time the run fits in under 200 MB.
+        let text = format!("[{}]", vec!["0"; 1_000_000].join(","));
+        let dir = workdir(&[
+            ("schema.json", r#"{"items": {"type": "string"}}"#),
+            ("many.json", &text),
+        ]);
+        let out = Command::new("sh")
+            .arg("-c")
+            .arg("ulimit -v 300000 && exec \"$0\" --schema schema.json many.json")
+            .arg(env!("CARGO_BIN_EXE_jsonvet"))
+            .current_dir(&dir)
+            .env_remove("GITHUB_ACTIONS")
+            .output()
+            .expect("run jsonvet");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert_eq!(
+            out.status.code(),
+            Some(1),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            stdout.ends_with(
+                "many.json:1:1: error[schema] ... and 999900 more schema errors in this document\n"
+            ),
+            "{stdout}"
+        );
+    }
 }
