@@ -11,9 +11,8 @@ use crate::sarif;
 pub(crate) use jsonvet::is_hidden;
 
 /// The output format, from `--format`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Format {
-    #[default]
     Text,
     Sarif,
 }
