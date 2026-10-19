@@ -687,6 +687,27 @@ fn sarif_holds_every_problem_and_keeps_the_exit_codes() {
 }
 
 #[test]
+fn a_utf16_or_utf32_file_names_its_encoding() {
+    let dir = workdir(&[]);
+    let files = [
+        ("le16.json", &b"\xFF\xFE[\x00]\x00"[..], "UTF-16 (LE)"),
+        ("be16.json", b"\xFE\xFF\x00[\x00]", "UTF-16 (BE)"),
+        ("le32.json", b"\xFF\xFE\x00\x00[\x00\x00\x00", "UTF-32 (LE)"),
+        ("be32.json", b"\x00\x00\xFE\xFF\x00\x00\x00[", "UTF-32 (BE)"),
+    ];
+    for (name, bytes, encoding) in files {
+        fs::write(dir.join(name), bytes).expect("write file");
+        assert_eq!(
+            jsonvet(&dir, &[name]),
+            (
+                1,
+                format!("{name}: error: file is {encoding}; jsonvet reads UTF-8\n")
+            )
+        );
+    }
+}
+
+#[test]
 fn sarif_columns_count_code_points() {
     // CRLF ends line 1; the emoji is one code point but two UTF-16 code units.
     let dir = workdir(&[("e.jsonc", "{\r\n\"\u{1F600}\": x}\r\n")]);

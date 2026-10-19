@@ -339,7 +339,7 @@ fn read(path: &Path) -> Result<String, String> {
         }
     });
     match read {
-        Ok(Some(bytes)) => utf8(bytes),
+        Ok(Some(bytes)) => decode(bytes),
         Ok(None) => Err("not a regular file".to_owned()),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Err("no such file".to_owned()),
         Err(e) => Err(format!("cannot read: {e}")),
@@ -350,12 +350,25 @@ fn read(path: &Path) -> Result<String, String> {
 fn read_stdin() -> Result<String, String> {
     let mut bytes = Vec::new();
     match io::stdin().lock().read_to_end(&mut bytes) {
-        Ok(_) => utf8(bytes),
+        Ok(_) => decode(bytes),
         Err(e) => Err(format!("cannot read: {e}")),
     }
 }
 
-fn utf8(bytes: Vec<u8>) -> Result<String, String> {
+/// A file's bytes as UTF-8 text. A file that starts with a UTF-16 or UTF-32 byte order mark says
+/// so, rather than that its first byte is not UTF-8.
+fn decode(bytes: Vec<u8>) -> Result<String, String> {
+    // UTF-32 LE first: its mark starts with UTF-16 LE's.
+    let encoding = match bytes.as_slice() {
+        [0xFF, 0xFE, 0, 0, ..] => Some("UTF-32 (LE)"),
+        [0, 0, 0xFE, 0xFF, ..] => Some("UTF-32 (BE)"),
+        [0xFF, 0xFE, ..] => Some("UTF-16 (LE)"),
+        [0xFE, 0xFF, ..] => Some("UTF-16 (BE)"),
+        _ => None,
+    };
+    if let Some(encoding) = encoding {
+        return Err(format!("file is {encoding}; jsonvet reads UTF-8"));
+    }
     String::from_utf8(bytes)
         .map_err(|e| format!("not valid UTF-8 (byte {})", e.utf8_error().valid_up_to()))
 }
