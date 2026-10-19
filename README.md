@@ -295,7 +295,9 @@ Run on 2026-10-14. The full grid, and where each expected verdict comes from: [d
 
 Found a bug or a file jsonvet gets wrong? Please
 [open an issue](https://github.com/simonvanlierde/jsonvet/issues) with the file, or the smallest
-part of it that still fails, and the command you ran.
+part of it that still fails, and the command you ran. A file that crashes or hangs jsonvet is a
+security bug: report it privately, as
+[SECURITY.md](https://github.com/simonvanlierde/jsonvet/blob/main/SECURITY.md) says.
 
 To work on jsonvet, clone it with `--recurse-submodules`, run `just setup` once, and run
 `just check` before a pull request. Setup, the checks, snapshots, fuzzing and releases are in
