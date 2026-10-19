@@ -56,9 +56,12 @@ fn on_big_stack<T: Send + 'static>(f: fn() -> T) -> T {
 fn run_here() -> ExitCode {
     let annotate = std::env::var_os("GITHUB_ACTIONS").is_some_and(|v| v == "true");
     let stdout = io::stdout().lock();
+    // A summary is for people: hooks and CI read stdout from a pipe and see the same output.
+    let summary = stdout.is_terminal();
     match run_with(
         std::env::args_os().skip(1),
         annotate,
+        summary,
         BufWriter::new(stdout),
     ) {
         Ok(code) => ExitCode::from(code),
@@ -70,10 +73,12 @@ fn run_here() -> ExitCode {
 }
 
 /// The command, with its inputs passed in: 0 when no file has an error, 1 when one does.
-/// A usage error comes back as `Err`, which `run` turns into exit status 2.
+/// With `summary`, text output ends with a count of the problems. A usage error comes back as
+/// `Err`, which `run` turns into exit status 2.
 fn run_with(
     args: impl IntoIterator<Item = OsString>,
     annotate: bool,
+    summary: bool,
     out: impl Write,
 ) -> Result<u8, String> {
     // Usage errors quote arguments and the schema file, which can hold a newline or an escape.
@@ -119,7 +124,11 @@ fn run_with(
     let mut rest = &args.files[..];
     let written = loop {
         if rest.is_empty() {
-            break printer.finish();
+            let line =
+                (summary && !args.files.is_empty()).then(|| counts.summary(args.files.len()));
+            break line
+                .map_or(Ok(()), |line| printer.text_line(&line))
+                .and_then(|()| printer.finish());
         }
         let bytes = AtomicUsize::new(0);
         let full = || bytes.load(Ordering::Relaxed) >= CHUNK_BYTES;
@@ -159,6 +168,7 @@ fn run_with(
                 ),
                 Err(message) => {
                     counts.errors += 1;
+                    counts.files += 1;
                     printer.unreadable(&shown(file), message)
                 }
             });
@@ -195,6 +205,26 @@ fn from_file(config: &ConfigSource) -> Result<Settings, String> {
 struct Counts {
     errors: usize,
     warnings: usize,
+    /// Files with at least one problem, or that could not be read.
+    files: usize,
+}
+
+impl Counts {
+    /// Such as `3 errors and 1 warning in 2 of 5 files`.
+    fn summary(&self, checked: usize) -> String {
+        let n = |count: usize, what: &str| {
+            format!("{count} {what}{}", if count == 1 { "" } else { "s" })
+        };
+        if self.errors + self.warnings == 0 {
+            return format!("no problems in {}", n(checked, "file"));
+        }
+        let problems = match (self.errors, self.warnings) {
+            (e, 0) => n(e, "error"),
+            (0, w) => n(w, "warning"),
+            (e, w) => format!("{} and {}", n(e, "error"), n(w, "warning")),
+        };
+        format!("{problems} in {} of {}", self.files, n(checked, "file"))
+    }
 }
 
 /// `f` on the items, on up to `threads` threads counting this one, each with a [`STACK`]-byte
@@ -267,6 +297,19 @@ fn check<'t>(
 /// Print one file's problems and schema errors, and add them to `counts`, each before it is
 /// printed, so a failed write still leaves the verdict.
 fn print_file(
+    file: &OsStr,
+    report: &Report<'_>,
+    schema_errors: &[(usize, String, bool)],
+    printer: &mut Printer<impl Write>,
+    counts: &mut Counts,
+) -> io::Result<()> {
+    let before = counts.errors + counts.warnings;
+    let result = print_problems(file, report, schema_errors, printer, counts);
+    counts.files += usize::from(counts.errors + counts.warnings > before);
+    result
+}
+
+fn print_problems(
     file: &OsStr,
     report: &Report<'_>,
     schema_errors: &[(usize, String, bool)],
@@ -381,6 +424,32 @@ mod tests {
             parallel(&[] as &[u8], 4, || false, |&b| b),
             Vec::<u8>::new()
         );
+    }
+
+    #[test]
+    fn the_summary_counts_problems_and_files() {
+        let dir = std::env::temp_dir().join(format!("jsonvet-summary-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a temp dir");
+        let dup = dir.join("dup.json");
+        let ok = dir.join("ok.json");
+        std::fs::write(&dup, "{\"a\": 1, \"a\": 2}").expect("write");
+        std::fs::write(&ok, "{}").expect("write");
+        let run = |summary: bool, files: &[&std::path::Path]| {
+            let mut out = Vec::new();
+            let args = ["--no-config".into()]
+                .into_iter()
+                .chain(files.iter().map(|f| f.as_os_str().to_owned()));
+            let code = super::run_with(args, false, summary, &mut out).expect("a check");
+            (code, String::from_utf8(out).expect("UTF-8"))
+        };
+        let (code, out) = run(true, &[&dup, &ok]);
+        assert_eq!(code, 1);
+        assert!(out.ends_with("\n1 error in 1 of 2 files\n"), "{out}");
+        assert_eq!(run(true, &[&ok]).1, "no problems in 1 file\n");
+        // No summary off a terminal, nor for no files.
+        assert!(!run(false, &[&dup]).1.contains(" in 1 of 1 file"));
+        assert_eq!(run(true, &[]).1, "");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

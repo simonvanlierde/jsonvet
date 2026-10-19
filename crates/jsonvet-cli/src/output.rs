@@ -196,6 +196,14 @@ impl<W: Write> Printer<W> {
         Ok(())
     }
 
+    /// A line of text output, such as the summary; nothing in SARIF.
+    pub(crate) fn text_line(&mut self, line: &str) -> io::Result<()> {
+        if self.sarif.is_none() {
+            writeln!(self.out, "{line}")?;
+        }
+        Ok(())
+    }
+
     /// Keep a SARIF result, or only count it once [`sarif::MAX_RESULTS`] are kept.
     fn push(&mut self, result: impl FnOnce() -> String) {
         if let Some(results) = &mut self.sarif {

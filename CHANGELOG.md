@@ -17,6 +17,8 @@ version for a new option or output, the patch version for a fix.
   suggestion, such as `did you mean duplicate-key?`.
 - SARIF output gives each rule its help text and a link to its section of docs/usage.md, so
   GitHub code scanning shows them on each alert.
+- When stdout is a terminal, text output ends with a count, such as `3 errors in 2 of 5 files`.
+  Piped output, as in the hook and in CI, is unchanged.
 - `SECURITY.md`: how to report a file that crashes or hangs jsonvet, privately through GitHub.
 
 ### Changed

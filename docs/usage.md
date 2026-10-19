@@ -23,7 +23,9 @@ The details behind the [README](../README.md). Why things work this way is in
 
 ## Output
 
-Each problem is one line: `file:line:col: severity[rule] message`.
+Each problem is one line: `file:line:col: severity[rule] message`. When stdout is a terminal,
+a last line counts them, such as `3 errors in 2 of 5 files`. Piped or redirected output, as in
+the hook and in CI, has no such line.
 
 - Lines and columns count from 1. Columns count Unicode code points, and a byte order mark is
   column 1.
