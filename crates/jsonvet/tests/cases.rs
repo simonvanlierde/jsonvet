@@ -501,3 +501,14 @@ fn words_show_whole_only_between_token_boundaries() {
     let long = format!("[{}]", "a".repeat(10_000_000));
     assert_eq!(first(Dialect::Json, &long), "expected a value, found `a`");
 }
+
+/// After a sign only a number can follow, so a word there gets no literal hint: `-null` is no
+/// more valid than `-None`.
+#[test]
+fn a_word_after_a_sign_gets_no_literal_hint() {
+    for dialect in [Dialect::Json, Dialect::Json5] {
+        let report = check("[-None]", &Config::new(dialect));
+        let message = report.problems()[0].to_string();
+        assert!(!message.contains("did you mean"), "{dialect}: {message}");
+    }
+}

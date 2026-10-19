@@ -483,15 +483,15 @@ impl<'a> Parser<'a> {
                 EventKind::Number(&self.text[start..self.pos])
             }
             b't' => {
-                self.literal("`true`")?;
+                self.literal("`true`", "a value")?;
                 EventKind::Bool(true)
             }
             b'f' => {
-                self.literal("`false`")?;
+                self.literal("`false`", "a value")?;
                 EventKind::Bool(false)
             }
             b'n' => {
-                self.literal("`null`")?;
+                self.literal("`null`", "a value")?;
                 EventKind::Null
             }
             _ => return Err(self.unexpected("a value")),
@@ -920,15 +920,26 @@ impl<'a> Parser<'a> {
                 if self.text[self.pos..].starts_with(word.trim_matches('`')) {
                     self.not_allowed(start, "NaN and Infinity are")
                 } else {
-                    self.unexpected("a value")
+                    self.unexpected(self.after_sign(start))
                 },
             );
         }
-        self.literal(word)
+        self.literal(word, self.after_sign(start))
     }
 
-    /// A literal such as `null`. `word` comes in backticks, as an error message shows it.
-    fn literal(&mut self, word: &'static str) -> Result<(), Fail> {
+    /// What a word at the current position stands in for: a value, or after a sign at `start`
+    /// a digit, where no literal hint applies.
+    fn after_sign(&self, start: usize) -> &'static str {
+        if self.pos > start {
+            "a digit"
+        } else {
+            "a value"
+        }
+    }
+
+    /// A literal such as `null`. `word` comes in backticks, as an error message shows it; a
+    /// different word whole in its place shows as found where `instead` was needed.
+    fn literal(&mut self, word: &'static str, instead: &'static str) -> Result<(), Fail> {
         let start = self.pos;
         for &expected in word.trim_matches('`').as_bytes() {
             if self.peek() != Some(expected) {
@@ -938,7 +949,7 @@ impl<'a> Parser<'a> {
                     .word_at(start)
                     .is_some_and(|w| start + w.len() > self.pos);
                 return Err(if other {
-                    self.unexpected_at(start, "a value")
+                    self.unexpected_at(start, instead)
                 } else {
                     self.unexpected(word)
                 });
