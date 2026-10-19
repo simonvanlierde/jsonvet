@@ -57,7 +57,7 @@ list_files() {
     local words=($input)
     set +f
     while IFS= read -r -d '' file; do files+=("$file"); done < <(
-      "$python" -c '
+      "$python" -I -c '
 import glob, os, sys
 from fnmatch import fnmatch
 
@@ -92,7 +92,10 @@ def expand(done, parts):
 
 seen = set()
 for pattern in sys.argv[1:]:
-    for path in sorted(expand([], pattern.replace(os.sep, "/").split("/"))) or [pattern]:
+    # Wildcards match files only: jsonvet cannot check a folder.
+    matched = [p for p in sorted(expand([], pattern.replace(os.sep, "/").split("/")))
+               if not (glob.has_magic(pattern) and os.path.isdir(p))]
+    for path in matched or [pattern]:
         if path not in seen:
             seen.add(path)
             sys.stdout.buffer.write(os.fsencode(path.replace(os.sep, "/")) + b"\0")
@@ -102,6 +105,10 @@ for pattern in sys.argv[1:]:
     # The same file names as the pre-commit hook's `files` pattern. A pathspec `*` also matches
     # `/`, so `*.json` finds files at any depth. Only regular files: pre-commit's `types: [text]`
     # skips symlinks (mode 120000) and submodules (160000).
+    if ! git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+      error "the default file list needs a git checkout in the working directory: run actions/checkout first, or set the files input"
+      return 2
+    fi
     while IFS= read -r -d '' line; do
       [[ "$line" == 100* ]] || continue
       files+=("${line#*$'\t'}")
@@ -121,14 +128,18 @@ write_sarif() {
   shift 3
   local status=0
   "$jsonvet" --format sarif "$@" > "$sarif" || status=$?
-  if [[ $status -gt 1 ]] || ! "$python" -c '
+  if [[ $status -gt 1 ]] || ! "$python" -I -c '
 import json, sys
 try:
     sys.exit(json.load(open(sys.argv[1], encoding="utf-8")).get("version") != "2.1.0")
 except (OSError, ValueError, AttributeError):
     sys.exit(1)
 ' "$sarif"; then
-    error "jsonvet did not write SARIF to $sarif (exit $status); the sarif input needs jsonvet 3.0.0 or later"
+    if [[ $status -gt 2 ]]; then
+      error "jsonvet did not write SARIF to $sarif: it could not run (exit $status)"
+    else
+      error "jsonvet did not write SARIF to $sarif (exit $status); the sarif input needs jsonvet 3.0.0 or later"
+    fi
     return 2
   fi
 }
@@ -142,17 +153,21 @@ main() {
   local venv="$RUNNER_TEMP/jsonvet-venv" python=python3
   # On Windows `python3` can be the Microsoft Store stub.
   [[ "$RUNNER_OS" == Windows ]] && python=python
-  "$python" -m venv "$venv" || exit 2
+  # -I keeps the checked-out repository off Python's path, so a json.py or venv/ in it never runs.
+  "$python" -I -m venv "$venv" || exit 2
   local bin="$venv/bin"
   [[ -d "$bin" ]] || bin="$venv/Scripts"
-  "$bin/python" -m pip install -q --disable-pip-version-check --only-binary jsonvet "jsonvet$spec" || exit 2
+  "$bin/python" -I -m pip install -q --disable-pip-version-check --only-binary jsonvet "jsonvet$spec" || exit 2
   "$bin/jsonvet" --version
 
   set -f
   # shellcheck disable=SC2206
   local args=($ARGS)
   set +f
-  list_files "$FILES" "$bin/python"
+  list_files "$FILES" "$bin/python" || exit 2
+  if [[ ${#files[@]} -eq 0 ]]; then
+    echo "::warning title=jsonvet action::found no JSON files to check" >&2
+  fi
   # shortcut: one command line for all files; Windows caps it at 32,767 characters, so a
   # repository with thousands of files needs batching there.
 

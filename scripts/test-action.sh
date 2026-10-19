@@ -78,6 +78,21 @@ want=$'a.json\nuntracked.json\nnested/deep/b.jsonc\nmissing*.json'
 got=$(cd "$repo" && list_files "out/*.json link.json" python3 && printf '%s\n' "${files[@]}")
 want=$'out/*.json\nlink.json'
 [[ "$got" == "$want" ]] || fail "symlinked directory: got [$got], want [$want]"
+# Wildcards match files only; a pattern that matches only folders stays as given.
+got=$(cd "$repo" && list_files "nested/** nested/*" python3 && printf '%s\n' "${files[@]}")
+want=$'nested/deep/b.jsonc\nnested/*'
+[[ "$got" == "$want" ]] || fail "folders: got [$got], want [$want]"
+# Outside a git work tree the default list is an error, not an empty pass.
+(cd "$tmp/outside" && GIT_CEILING_DIRECTORIES="$tmp" list_files "" python3 2>/dev/null) && fail "default list passed outside a git work tree"
+
+# Modules in the checked-out repository never run in place of Python's own.
+mkdir "$tmp/evil"
+for module in glob fnmatch json; do
+  echo 'raise SystemExit("ran the repository'\''s module")' > "$tmp/evil/$module.py"
+done
+echo '{}' > "$tmp/evil/a.json"
+got=$(cd "$tmp/evil" && list_files "*.json" python3 && printf '%s\n' "${files[@]}")
+[[ "$got" == "a.json" ]] || fail "files input with glob.py in the repository: got [$got]"
 
 # SARIF: the output must be a SARIF 2.1.0 document, whatever the exit code says.
 fake() {
@@ -96,6 +111,8 @@ write_sarif "$tmp/jsonvet" python3 "$tmp/out.sarif" -- a.json 2>/dev/null && fai
 fake 'echo "{\"version\": \"2.1.0\"}"; exit 2'
 write_sarif "$tmp/jsonvet" python3 "$tmp/out.sarif" -- a.json 2>/dev/null && fail "exit 2 passed"
 write_sarif "$tmp/jsonvet" python3 "$tmp/no/such/dir/out.sarif" -- a.json 2>/dev/null && fail "an unwritable path passed"
+fake 'echo "{\"version\": \"2.1.0\", \"runs\": []}"'
+(cd "$tmp/evil" && write_sarif "$tmp/jsonvet" python3 "$tmp/out.sarif" -- a.json 2>/dev/null) || fail "SARIF check ran the repository's json.py"
 
 if [[ $failures -gt 0 ]]; then
   echo "$failures failed"
