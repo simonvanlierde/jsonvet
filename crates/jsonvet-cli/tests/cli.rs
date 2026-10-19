@@ -1403,6 +1403,23 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
     }
 
     #[test]
+    fn a_json_lines_dialect_for_every_file_leaves_the_schema_one_value() {
+        let dir = workdir(&[
+            ("schema.json", "{\n  \"type\": \"object\"\n}\n"),
+            ("d.jsonl", "{}\n[]\n"),
+        ]);
+        let (code, out, _) = jsonvet_stderr(
+            &dir,
+            &["--dialect", "jsonl", "--schema", "schema.json", "d.jsonl"],
+        );
+        assert_eq!(code, 1);
+        assert_eq!(
+            out,
+            "d.jsonl:2:1: error[schema] [] is not of type \"object\" (at $)\n"
+        );
+    }
+
+    #[test]
     fn a_schema_value_json_schema_cannot_hold_is_a_usage_error() {
         let dir = workdir(&[
             ("nan.json5", "{enum: [NaN, 1]}"),

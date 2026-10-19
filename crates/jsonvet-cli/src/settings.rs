@@ -104,6 +104,11 @@ impl Settings {
             .find(|rule| matches(rule))
             .and_then(|rule| rule.dialect)
             .unwrap_or_else(auto);
+        self.config(dialect)
+    }
+
+    /// The checking config for `dialect`, with the rule severities set.
+    pub(crate) fn config(&self, dialect: Dialect) -> Config {
         self.rules
             .iter()
             .fold(Config::new(dialect), |config, &(rule, severity)| {
