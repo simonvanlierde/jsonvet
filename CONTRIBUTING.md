@@ -7,8 +7,8 @@ Rust from rustup. Then run `just setup` once: it fetches the json5-tests submodu
 the git hooks with [prek](https://github.com/j178/prek). `just --list` shows every task.
 
 Run `just check` before you open a pull request. It runs CI's Linux `lint` and `test` jobs:
-formatting, clippy, rustdoc, cargo deny, ruff, the tests with doctests, the version check and the
-conformance page diff.
+formatting, clippy, rustdoc, cargo deny, ruff, zizmor, the tests with doctests, the version check
+and the conformance page diff.
 
 The page diff fails while `README.md` or `docs/conformance.md` has unstaged edits, so stage them
 first.

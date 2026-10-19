@@ -45,10 +45,10 @@ jobs:
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: ${{ env.PINNED_UV }}
-      # The repo's Python: the hook placeholder and scripts/. The ruff hooks from
-      # .pre-commit-config.yaml, so its rev is the one ruff pin. Only these two: the others guard
-      # commits or repeat the cargo steps above.
-      - run: uvx prek@0.5.5 run ruff-check ruff-format --all-files --show-diff-on-failure
+      # The repo's Python (the hook placeholder and scripts/) and the workflows. The ruff and
+      # zizmor hooks from .pre-commit-config.yaml, so its revs are the one ruff and zizmor pins.
+      # Only these: the others guard commits or repeat the cargo steps above.
+      - run: uvx prek@0.5.5 run ruff-check ruff-format zizmor --all-files --show-diff-on-failure
       # The crates, the placeholder's wheel pin and the check-json5 package name one release.
       - run: uv run scripts/check-versions.py
       # The conformance page is rendered from conformance/results/; the parser runs stay local.
