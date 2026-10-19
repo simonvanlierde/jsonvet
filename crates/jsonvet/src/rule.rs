@@ -91,8 +91,9 @@ impl fmt::Display for UnknownRule {
         let ids: Vec<&str> = Rule::ALL.iter().map(|r| r.id()).collect();
         write!(
             f,
-            "unknown rule `{}`; expected one of {}",
+            "unknown rule `{}`{}; expected one of {}",
             self.0,
+            crate::did_you_mean(&self.0, ids.iter().copied()),
             ids.join(", ")
         )
     }

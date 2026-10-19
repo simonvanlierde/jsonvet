@@ -545,18 +545,57 @@ fn pyproject_tool_table_and_bad_configs() {
         ("rules.toml", "rules = 1\n"),
         ("dialects.toml", "dialects = 1\n"),
         ("forged.toml", "\"\\n::error::x\" = \"error\"\n"),
+        ("typo.toml", "[rules]\nduplicate-keys = \"error\"\n"),
+        ("key.toml", "# x\n  rule = {}\n"),
+        ("severity.toml", "[rules]\nsyntax = \"eror\"\n"),
+        (
+            "dialect.toml",
+            "[[dialects]]\nfiles = \"*.json\"\ndialect = \"jsno\"\n",
+        ),
+        ("entry.toml", "[[dialects]]\nfile = \"*.json\"\n"),
+        ("syntax.toml", "[rules\n"),
         ("d.json", "{}"),
     ]);
     for (config, message) in [
-        ("rules.toml", "`rules` must be a table"),
-        ("dialects.toml", "`dialects` must be an array of tables"),
+        ("rules.toml:1:9", "`rules` must be a table"),
+        (
+            "dialects.toml:1:12",
+            "`dialects` must be an array of tables",
+        ),
         // A key holding a newline stays on the line, so it cannot forge a workflow command.
         (
-            "forged.toml",
+            "forged.toml:1:1",
             "unknown key `\\n::error::x`; expected rules or dialects",
         ),
+        // A typo gets its line and column, and the name it is closest to.
+        (
+            "typo.toml:2:1",
+            "unknown rule `duplicate-keys` (did you mean `duplicate-key`?); expected one of \
+             syntax, duplicate-key, invalid-number, invalid-code-point, byte-order-mark, \
+             missing-final-newline",
+        ),
+        (
+            "key.toml:2:3",
+            "unknown key `rule` (did you mean `rules`?); expected rules or dialects",
+        ),
+        (
+            "severity.toml:2:10",
+            "unknown severity `eror` (did you mean `error`?); expected error, warning or ignore",
+        ),
+        (
+            "dialect.toml:3:11",
+            "unknown dialect `jsno` (did you mean `json`?); expected one of json, i-json, \
+             jsonc, jwcc, json5, jsonl, ijson, hujson, ndjson, json-lines, or auto",
+        ),
+        (
+            "entry.toml:2:1",
+            "unknown key `file` (did you mean `files`?) in a `dialects` entry; expected files \
+             and dialect",
+        ),
+        ("syntax.toml:1:7", "unclosed table, expected `]`"),
     ] {
-        let (code, _, err) = jsonvet_stderr(&wrong_types, &["--config", config, "d.json"]);
+        let file = config.split(':').next().unwrap_or_default();
+        let (code, _, err) = jsonvet_stderr(&wrong_types, &["--config", file, "d.json"]);
         assert_eq!(code, 2);
         assert_eq!(err, format!("jsonvet: {config}: {message}\n"));
     }
@@ -1796,7 +1835,9 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         let (code, _, err) = jsonvet_stderr(&dir, &["--schema", "schema.json", "ok.json"]);
         assert_eq!(code, 2);
         assert!(
-            err.contains("jsonvet.toml: the `schema` rule is always an error and cannot be set\n"),
+            err.contains(
+                "jsonvet.toml:2:1: the `schema` rule is always an error and cannot be set\n"
+            ),
             "{err}"
         );
     }

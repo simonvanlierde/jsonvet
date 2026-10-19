@@ -47,6 +47,14 @@ impl Dialect {
         }
     }
 
+    /// Other names [`FromStr`] accepts, each with the dialect it stands for.
+    pub const ALIASES: &'static [(&'static str, Dialect)] = &[
+        ("ijson", Dialect::IJson),
+        ("hujson", Dialect::Jwcc),
+        ("ndjson", Dialect::JsonLines),
+        ("json-lines", Dialect::JsonLines),
+    ];
+
     /// The file extensions jsonvet checks by default, without the dot, each with its dialect.
     /// Matching is case-sensitive.
     pub const EXTENSIONS: &'static [(&'static str, Dialect)] = &[
@@ -118,11 +126,16 @@ impl UnknownDialect {
 
 impl fmt::Display for UnknownDialect {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let names: Vec<&str> = Dialect::ALL.iter().map(|d| d.name()).collect();
+        let names: Vec<&str> = Dialect::ALL
+            .iter()
+            .map(|d| d.name())
+            .chain(Dialect::ALIASES.iter().map(|&(alias, _)| alias))
+            .collect();
         write!(
             f,
-            "unknown dialect `{}`; expected one of {}",
+            "unknown dialect `{}`{}; expected one of {}",
             self.0,
+            crate::did_you_mean(&self.0, names.iter().copied()),
             names.join(", ")
         )
     }
@@ -134,16 +147,13 @@ impl FromStr for Dialect {
     type Err = UnknownDialect;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "ndjson" | "json-lines" => Ok(Dialect::JsonLines),
-            "hujson" => Ok(Dialect::Jwcc),
-            "ijson" => Ok(Dialect::IJson),
-            _ => Dialect::ALL
-                .iter()
-                .copied()
-                .find(|d| d.name() == s)
-                .ok_or_else(|| UnknownDialect(s.to_owned())),
-        }
+        Dialect::ALL
+            .iter()
+            .map(|&d| (d.name(), d))
+            .chain(Dialect::ALIASES.iter().copied())
+            .find(|&(name, _)| name == s)
+            .map(|(_, d)| d)
+            .ok_or_else(|| UnknownDialect(s.to_owned()))
     }
 }
 
