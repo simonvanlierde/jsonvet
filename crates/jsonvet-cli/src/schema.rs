@@ -909,11 +909,23 @@ fn number(text: &str) -> Option<Value> {
 #[cfg(test)]
 mod tests {
     use super::{
-        MAX_MESSAGE, Reach, cut, documents, fits, locate, message, number, place, segments,
+        MAX_MESSAGE, MAX_SCHEMA_SIZE, Measure, Reach, Visit, cut, documents, fits, locate, message,
+        number, place, segments,
     };
     use jsonvet::{Config, Dialect};
     use proptest::prelude::*;
     use serde_json::{Value, json};
+
+    #[test]
+    fn a_schema_of_exactly_the_size_limit_fits() {
+        let visit = |size| Visit {
+            measure: Measure { height: 1, size },
+            cut: usize::MAX,
+        };
+        let mut schema = visit(MAX_SCHEMA_SIZE - 1);
+        assert!(!schema.add(visit(1)));
+        assert!(schema.add(visit(1)));
+    }
 
     #[test]
     fn local_refs_resolve_by_pointer_anchor_and_id() {

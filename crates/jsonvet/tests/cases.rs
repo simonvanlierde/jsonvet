@@ -243,6 +243,9 @@ fn positions_follow_json5_line_terminators() {
         ),
         (Json5, "{\"é😀\": 1, \"é😀\": 2}"),
     ]));
+    // The parse the CLI uses for --schema places problems the same way.
+    let (report, _) = jsonvet::parse("{a: 1,\u{2028} a: 2}", &Config::new(Json5));
+    assert_eq!(report.location(report.problems()[0].offset()).line, 2);
 }
 
 #[test]
@@ -376,6 +379,10 @@ fn related_offsets_say_what_they_point_at() {
         Some((2, RelatedKind::Start))
     );
     assert_eq!(related(Dialect::Json, "[1 2]"), None);
+    let report = check(r#"{"x": 0, "a": 1, "a": 2}"#, &Config::new(Dialect::Json));
+    #[expect(deprecated, reason = "kept working until 4.0")]
+    let offset = report.problems()[0].related_offset();
+    assert_eq!(offset, Some(9));
 }
 
 #[test]
