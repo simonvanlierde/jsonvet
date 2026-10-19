@@ -158,7 +158,8 @@ The limits are listed in the [reference](usage.md#json-schema-limits). Why each 
   Every run starts a thread with a 64 MB stack, because the 512-level read took up to 2.2 MB in a
   debug build, more than Windows' 1 MB main thread. Only the stack a run uses is committed, so a
   plain check still works under `ulimit -v 60000`. Where the thread cannot start, jsonvet runs on
-  the main thread.
+  the main thread. The threads that check files in parallel get the same stack, and any that
+  cannot start leave their files to the others.
 - **Memory.** Folded values take 14 to 27 times the file's size, the most for many small records
   such as JSON Lines.
 - **Schema depth and `$ref` chains.** Without the check, 1,000 `allOf` and `$ref` hops overflow the

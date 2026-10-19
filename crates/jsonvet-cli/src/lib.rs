@@ -5,7 +5,9 @@ use std::io::{self, BufWriter, Write};
 use std::path::Path;
 use std::process::ExitCode;
 
-use jsonvet::Severity;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use jsonvet::{Report, Severity};
 
 mod args;
 mod glob;
@@ -29,6 +31,9 @@ const SCHEMA_MAX_DEPTH: usize = 512;
 /// took up to 2.2 MB in a debug build, more than Windows' 1 MB main thread. Only the pages used
 /// are committed, so a plain check costs no more memory.
 const STACK: usize = 64 << 20;
+
+/// How many bytes of file text a run reads before it checks and prints them.
+const CHUNK_BYTES: usize = 64 << 20;
 
 /// Run the command with the process's arguments and environment, and return its exit code.
 pub fn run() -> ExitCode {
@@ -103,13 +108,52 @@ fn run_with(
 
     let mut printer = Printer::new(out, args.format, annotate);
     let mut counts = Counts::default();
-    let written = args
-        .files
-        .iter()
-        .try_for_each(|file| {
-            check_file(file, &settings, schema.as_ref(), &mut printer, &mut counts)
-        })
-        .and_then(|()| printer.finish());
+    let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
+    // Files are read and checked on every core, a chunk at a time, then printed here in the
+    // order given. A chunk ends once its files hold CHUNK_BYTES, so memory stays near that.
+    // shortcut: each chunk waits for its slowest file before the next starts; hand files out
+    // one at a time across chunks if one big file among many small ones holds a run up.
+    let mut rest = &args.files[..];
+    let written = loop {
+        if rest.is_empty() {
+            break printer.finish();
+        }
+        let bytes = AtomicUsize::new(0);
+        let full = || bytes.load(Ordering::Relaxed) >= CHUNK_BYTES;
+        let texts = parallel(rest, threads, full, |file| {
+            let text = read(Path::new(file));
+            bytes.fetch_add(text.as_ref().map_or(0, String::len), Ordering::Relaxed);
+            text
+        });
+        let chunk;
+        (chunk, rest) = rest.split_at(texts.len());
+        let jobs: Vec<_> = chunk.iter().zip(&texts).collect();
+        let checked = parallel(
+            &jobs,
+            threads,
+            || false,
+            |(file, text)| {
+                let name = file.to_string_lossy();
+                text.as_deref()
+                    .map(|text| check(&name, text, &settings, schema.as_ref()))
+            },
+        );
+        let outcome = chunk
+            .iter()
+            .zip(checked)
+            .try_for_each(|(file, checked)| match checked {
+                Ok((report, schema_errors)) => {
+                    print_file(file, &report, &schema_errors, &mut printer, &mut counts)
+                }
+                Err(message) => {
+                    counts.errors += 1;
+                    printer.unreadable(file, message)
+                }
+            });
+        if outcome.is_err() {
+            break outcome;
+        }
+    };
     // A reader that has gone, as with `| head`, wants no more output: the verdict so far stands.
     match written {
         Err(e) if e.kind() != io::ErrorKind::BrokenPipe => {
@@ -127,44 +171,93 @@ struct Counts {
     warnings: usize,
 }
 
-/// Check one file, and against `schema` if there is one, and add its problems to `counts`,
-/// each before it is printed, so a failed write still leaves the verdict. The name is opened as
-/// given; its lossy UTF-8 form is only for output and glob matching.
-fn check_file(
-    file: &OsStr,
+/// `f` on the items, on up to `threads` threads counting this one, each with a [`STACK`]-byte
+/// stack, until `stop` says so before an item is taken: the results for the items done, in
+/// order, always at least the first. A panic in `f` carries on here.
+fn parallel<T: Sync, U: Send>(
+    items: &[T],
+    threads: usize,
+    stop: impl Fn() -> bool + Sync,
+    f: impl Fn(&T) -> U + Sync,
+) -> Vec<U> {
+    let next = AtomicUsize::new(0);
+    // Each thread takes the next item in turn, so the items taken are always the first ones,
+    // and the results are tagged to put them back in order.
+    let work = || {
+        let mut done = Vec::new();
+        loop {
+            if stop() && next.load(Ordering::Relaxed) > 0 {
+                break done;
+            }
+            let i = next.fetch_add(1, Ordering::Relaxed);
+            let Some(item) = items.get(i) else { break done };
+            done.push((i, f(item)));
+        }
+    };
+    let mut done = std::thread::scope(|scope| {
+        // A thread that cannot start leaves its share to the others.
+        let helpers: Vec<_> = (1..threads.min(items.len()))
+            .filter_map(|_| {
+                std::thread::Builder::new()
+                    .stack_size(STACK)
+                    .spawn_scoped(scope, work)
+                    .ok()
+            })
+            .collect();
+        let mut done = work();
+        for helper in helpers {
+            done.extend(
+                helper
+                    .join()
+                    .unwrap_or_else(|panic| std::panic::resume_unwind(panic)),
+            );
+        }
+        done
+    });
+    done.sort_unstable_by_key(|&(i, _)| i);
+    done.into_iter().map(|(_, result)| result).collect()
+}
+
+/// Check a file's text, named by its lossy UTF-8 form for glob matching, and against `schema`
+/// if there is one: the report and the schema errors.
+fn check<'t>(
+    name: &str,
+    text: &'t str,
     settings: &Settings,
     schema: Option<&Schema>,
+) -> (Report<'t>, Vec<(usize, String, bool)>) {
+    let config = settings.config_for(name);
+    match schema {
+        Some(schema) => {
+            let (report, events) = jsonvet::parse(text, &config.max_depth(SCHEMA_MAX_DEPTH));
+            // `events` is `None` after a syntax error, so such a file gets no schema errors.
+            let errors = events.map_or_else(Vec::new, |events| schema.errors(&events));
+            (report, errors)
+        }
+        None => (jsonvet::check(text, &config), Vec::new()),
+    }
+}
+
+/// Print one file's problems and schema errors, and add them to `counts`, each before it is
+/// printed, so a failed write still leaves the verdict.
+fn print_file(
+    file: &OsStr,
+    report: &Report<'_>,
+    schema_errors: &[(usize, String, bool)],
     printer: &mut Printer<impl Write>,
     counts: &mut Counts,
 ) -> io::Result<()> {
-    let text = read(Path::new(file));
-    let name = file.to_string_lossy();
-    let text = match text {
-        Ok(text) => text,
-        Err(message) => {
-            counts.errors += 1;
-            return printer.unreadable(file, &message);
-        }
-    };
-    let config = settings.config_for(&name);
-    let (report, events) = match schema {
-        Some(_) => jsonvet::parse(&text, &config.max_depth(SCHEMA_MAX_DEPTH)),
-        None => (jsonvet::check(&text, &config), None),
-    };
     for problem in report.problems() {
         match problem.severity() {
             Severity::Error => counts.errors += 1,
             Severity::Warning => counts.warnings += 1,
             _ => {}
         }
-        printer.problem(file, &report, problem)?;
+        printer.problem(file, report, problem)?;
     }
-    // `events` is `None` after a syntax error, so such a file gets no schema errors.
-    if let (Some(schema), Some(events)) = (schema, events) {
-        for (offset, message, summary) in schema.errors(&events) {
-            counts.errors += usize::from(!summary);
-            printer.schema_error(file, &report, offset, &message, summary)?;
-        }
+    for (offset, message, summary) in schema_errors {
+        counts.errors += usize::from(!summary);
+        printer.schema_error(file, report, *offset, message, *summary)?;
     }
     Ok(())
 }
@@ -199,6 +292,36 @@ fn print(mut out: impl Write, text: &str) -> Result<u8, String> {
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use super::parallel;
+
+    #[test]
+    fn parallel_keeps_the_order_and_stops_after_a_prefix() {
+        let items: Vec<usize> = (0..1000).collect();
+        for threads in [1, 3, 16] {
+            let squares = parallel(&items, threads, || false, |i| i * i);
+            assert_eq!(squares, items.iter().map(|i| i * i).collect::<Vec<_>>());
+            // Stopped from the start, it still does the first item.
+            assert_eq!(parallel(&items, threads, || true, |&i| i), [0]);
+            let done = AtomicUsize::new(0);
+            let some = parallel(
+                &items,
+                threads,
+                || done.load(Ordering::Relaxed) >= 100,
+                |&i| {
+                    done.fetch_add(1, Ordering::Relaxed);
+                    i
+                },
+            );
+            // At least 100, plus at most one per thread already under way.
+            assert!((100..100 + threads).contains(&some.len()), "{}", some.len());
+            assert_eq!(some, (0..some.len()).collect::<Vec<_>>());
+        }
+        assert_eq!(
+            parallel(&[] as &[u8], 4, || false, |&b| b),
+            Vec::<u8>::new()
+        );
+    }
 
     #[test]
     fn a_panic_on_the_big_stack_carries_on_in_the_caller() {
