@@ -134,7 +134,8 @@ fn each_output_path_escapes_names_and_messages() {
         #[cfg(unix)]
         ("::a\n\u{1b}[2J,.json", "[1,"),
     ]);
-    let end = "error[syntax] expected a value, found the end of the file";
+    let end =
+        "error[syntax] unclosed `[`: expected a value, found the end of the file (opened at 1:1)";
     let message = "duplicate key $[\"\\u202a##\\u005bk:%,\"] (first at 1:2)";
     let text = format!("m.json:1:17: error[duplicate-key] {message}\n");
     let cases = [
@@ -154,7 +155,7 @@ fn each_output_path_escapes_names_and_messages() {
             true,
             format!(
                 "./::a\\n\\u001b[2J,.json:1:4: {end}\n\
-                 ::error file=%3A%3Aa\\n\\u001b[2J%2C.json,line=1,col=4,title=jsonvet (syntax)::expected a value, found the end of the file\n"
+                 ::error file=%3A%3Aa\\n\\u001b[2J%2C.json,line=1,col=4,title=jsonvet (syntax)::unclosed `[`: expected a value, found the end of the file (opened at 1:1)\n"
             ),
         ),
         // A message in an annotation.
@@ -295,7 +296,7 @@ fn only_regular_files_are_read() {
         String::from_utf8(out.stdout).expect("UTF-8 output"),
         "zero.json: error: not a regular file\n\
          fifo.json: error: not a regular file\n\
-         link.json:1:4: error[syntax] expected a value, found the end of the file\n"
+         link.json:1:4: error[syntax] unclosed `[`: expected a value, found the end of the file (opened at 1:1)\n"
     );
 }
 
@@ -326,7 +327,7 @@ fn strict_globs_keep_their_1x_meaning() {
         (code, out.as_str()),
         (
             1,
-            "package.json:1:2: error[syntax] comments are not allowed in json\na/package.json:1:2: error[syntax] comments are not allowed in json\n"
+            "package.json:1:2: error[syntax] comments are not allowed in json; the jsonc dialect allows this\na/package.json:1:2: error[syntax] comments are not allowed in json; the jsonc dialect allows this\n"
         )
     );
 }
@@ -341,7 +342,7 @@ fn an_unknown_option_is_a_usage_error_unless_it_is_a_file() {
         err.starts_with("jsonvet: unknown option `--strcit`\n"),
         "{err}"
     );
-    let found = "--x.json:1:4: error[syntax] expected a value, found the end of the file\n";
+    let found = "--x.json:1:4: error[syntax] unclosed `[`: expected a value, found the end of the file (opened at 1:1)\n";
     assert_eq!(run(&["--x.json"]), (1, found.to_owned(), String::new()));
     assert_eq!(
         run(&["--", "--x.json"]),
@@ -352,7 +353,7 @@ fn an_unknown_option_is_a_usage_error_unless_it_is_a_file() {
     assert_eq!((code, out.as_str()), (2, ""));
     assert!(err.starts_with("jsonvet: unknown option `-q`\n"), "{err}");
     fs::write(dir.join("-q"), "[1,").expect("write file");
-    let found = "-q:1:4: error[syntax] expected a value, found the end of the file\n";
+    let found = "-q:1:4: error[syntax] unclosed `[`: expected a value, found the end of the file (opened at 1:1)\n";
     assert_eq!(run(&["-q"]), (1, found.to_owned(), String::new()));
 }
 
@@ -379,7 +380,7 @@ fn help_and_version_letters_in_a_file_name_are_a_file() {
         (code, out.as_str()),
         (
             1,
-            "bad.json:1:4: error[syntax] expected a value, found the end of the file\n"
+            "bad.json:1:4: error[syntax] unclosed `[`: expected a value, found the end of the file (opened at 1:1)\n"
         )
     );
 }
@@ -403,7 +404,7 @@ fn a_file_name_that_is_not_utf8_is_opened_as_given() {
         .env_remove("GITHUB_ACTIONS")
         .output()
         .expect("run jsonvet");
-    let found = ".json:1:4: error[syntax] trailing comma before `]` is not allowed in json\n";
+    let found = ".json:1:4: error[syntax] trailing comma before `]` is not allowed in json; the jwcc and json5 dialects allow this\n";
     assert_eq!(
         String::from_utf8_lossy(&out.stdout),
         format!("caf\u{FFFD}{found}--\u{FFFD}{found}-x\u{FFFD}{found}")
@@ -461,7 +462,7 @@ fn config_severities_take_the_warn_and_off_aliases() {
 fn config_globs_are_relative_to_the_config_file() {
     let toml = "dialects = [{ files = \"data/*.json\", dialect = \"json\" }]\n";
     let pyproject = format!("[tool.jsonvet]\n{toml}");
-    let unquoted = "data/x.json:1:2: error[syntax] unquoted keys are not allowed in json\n";
+    let unquoted = "data/x.json:1:2: error[syntax] unquoted keys are not allowed in json; the json5 dialect allows this\n";
     for config in [
         ("jsonvet.toml", toml),
         ("pyproject.toml", pyproject.as_str()),
@@ -544,18 +545,57 @@ fn pyproject_tool_table_and_bad_configs() {
         ("rules.toml", "rules = 1\n"),
         ("dialects.toml", "dialects = 1\n"),
         ("forged.toml", "\"\\n::error::x\" = \"error\"\n"),
+        ("typo.toml", "[rules]\nduplicate-keys = \"error\"\n"),
+        ("key.toml", "# x\n  rule = {}\n"),
+        ("severity.toml", "[rules]\nsyntax = \"eror\"\n"),
+        (
+            "dialect.toml",
+            "[[dialects]]\nfiles = \"*.json\"\ndialect = \"jsno\"\n",
+        ),
+        ("entry.toml", "[[dialects]]\nfile = \"*.json\"\n"),
+        ("syntax.toml", "[rules\n"),
         ("d.json", "{}"),
     ]);
     for (config, message) in [
-        ("rules.toml", "`rules` must be a table"),
-        ("dialects.toml", "`dialects` must be an array of tables"),
+        ("rules.toml:1:9", "`rules` must be a table"),
+        (
+            "dialects.toml:1:12",
+            "`dialects` must be an array of tables",
+        ),
         // A key holding a newline stays on the line, so it cannot forge a workflow command.
         (
-            "forged.toml",
+            "forged.toml:1:1",
             "unknown key `\\n::error::x`; expected rules or dialects",
         ),
+        // A typo gets its line and column, and the name it is closest to.
+        (
+            "typo.toml:2:1",
+            "unknown rule `duplicate-keys` (did you mean `duplicate-key`?); expected one of \
+             syntax, duplicate-key, invalid-number, invalid-code-point, byte-order-mark, \
+             missing-final-newline",
+        ),
+        (
+            "key.toml:2:3",
+            "unknown key `rule` (did you mean `rules`?); expected rules or dialects",
+        ),
+        (
+            "severity.toml:2:10",
+            "unknown severity `eror` (did you mean `error`?); expected error, warning or ignore",
+        ),
+        (
+            "dialect.toml:3:11",
+            "unknown dialect `jsno` (did you mean `json`?); expected one of json, i-json, \
+             jsonc, jwcc, json5, jsonl, ijson, hujson, ndjson, json-lines, or auto",
+        ),
+        (
+            "entry.toml:2:1",
+            "unknown key `file` (did you mean `files`?) in a `dialects` entry; expected files \
+             and dialect",
+        ),
+        ("syntax.toml:1:7", "unclosed table, expected `]`"),
     ] {
-        let (code, _, err) = jsonvet_stderr(&wrong_types, &["--config", config, "d.json"]);
+        let file = config.split(':').next().unwrap_or_default();
+        let (code, _, err) = jsonvet_stderr(&wrong_types, &["--config", file, "d.json"]);
         assert_eq!(code, 2);
         assert_eq!(err, format!("jsonvet: {config}: {message}\n"));
     }
@@ -568,6 +608,7 @@ fn sarif_holds_every_problem_and_keeps_the_exit_codes() {
         ("bom.json", "\u{FEFF}{}"),
         ("ok.json", "{}"),
         ("open.json", "[1, /* x"),
+        ("unclosed.json", "{\"a\": [1"),
     ]);
     let run = |args: &[&str]| {
         // SARIF replaces the workflow annotations, even in GitHub Actions. With no results
@@ -603,6 +644,17 @@ fn sarif_holds_every_problem_and_keeps_the_exit_codes() {
             "schema",
         ]
     );
+    // Code scanning shows each rule's help and links its section of docs/usage.md.
+    assert_eq!(
+        rules[1]["helpUri"],
+        "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#duplicate-key"
+    );
+    assert!(rules.iter().all(|r| {
+        r["help"]["text"].as_str().is_some_and(|t| t.len() > 40)
+            && r["fullDescription"]["text"]
+                .as_str()
+                .is_some_and(|t| t.ends_with('.'))
+    }));
     assert!(rules.iter().all(|r| {
         !r["shortDescription"]["text"]
             .as_str()
@@ -660,6 +712,38 @@ fn sarif_holds_every_problem_and_keeps_the_exit_codes() {
     let start = &open["relatedLocations"][0];
     assert_eq!(start["message"]["text"], "starts here");
     assert_eq!(start["physicalLocation"]["region"]["startColumn"], 5);
+
+    // An array still open at the end points back at its `[`.
+    let (_, sarif) = run(&["--format", "sarif", "unclosed.json"]);
+    let unclosed = &sarif["runs"][0]["results"][0];
+    assert_eq!(
+        unclosed["message"]["text"],
+        "unclosed `[`: expected `,` or `]`, found the end of the file (opened at 1:7)"
+    );
+    let opened = &unclosed["relatedLocations"][0];
+    assert_eq!(opened["message"]["text"], "opened here");
+    assert_eq!(opened["physicalLocation"]["region"]["startColumn"], 7);
+}
+
+#[test]
+fn a_utf16_or_utf32_file_names_its_encoding() {
+    let dir = workdir(&[]);
+    let files = [
+        ("le16.json", &b"\xFF\xFE[\x00]\x00"[..], "UTF-16 (LE)"),
+        ("be16.json", b"\xFE\xFF\x00[\x00]", "UTF-16 (BE)"),
+        ("le32.json", b"\xFF\xFE\x00\x00[\x00\x00\x00", "UTF-32 (LE)"),
+        ("be32.json", b"\x00\x00\xFE\xFF\x00\x00\x00[", "UTF-32 (BE)"),
+    ];
+    for (name, bytes, encoding) in files {
+        fs::write(dir.join(name), bytes).expect("write file");
+        assert_eq!(
+            jsonvet(&dir, &[name]),
+            (
+                1,
+                format!("{name}: error: file is {encoding}; jsonvet reads UTF-8\n")
+            )
+        );
+    }
 }
 
 #[test]
@@ -688,7 +772,9 @@ fn the_last_matching_dialect_wins_and_auto_means_the_extension() {
         ("c.jsonc", "{// c\n}"),
     ]);
     let jsonc = |name: &str| {
-        format!("{name}:1:2: error[syntax] single-quoted strings are not allowed in jsonc\n")
+        format!(
+            "{name}:1:2: error[syntax] single-quoted strings are not allowed in jsonc; the json5 dialect allows this\n"
+        )
     };
     let args = [
         "--dialect",
@@ -723,7 +809,7 @@ fn a_backslash_path_matches_a_slash_pattern() {
         (code, out.as_str()),
         (
             1,
-            "sub\\a.json:1:2: error[syntax] unquoted keys are not allowed in json\n"
+            "sub\\a.json:1:2: error[syntax] unquoted keys are not allowed in json; the json5 dialect allows this\n"
         )
     );
 }
@@ -749,7 +835,7 @@ fn each_extension_has_its_dialect() {
             (
                 1,
                 format!(
-                    "{name}:1:2: error[syntax] single-quoted strings are not allowed in {dialect}\n"
+                    "{name}:1:2: error[syntax] single-quoted strings are not allowed in {dialect}; the json5 dialect allows this\n"
                 )
             )
         );
@@ -800,6 +886,102 @@ fn a_file_that_cannot_be_read_says_why() {
 }
 
 /// SARIF strings escape a `[` only where it follows `##`.
+/// Run jsonvet in `dir` with `input` on its standard input; return its exit code, stdout and
+/// stderr.
+fn jsonvet_stdin(dir: &Path, args: &[&str], input: &str) -> (i32, String, String) {
+    use std::io::Write as _;
+    use std::process::Stdio;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
+        .args(args)
+        .current_dir(dir)
+        .env_remove("GITHUB_ACTIONS")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run jsonvet");
+    let mut stdin = child.stdin.take().expect("a stdin pipe");
+    stdin.write_all(input.as_bytes()).expect("write stdin");
+    drop(stdin);
+    let out = child.wait_with_output().expect("wait for jsonvet");
+    (
+        out.status.code().expect("an exit code"),
+        String::from_utf8(out.stdout).expect("UTF-8 output"),
+        String::from_utf8(out.stderr).expect("UTF-8 errors"),
+    )
+}
+
+#[test]
+fn a_dash_reads_standard_input() {
+    let dir = workdir(&[(
+        "jsonvet.toml",
+        "dialects = [{ dialect = \"json\", files = \"*.cfg\" }]\n",
+    )]);
+    let dup = "{\"a\":1,\"a\":2}\n";
+    assert_eq!(
+        jsonvet_stdin(&dir, &["-"], dup),
+        (
+            1,
+            "-:1:8: error[duplicate-key] duplicate key $.a (first at 1:2)\n".to_owned(),
+            String::new()
+        )
+    );
+    // Standard input with no name is checked as json5, the default for an unknown extension.
+    let single = "{'a': 1}\n";
+    assert_eq!(jsonvet_stdin(&dir, &["-"], single).0, 0);
+    let (code, out, _) = jsonvet_stdin(&dir, &["--stdin-filename", "x.jsonc", "-"], single);
+    assert_eq!(code, 1);
+    assert!(out.starts_with("x.jsonc:1:2: error[syntax]"), "{out}");
+    // With no file, --stdin-filename reads standard input; config globs match its name.
+    let (code, out, _) = jsonvet_stdin(&dir, &["--stdin-filename=sub/a.cfg"], "{,}");
+    assert_eq!(code, 1);
+    assert!(out.starts_with("sub/a.cfg:1:2: error[syntax]"), "{out}");
+    // Empty input is an empty file: a syntax error, not a pass.
+    assert_eq!(
+        jsonvet_stdin(&dir, &["-"], ""),
+        (
+            1,
+            "-:1:1: error[syntax] expected a value, found the end of the file\n".to_owned(),
+            String::new()
+        )
+    );
+    assert_eq!(jsonvet_stdin(&dir, &["-", "-"], "{}").0, 2);
+}
+
+#[test]
+fn list_rules_and_explain() {
+    let dir = workdir(&[]);
+    let (code, out) = jsonvet(&dir, &["--list-rules"]);
+    assert_eq!(code, 0);
+    assert!(
+        out.starts_with("syntax (error)\n    the first syntax error"),
+        "{out}"
+    );
+    let (code, out) = jsonvet(&dir, &["--explain", "duplicate-key"]);
+    assert_eq!(code, 0);
+    assert!(
+        out.contains("Bad:  {\"port\": 80, \"port\": 8080}"),
+        "{out}"
+    );
+    let (code, out, err) = jsonvet_stderr(&dir, &["--explain=duplicat-key"]);
+    assert_eq!((code, out.as_str()), (2, ""));
+    assert!(
+        err.starts_with("jsonvet: unknown rule `duplicat-key` (did you mean `duplicate-key`?)"),
+        "{err}"
+    );
+}
+
+#[test]
+fn piped_input_with_no_file_is_not_read() {
+    // CI often leaves standard input as a pipe or file with nothing in it, so a run with no
+    // files says nothing, whatever standard input is.
+    let dir = workdir(&[]);
+    assert_eq!(
+        jsonvet_stdin(&dir, &[], "{\"a\":1,\"a\":2}"),
+        (0, String::new(), String::new())
+    );
+}
+
 #[test]
 fn sarif_keeps_other_brackets() {
     let dir = workdir(&[("a.json", "[{\"a\": 1, \"a\": 2}]")]);
@@ -991,7 +1173,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         assert_eq!(code, 1);
         assert_eq!(
             out,
-            "bad.json:1:24: error[syntax] expected a value, found the end of the file\n\
+            "bad.json:1:24: error[syntax] unclosed `[`: expected a value, found the end of the file (opened at 1:21)\n\
              dup.json:1:15: error[duplicate-key] duplicate key $.name (first at 1:2)\n"
         );
     }
@@ -1019,7 +1201,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
             ),
             (
                 "broken.json",
-                "jsonvet: the schema broken.json:1:10: expected a value, found the end of the file\n",
+                "jsonvet: the schema broken.json:1:10: unclosed `{`: expected a value, found the end of the file\n",
             ),
             (
                 "remote.json",
@@ -1653,7 +1835,9 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         let (code, _, err) = jsonvet_stderr(&dir, &["--schema", "schema.json", "ok.json"]);
         assert_eq!(code, 2);
         assert!(
-            err.contains("jsonvet.toml: the `schema` rule is always an error and cannot be set\n"),
+            err.contains(
+                "jsonvet.toml:2:1: the `schema` rule is always an error and cannot be set\n"
+            ),
             "{err}"
         );
     }

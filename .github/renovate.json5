@@ -24,7 +24,7 @@
       // Cargo tools installed by taiki-e/install-action.
       customType: "regex",
       managerFilePatterns: ["/^\\.github/workflows/.+\\.yml$/"],
-      matchStrings: ["(?<depName>cargo-(?:deny|fuzz|llvm-cov|mutants|nextest|semver-checks))@(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      matchStrings: ["(?<depName>cargo-(?:cyclonedx|deny|fuzz|llvm-cov|mutants|nextest|semver-checks))@(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
       datasourceTemplate: "crate",
     },
     {

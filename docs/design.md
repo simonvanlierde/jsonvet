@@ -40,7 +40,9 @@ These change, and the changelog marks them **Breaking**:
   in the config file, keeps the old verdict.
 
 A syntax error points at the first character that cannot continue the document, or at the end of
-the input. Where that differs from 1.4, the difference and its reason are listed below. Any other
+the input. Two point earlier: a missing `,` points just after the value before it, and a number
+with a leading zero at that zero. A word that cannot continue it, such as `True`, is named whole,
+at its first letter. Where that differs from 1.4, the difference and its reason are listed below. Any other
 difference is a bug.
 
 ### Known differences from 1.4
@@ -102,6 +104,11 @@ Lines end at LF, CR and CRLF. In JSON5 they also end at U+2028 and U+2029, becau
 counts them as line terminators. The other dialects treat both as ordinary characters.
 
 `.json` defaults to JSON5, as in 1.4. `auto` means "the default for this file's extension".
+
+JSONC rejects trailing commas, with no option to allow them. The [JSONC spec](https://jsonc.org/)
+says parsers "MAY" accept them, and its reference parser, Microsoft's `jsonc-parser`, and prek's
+`check-jsonc` reject them by default. Files whose own tools accept them, such as VS Code's
+settings and `tsconfig.json`, are JWCC, which `dialects` selects per glob.
 
 ## Rules
 
@@ -267,6 +274,13 @@ and Windows, plus the oldest supported Rust (1.88). Each layer exists for one re
 ## Publishing
 
 A release publishes to PyPI and crates.io from `release.yml`, with trusted publishing on both.
+A pushed `vX.Y.Z` tag starts it, not a published GitHub release: the release is immutable, so the
+workflow drafts it, attaches the binary archives, the SBOM and `SHA256SUMS`, and publishes it after
+the packages are up. The archives hold the binary from each wheel, not a second build, so PyPI and
+the GitHub release ship the same bytes. Each file gets a build provenance attestation, and the
+PyPI upload adds PEP 740 attestations. The binaries are not built with `cargo auditable`: maturin
+cannot run it without a cargo wrapper inside every build container, so the SBOM lists the
+dependencies instead.
 The `check-json5` package uploads after the `jsonvet` wheels, and `jsonvet-cli` after the
 `jsonvet` crate. crates.io only allows trusted publishing for a crate that already exists, so
 2.0.0 went up by hand.

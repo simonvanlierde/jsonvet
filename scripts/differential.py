@@ -252,7 +252,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--cases", type=int, default=3000)
     parser.add_argument("--seed", type=int, default=7)
-    parser.add_argument("--jsonvet", default=str(ROOT / "target" / "release" / "jsonvet"))
+    # Resolved here: the checks run inside a temporary directory, where a relative path breaks.
+    parser.add_argument(
+        "--jsonvet",
+        type=lambda p: str(Path(p).resolve()),
+        default=str(ROOT / "target" / "release" / "jsonvet"),
+    )
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="jsonvet-differential-") as tmp:
         cwd = Path(tmp)

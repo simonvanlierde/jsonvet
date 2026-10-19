@@ -13,14 +13,19 @@ The details behind the [README](../README.md). Why things work this way is in
 --max-warnings N
 --format text|sarif        text lines (the default), or one SARIF 2.1.0 document on stdout
 --schema FILE              also check every file against the JSON Schema in FILE
+--stdin-filename PATH      the name standard input (`-`) goes by
 --config FILE, --no-config
+--list-rules               list the rules with their default severities
+--explain RULE             explain a rule, with an example
 ```
 
 `jsonvet --help` prints the same list with more detail.
 
 ## Output
 
-Each problem is one line: `file:line:col: severity[rule] message`.
+Each problem is one line: `file:line:col: severity[rule] message`. When stdout is a terminal,
+a last line counts them, such as `3 errors in 2 of 5 files`. Piped or redirected output, as in
+the hook and in CI, has no such line.
 
 - Lines and columns count from 1. Columns count Unicode code points, and a byte order mark is
   column 1.
@@ -28,6 +33,16 @@ Each problem is one line: `file:line:col: severity[rule] message`.
   `$.tags[1]` an array element, `$[""]` the empty key.
 - A file jsonvet cannot read gets a line with no position and no rule, such as
   `gone.json: error: no such file`. It always fails the run, and you cannot change that.
+- A syntax error that is about two places also names the second: `(started at 1:10)` for an
+  unterminated string or comment, `(opened at 1:1)` for an object or array still open at the end
+  of the file. A missing `,` points just after the value before it.
+- Some syntax errors end with a hint after a `;`: the dialect that would accept the syntax, as in
+  `comments are not allowed in json; the jsonc dialect allows this`, or `did you mean `true`?` for
+  a word such as `True`. Select a dialect with `--dialect jsonc:GLOB`, or a `dialects` entry in
+  the configuration file.
+- A file that starts with a UTF-16 or UTF-32 byte order mark fails with
+  `file is UTF-16 (LE); jsonvet reads UTF-8`. Any other file that is not UTF-8 fails with
+  `not valid UTF-8 (byte N)`.
 - In GitHub Actions, each problem is also printed as an annotation.
 
 jsonvet escapes control, bidirectional and invisible characters in file names and messages. So no
@@ -49,6 +64,20 @@ submodules.
 When the output pipe closes early, as in `jsonvet … | head -1`, jsonvet stops quietly. It exits
 with the verdict for the files it has checked.
 
+## Standard input
+
+`-` as a file reads standard input: `cat a.json | jsonvet -`. Output names it `-`, and it is
+checked as JSON5, the default for an unknown extension. `--stdin-filename PATH` names it `PATH`
+instead, in the output and when picking its dialect and settings, so
+`jsonvet --stdin-filename tsconfig.json -` checks it as a `.json` file. With `--stdin-filename`
+and no file, jsonvet reads standard input without the `-`.
+
+Empty input is checked like an empty file, which is a syntax error. `-` can be given only once;
+to check a file named `-`, pass `./-`.
+
+jsonvet reads standard input only when asked, as ruff, Biome and taplo do. A run with no files,
+such as `echo '{}' | jsonvet`, checks nothing and exits 0.
+
 ## File names that look like options
 
 pre-commit passes file names with no `--` before them. So jsonvet reads an unknown `-x` or
@@ -60,6 +89,11 @@ To be sure, put `--` before the file names: `jsonvet -- --x.json`.
 ## Dialects
 
 - Extensions match in lower case only, so `DATA.JSONL` is checked as JSON5, not JSON Lines.
+- `--dialect` and the configuration file also take the names `ijson` (for `i-json`), `hujson`
+  (for `jwcc`), and `ndjson` and `json-lines` (for `jsonl`). Dialect names are case-sensitive: `--dialect JSON` is an error that suggests `json`.
+- JSONC rejects trailing commas, as the [JSONC spec](https://jsonc.org/) and Microsoft's
+  reference parser do by default. For files that use them, such as `tsconfig.json` or VS Code's
+  `settings.json`, select `jwcc`, which is JSONC with trailing commas.
 - JSONC, JWCC and JSON5 each add syntax to the one before, except where a `//` comment ends.
   JWCC ends it at LF only, JSONC also at a lone CR, and JSON5 also at U+2028 and U+2029.
 - In `i-json`, lone surrogates, noncharacters and numbers that a double cannot hold are errors.
@@ -68,6 +102,85 @@ To be sure, put `--` before the file names: `jsonvet -- --x.json`.
 
 A severity is `error`, `warning` (or `warn`), or `ignore` (or `off`). An ignored rule is not
 checked at all. Warnings fail a run only when there are more than `--max-warnings N`.
+
+`jsonvet --list-rules` lists the rules and `jsonvet --explain RULE` prints one of the sections
+below. SARIF output links each rule to its section here.
+
+### syntax
+
+The file is not valid in its dialect: a missing or extra comma, a comment in strict JSON, an
+unclosed string. jsonvet reports the first one and stops there, since what follows cannot be read
+reliably. Always an error.
+
+```text
+Bad (json):  {"a": 1,}
+Good (json): {"a": 1}
+```
+
+### duplicate-key
+
+Most parsers keep the last copy of a repeated key and drop the others without a word, so a value
+is lost; RFC 8259 leaves the result undefined. The message gives the key's JSONPath and where its
+first copy is. An error in every dialect.
+
+```text
+Bad:  {"port": 80, "port": 8080}
+Good: {"port": 8080}
+```
+
+### invalid-number
+
+I-JSON (RFC 7493) asks for numbers a double can hold, and for integers within 2^53 - 1 either
+side of zero, so that every parser reads them the same. jsonvet reports an overflow, and an
+integer written as digits alone past that limit. An error in `i-json`, off otherwise.
+
+```text
+Bad (i-json):  {"id": 9007199254740993}
+Good (i-json): {"id": "9007199254740993"}
+```
+
+### invalid-code-point
+
+I-JSON (RFC 7493) forbids lone surrogates and noncharacters in strings: many decoders reject them
+or replace them with U+FFFD. An error in `i-json`, off otherwise.
+
+```text
+Bad (i-json):  {"a": "\ud800"}
+Good (i-json): {"a": "\ud83d\ude00"}
+```
+
+### byte-order-mark
+
+RFC 8259 says JSON text must not start with a byte order mark (U+FEFF), and many parsers fail on
+one. Save the file as UTF-8 without a BOM. An error in `jsonl`, a warning in `json` and `i-json`,
+off otherwise.
+
+```text
+Bad:  <U+FEFF>{"a": 1}
+Good: {"a": 1}
+```
+
+### missing-final-newline
+
+JSON Lines ends every record with a newline. Without one, the next record appended joins the last
+line and breaks it. A warning in `jsonl`, off otherwise.
+
+```text
+Bad (jsonl):  {"a": 1}<end of file>
+Good (jsonl): {"a": 1}<newline>
+```
+
+### unreadable
+
+jsonvet could not check the file at all: it does not exist, is a directory, device, FIFO or
+socket, could not be read, or is not UTF-8. It always fails the run, and no option changes that.
+Text output shows no rule for it; SARIF output files it under `unreadable`.
+
+### schema
+
+A value the JSON Schema given with `--schema` rejects, such as a missing required key or a string
+where the schema wants a number. Always an error: `--error`, `--warn`, `--ignore` and settings
+files do not take this rule.
 
 ## Globs
 
@@ -88,7 +201,18 @@ working directory and its parents, and stops at the repository root. Options on 
 win. `--config FILE` reads that file instead, and `--no-config` reads none.
 
 The file takes two keys, `rules` and `dialects`. Any other key, at the top or in a `dialects`
-entry, is a usage error, so a typo never goes unnoticed.
+entry, is a usage error, so a typo never goes unnoticed. The error names the line and column in
+the file, and the closest known name: `jsonvet.toml:2:1: unknown rule `duplicate-keys` (did you
+mean `duplicate-key`?); …`.
+
+```toml
+[rules]
+byte-order-mark = "error"
+
+[[dialects]]
+files = ".vscode/*.json"
+dialect = "jwcc"
+```
 
 ## GitHub Action
 
@@ -122,6 +246,8 @@ jsonvet --format sarif $(git ls-files '*.json') > jsonvet.sarif
 
 - Each problem is a result with its rule, severity, message and position. A duplicate key also
   points at the first copy. A file jsonvet cannot read is a result under the rule `unreadable`.
+- Each rule carries its help text and a link to its section above, which GitHub code scanning
+  shows on each alert.
 - The exit status and `--max-warnings` work as with text. No annotations are printed.
 - GitHub keeps only 5,000 results of a run with more than 25,000. So jsonvet writes the first
   25,000, and counts the rest in a tool notification and on stderr.

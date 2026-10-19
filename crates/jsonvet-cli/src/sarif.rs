@@ -5,9 +5,10 @@ use std::ffi::OsStr;
 use std::fmt::Write as _;
 use std::path::Path;
 
-use jsonvet::{Location, Rule, Severity};
+use jsonvet::{Location, Severity};
 
 use crate::output::{escape_utf16, is_hidden};
+use crate::rules;
 
 /// A file that could not be read gets its own rule, so it shows as an alert. GitHub code scanning
 /// lists tool notifications only on its tool status page, where a failing file is easy to miss.
@@ -67,24 +68,16 @@ pub(crate) fn level(severity: Severity) -> &'static str {
 /// The whole document: one run holding the results, and a notification counting the `dropped`
 /// ones past [`MAX_RESULTS`].
 pub(crate) fn document(results: &[String], dropped: usize) -> String {
-    let rules: Vec<String> = Rule::ALL
-        .iter()
-        .map(|rule| (rule.id(), rule.description()))
-        .chain([
-            (
-                UNREADABLE,
-                "a file that is not a regular file, could not be read, or is not UTF-8",
-            ),
-            (
-                SCHEMA,
-                "a value the JSON Schema given with --schema rejects",
-            ),
-        ])
-        .map(|(id, text)| {
+    // GitHub code scanning shows `help` and links `helpUri` on each alert.
+    let rules: Vec<String> = rules::ids()
+        .map(|id| {
             format!(
-                r#"{{"id":{},"shortDescription":{{"text":{}}}}}"#,
+                r#"{{"id":{},"shortDescription":{{"text":{}}},"fullDescription":{{"text":{}}},"help":{{"text":{}}},"helpUri":{}}}"#,
                 string(id),
-                string(text)
+                string(rules::description(id)),
+                string(&format!("{}.", rules::description(id))),
+                string(rules::explanation(id)),
+                string(&rules::help_uri(id))
             )
         })
         .collect();

@@ -100,6 +100,7 @@ impl<W: Write> Printer<W> {
         let related = problem.related().map(|related| {
             let labels = match related.kind {
                 RelatedKind::FirstOccurrence => ("first at", "first copy"),
+                RelatedKind::Opened => ("opened at", "opened here"),
                 // NOTE: `RelatedKind` is non-exhaustive; `Start` is the only other kind so far.
                 _ => ("started at", "starts here"),
             };
@@ -192,6 +193,14 @@ impl<W: Write> Printer<W> {
                 escape(&printable(file), true),
                 escape(message, false)
             )?;
+        }
+        Ok(())
+    }
+
+    /// A line of text output, such as the summary; nothing in SARIF.
+    pub(crate) fn text_line(&mut self, line: &str) -> io::Result<()> {
+        if self.sarif.is_none() {
+            writeln!(self.out, "{line}")?;
         }
         Ok(())
     }
