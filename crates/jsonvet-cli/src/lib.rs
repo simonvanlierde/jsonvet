@@ -186,16 +186,15 @@ fn run_with(
 
 /// The settings from the config file `config` names, or none.
 fn from_file(config: &ConfigSource) -> Result<Settings, String> {
-    let path = match config {
-        ConfigSource::None => None,
-        ConfigSource::File(path) => Some(path.clone()),
+    match config {
+        ConfigSource::None => Ok(Settings::default()),
+        ConfigSource::File(path) => settings::load(path),
         ConfigSource::Search => {
             let cwd = std::env::current_dir()
                 .map_err(|e| format!("cannot read the working directory: {e}"))?;
-            settings::discover(&cwd)
+            settings::discover(&cwd).map_or_else(|| Ok(Settings::default()), |p| settings::load(&p))
         }
-    };
-    path.map_or_else(|| Ok(Settings::default()), |path| settings::load(&path))
+    }
 }
 
 #[derive(Default)]
