@@ -17,6 +17,10 @@ version for a new option or output, the patch version for a fix.
 - The README is shorter and starts with a quick start. The details (globs, exit status, SARIF,
   the Action's inputs, the JSON Schema limits) moved to
   [docs/usage.md](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md).
+- Files are checked on every core, so a run over many files is about 4x faster on 12 cores. The
+  output is unchanged and in the order the files were given. Memory now covers the files
+  checked together: about 64 MB of text, or one file per core when files are larger than that.
+- Strings are scanned 16 bytes at a time: files of long strings check up to 1.8x faster.
 
 ### Fixed
 
