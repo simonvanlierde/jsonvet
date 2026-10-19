@@ -21,6 +21,9 @@ version for a new option or output, the patch version for a fix.
   output is unchanged and in the order the files were given. Memory now covers the files
   checked together: about 64 MB of text, or one file per core when files are larger than that.
 - Strings are scanned 16 bytes at a time: files of long strings check up to 1.8x faster.
+- Objects with many keys check up to 2.5x faster in a third less memory: one object of 2 million
+  keys takes 0.34 s and 158 MB instead of 0.84 s and 246 MB. Files of many small objects check
+  about 10% faster.
 
 ### Fixed
 

@@ -3,7 +3,10 @@
 
 use std::borrow::Cow;
 use std::cell::OnceCell;
-use std::collections::HashMap;
+use std::hash::{BuildHasher, RandomState};
+
+use hashbrown::HashTable;
+use hashbrown::hash_table::Entry;
 
 use crate::event::{Event, EventKind};
 use crate::path::{self, Segment};
@@ -52,6 +55,7 @@ pub(crate) fn check<'a>(
         max_depth: config.max_depth,
         problems: Vec::new(),
         stack: Vec::new(),
+        spare_keys: Vec::new(),
         events: events.then(Vec::new),
     };
     parser.byte_order_mark(config.severity(Rule::ByteOrderMark));
@@ -118,6 +122,8 @@ struct Parser<'a> {
     max_depth: usize,
     problems: Vec<Problem>,
     stack: Vec<Frame<'a>>,
+    /// Emptied key lists from closed objects, reused so each object does not allocate anew.
+    spare_keys: Vec<Keys<'a>>,
     /// The values seen so far, when the caller asked for them.
     events: Option<Vec<Event<'a>>>,
 }
@@ -135,42 +141,96 @@ struct Frame<'a> {
     segment: Segment<'a>,
     /// `segment` as a path shows it, made on the first duplicate inside the container.
     rendered: OnceCell<String>,
-    /// The keys seen so far with the offset of each, for objects.
-    seen_keys: Vec<(Key<'a>, usize)>,
-    /// The same keys, indexed once the object grows past `LINEAR_KEYS`.
-    seen_index: Option<HashMap<Key<'a>, usize>>,
+    /// The keys seen so far, for objects.
+    keys: Keys<'a>,
     /// The current member's key, in an object.
     current_key: Key<'a>,
     /// The current element's position, in an array.
     element_index: usize,
 }
 
-impl<'a> Frame<'a> {
+impl Frame<'_> {
     fn rendered(&self) -> &str {
         self.rendered.get_or_init(|| path::rendered(&self.segment))
     }
+}
 
-    fn first_offset(&self, key: &[u8]) -> Option<usize> {
-        match &self.seen_index {
-            Some(index) => index.get(key).copied(),
-            None => self
-                .seen_keys
-                .iter()
-                .find(|(k, _)| **k == *key)
-                .map(|(_, at)| *at),
+/// An object's keys with the offset of each, in the order they came.
+#[derive(Default)]
+struct Keys<'a> {
+    list: Vec<(Key<'a>, usize)>,
+    /// `(hash, position in list)` per key once the list grows past `LINEAR_KEYS`. With the hash
+    /// at hand a resize never rehashes a key, and a lookup compares keys only when hashes match.
+    index: HashTable<(u32, u32)>,
+    /// std's SipHash, keyed from the OS: without those keys a crafted file cannot make its keys
+    /// collide, so the index stays linear on untrusted input (SECURITY.md).
+    state: RandomState,
+}
+
+impl<'a> Keys<'a> {
+    /// The offset of `key`'s first appearance, or `None` after recording it at `at`.
+    fn first_or_insert(&mut self, key: &Key<'a>, at: usize) -> Option<usize> {
+        let list = &mut self.list;
+        // shortcut: past u32::MAX keys (a 128 GiB list) the check falls back to the linear scan.
+        let position = u32::try_from(list.len())
+            .ok()
+            .filter(|_| list.len() > LINEAR_KEYS);
+        let Some(position) = position else {
+            if let Some((_, first)) = list.iter().find(|(k, _)| k == key) {
+                return Some(*first);
+            }
+            list.push((key.clone(), at));
+            if list.len() == LINEAR_KEYS + 1 {
+                for (i, (k, _)) in (0..).zip(list.iter()) {
+                    let hash = short_hash(&self.state, k);
+                    self.index
+                        .insert_unique(spread(hash), (hash, i), |&(h, _)| spread(h));
+                }
+            }
+            return None;
+        };
+        let hash = short_hash(&self.state, key);
+        let entry = self.index.entry(
+            spread(hash),
+            |&(h, i)| h == hash && list[i as usize].0 == *key,
+            |&(h, _)| spread(h),
+        );
+        match entry {
+            Entry::Occupied(found) => Some(list[found.get().1 as usize].1),
+            Entry::Vacant(vacant) => {
+                vacant.insert((hash, position));
+                list.push((key.clone(), at));
+                None
+            }
         }
     }
 
-    fn insert(&mut self, key: Key<'a>, at: usize) {
-        if let Some(index) = &mut self.seen_index {
-            index.insert(key, at);
-            return;
-        }
-        self.seen_keys.push((key, at));
-        if self.seen_keys.len() > LINEAR_KEYS {
-            self.seen_index = Some(self.seen_keys.drain(..).collect());
+    /// Empty, but keeping the allocations for the next object.
+    fn clear(&mut self) {
+        self.list.clear();
+        // Clearing takes time in the table's capacity, so a big object's table must not pass to
+        // the small ones after it: each would pay to clear it.
+        if self.index.capacity() > 4 * self.index.len() {
+            self.index = HashTable::new();
+        } else {
+            self.index.clear();
         }
     }
+}
+
+/// The low 32 bits of `key`'s hash.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "the low 32 bits are the point"
+)]
+fn short_hash(state: &RandomState, key: &[u8]) -> u32 {
+    state.hash_one(key) as u32
+}
+
+/// `hash` in both halves of a `u64`: hashbrown picks the bucket from the low bits and its 7-bit
+/// tag from the top ones.
+fn spread(hash: u32) -> u64 {
+    u64::from(hash) * 0x1_0000_0001
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -360,7 +420,10 @@ impl<'a> Parser<'a> {
         }
         self.emit(self.pos, EventKind::End);
         self.pos += 1;
-        self.stack.pop();
+        if let Some(mut frame) = self.stack.pop() {
+            frame.keys.clear();
+            self.spare_keys.push(frame.keys);
+        }
         Ok(self.state_after_value())
     }
 
@@ -380,8 +443,7 @@ impl<'a> Parser<'a> {
             container,
             segment,
             rendered: OnceCell::new(),
-            seen_keys: Vec::new(),
-            seen_index: None,
+            keys: self.spare_keys.pop().unwrap_or_default(),
             current_key: Key::Borrowed(&[]),
             element_index: 0,
         });
@@ -507,8 +569,8 @@ impl<'a> Parser<'a> {
         let Some(frame) = self.stack.last_mut() else {
             return;
         };
-        match frame.first_offset(key) {
-            None => frame.insert(key.clone(), start),
+        match frame.keys.first_or_insert(key, start) {
+            None => {}
             Some(first) => {
                 let mut last = String::new();
                 path::push_key(&mut last, key);
