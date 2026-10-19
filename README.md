@@ -5,6 +5,7 @@
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/simonvanlierde/jsonvet/blob/main/LICENSE)
 [![release](https://img.shields.io/github/v/release/simonvanlierde/jsonvet)](https://github.com/simonvanlierde/jsonvet/releases/latest)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23461825.svg)](https://doi.org/10.5281/zenodo.23461825)
 
 jsonvet checks JSON, I-JSON, JSONC, HuJSON (JWCC), JSON5 and JSON Lines files for syntax errors,
 duplicate keys and the rules of each dialect. Each problem comes with its file, line, column and

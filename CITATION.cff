@@ -3,12 +3,17 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 type: software
 title: "jsonvet"
-abstract: "A linter for JSON, I-JSON, JSONC, JWCC (HuJSON), JSON5 and JSON Lines: syntax errors, duplicate keys and each dialect's rules with exact positions, plus JSON Schema validation with exact positions (--schema) and SARIF output for GitHub code scanning. Ships as a pre-commit hook, PyPI wheels, Rust crates and a GitHub Action. Includes a conformance matrix of JSON5, JSONC, JWCC and JSON Lines parsers."
+abstract: "A linter for JSON, I-JSON, JSONC, JWCC (HuJSON), JSON5 and JSON Lines: syntax errors, duplicate keys, each dialect's rules and JSON Schema errors (--schema), all with exact positions, plus SARIF output for GitHub code scanning. Ships as a pre-commit hook, PyPI wheels, Rust crates and a GitHub Action. Includes a conformance matrix of JSON5, JSONC, JWCC and JSON Lines parsers."
 authors:
   - family-names: "van Lierde"
     given-names: "Simon"
     orcid: "https://orcid.org/0009-0006-6953-909X"
 repository-code: "https://github.com/simonvanlierde/jsonvet"
+# The concept DOI, which always resolves to the latest version.
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.23461825"
+    description: "All versions of jsonvet"
 license: "MIT"
 keywords:
   - "json"
