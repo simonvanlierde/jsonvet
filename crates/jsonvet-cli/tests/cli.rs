@@ -550,10 +550,10 @@ fn a_bad_nested_config_file_stops_the_run() {
     assert_eq!(jsonvet(&dir, &["ok.json"]), (0, String::new()));
     let (code, out, err) = jsonvet_stderr(&dir, &["ok.json", "sub/x.json"]);
     assert_eq!((code, out.as_str()), (2, ""));
-    assert!(
-        err.contains("sub/jsonvet.toml:1:11: unknown rule `nope`"),
-        "{err}"
-    );
+    // The path is absolute, with the platform's separator.
+    let config = Path::new("sub").join("jsonvet.toml");
+    let message = format!("{}:1:11: unknown rule `nope`", config.display());
+    assert!(err.contains(&message), "{err}");
     assert_eq!(jsonvet_stderr(&dir, &["."]).0, 2);
 }
 
