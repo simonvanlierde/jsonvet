@@ -369,6 +369,11 @@ impl<'a> Parser<'a> {
     /// `hint` says whether the larger dialect really reads the syntax at `at`, so that the
     /// message may point to it. JSON Lines gets none: no larger dialect extends it, and a
     /// file checked in parts must report what one pass does.
+    ///
+    /// This and the hint helpers below run only on a syntax error. `#[cold]` keeps them out of
+    /// the scanning loops they are called from, which they otherwise slowed by 1.4 to 3.2% in
+    /// instructions on clean files.
+    #[cold]
     fn not_allowed(&self, at: usize, what: &'static str, hint: bool) -> Fail {
         Fail::at(
             at,
@@ -382,6 +387,7 @@ impl<'a> Parser<'a> {
 
     /// A single-quoted string at `at`, which only JSON5 allows; the hint holds only when JSON5
     /// reads the string to its closing quote.
+    #[cold]
     fn single_quoted(&mut self, at: usize) -> Fail {
         let hint = self.json5_reads(at, |p| p.string(b'\'', false).map(|_| true));
         self.not_allowed(at, "single-quoted strings are", hint)
@@ -390,6 +396,7 @@ impl<'a> Parser<'a> {
     /// Whether JSON5 reads the token at `at`: `scan` runs from there with JSON5's rules and
     /// says whether the token it read ends where it should. The parser's state is restored.
     /// Never in JSON Lines, which gets no hint.
+    #[cold]
     fn json5_reads(
         &mut self,
         at: usize,
@@ -410,6 +417,7 @@ impl<'a> Parser<'a> {
     /// A number form only JSON5 allows, starting at `start`. The hint holds only when JSON5
     /// reads the number whole: not `0x`, `+x` or `5.e`, and not `NaNx` or `0x1g`, where the
     /// token runs on into a word.
+    #[cold]
     fn json5_number(&mut self, start: usize, what: &'static str) -> Fail {
         let hint = self.json5_reads(start, |p| {
             p.number()?;
@@ -417,6 +425,17 @@ impl<'a> Parser<'a> {
             Ok(p.pos == p.bytes.len() || !(c == '\\' || is_identifier_part(c)))
         });
         self.not_allowed(start, what, hint)
+    }
+
+    /// A comment at the parser's position in a dialect without them. Only a block comment can
+    /// fail to end, and then JSONC rejects it too. JSON Lines gets no hint, so it skips the
+    /// search to the end of the text.
+    #[cold]
+    fn comment_not_allowed(&self) -> Fail {
+        let hint = !self.json_lines
+            && (self.bytes[self.pos + 1] == b'/'
+                || memchr::memmem::find(&self.bytes[self.pos + 2..], b"*/").is_some());
+        self.not_allowed(self.pos, "comments are", hint)
     }
 
     fn emit(&mut self, offset: usize, kind: EventKind<'a>) {
@@ -1135,13 +1154,7 @@ impl<'a> Parser<'a> {
                 b' ' | b'\t' | b'\r' | b'\n' => self.pos += 1,
                 b'/' => match self.bytes.get(self.pos + 1) {
                     Some(b'/' | b'*') if !self.dialect.comments() => {
-                        // Only a block comment can fail to end, and then JSONC rejects it too.
-                        // JSON Lines gets no hint, so it skips the search to the end of the text.
-                        let hint = !self.json_lines
-                            && (self.bytes[self.pos + 1] == b'/'
-                                || memchr::memmem::find(&self.bytes[self.pos + 2..], b"*/")
-                                    .is_some());
-                        return Err(self.not_allowed(self.pos, "comments are", hint));
+                        return Err(self.comment_not_allowed());
                     }
                     Some(b'/') => self.line_comment(),
                     Some(b'*') => self.block_comment()?,
