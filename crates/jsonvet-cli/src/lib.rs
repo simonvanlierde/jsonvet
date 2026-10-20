@@ -554,8 +554,9 @@ mod tests {
         assert!(out.ends_with("\n1 error in 1 of 2 files\n"), "{out}");
         // A file that cannot be read counts as a file with an error.
         let gone = dir.join("gone.json");
-        let (_, out) = run(true, &[&dup, &gone, &ok]);
-        assert!(out.ends_with("\n2 errors in 2 of 3 files\n"), "{out}");
+        // The clean file last, so counting it instead of a file with problems shows.
+        let (_, out) = run(true, &[&dup, &gone, &dup, &ok]);
+        assert!(out.ends_with("\n3 errors in 3 of 4 files\n"), "{out}");
         assert_eq!(run(true, &[&ok]).1, "no problems in 1 file\n");
         // No summary off a terminal, nor for no files.
         assert!(!run(false, &[&dup]).1.contains(" in 1 of 1 file"));
