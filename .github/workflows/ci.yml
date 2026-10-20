@@ -120,9 +120,9 @@ jobs:
 
   # Instruction counts for `check` under callgrind: crates/jsonvet/benches/check.rs. On a pull
   # request the job counts the base branch first (the merge commit's first parent), then the merge
-  # commit, and fails when a case's instructions (Ir) rise by more than 1%. Counts move by under
-  # 0.3% between runs. When the base has no benchmarks, or needs another gungraun-runner, its step
-  # fails without failing the job, and the second run saves its counts with nothing to compare.
+  # commit, and fails when a case's instructions (Ir) rise by more than 1% (CONTRIBUTING.md, Tests).
+  # When the base has no benchmarks, or needs another gungraun-runner, its step fails without
+  # failing the job, and the second run saves its counts with nothing to compare and a warning.
   bench:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -138,6 +138,7 @@ jobs:
       # Valgrind, and gungraun-runner at the gungraun version in Cargo.lock.
       - uses: gungraun/setup-gungraun@62591572561bb2f4ed2ae300b8a8bea99ea8ddaf # v1.1.3
       - name: Count the base branch
+        id: base
         if: github.event_name == 'pull_request'
         continue-on-error: true
         env:
@@ -151,7 +152,11 @@ jobs:
         env:
           GUNGRAUN_HOME: ${{ runner.temp }}/gungraun
           GUNGRAUN_CALLGRIND_LIMITS: ir=1%
+          BASE_OUTCOME: ${{ steps.base.outcome }}
         run: |
+          if [ "$BASE_OUTCOME" = failure ]; then
+            echo "::warning title=bench::The base branch could not be counted, so this run compares nothing."
+          fi
           git checkout --quiet "$GITHUB_SHA"
           status=0
           cargo bench --locked -p jsonvet --bench check -- --baseline=base | tee counts.txt || status=$?
