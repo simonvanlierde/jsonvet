@@ -19,6 +19,10 @@ The first run pulls four images and builds the drivers into `conformance/.work/`
 With the images present, a full run takes about 20 seconds, the builds included. `--work DIR` puts the build cache
 elsewhere, and `--only PARSER ...` reruns some parsers and keeps the other results.
 
+Go makes its module cache in `conformance/.work/go` read-only, and a worktree holds the
+json5-tests submodule, so `git worktree remove` fails on a worktree that ran this. Remove one
+with `chmod -R u+w <worktree> && rm -rf <worktree> && git worktree prune`.
+
 ## How third-party code is kept off the host
 
 Every parser except jsonvet is installed and run inside an official image (`node:22-slim`,
