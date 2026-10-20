@@ -566,8 +566,8 @@ dependencies = [
  "jsonschema",
  "jsonvet",
  "lexopt",
- "percent-encoding",
  "proptest",
+ "referencing",
  "serde_json",
  "toml",
 ]

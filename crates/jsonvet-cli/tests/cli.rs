@@ -1489,7 +1489,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         );
         assert_eq!(
             lines[101],
-            "l.jsonl:3:1: error[schema] ... and 1 more schema errors in this document"
+            "l.jsonl:3:1: error[schema] ... and more schema errors in this document"
         );
     }
 
@@ -1698,9 +1698,11 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         assert_eq!(code, 1);
         // At most 100 errors per document, then a count of the rest.
         assert_eq!(out.lines().count(), 101);
-        assert!(out.ends_with(
-            "r.json:1:1: error[schema] ... and 400 more schema errors in this document\n"
-        ));
+        assert!(
+            out.ends_with(
+                "r.json:1:1: error[schema] ... and more schema errors in this document\n"
+            )
+        );
         assert!(out.starts_with(
             "r.json:1:2: error[schema] this string could not be checked against the pattern \"^(a|a)*\\1b\": matching it takes more than 5000 backtracking steps (at $[0])\n"
         ), "{out}");
@@ -1815,14 +1817,14 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         assert_eq!(out.lines().count(), 101);
         assert!(
             out.ends_with(
-                "n.json:1:1: error[schema] ... and 51 more schema errors in this document\n"
+                "n.json:1:1: error[schema] ... and more schema errors in this document\n"
             ),
             "{out}"
         );
     }
 
     #[test]
-    fn past_100_errors_text_counts_the_rest_and_sarif_and_json_leave_the_count_out() {
+    fn past_100_errors_text_says_there_are_more_and_sarif_and_json_leave_that_out() {
         let numbers: Vec<String> = (0..101).map(|i| i.to_string()).collect();
         let dir = workdir(&[
             ("schema.json", r#"{"items": {"type": "string"}}"#),
@@ -1838,7 +1840,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         );
         assert_eq!(
             lines[100],
-            "n.json:1:1: error[schema] ... and 1 more schema errors in this document"
+            "n.json:1:1: error[schema] ... and more schema errors in this document"
         );
         let (code, out, _) = jsonvet_stderr(
             &dir,
@@ -1995,7 +1997,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
             );
             assert_eq!(
                 lines[100],
-                "many.json:1:1: error[schema] ... and 900 more schema errors in this document"
+                "many.json:1:1: error[schema] ... and more schema errors in this document"
             );
         }
     }
@@ -2269,9 +2271,182 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         );
         assert!(
             stdout.ends_with(
-                "many.json:1:1: error[schema] ... and 999900 more schema errors in this document\n"
+                "many.json:1:1: error[schema] ... and more schema errors in this document\n"
             ),
             "{stdout}"
+        );
+    }
+
+    /// `$defs` `l0` to `l{levels}`, each an `anyOf` of two `$ref`s to the next, ending in
+    /// `last`: jsonschema checks `last` 2^levels times for one value.
+    fn doubling(levels: usize, last: &str) -> String {
+        let defs: Vec<String> = (0..levels)
+            .map(|i| {
+                let next = format!("{{\"$ref\": \"#/$defs/l{}\"}}", i + 1);
+                format!("\"l{i}\": {{\"anyOf\": [{next}, {next}]}}")
+            })
+            .collect();
+        format!("{}, \"l{levels}\": {last}", defs.join(", "))
+    }
+
+    /// Run jsonvet under `ulimit -v` (in KB) on `file` with `--schema schema.json`.
+    #[cfg(target_os = "linux")]
+    fn capped(dir: &Path, kilobytes: usize, file: &str) -> (Option<i32>, String) {
+        let out = Command::new("sh")
+            .arg("-c")
+            .arg(format!(
+                "ulimit -v {kilobytes} && exec \"$0\" --schema schema.json {file}"
+            ))
+            .arg(env!("CARGO_BIN_EXE_jsonvet"))
+            .current_dir(dir)
+            .env_remove("GITHUB_ACTIONS")
+            .output()
+            .expect("run jsonvet");
+        (
+            out.status.code(),
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+        )
+    }
+
+    /// `ulimit -v` caps the address space on Linux only; macOS accepts it and ignores it.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn errors_that_hold_much_of_the_schema_are_dropped_as_they_come() {
+        // Each `anyOf` error holds every branch's errors, 16,384 here, and each `enum` error a
+        // copy of 20,000 numbers: 40 such errors took 760 MB, and 2,000 took 1.3 GB.
+        let enum_ = (1..=20_000).map(|n| n.to_string()).collect::<Vec<_>>();
+        let members: Vec<String> = (0..2_000).map(|i| format!("\"k{i}\": 0")).collect();
+        let cases = [
+            (
+                format!(
+                    "{{\"$defs\": {{{}}}, \"items\": {{\"$ref\": \"#/$defs/l0\"}}}}",
+                    doubling(14, "{\"type\": \"string\"}")
+                ),
+                format!("[{}]", vec!["0"; 40].join(",")),
+                40,
+            ),
+            (
+                format!(
+                    "{{\"additionalProperties\": {{\"enum\": [{}]}}}}",
+                    enum_.join(",")
+                ),
+                format!("{{{}}}", members.join(",")),
+                101,
+            ),
+        ];
+        for (schema, text, lines) in cases {
+            let dir = workdir(&[("schema.json", &schema), ("many.json", &text)]);
+            let (code, out) = capped(&dir, 300_000, "many.json");
+            assert_eq!(code, Some(1), "{out}");
+            assert_eq!(out.lines().count(), lines, "{out}");
+        }
+    }
+
+    #[test]
+    fn errors_past_the_first_100_are_not_looked_for() {
+        // jsonschema built every error of the 5,000 elements only to count them: 56.7 s with 14
+        // levels.
+        let schema = format!(
+            "{{\"$defs\": {{{}}}, \"items\": {{\"$ref\": \"#/$defs/l0\"}}}}",
+            doubling(10, "{\"type\": \"string\"}")
+        );
+        let text = format!("[{}]", vec!["0"; 5_000].join(","));
+        let dir = workdir(&[("schema.json", &schema), ("many.json", &text)]);
+        let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "schema.json", "many.json"]);
+        assert_eq!(code, 1);
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines.len(), 101);
+        assert_eq!(
+            lines[100],
+            "many.json:1:1: error[schema] ... and more schema errors in this document"
+        );
+    }
+
+    #[test]
+    fn nested_unevaluated_properties_are_a_usage_error() {
+        // Each level checks the one below it twice: 27 levels took 22.6 s on `{"c": 1}`.
+        let mut level = "{\"properties\": {\"a\": true}}".to_owned();
+        for _ in 0..22 {
+            level = format!(
+                "{{\"anyOf\": [{level}, {{\"properties\": {{\"b\": true}}}}], \"unevaluatedProperties\": false}}"
+            );
+        }
+        let schema = format!(
+            "{{\"$schema\": \"https://json-schema.org/draft/2020-12/schema\", \"allOf\": [{level}]}}"
+        );
+        let dir = workdir(&[("schema.json", &schema), ("c.json", "{\"c\": 1}")]);
+        let (code, out, err) = jsonvet_stderr(&dir, &["--schema", "schema.json", "c.json"]);
+        assert_eq!((code, out.as_str()), (2, ""));
+        assert!(
+            err.ends_with(
+                "this `unevaluatedProperties` takes the schema past 5000000 objects and arrays, \
+                 counting twice the schemas beside it that jsonschema checks again for it\n"
+            ),
+            "{err}"
+        );
+        // A `$ref` from `properties` is checked once, so a chain of them is fine.
+        let defs: Vec<String> = (0..40)
+            .map(|i| {
+                format!(
+                    "\"d{i}\": {{\"properties\": {{\"a\": {{\"$ref\": \"#/$defs/d{}\"}}}}, \"unevaluatedProperties\": false}}",
+                    i + 1
+                )
+            })
+            .collect();
+        let schema = format!(
+            "{{\"$defs\": {{{}, \"d40\": {{}}}}, \"$ref\": \"#/$defs/d0\"}}",
+            defs.join(", ")
+        );
+        let dir = workdir(&[("schema.json", &schema), ("c.json", "{\"c\": 1}")]);
+        let (code, _, err) = jsonvet_stderr(&dir, &["--schema", "schema.json", "c.json"]);
+        assert_eq!(code, 1, "{err}");
+    }
+
+    #[test]
+    fn a_ref_resolves_against_its_own_base_not_a_like_named_id_elsewhere() {
+        // `b/l{i}` doubles at each level; `a/l{i}`, with the same relative `$id`s, is small.
+        let (levels, decoys, chain) = (21, &mut Vec::new(), &mut Vec::new());
+        for i in 0..=levels {
+            decoys.push(format!(
+                "\"t{i}\": {{\"$id\": \"l{i}\", \"type\": \"string\"}}"
+            ));
+            chain.push(if i == levels {
+                format!("\"c{i}\": {{\"$id\": \"l{i}\", \"type\": \"string\"}}")
+            } else {
+                let next = format!("{{\"$ref\": \"l{}\"}}", i + 1);
+                format!("\"c{i}\": {{\"$id\": \"l{i}\", \"anyOf\": [{next}, {next}]}}")
+            });
+        }
+        let schema = format!(
+            "{{\"$id\": \"https://x.example/root\", \"$defs\": {{\n\
+             \"A\": {{\"$id\": \"https://x.example/a/\", \"$defs\": {{{}}}}},\n\
+             \"B\": {{\"$id\": \"https://x.example/b/\", \"$defs\": {{{}}}}}}},\n\
+             \"items\": {{\"$ref\": \"https://x.example/b/l0\"}}}}",
+            decoys.join(", "),
+            chain.join(", ")
+        );
+        let dir = workdir(&[
+            ("schema.json", &schema),
+            ("one.json", "[0]"),
+            (
+                "unresolved.json",
+                "{\n  \"$defs\": {\"a\": {\"$ref\": \"#/$defs/none\"}}\n}",
+            ),
+        ]);
+        let (code, out, err) = jsonvet_stderr(&dir, &["--schema", "schema.json", "one.json"]);
+        assert_eq!((code, out.as_str()), (2, ""));
+        assert!(
+            err.starts_with("jsonvet: the schema schema.json:3:"),
+            "{err}"
+        );
+        assert!(err.contains("takes the schema past 5000000"), "{err}");
+        // A `$ref` that points at nothing is an error at that `$ref`, even where nothing uses it.
+        let (code, out, err) = jsonvet_stderr(&dir, &["--schema", "unresolved.json", "one.json"]);
+        assert_eq!((code, out.as_str()), (2, ""));
+        assert_eq!(
+            err,
+            "jsonvet: the schema unresolved.json:2:19: this `$ref` cannot be resolved: Pointer \
+             '/$defs/none' does not exist\n"
         );
     }
 }

@@ -1,5 +1,6 @@
 //! Paths that were once quadratic stay linear. Each test counts the instructions for an input of
-//! size n and of size 10n: linear work gives a ratio near 10, quadratic work near 100. Valgrind
+//! size n and of size 10n: linear work gives a ratio near 10, quadratic work near 100. Work
+//! that stops growing past a cap gives a ratio near 1. Valgrind
 //! counts them, because wall-clock time swings too much on a shared machine, so the tests are
 //! ignored by default. `just scaling` runs them, as ci.yml's `scaling` job does.
 
@@ -70,6 +71,27 @@ fn assert_linear(n: usize, run: impl Fn(usize) -> u64) {
     );
 }
 
+/// Count the instructions of `run` at `n` and `10 * n`, and fail unless they stay within twice
+/// each other: the work does not grow with the input past `n`.
+fn assert_flat(n: usize, run: impl Fn(usize) -> u64) {
+    let (small, large) = (run(n), run(10 * n));
+    eprintln!("n = {n}: {small} instructions; 10n: {large}");
+    assert!(
+        large < 2 * small,
+        "10 times the input took {large} instructions, against {small}"
+    );
+}
+
+/// Run jsonvet with `--schema schema.json` on `text` as `file`.
+fn with_schema(name: &str, schema: &str, text: &str) -> u64 {
+    let dir = workdir(name, &[("schema.json", schema), ("file.json", text)]);
+    instructions(
+        Path::new(env!("CARGO_BIN_EXE_jsonvet")),
+        &["--schema", "schema.json", "file.json"],
+        &dir,
+    )
+}
+
 /// Run jsonvet on `text` as `file`, with `args` before it.
 fn jsonvet(file: &str, text: &str, args: &[&str]) -> u64 {
     let dir = workdir(
@@ -116,6 +138,45 @@ fn schema_on_keys_with_lone_surrogates() {
             &format!("{{{}}}", keys.join(",")),
             &["--schema", "schema.json"],
         )
+    });
+}
+
+#[test]
+#[ignore = "needs valgrind: just scaling"]
+fn schema_errors_past_the_first_100() {
+    // Once 100 errors are kept, jsonschema is not asked for the rest, which each cost 2^10 checks.
+    let defs: Vec<String> = (0..10)
+        .map(|i| {
+            let next = format!("{{\"$ref\": \"#/$defs/l{}\"}}", i + 1);
+            format!("\"l{i}\": {{\"anyOf\": [{next}, {next}]}}")
+        })
+        .collect();
+    let schema = format!(
+        "{{\"$defs\": {{{}, \"l10\": {{\"type\": \"string\"}}}}, \"items\": {{\"$ref\": \"#/$defs/l0\"}}}}",
+        defs.join(", ")
+    );
+    assert_flat(200, |n| {
+        with_schema("errors", &schema, &format!("[{}]", vec!["0"; n].join(",")))
+    });
+}
+
+#[test]
+#[ignore = "needs valgrind: just scaling"]
+fn schema_refs_to_many_ids() {
+    // Each `$ref` is looked up by its absolute URI, not compared with every `$id`.
+    assert_linear(300, |n| {
+        let defs: Vec<String> = (0..n)
+            .map(|i| format!("\"d{i}\": {{\"$id\": \"https://x/u{i}\", \"type\": \"object\"}}"))
+            .collect();
+        let refs: Vec<String> = (0..n)
+            .map(|i| format!("{{\"$ref\": \"https://x/u{}\"}}", n - 1 - i))
+            .collect();
+        let schema = format!(
+            "{{\"$defs\": {{{}}}, \"allOf\": [{}]}}",
+            defs.join(", "),
+            refs.join(", ")
+        );
+        with_schema("ids", &schema, "{}")
     });
 }
 
