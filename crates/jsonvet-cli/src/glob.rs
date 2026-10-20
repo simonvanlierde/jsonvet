@@ -1,30 +1,57 @@
 //! File patterns, matched as check-json5 1.4 matched them: a pattern without `/` matches the
 //! file name at any depth, one with `/` matches the whole path, and `*` also matches `/`.
 
-/// Whether `pattern` matches `path`.
-pub(crate) fn matches(pattern: &str, path: &str) -> bool {
-    let path = normalize(path);
-    let target = if pattern.contains('/') {
-        path.as_str()
-    } else {
-        path.rsplit('/').next().unwrap_or_default()
-    };
-    let pattern: Vec<char> = pattern.chars().collect();
-    let target: Vec<char> = target.chars().collect();
-    wildcard(&pattern, &target)
+/// A pattern, split into characters once: a walk matches each one against every entry.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Glob {
+    chars: Vec<char>,
+    /// Whether it has a `/`, so it matches the whole path rather than the file name.
+    whole: bool,
 }
 
-/// `path` relative to the directory `base`, both absolute, or `None` when `path` is not
-/// inside `base`.
-pub(crate) fn relative(path: &str, base: &str) -> Option<String> {
-    let (path, base) = (normalize(path), normalize(base));
-    let rest = path.strip_prefix(base.trim_end_matches('/'))?;
-    rest.strip_prefix('/').map(str::to_owned)
+impl Glob {
+    pub(crate) fn new(pattern: &str) -> Glob {
+        Glob {
+            chars: pattern.chars().collect(),
+            whole: pattern.contains('/'),
+        }
+    }
+
+    pub(crate) fn matches(&self, path: &Target) -> bool {
+        let target = if self.whole {
+            &path.chars
+        } else {
+            &path.chars[path.name..]
+        };
+        wildcard(&self.chars, target)
+    }
+}
+
+/// A path, normalized and split into characters once, for matching against many globs.
+pub(crate) struct Target {
+    chars: Vec<char>,
+    /// Where the file name starts in `chars`.
+    name: usize,
+}
+
+impl Target {
+    pub(crate) fn new(path: &str) -> Target {
+        let chars: Vec<char> = normalize(path).chars().collect();
+        let name = chars.iter().rposition(|&c| c == '/').map_or(0, |i| i + 1);
+        Target { chars, name }
+    }
+}
+
+/// `path` relative to the directory `base`, both absolute and normalized, or `None` when `path`
+/// is not inside `base`.
+pub(crate) fn relative<'p>(path: &'p str, base: &str) -> Option<&'p str> {
+    path.strip_prefix(base.trim_end_matches('/'))?
+        .strip_prefix('/')
 }
 
 /// Collapse `.`, `..` and repeated separators, and use `/` throughout, as Python's
 /// `os.path.normpath` does, so `./sub/a.json` matches `sub/*.json`.
-fn normalize(path: &str) -> String {
+pub(crate) fn normalize(path: &str) -> String {
     let path = path.replace('\\', "/");
     let absolute = path.starts_with('/');
     let mut parts: Vec<&str> = Vec::new();
@@ -123,7 +150,16 @@ fn in_class(class: &[char], c: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{matches, normalize, relative, wildcard};
+    use super::{Glob, Target, normalize, wildcard};
+
+    fn matches(pattern: &str, path: &str) -> bool {
+        Glob::new(pattern).matches(&Target::new(path))
+    }
+
+    /// `relative` on the paths as the settings pass them: normalized.
+    fn relative(path: &str, base: &str) -> Option<String> {
+        super::relative(&normalize(path), &normalize(base)).map(str::to_owned)
+    }
 
     #[test]
     fn patterns_match_as_check_json5_matched_them() {

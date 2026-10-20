@@ -40,8 +40,13 @@ exclude_re = [
   # No byte matches two of the per-byte tests, so XOR and OR agree there; the OR with `stop` is
   # tested.
   "parse.rs:\\d+:(37|52|65): replace \\| with \\^ in plain_run",
+  # Speed only: `std::path::absolute` finds the working directory itself, once per path.
+  "settings.rs:.* replace match guard .* with false in absolute",
   # Speed only: a chunk that ends after every file still prints the same.
-  "lib.rs:.* replace >= with < in run_with",
+  "lib.rs:.* replace >= with < in read_chunk",
+  # Memory only: whether a `--schema` chunk is cut by file sizes, which prints the same.
+  "lib.rs:.* replace match guard !shares.is_empty\\(\\) with false in run_with",
+  "lib.rs:.* replace - with (\\+|/) in run_with",
   # Speed only: how many threads a split JSON Lines file uses, which gives the same report.
   "lib.rs:.* replace / with (%|\\*) in run_with",
   # Any other false schema is reported at its own value, which the comparison after the guard

@@ -12,17 +12,18 @@ use toml::Table;
 use toml::de::{DeTable, DeValue};
 
 use crate::args::ConfigSource;
-use crate::glob;
+use crate::glob::{self, Glob, Target};
 use crate::output::printable;
 
 /// A dialect for files matching a pattern, or for every file when the pattern is `None`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DialectPattern {
-    pub(crate) files: Option<String>,
+    pub(crate) files: Option<Glob>,
     /// `None` means `auto`: the default for the file's extension.
     pub(crate) dialect: Option<Dialect>,
-    /// The absolute directory of the config file the pattern comes from, which `files` is
-    /// relative to. `None` for the command line, whose patterns match the path as given.
+    /// The absolute directory of the config file the pattern comes from, normalized, which
+    /// `files` is relative to. `None` for the command line, whose patterns match the path as
+    /// given.
     pub(crate) base: Option<String>,
 }
 
@@ -30,7 +31,7 @@ impl DialectPattern {
     /// Parse `DIALECT` or `DIALECT:GLOB`, where `DIALECT` may be `auto`.
     pub(crate) fn parse(value: &str) -> Result<Self, String> {
         let (name, files) = match value.split_once(':') {
-            Some((name, files)) => (name, Some(files.to_owned())),
+            Some((name, files)) => (name, Some(Glob::new(files))),
             None => (value, None),
         };
         Ok(DialectPattern {
@@ -77,8 +78,8 @@ pub(crate) struct Settings {
     pub(crate) dialects: Vec<DialectPattern>,
     pub(crate) rules: Vec<(Rule, Severity)>,
     /// Patterns for paths a directory walk skips, each with the absolute directory of the
-    /// config file it comes from, which it is relative to.
-    pub(crate) exclude: Vec<(String, String)>,
+    /// config file it comes from, normalized, which it is relative to.
+    pub(crate) exclude: Vec<(Glob, String)>,
 }
 
 impl Settings {
@@ -92,28 +93,29 @@ impl Settings {
 
     /// Whether a directory walk skips `path`, a file or a folder.
     pub(crate) fn excluded(&self, path: &Path) -> bool {
-        let absolute = std::cell::OnceCell::new();
+        let path = path.to_string_lossy();
+        let mut located = Located::new(&path);
         self.exclude
             .iter()
-            .any(|(pattern, base)| in_base(pattern, base, &path.to_string_lossy(), &absolute))
+            .any(|(glob, base)| located.in_base(base).is_some_and(|path| glob.matches(path)))
     }
 
     /// The checking config for one file: the last matching dialect pattern wins.
     pub(crate) fn config_for(&self, path: &str) -> Config {
         let auto = || Dialect::for_path(Path::new(path)).unwrap_or(Dialect::Json5);
-        // Found only when a config file's pattern needs it: it asks the system for the working
-        // directory each time.
-        let absolute = std::cell::OnceCell::new();
-        let matches = |rule: &DialectPattern| match (&rule.files, &rule.base) {
-            (None, _) => true,
-            (Some(pattern), None) => glob::matches(pattern, path),
-            (Some(pattern), Some(base)) => in_base(pattern, base, path, &absolute),
-        };
+        let given = std::cell::OnceCell::new();
+        let mut located = Located::new(path);
         let dialect = self
             .dialects
             .iter()
             .rev()
-            .find(|rule| matches(rule))
+            .find(|rule| match (&rule.files, &rule.base) {
+                (None, _) => true,
+                (Some(glob), None) => glob.matches(given.get_or_init(|| Target::new(path))),
+                (Some(glob), Some(base)) => {
+                    located.in_base(base).is_some_and(|path| glob.matches(path))
+                }
+            })
             .and_then(|rule| rule.dialect)
             .unwrap_or_else(auto);
         self.config(dialect)
@@ -129,21 +131,58 @@ impl Settings {
     }
 }
 
-/// Whether `pattern` matches `path` relative to the directory `base`. A path outside `base`
-/// matches none of its patterns. `absolute` caches `path` made absolute, which asks the system
-/// for the working directory.
-fn in_base(
-    pattern: &str,
-    base: &str,
-    path: &str,
-    absolute: &std::cell::OnceCell<Option<PathBuf>>,
-) -> bool {
+/// A path, made absolute and relative to a config file's folder only when a pattern needs it,
+/// and once for each folder rather than once for each pattern: a walk matches every pattern
+/// against every entry.
+struct Located<'p> {
+    path: &'p str,
+    /// The path made absolute and normalized, once a pattern needs it.
+    absolute: std::cell::OnceCell<Option<String>>,
+    /// The last folder asked for, and the path relative to it, if inside it.
+    relative: Option<(&'p str, Option<Target>)>,
+}
+
+impl<'p> Located<'p> {
+    fn new(path: &'p str) -> Located<'p> {
+        Located {
+            path,
+            absolute: std::cell::OnceCell::new(),
+            relative: None,
+        }
+    }
+
+    /// The path relative to the normalized folder `base`, or `None` when it is outside it,
+    /// which matches none of its patterns.
+    fn in_base(&mut self, base: &'p str) -> Option<&Target> {
+        if self.relative.as_ref().is_none_or(|(last, _)| *last != base) {
+            let absolute = self.absolute.get_or_init(|| absolute(self.path));
+            let relative = absolute
+                .as_deref()
+                .and_then(|absolute| glob::relative(absolute, base))
+                .map(Target::new);
+            self.relative = Some((base, relative));
+        }
+        self.relative
+            .as_ref()
+            .and_then(|(_, relative)| relative.as_ref())
+    }
+}
+
+/// `path` made absolute and normalized, or `None` for an empty path, as `std::path::absolute`
+/// gives. The working directory is asked for once rather than for each path: jsonvet never
+/// changes it.
+fn absolute(path: &str) -> Option<String> {
+    static CWD: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    let path = Path::new(path);
+    let absolute = match CWD.get_or_init(|| std::env::current_dir().ok()) {
+        Some(cwd) if path.is_relative() && !path.as_os_str().is_empty() => {
+            std::path::absolute(cwd.join(path))
+        }
+        _ => std::path::absolute(path),
+    };
     absolute
-        .get_or_init(|| std::path::absolute(path).ok())
-        .as_deref()
-        .map(Path::to_string_lossy)
-        .and_then(|absolute| glob::relative(&absolute, base))
-        .is_some_and(|relative| glob::matches(pattern, &relative))
+        .ok()
+        .map(|absolute| glob::normalize(&absolute.to_string_lossy()))
 }
 
 /// The settings for each file: the nearest config file above it, or the one `--config` names,
@@ -309,7 +348,9 @@ pub(crate) fn load(path: &Path) -> Result<Settings, String> {
         table
     };
     let base = std::path::absolute(path).map_err(|e| in_file(&e))?;
-    let base = base.parent().map(|dir| dir.to_string_lossy().into_owned());
+    let base = base
+        .parent()
+        .map(|dir| glob::normalize(&dir.to_string_lossy()));
     let mut settings = Settings::default();
     for (key, value) in file {
         let here = value.span().start;
@@ -345,7 +386,7 @@ pub(crate) fn load(path: &Path) -> Result<Settings, String> {
                     })?;
                     // Without a base there is nothing for the pattern to be relative to.
                     if let Some(base) = &base {
-                        settings.exclude.push((text.to_owned(), base.clone()));
+                        settings.exclude.push((Glob::new(text), base.clone()));
                     }
                 }
             }
@@ -397,8 +438,37 @@ fn dialect_entry(entry: &Spanned<DeValue<'_>>) -> Result<DialectPattern, (usize,
     let (_, files) = string("files")?;
     let (dialect_at, dialect) = string("dialect")?;
     Ok(DialectPattern {
-        files: Some(files.to_owned()),
+        files: Some(Glob::new(files)),
         dialect: parse_dialect(dialect).map_err(|e| (dialect_at, e))?,
         base: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Glob, Settings, absolute};
+
+    #[test]
+    fn each_pattern_matches_relative_to_its_own_base() {
+        let settings = Settings {
+            exclude: vec![
+                (Glob::new("a.json"), "/r1".to_owned()),
+                (Glob::new("b.json"), "/r2".to_owned()),
+            ],
+            ..Settings::default()
+        };
+        assert!(settings.excluded("/r1/a.json".as_ref()));
+        assert!(settings.excluded("/r2/b.json".as_ref()));
+        assert!(!settings.excluded("/r1/b.json".as_ref()));
+    }
+
+    #[test]
+    fn paths_are_made_absolute_from_the_working_directory() {
+        let cwd = std::env::current_dir().expect("a working directory");
+        let cwd = cwd.to_string_lossy().replace('\\', "/");
+        assert_eq!(absolute("a/./b.json"), Some(format!("{cwd}/a/b.json")));
+        assert_eq!(absolute(""), None);
+        #[cfg(unix)]
+        assert_eq!(absolute("/x/../y.json").as_deref(), Some("/y.json"));
+    }
 }
