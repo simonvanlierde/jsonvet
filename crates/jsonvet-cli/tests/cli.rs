@@ -902,7 +902,11 @@ fn jsonvet_stdin(dir: &Path, args: &[&str], input: &str) -> (i32, String, String
         .spawn()
         .expect("run jsonvet");
     let mut stdin = child.stdin.take().expect("a stdin pipe");
-    stdin.write_all(input.as_bytes()).expect("write stdin");
+    // A run that never reads standard input may exit before the write, which then fails with a
+    // broken pipe; the exit code and output still say what happened.
+    if let Err(e) = stdin.write_all(input.as_bytes()) {
+        assert_eq!(e.kind(), std::io::ErrorKind::BrokenPipe, "write stdin: {e}");
+    }
     drop(stdin);
     let out = child.wait_with_output().expect("wait for jsonvet");
     (
@@ -2059,6 +2063,11 @@ mod directories {
         format!("{path}:1:10: error[duplicate-key] duplicate key $.a (first at 1:2)\n")
     }
 
+    /// `dup` for a path the walk found, which joins folder and file with the platform's separator.
+    fn walked(path: &str) -> String {
+        dup(&path.replace('/', std::path::MAIN_SEPARATOR_STR))
+    }
+
     #[test]
     fn a_directory_is_walked_in_sorted_order_for_known_file_types_only() {
         let dir = workdir(&[
@@ -2073,12 +2082,17 @@ mod directories {
             jsonvet(&dir, &["."]),
             (
                 1,
-                [dup("./a/y.json5"), dup("./a/z.jsonc"), dup("./b.json")].concat()
+                [
+                    walked("./a/y.json5"),
+                    walked("./a/z.jsonc"),
+                    walked("./b.json")
+                ]
+                .concat()
             )
         );
         assert_eq!(
             jsonvet(&dir, &["a"]),
-            (1, [dup("a/y.json5"), dup("a/z.jsonc")].concat())
+            (1, [walked("a/y.json5"), walked("a/z.jsonc")].concat())
         );
     }
 
@@ -2094,7 +2108,7 @@ mod directories {
             (".babelrc", DUP),
             ("kept.json", DUP),
         ]);
-        assert_eq!(jsonvet(&dir, &["."]), (1, dup("./kept.json")));
+        assert_eq!(jsonvet(&dir, &["."]), (1, walked("./kept.json")));
         assert_eq!(
             jsonvet(&dir, &["skip.json", "build/out.json", ".babelrc"]),
             (
@@ -2120,13 +2134,19 @@ mod directories {
         ]);
         assert_eq!(
             jsonvet(&dir, &["."]),
-            (1, [dup("./data/a.json"), dup("./sub/kept.json")].concat())
+            (
+                1,
+                [walked("./data/a.json"), walked("./sub/kept.json")].concat()
+            )
         );
         // Patterns are relative to the config file, wherever the run starts.
-        assert_eq!(jsonvet(&dir.join("sub"), &["."]), (1, dup("./kept.json")));
+        assert_eq!(
+            jsonvet(&dir.join("sub"), &["."]),
+            (1, walked("./kept.json"))
+        );
         assert_eq!(jsonvet(&dir, &["vendor/x.json"]), (1, dup("vendor/x.json")));
         // A directory named on the command line is walked even when excluded.
-        assert_eq!(jsonvet(&dir, &["vendor"]), (1, dup("vendor/x.json")));
+        assert_eq!(jsonvet(&dir, &["vendor"]), (1, walked("vendor/x.json")));
     }
 
     #[test]
@@ -2158,8 +2178,8 @@ mod directories {
                 1,
                 [
                     dup("top.json"),
-                    dup("d/a.json"),
-                    dup("d/b.json"),
+                    walked("d/a.json"),
+                    walked("d/b.json"),
                     dup("top.json")
                 ]
                 .concat()
