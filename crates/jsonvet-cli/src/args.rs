@@ -160,27 +160,28 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
             Long("stdin-filename") => {
                 stdin_filename = Some(parser.value().map_err(|e| e.to_string())?);
             }
-            Value(file) => files.push(file),
             // pre-commit puts file names after the options with no `--`, so an existing file
             // named like `-x.json`, `-h.json` or `--y.json` is a file, not an option.
-            Short(c) => {
-                let rest = rest(&mut parser);
-                let file = match (c, rest.is_empty()) {
-                    ('h', true) => return Ok(Command::Help),
-                    ('V', true) => return Ok(Command::Version),
-                    _ => joined(&format!("-{c}"), "", &rest),
+            arg => {
+                let (mut file, separator) = match arg {
+                    Short(c) => (OsString::from(format!("-{c}")), ""),
+                    Long(name) => (OsString::from(format!("--{name}")), "="),
+                    Value(file) => {
+                        files.push(file);
+                        continue;
+                    }
                 };
-                files.push(on_disk(file)?);
-            }
-            Long(name) => {
-                let name = name.to_owned();
                 let rest = rest(&mut parser);
-                let file = match (name.as_str(), rest.is_empty()) {
-                    ("help", true) => return Ok(Command::Help),
-                    ("version", true) => return Ok(Command::Version),
-                    (_, true) => format!("--{name}").into(),
-                    _ => joined(&format!("--{name}"), "=", &rest),
-                };
+                if rest.is_empty() {
+                    match file.to_str() {
+                        Some("-h" | "--help") => return Ok(Command::Help),
+                        Some("-V" | "--version") => return Ok(Command::Version),
+                        _ => {}
+                    }
+                } else {
+                    file.push(separator);
+                    file.push(rest);
+                }
                 files.push(on_disk(file)?);
             }
         }
@@ -231,13 +232,6 @@ fn value(parser: &mut lexopt::Parser) -> Result<String, String> {
 /// `-dash.json`, or the value of `--name=value`.
 fn rest(parser: &mut lexopt::Parser) -> OsString {
     parser.optional_value().unwrap_or_default()
-}
-
-fn joined(option: &str, separator: &str, rest: &OsString) -> OsString {
-    let mut name = OsString::from(option);
-    name.push(separator);
-    name.push(rest);
-    name
 }
 
 #[cfg(test)]
