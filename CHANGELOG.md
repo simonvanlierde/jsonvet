@@ -14,8 +14,9 @@ version for a new option or output, the patch version for a fix.
   on Linux and macOS, or in `%APPDATA%` on Windows. It applies only when no project config file is
   found, and its globs are relative to the working directory. `--config` and `--no-config` skip it.
 - The Action checks the wheel's build provenance attestation with `gh attestation verify` before
-  installing it, for jsonvet 3.1.0 and later, and stops if the check fails. A new `verify` input
-  turns this off for GitHub Enterprise Server or runners without `gh`.
+  installing it, for jsonvet 3.1.0 and later, and stops if the check fails. On a runner without
+  `gh` it installs unchecked, with a notice. A new `verify` input turns the check off, as GitHub
+  Enterprise Server needs.
 - A folder as an argument checks the files under it with an extension or name jsonvet knows,
   in sorted order. The walk skips hidden files and what `.gitignore` and `.ignore` name, as
   ripgrep does. Files named on the command line are checked as before. Before, a folder was

@@ -126,10 +126,15 @@ for pattern in sys.argv[1:]:
 
 # Checks the build provenance attestation of a downloaded jsonvet wheel: it must come from this
 # repository's release.yml, which runs only for a pushed tag. Releases before 3.1.0 have no
-# attestation, so they are installed with a notice. Arguments: the wheel, the `verify` input.
+# attestation, so they are installed with a notice, as on a runner without gh: only the runner's
+# owner can take gh away, not someone who controls the package index. Arguments: the wheel, the
+# `verify` input.
 verify_wheel() {
   local wheel="$1" verify="$2" version
-  version=$(basename "$wheel" | cut -d - -f 2)
+  # `jsonvet-<version>-<tags>.whl`, read without external commands.
+  version=${wheel##*/}
+  version=${version#*-}
+  version=${version%%-*}
   if [[ "$verify" == false ]]; then
     echo "::notice title=jsonvet action::verify is false, so the jsonvet $version wheel's attestation is not checked" >&2
     return 0
@@ -142,8 +147,8 @@ verify_wheel() {
     return 0
   fi
   if ! command -v gh > /dev/null; then
-    error "checking the wheel's attestation needs the GitHub CLI (gh), which hosted runners have; install it, or set verify: false"
-    return 2
+    echo "::notice title=jsonvet action::this runner has no GitHub CLI (gh), so the jsonvet $version wheel's attestation is not checked; install gh to check it" >&2
+    return 0
   fi
   if ! gh attestation verify "$wheel" --repo simonvanlierde/jsonvet \
     --signer-workflow simonvanlierde/jsonvet/.github/workflows/release.yml > /dev/null; then
