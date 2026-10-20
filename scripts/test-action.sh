@@ -85,6 +85,12 @@ want=$'nested/deep/b.jsonc\nnested/*'
 # Outside a git work tree the default list is an error, not an empty pass.
 (cd "$tmp/outside" && GIT_CEILING_DIRECTORIES="$tmp" list_files "" python3 2>/dev/null) && fail "default list passed outside a git work tree"
 
+# A file named `-` is passed as `./-`, or jsonvet reads standard input instead.
+mkdir "$tmp/dash"
+echo '{}' > "$tmp/dash/-"
+got=$(cd "$tmp/dash" && list_files "* -" python3 && printf '%s\n' "${files[@]}")
+[[ "$got" == "./-" ]] || fail "a file named -: got [$got], want [./-]"
+
 # Modules in the checked-out repository never run in place of Python's own.
 mkdir "$tmp/evil"
 for module in glob fnmatch json; do
@@ -113,6 +119,27 @@ write_sarif "$tmp/jsonvet" python3 "$tmp/out.sarif" -- a.json 2>/dev/null && fai
 write_sarif "$tmp/jsonvet" python3 "$tmp/no/such/dir/out.sarif" -- a.json 2>/dev/null && fail "an unwritable path passed"
 fake 'echo "{\"version\": \"2.1.0\", \"runs\": []}"'
 (cd "$tmp/evil" && write_sarif "$tmp/jsonvet" python3 "$tmp/out.sarif" -- a.json 2>/dev/null) || fail "SARIF check ran the repository's json.py"
+
+# The wheel's attestation: checked with gh from 3.1.0 on, unless verify is false.
+mkdir "$tmp/bin"
+# shellcheck disable=SC2016
+printf '#!/usr/bin/env bash\necho "$*" >> "%s/gh.log"\n[[ -z "$GH_FAIL" ]]\n' "$tmp" > "$tmp/bin/gh"
+chmod +x "$tmp/bin/gh"
+wheel="$tmp/jsonvet-3.1.0-py3-none-manylinux_2_17_x86_64.whl"
+PATH="$tmp/bin:$PATH" verify_wheel "$wheel" true 2>/dev/null || fail "an attested wheel was rejected"
+want="attestation verify $wheel --repo simonvanlierde/jsonvet --signer-workflow simonvanlierde/jsonvet/.github/workflows/release.yml"
+[[ "$(cat "$tmp/gh.log")" == "$want" ]] || fail "gh ran as [$(cat "$tmp/gh.log")], want [$want]"
+GH_FAIL=1 PATH="$tmp/bin:$PATH" verify_wheel "$wheel" true 2>/dev/null && fail "a wheel without a valid attestation passed"
+GH_FAIL=1 PATH="$tmp/bin:$PATH" verify_wheel "$wheel" false 2>/dev/null || fail "verify: false still checked"
+for version in 3.0.0 3.0.0.post1 2.1.0; do
+  GH_FAIL=1 PATH="$tmp/bin:$PATH" verify_wheel "$tmp/jsonvet-$version-py3-none-any.whl" true 2>/dev/null || fail "jsonvet $version, made before attestations, was rejected"
+done
+for version in 3.1.0rc1 3.10.0 4.0.0; do
+  GH_FAIL=1 PATH="$tmp/bin:$PATH" verify_wheel "$tmp/jsonvet-$version-py3-none-any.whl" true 2>/dev/null && fail "jsonvet $version passed unchecked"
+done
+verify_wheel "$wheel" yes 2>/dev/null && fail "verify accepted 'yes'"
+# Without gh the check fails rather than passing unchecked.
+PATH="$tmp/empty" "$BASH" -c ". '$here/action.sh'; verify_wheel '$wheel' true" 2>/dev/null && fail "a missing gh passed"
 
 if [[ $failures -gt 0 ]]; then
   echo "$failures failed"

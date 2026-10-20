@@ -56,7 +56,11 @@ list_files() {
     # shellcheck disable=SC2206
     local words=($input)
     set +f
-    while IFS= read -r -d '' file; do files+=("$file"); done < <(
+    # jsonvet reads a file named `-` as standard input, so it gets a `./`.
+    while IFS= read -r -d '' file; do
+      [[ "$file" == - ]] && file=./-
+      files+=("$file")
+    done < <(
       "$python" -I -c '
 import glob, os, sys
 from fnmatch import fnmatch
@@ -120,6 +124,34 @@ for pattern in sys.argv[1:]:
   fi
 }
 
+# Checks the build provenance attestation of a downloaded jsonvet wheel: it must come from this
+# repository's release.yml, which runs only for a pushed tag. Releases before 3.1.0 have no
+# attestation, so they are installed with a notice. Arguments: the wheel, the `verify` input.
+verify_wheel() {
+  local wheel="$1" verify="$2" version
+  version=$(basename "$wheel" | cut -d - -f 2)
+  if [[ "$verify" == false ]]; then
+    echo "::notice title=jsonvet action::verify is false, so the jsonvet $version wheel's attestation is not checked" >&2
+    return 0
+  elif [[ "$verify" != true ]]; then
+    error "verify must be true or false, not '$verify'"
+    return 2
+  fi
+  if [[ "$version" =~ ^[0-2]\. || "$version" =~ ^3\.0\. ]]; then
+    echo "::notice title=jsonvet action::jsonvet $version has no attestation to check: releases before 3.1.0 have none" >&2
+    return 0
+  fi
+  if ! command -v gh > /dev/null; then
+    error "checking the wheel's attestation needs the GitHub CLI (gh), which hosted runners have; install it, or set verify: false"
+    return 2
+  fi
+  if ! gh attestation verify "$wheel" --repo simonvanlierde/jsonvet \
+    --signer-workflow simonvanlierde/jsonvet/.github/workflows/release.yml > /dev/null; then
+    error "the jsonvet $version wheel from PyPI has no valid attestation from simonvanlierde/jsonvet's release workflow, so it was not installed; set verify: false only if you trust your package index"
+    return 2
+  fi
+}
+
 # Writes the SARIF file. Arguments: the jsonvet binary, the Python, the SARIF path, then the
 # jsonvet arguments. Exit 1 means problems found, but jsonvet before 3.0.0 has no `--format` and
 # takes it for a file name, and a path that cannot be written also gives 1, so check what landed.
@@ -157,7 +189,16 @@ main() {
   "$python" -I -m venv "$venv" || exit 2
   local bin="$venv/bin"
   [[ -d "$bin" ]] || bin="$venv/Scripts"
-  "$bin/python" -I -m pip install -q --disable-pip-version-check --only-binary jsonvet "jsonvet$spec" || exit 2
+  # Downloaded first, so the wheel's attestation is checked before it is installed.
+  # Forward slashes: a `\` in a Windows path would escape the next character in the glob.
+  local wheels="${RUNNER_TEMP//\\//}/jsonvet-wheel"
+  "$bin/python" -I -m pip download -q --disable-pip-version-check --no-deps --only-binary :all: \
+    -d "$wheels" "jsonvet$spec" || exit 2
+  local found=("$wheels"/jsonvet-*.whl)
+  verify_wheel "${found[0]}" "$VERIFY" || exit 2
+  # Only gh needs the token; jsonvet reads files from strangers.
+  unset GH_TOKEN
+  "$bin/python" -I -m pip install -q --disable-pip-version-check --no-deps --no-index "${found[0]}" || exit 2
   "$bin/jsonvet" --version
 
   set -f

@@ -1,0 +1,5 @@
+# Tests never read the user config of whoever runs them: jsonvet looks for
+# jsonvet/jsonvet.toml in these folders, which do not exist. Also applies to `cargo run`.
+[env]
+XDG_CONFIG_HOME = { value = "target/no-user-config", relative = true, force = true }
+APPDATA = { value = "target/no-user-config", relative = true, force = true }
