@@ -2363,6 +2363,23 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
     }
 
     #[test]
+    fn every_key_and_string_too_costly_for_every_pattern_is_reported() {
+        let slow = format!("{}!", "a".repeat(30));
+        let schema = r#"{"patternProperties": {"^(a|a)*\\1b|!": true, "^(a|a)*\\1c|!": true}, "items": {"pattern": "^(a|a)*\\1b|!"}, "allOf": [{"pattern": "^(a|a)*\\1c|!"}]}"#;
+        let dir = workdir(&[
+            ("schema.json", schema),
+            ("k.json", &format!("{{\"{slow}\": 1, \"{slow}{slow}\": 2}}")),
+            ("s.json", &format!("\"{slow}\"")),
+        ]);
+        // Two patterns on two keys, then two on one string.
+        for (file, errors) in [("k.json", 4), ("s.json", 2)] {
+            let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "schema.json", file]);
+            assert_eq!(code, 1, "{file}");
+            assert_eq!(out.lines().count(), errors, "{file}: {out}");
+        }
+    }
+
+    #[test]
     fn nested_unevaluated_properties_are_a_usage_error() {
         // Each level checks the one below it twice: 27 levels took 22.6 s on `{"c": 1}`.
         let mut level = "{\"properties\": {\"a\": true}}".to_owned();

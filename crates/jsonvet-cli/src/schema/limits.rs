@@ -161,11 +161,9 @@ impl<'r> Reach<'r> {
             if key != "$ref" && !draft.is_known_keyword(key) {
                 continue;
             }
-            let lookup = match key {
-                "$recursiveRef" => resolver.lookup_recursive_ref(),
-                _ => resolver.lookup(reference),
-            };
-            let (target, target_resolver, target_draft) = match lookup {
+            // A `$recursiveRef` is `#`, and the dynamic scope it may move to is a schema on the
+            // way, which adds nothing.
+            let (target, target_resolver, target_draft) = match resolver.lookup(reference) {
                 Ok(target) => target.into_inner(),
                 Err(error) => {
                     let problem = Problem::Unresolved(error.to_string());
@@ -265,8 +263,14 @@ impl<'r> Reach<'r> {
                 .into_iter()
                 .find(|key| value.get(key).is_some() && draft.is_known_keyword(key))
             {
-                below.measure.size = below.measure.size.saturating_add(again);
-                if below.measure.size > MAX_SCHEMA_SIZE {
+                let again = Visit {
+                    measure: Measure {
+                        height: 0,
+                        size: again,
+                    },
+                    cut: usize::MAX,
+                };
+                if below.add(again) {
                     return Err(self.over_at(Some((value, key)), Problem::Twice));
                 }
             }
@@ -529,25 +533,47 @@ mod tests {
 
     #[test]
     fn enum_and_const_values_count_toward_the_size() {
-        // 18 levels, each with two `$ref`s to the next, reach the last 262,144 times: about 1.6
-        // million objects and arrays, and 6.8 million values with the 20 numbers at the end.
+        // 16 levels, each with two `$ref`s to the next, reach the last 65,536 times: about 0.4
+        // million objects and arrays, and 7 million values with the 100 numbers at the end.
         let fan_out = |last: Value| {
             let mut defs = serde_json::Map::new();
-            for i in 0..18 {
+            for i in 0..16 {
                 let next = format!("#/$defs/d{}", i + 1);
                 defs.insert(
                     format!("d{i}"),
                     json!({"anyOf": [{"$ref": next}, {"$ref": next}]}),
                 );
             }
-            defs.insert("d18".to_owned(), last);
+            defs.insert("d16".to_owned(), last);
             json!({"$defs": defs, "$ref": "#/$defs/d0"})
         };
-        let numbers: Vec<usize> = (0..20).collect();
+        let numbers: Vec<usize> = (0..100).collect();
         for last in [json!({"enum": numbers}), json!({"const": [numbers]})] {
             let big = over(&fan_out(last)).is_some_and(|over| matches!(over.problem, Problem::Big));
             assert!(big);
         }
         assert!(over(&fan_out(json!({"type": "string"}))).is_none());
+        // Values jsonschema does not compare with, as in `default`, count only their arrays.
+        assert!(over(&fan_out(json!({"default": numbers}))).is_none());
+    }
+
+    #[test]
+    fn a_reference_keyword_of_another_draft_is_not_followed() {
+        for (draft, key) in [
+            ("http://json-schema.org/draft-07/schema#", "$dynamicRef"),
+            ("http://json-schema.org/draft-07/schema#", "$recursiveRef"),
+            (
+                "https://json-schema.org/draft/2019-09/schema",
+                "$dynamicRef",
+            ),
+        ] {
+            let schema = json!({"$schema": draft, "properties": {"a": {key: "#/nowhere"}}});
+            assert!(over(&schema).is_none(), "{draft} {key}");
+        }
+        let schema = json!({"properties": {"a": {"$dynamicRef": "#/nowhere"}}});
+        let unresolved = over(&schema).is_some_and(|over| {
+            matches!(over.problem, Problem::Unresolved(_)) && over.path == ["properties", "a"]
+        });
+        assert!(unresolved);
     }
 }
