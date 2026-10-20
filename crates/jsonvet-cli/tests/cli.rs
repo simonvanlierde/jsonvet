@@ -54,7 +54,7 @@ fn reports_and_exit_codes() {
                 .to_owned()
         )
     );
-    let (code, out) = run(&["--strict", "*.json", "bom.json"]);
+    let (code, out) = run(&["--dialect=json:*.json", "bom.json"]);
     assert_eq!(
         (code, out.as_str()),
         (
@@ -63,17 +63,16 @@ fn reports_and_exit_codes() {
         )
     );
     assert_eq!(
-        run(&["--strict", "*.json", "--max-warnings", "0", "bom.json"]).0,
+        run(&["--dialect=json:*.json", "--max-warnings", "0", "bom.json"]).0,
         1
     );
     assert_eq!(
-        run(&["--strict", "*.json", "--max-warnings", "1", "bom.json"]).0,
+        run(&["--dialect=json:*.json", "--max-warnings", "1", "bom.json"]).0,
         0
     );
     assert_eq!(
         run(&[
-            "--strict",
-            "*.json",
+            "--dialect=json:*.json",
             "--ignore",
             "byte-order-mark",
             "bom.json"
@@ -90,7 +89,7 @@ fn github_annotations_follow_each_problem() {
     ]);
     let run = |actions: &str| {
         let out = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
-            .args(["--strict", "*.json", "bom.json", "dup.json"])
+            .args(["--dialect=json:*.json", "bom.json", "dup.json"])
             .current_dir(&dir)
             .env("GITHUB_ACTIONS", actions)
             .output()
@@ -386,7 +385,7 @@ fn a_file_name_that_is_not_utf8_is_opened_as_given() {
     for name in names {
         fs::write(dir.join(name), "[1,]").expect("write file");
     }
-    let args = [[OsStr::new("--strict"), OsStr::new("*")].as_slice(), &names].concat();
+    let args = [[OsStr::new("--dialect=json:*")].as_slice(), &names].concat();
     let (_, out, _) = run_jsonvet(&dir, &args, false);
     let found = ".json:1:4: error[syntax] trailing comma before `]` is not allowed in json; the jwcc and json5 dialects allow this\n";
     assert_eq!(
@@ -677,13 +676,12 @@ fn sarif_holds_every_problem_and_keeps_the_exit_codes() {
     insta::assert_snapshot!(serde_json::to_string_pretty(&sarif).expect("JSON"));
 
     // A warning passes unless --max-warnings says otherwise, as with text output.
-    let (code, sarif) = run(&["--format=sarif", "--strict", "*.json", "bom.json"]);
+    let (code, sarif) = run(&["--format=sarif", "--dialect=json:*.json", "bom.json"]);
     assert_eq!(code, 0);
     assert_eq!(sarif["runs"][0]["results"][0]["level"], "warning");
     let args = [
         "--format=sarif",
-        "--strict",
-        "*.json",
+        "--dialect=json:*.json",
         "--max-warnings",
         "0",
         "bom.json",
@@ -810,8 +808,7 @@ fn json_holds_every_problem_and_keeps_the_exit_codes() {
         "json",
         "--schema",
         "schema.json",
-        "--strict",
-        "*.json",
+        "--dialect=json:*.json",
         "bad.json",
         "dup.json",
         "bom.json",
@@ -834,13 +831,12 @@ fn json_holds_every_problem_and_keeps_the_exit_codes() {
     assert_eq!(json["diagnostics"].as_array().map(Vec::len), Some(5));
 
     // A warning passes unless --max-warnings says otherwise; no problems is an empty list.
-    let (code, out, _) = jsonvet_stderr(&dir, &["--format=json", "--strict", "*", "bom.json"]);
+    let (code, out, _) = jsonvet_stderr(&dir, &["--format=json", "--dialect=json:*", "bom.json"]);
     assert_eq!(code, 0);
     assert!(out.contains(r#""severity":"warning""#), "{out}");
     let args = [
         "--format=json",
-        "--strict",
-        "*",
+        "--dialect=json:*",
         "--max-warnings=0",
         "bom.json",
     ];
