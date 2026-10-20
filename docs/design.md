@@ -147,8 +147,8 @@ U+2028 to U+202E, U+2060 to U+2064, U+2066 to U+2069, U+FEFF, U+E0000 to U+E007F
 `\u202e`, past U+FFFF as a UTF-16 pair such as `\udb40\udc01`. SARIF and JSON strings escape the
 same characters the same way. A name that starts with `::`, after any white space, prints as `./::…`,
 and a `[` straight after `##` prints as `\u005b`. So no line looks like a GitHub workflow
-command, old (`##[command]`) or new (`::command`). An annotation's `file=` value holds the real
-name, percent-encoded as GitHub requires.
+command, old (`##[command]`) or new (`::command`). An annotation's `file=` value holds the name
+as the text line prints it, with those escapes, then percent-encoded as GitHub requires.
 
 ### `--schema`
 
@@ -215,8 +215,19 @@ jsonvet reads `jsonvet.toml`, or a `[tool.jsonvet]` table in `pyproject.toml`. F
 looks in the file's folder and its parents, and the nearest file replaces any above it, as in
 ruff, so a package in a monorepo keeps its own settings. Each folder is looked up once a run. The
 search stops at the first directory that has a `.git` entry, so it never uses a stray file above
-the repository. A pattern given with `--dialect` or `--strict`
+the repository. Without a `.git`, as after actions/checkout falls back to a tarball, it stops at
+the working directory, or for a file outside it at the file's own folder: on a shared runner,
+anyone can write a `jsonvet.toml` above the job's folder. Only when the search finds nothing does
+the user's own `jsonvet.toml` apply, as ruff's does. It sits in no project, so its globs are
+relative to the working directory, also as in ruff. A pattern given with `--dialect` or `--strict`
 matches the path as typed, as in 1.4. The [reference](usage.md#globs) has the glob rules.
+
+Config, schema and ignore files are read only when they are regular files (or symlinks to one) of
+a bounded size, as checked files are: a committed link to `/dev/zero` would fill memory and a FIFO
+would hang the run. A config file may still be a symlink. It can lead anywhere on the machine, so
+an error in one names the line and column only, never a key or value that could be a secret.
+The `ignore` crate reads `.gitignore` and `.ignore` to the end without such a check, so the walk
+looks at those two in each folder before it enters it and stops with an error at a bad one.
 
 ## Architecture
 

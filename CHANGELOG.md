@@ -10,6 +10,12 @@ version for a new option or output, the patch version for a fix.
 
 ### Added
 
+- A user config file, as ruff has: `jsonvet/jsonvet.toml` in `$XDG_CONFIG_HOME` (or `~/.config`)
+  on Linux and macOS, or in `%APPDATA%` on Windows. It applies only when no project config file is
+  found, and its globs are relative to the working directory. `--config` and `--no-config` skip it.
+- The Action checks the wheel's build provenance attestation with `gh attestation verify` before
+  installing it, for jsonvet 3.1.0 and later, and stops if the check fails. A new `verify` input
+  turns this off for GitHub Enterprise Server or runners without `gh`.
 - A folder as an argument checks the files under it with an extension or name jsonvet knows,
   in sorted order. The walk skips hidden files and what `.gitignore` and `.ignore` name, as
   ripgrep does. Files named on the command line are checked as before. Before, a folder was
@@ -61,6 +67,9 @@ version for a new option or output, the patch version for a fix.
 
 ### Changed
 
+- Without a `.git` anywhere above a file, as after actions/checkout's tarball fallback, the config
+  search stops at the working directory, or for a file outside it at the file's own folder. Before,
+  it climbed to `/`, so a `jsonvet.toml` above the job's folder on a shared runner applied.
 - Each file takes the nearest `jsonvet.toml` or `[tool.jsonvet]` above it, in its own folder or a
   parent up to the repository root, so each package in a monorepo can have its own settings.
   Before, one file was found from the working directory for all files. The nearest file replaces
@@ -86,6 +95,15 @@ version for a new option or output, the patch version for a fix.
 
 ### Fixed
 
+- A `pyproject.toml`, `--schema` file, `.gitignore` or `.ignore` that is a FIFO or a link to a
+  device such as `/dev/zero` no longer hangs jsonvet or fills memory. Such a `pyproject.toml` is
+  skipped, as such a `jsonvet.toml` already was; a schema or ignore file like that is a usage
+  error. Config and ignore files may hold up to 16 MB, a schema up to 64 MB.
+- An error in a config file that is a symlink names its line and column but no longer quotes the
+  key or value, which could be a secret from the file the link leads to.
+- The Action checks a file named `-` that a `files` glob matches. It passed it as `-`, so jsonvet
+  read standard input instead.
+- docs/design.md now says an annotation's `file=` holds the escaped name the text line shows.
 - `jsonvet -` no longer fails with `no such file`; it reads standard input.
 - `jsonvet --help` no longer says that `--schema` is missing from the PyPI wheels. It has been in
   them since 3.0.0.

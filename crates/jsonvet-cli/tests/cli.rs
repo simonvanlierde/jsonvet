@@ -2450,3 +2450,243 @@ mod directories {
         );
     }
 }
+
+/// Config, schema and ignore files: what is read, how far up, and what an error shows.
+mod file_reads {
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+
+    use super::workdir;
+
+    /// Run jsonvet in `dir` with `XDG_CONFIG_HOME` and `APPDATA` set to `user`, and kill it
+    /// after 10 seconds; return its exit code, stdout and stderr.
+    fn run(dir: &Path, user: &Path, args: &[&str]) -> (i32, String, String) {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
+            .args(args)
+            .current_dir(dir)
+            .env_remove("GITHUB_ACTIONS")
+            .env("XDG_CONFIG_HOME", user)
+            .env("APPDATA", user)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("run jsonvet");
+        let start = Instant::now();
+        while child.try_wait().expect("wait").is_none() {
+            if start.elapsed() > Duration::from_secs(10) {
+                let _ = child.kill();
+                panic!("jsonvet {args:?} still running after 10 seconds");
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let out = child.wait_with_output().expect("output");
+        (
+            out.status.code().expect("an exit code"),
+            String::from_utf8(out.stdout).expect("UTF-8 output"),
+            String::from_utf8(out.stderr).expect("UTF-8 errors"),
+        )
+    }
+
+    /// A folder for one test outside any repository, as a CI job without `.git` has.
+    fn bare(name: &str, files: &[(&str, &str)]) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("jsonvet-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        for (file, text) in files {
+            let path = dir.join(file);
+            fs::create_dir_all(path.parent().expect("a parent")).expect("create dirs");
+            fs::write(path, text).expect("write file");
+        }
+        assert!(
+            !dir.ancestors().any(|d| d.join(".git").exists()),
+            "{} is in a repository",
+            dir.display()
+        );
+        dir
+    }
+
+    #[cfg(unix)]
+    fn fifo(path: &Path) {
+        let made = Command::new("mkfifo")
+            .arg(path)
+            .status()
+            .expect("run mkfifo");
+        assert!(made.success());
+    }
+
+    const DUP: &str = "{\"a\": 1, \"a\": 2}";
+    const DUP_ERROR: &str = "x.json:1:10: error[duplicate-key] duplicate key $.a (first at 1:2)\n";
+
+    #[cfg(unix)]
+    #[test]
+    fn config_schema_and_ignore_files_that_are_not_regular_files_are_not_read() {
+        let dir = workdir(&[("a/x.json", DUP), ("b/x.json", DUP), ("c/x.json", DUP)]);
+        let user = dir.join("no-user");
+        // A FIFO stands for any file that is not a regular file: it hangs a read, as
+        // `/dev/zero` fills memory.
+        fifo(&dir.join("a/pyproject.toml"));
+        // Skipped as a missing file is, so the search goes on up.
+        assert_eq!(
+            run(&dir.join("a"), &user, &["x.json"]),
+            (1, DUP_ERROR.to_owned(), String::new())
+        );
+        fifo(&dir.join("schema.json"));
+        let (code, _, err) = run(&dir, &user, &["--schema", "schema.json", "a/x.json"]);
+        assert_eq!(
+            (code, err.as_str()),
+            (
+                2,
+                "jsonvet: cannot read the schema schema.json: not a regular file\n"
+            )
+        );
+        fifo(&dir.join("b/.gitignore"));
+        let (code, _, err) = run(&dir, &user, &["."]);
+        assert_eq!(
+            (code, err.as_str()),
+            (
+                2,
+                "jsonvet: cannot walk: ./b/.gitignore: not a regular file\n"
+            )
+        );
+        // The walk's own folder and those above it are read before any filter runs.
+        let (code, _, err) = run(&dir, &user, &["b"]);
+        assert_eq!(code, 2);
+        assert_eq!(
+            err,
+            "jsonvet: cannot walk: b/.gitignore: not a regular file\n"
+        );
+        fifo(&dir.join("c/.ignore"));
+        let (code, _, err) = run(&dir.join("c"), &user, &["."]);
+        assert_eq!(code, 2);
+        assert_eq!(err, "jsonvet: cannot walk: ./.ignore: not a regular file\n");
+        // A pyproject.toml that is not UTF-8 has no jsonvet table, so it is skipped too.
+        fs::write(dir.join("a/pyproject.toml.tmp"), b"\xff[tool.jsonvet]\n").expect("write");
+        fs::remove_file(dir.join("a/pyproject.toml")).expect("remove the FIFO");
+        fs::rename(
+            dir.join("a/pyproject.toml.tmp"),
+            dir.join("a/pyproject.toml"),
+        )
+        .expect("move");
+        assert_eq!(run(&dir.join("a"), &user, &["x.json"]).0, 1);
+        // Up to 16 MB is read, one byte more is too large: sparse files, so the test writes
+        // nothing.
+        let big = dir.join("big");
+        fs::create_dir_all(&big).expect("create dir");
+        let sized = |name: &str, len: u64| {
+            fs::File::create(big.join(name))
+                .and_then(|file| file.set_len(len))
+                .expect("a large file");
+        };
+        fs::write(big.join("x.json"), "{}").expect("write");
+        sized("pyproject.toml", 16 << 20);
+        sized(".gitignore", 16 << 20);
+        assert_eq!(run(&big, &user, &["x.json", "."]).0, 0);
+        sized(".gitignore", (16 << 20) + 1);
+        let (code, _, err) = run(&big, &user, &["."]);
+        assert_eq!(
+            (code, err.as_str()),
+            (2, "jsonvet: cannot walk: ./.gitignore: larger than 16 MB\n")
+        );
+        sized("pyproject.toml", (16 << 20) + 1);
+        let (code, _, err) = run(&big, &user, &["x.json"]);
+        assert_eq!(code, 2);
+        assert!(
+            err.ends_with("pyproject.toml: larger than 16 MB\n"),
+            "{err}"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_error_in_a_symlinked_config_file_shows_no_value_from_it() {
+        let dir = workdir(&[
+            ("secret.toml", "[rules]\nsyntax = \"ghp_SECRETTOKEN123\"\n"),
+            ("r/x.json", "{}"),
+        ]);
+        let user = dir.join("no-user");
+        std::os::unix::fs::symlink("../secret.toml", dir.join("r/jsonvet.toml")).expect("link");
+        let (code, _, err) = run(&dir.join("r"), &user, &["x.json"]);
+        assert_eq!(code, 2);
+        assert!(
+            err.ends_with(
+                "/r/jsonvet.toml:2:10: invalid setting, not shown because the file is a symlink\n"
+            ),
+            "{err}"
+        );
+        // The same file, not linked, says what is wrong.
+        let (_, _, err) = run(&dir, &user, &["--config", "secret.toml", "r/x.json"]);
+        assert!(err.contains("ghp_SECRETTOKEN123"), "{err}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn without_git_the_search_stops_at_the_working_directory() {
+        let off = "[rules]\nduplicate-key = \"off\"\n";
+        let dir = bare(
+            "no-git",
+            &[
+                ("jsonvet.toml", off),
+                ("job/x.json", DUP),
+                ("job/sub/x.json", DUP),
+                ("other/x.json", DUP),
+                ("other/sub/x.json", DUP),
+                ("own/jsonvet.toml", off),
+                ("own/x.json", DUP),
+            ],
+        );
+        let user = dir.join("no-user");
+        // A config file above the working directory never applies.
+        assert_eq!(run(&dir.join("job"), &user, &["x.json"]).0, 1);
+        assert_eq!(run(&dir.join("job"), &user, &["sub/x.json"]).0, 1);
+        // One in the working directory still does.
+        assert_eq!(run(&dir, &user, &["job/sub/x.json"]).0, 0);
+        // A file outside the working directory takes only its own folder's.
+        let job = dir.join("job");
+        assert_eq!(run(&job, &user, &["../other/x.json"]).0, 1);
+        assert_eq!(run(&job, &user, &["../other/sub/x.json"]).0, 1);
+        assert_eq!(run(&job, &user, &["../own/x.json"]).0, 0);
+        // With a `.git` above it, it climbs to that folder as before.
+        fs::create_dir_all(dir.join("other/.git")).expect("mark a repository");
+        fs::write(dir.join("other/jsonvet.toml"), off).expect("write");
+        assert_eq!(run(&job, &user, &["../other/sub/x.json"]).0, 0);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_user_config_applies_only_without_a_project_config() {
+        let dir = workdir(&[
+            (
+                "user/jsonvet/jsonvet.toml",
+                "[rules]\nduplicate-key = \"warning\"\n\n[[dialects]]\nfiles = \"data/*.txt\"\ndialect = \"jsonl\"\n",
+            ),
+            ("p/x.json", DUP),
+            ("p/data/x.txt", "{}\n{}\n"),
+            ("q/jsonvet.toml", ""),
+            ("q/x.json", DUP),
+        ]);
+        let user = dir.join("user");
+        let warning = "x.json:1:10: warning[duplicate-key] duplicate key $.a (first at 1:2)\n";
+        let p = dir.join("p");
+        assert_eq!(
+            run(&p, &user, &["x.json"]),
+            (0, warning.to_owned(), String::new())
+        );
+        // Its globs are relative to the working directory.
+        assert_eq!(run(&p, &user, &["data/x.txt"]).0, 0);
+        assert_eq!(run(&p.join("data"), &user, &["x.txt"]).0, 1);
+        // A project config file replaces it, and the options skip it.
+        let q = dir.join("q");
+        assert_eq!(run(&q, &user, &["x.json"]).0, 1);
+        assert_eq!(run(&p, &user, &["--no-config", "x.json"]).0, 1);
+        assert_eq!(
+            run(&p, &user, &["--config", "../q/jsonvet.toml", "x.json"]).0,
+            1
+        );
+        // A relative XDG_CONFIG_HOME is ignored, as the XDG spec says.
+        #[cfg(not(windows))]
+        assert_eq!(run(&dir, Path::new("user"), &["p/x.json"]).0, 1);
+        let _ = fs::remove_dir_all(&dir);
+    }
+}

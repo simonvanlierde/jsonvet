@@ -175,7 +175,7 @@ impl Schema {
     /// with it is a usage error.
     pub(crate) fn load(path: &Path, settings: &Settings) -> Result<Schema, String> {
         let name = path.to_string_lossy();
-        let text = std::fs::read_to_string(path)
+        let text = crate::read_small(path, crate::MAX_SCHEMA_BYTES)
             .map_err(|e| format!("cannot read the schema {name}: {e}"))?;
         // jsonschema compiles a schema recursively: a deep one can take gigabytes or the stack.
         let mut config = settings.config_for(&name);

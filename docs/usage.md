@@ -33,6 +33,8 @@ word, so `jsonvet .` does not check `README.md` as JSON5. The walk works as ripg
 - It skips paths the `exclude` setting names. A pattern that matches a folder skips everything
   under it.
 - It does not follow symlinks.
+- It stops with a usage error at a `.gitignore` or `.ignore`, in the folder or one above it, that
+  is not a regular file or holds more than 16 MB.
 - It lists the files under each folder in sorted order, so output is stable. Arguments keep the
   order you give them.
 
@@ -224,6 +226,20 @@ wins, and it replaces any file further up: settings are not merged. Standard inp
 its `--stdin-filename`, or from the working directory. Options on the command line win.
 `--config FILE` reads that file for every file instead, and `--no-config` reads none.
 
+The repository root is the first folder with a `.git` entry. With none above the file, the search
+stops at the working directory, and for a file outside the working directory it reads only the
+file's own folder.
+
+When the search finds no file, jsonvet reads your own `jsonvet/jsonvet.toml`, if you have one:
+in `$XDG_CONFIG_HOME`, or `~/.config` without it, on Linux and macOS, and in `%APPDATA%` on
+Windows. Its globs are relative to the working directory. Any project file replaces it, and
+`--config` and `--no-config` skip it.
+
+A config file that is not a regular file, such as a FIFO, is skipped; a `--schema` file that is not
+one is a usage error. A config file may hold at most 16 MB and a schema 64 MB. An error in a
+config file that is a symlink names its line and column, but not the key or value, since the
+link may lead to a file that is not yours to show.
+
 A folder walk skips what the `exclude` setting of each folder's nearest file names.
 
 The file takes three keys, `rules`, `dialects` and `exclude`. Any other key, at the top or in a
@@ -257,6 +273,7 @@ All inputs are optional:
 | `args`    | extra options, separated by spaces, such as `--strict package.json`                         |
 | `sarif`   | also write a SARIF file to this path, besides the usual log and annotations                 |
 | `version` | the jsonvet version to install: `X.Y.Z` (also with a suffix such as `rc1` or `.post1`), `X.*`, `X.Y.*` or `latest` |
+| `verify`  | `true` (the default) checks the wheel's attestation before installing it; `false` skips that |
 
 In `files`, `**` matches folders at any depth on every runner. The Action skips symlinks, and by
 default also submodules. Any other `version` value stops the step.
@@ -266,8 +283,11 @@ and `@v3.0.0` gets 3.0.0. Pinned to a commit SHA or a branch, it installs the re
 that commit's `Cargo.toml`. Between releases that is the last release, not the code in the
 commit. The step log names the version it installed.
 
-Pinning the Action does not pin the wheel's bytes: pip installs `jsonvet==X.Y.Z` from PyPI without
-a hash check.
+Pinning the Action does not pin the wheel's bytes, so before installing the wheel from PyPI the
+Action checks its build provenance attestation with `gh attestation verify`: it must come from
+jsonvet's `release.yml`. Hosted runners have `gh`. Set `verify: false` on GitHub Enterprise Server
+or on a runner without `gh`. Releases before 3.1.0 have no attestation, so they install unchecked,
+with a notice in the log.
 
 ## SARIF
 
