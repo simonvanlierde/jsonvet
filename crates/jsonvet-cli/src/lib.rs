@@ -360,7 +360,8 @@ fn check<'t>(
 }
 
 /// Print one file's problems and schema errors, and add them to `counts`, each before it is
-/// printed, so a failed write still leaves the verdict.
+/// printed, so a failed write still leaves the verdict. The file count is added last: only the
+/// summary reads it, and a failed write ends the run before the summary.
 fn print_file(
     file: &OsStr,
     report: &Report<'_>,
@@ -369,18 +370,6 @@ fn print_file(
     counts: &mut Counts,
 ) -> io::Result<()> {
     let before = counts.errors + counts.warnings;
-    let result = print_problems(file, report, schema_errors, printer, counts);
-    counts.files += usize::from(counts.errors + counts.warnings > before);
-    result
-}
-
-fn print_problems(
-    file: &OsStr,
-    report: &Report<'_>,
-    schema_errors: &[(usize, String, bool)],
-    printer: &mut Printer<impl Write>,
-    counts: &mut Counts,
-) -> io::Result<()> {
     for problem in report.problems() {
         match problem.severity() {
             Severity::Error => counts.errors += 1,
@@ -393,6 +382,7 @@ fn print_problems(
         counts.errors += usize::from(!summary);
         printer.schema_error(file, report, *offset, message, *summary)?;
     }
+    counts.files += usize::from(counts.errors + counts.warnings > before);
     Ok(())
 }
 
