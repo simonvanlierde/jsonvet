@@ -132,8 +132,11 @@ open, and these rules do not flag them:
 - an integer written with a fraction or an exponent past 2⁵³ (`9007199254740993.0`).
 
 In GitHub Actions each problem is also printed as a `::warning` or `::error` annotation.
-`--format sarif` prints one SARIF 2.1.0 document instead, with no annotations. jsonvet writes its
-JSON by hand.
+`--format sarif` prints one SARIF 2.1.0 document instead, with no annotations. `--format json`
+prints jsonvet's own, smaller document. jsonvet writes both by hand, so both escape strings as
+below; serde_json would leave bidi controls and `##[` as they are. SARIF holds its results until
+the end, to cap them at GitHub's limit. JSON has no limit, so it writes each diagnostic as it
+comes, and memory stays flat however many problems a run finds.
 
 ### Output
 
@@ -141,8 +144,8 @@ File names and messages come from the files you check, so jsonvet escapes anythi
 break the line or a terminal. A control character prints as `\u001b`, with CR and LF as `\r` and
 `\n`. A bidirectional control or invisible character (U+00AD, U+061C, U+180E, U+200B to U+200F,
 U+2028 to U+202E, U+2060 to U+2064, U+2066 to U+2069, U+FEFF, U+E0000 to U+E007F) prints as
-`\u202e`, past U+FFFF as a UTF-16 pair such as `\udb40\udc01`. SARIF strings escape the same
-characters the same way. A name that starts with `::`, after any white space, prints as `./::…`,
+`\u202e`, past U+FFFF as a UTF-16 pair such as `\udb40\udc01`. SARIF and JSON strings escape the
+same characters the same way. A name that starts with `::`, after any white space, prints as `./::…`,
 and a `[` straight after `##` prints as `\u005b`. So no line looks like a GitHub workflow
 command, old (`##[command]`) or new (`::command`). An annotation's `file=` value holds the real
 name, percent-encoded as GitHub requires.

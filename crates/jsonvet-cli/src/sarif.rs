@@ -159,7 +159,7 @@ fn uri(file: &OsStr) -> (String, bool) {
 }
 
 /// A JSON string literal.
-fn string(value: &str) -> String {
+pub(crate) fn string(value: &str) -> String {
     let mut json = String::with_capacity(value.len() + 2);
     json.push('"');
     for c in value.chars() {

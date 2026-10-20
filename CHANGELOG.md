@@ -20,6 +20,10 @@ version for a new option or output, the patch version for a fix.
 - `--list-rules` lists the rules with their default severity in each dialect, and
   `--explain RULE` explains one, with a bad and a good example. A mistyped rule gets a
   suggestion, such as ``(did you mean `duplicate-key`?)``.
+- `--format json` prints one JSON document for scripts and editors: a `version` and a list of
+  diagnostics, each with the file, rule, severity, message, line, column and byte offset, and
+  the related place where there is one, such as a duplicate key's first copy. Unreadable files
+  and `--schema` errors are in the list too. docs/usage.md describes every field.
 - SARIF output gives each rule its help text and a link to its section of docs/usage.md, so
   GitHub code scanning shows them on each alert.
 - When stdout is a terminal, text output ends with a count, such as `3 errors in 2 of 5 files`.

@@ -11,7 +11,8 @@ The details behind the [README](../README.md). Why things work this way is in
 --strict GLOB              the same as --dialect json:GLOB, kept from check-json5
 --error RULE, --warn RULE, --ignore RULE
 --max-warnings N
---format text|sarif        text lines (the default), or one SARIF 2.1.0 document on stdout
+--format text|sarif|json   text lines (the default), one SARIF 2.1.0 document, or one JSON
+                           document on stdout
 --schema FILE              also check every file against the JSON Schema in FILE
 --stdin-filename PATH      the name standard input (`-`) goes by
 --config FILE, --no-config
@@ -192,7 +193,7 @@ Good (jsonl): {"a": 1}<newline>
 
 jsonvet could not check the file at all: it does not exist, is a directory, device, FIFO or
 socket, could not be read, or is not UTF-8. It always fails the run, and no option changes that.
-Text output shows no rule for it; SARIF output files it under `unreadable`.
+Text output shows no rule for it; SARIF and JSON output file it under `unreadable`.
 
 ### schema
 
@@ -284,17 +285,53 @@ jsonvet --format sarif $(git ls-files '*.json') > jsonvet.sarif
 Uploading needs `github/codeql-action/upload-sarif` and the `security-events: write` permission.
 The README has a [workflow](../README.md#github-code-scanning).
 
+## JSON
+
+`--format json` prints one JSON document instead of text lines, for scripts and editors:
+
+```bash
+jsonvet --format json config.json5 | jq -r '.diagnostics[] | "\(.file):\(.line) \(.rule)"'
+```
+
+```json
+{"version":1,"diagnostics":[
+{"file":"dup.json","rule":"duplicate-key","severity":"error","message":"duplicate key $.a (first at 2:3)","line":3,"column":3,"offset":14,"related":[{"message":"first copy","line":2,"column":3,"offset":4}]},
+{"file":"gone.json","rule":"unreadable","severity":"error","message":"no such file","line":null,"column":null,"offset":null,"related":[]}
+]}
+```
+
+- `version` is the version of this layout, now `1`. A new field may come without a new version;
+  a field that changes meaning or goes away gets one. Ignore fields you do not know.
+- `diagnostics` holds one object per problem, in the order text output prints them. Each has:
+
+  | Field      | What it holds                                                                     |
+  | ---------- | --------------------------------------------------------------------------------- |
+  | `file`     | the file name as given, or the `--stdin-filename`; bytes that are not UTF-8 show as U+FFFD |
+  | `rule`     | the rule id, such as `duplicate-key`, or `schema` or `unreadable`                 |
+  | `severity` | `error` or `warning`                                                              |
+  | `message`  | the message as text output prints it, with its `(first at 2:3)` part              |
+  | `line`     | the line, from 1; `null` for a file jsonvet could not read                        |
+  | `column`   | the column, from 1, in code points as in text output; `null` with no line         |
+  | `offset`   | the byte offset in the file, from 0; `null` with no line                          |
+  | `related`  | other places the problem names, each with `message`, `line`, `column` and `offset`: a duplicate key's first copy (`first copy`), the bracket an unclosed value opened at (`opened here`), or where an unterminated comment or string starts (`starts here`). Often empty |
+
+- Strings escape control characters, bidi controls and the `[` of `##[` as SARIF does (see
+  [design.md](design.md#output)), so a JSON reader gets the name and message back unchanged.
+- Each diagnostic is on a line of its own, written as soon as its file is checked: there is no
+  limit on their number, and output starts before the run ends.
+- The exit status and `--max-warnings` work as with text. No annotations or count are printed.
+
 ## JSON Schema limits
 
 These hold for `--schema`. Why each one exists is in [design.md](design.md#--schema).
 
-- **Severity.** Schema errors are always errors, in text, annotations and SARIF. `--error`,
+- **Severity.** Schema errors are always errors, in text, annotations, SARIF and JSON. `--error`,
   `--warn`, `--ignore` and the config file do not take `schema`, and exit 2 if you give it to
   them.
 - **Errors.** A document lists at most 100 schema errors. They are the first 100 that jsonschema
   finds, and it takes an object's keys in sorted order, not file order. They print in file order.
   Then one more line, `... and N more schema errors in this document`, sits at the document's
-  start. SARIF leaves that line out. `additionalProperties` gives one error per key it does not
+  start. SARIF and JSON leave that line out. `additionalProperties` gives one error per key it does not
   allow, at that key, and each one counts toward the 100.
 - **Messages.** Each message ends with the JSONPath of the value, as duplicate keys do. A message
   quotes the value unless that makes it long; then it says `value`. A message, with its path, is

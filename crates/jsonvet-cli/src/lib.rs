@@ -12,6 +12,7 @@ use jsonvet::{Dialect, Report, Severity};
 
 mod args;
 mod glob;
+mod json;
 mod output;
 mod rules;
 mod sarif;
@@ -569,6 +570,20 @@ mod tests {
         // No summary off a terminal, nor for no files.
         assert!(!run(false, &[&dup]).1.contains(" in 1 of 1 file"));
         assert_eq!(run(true, &[]).1, "");
+        // SARIF and JSON stay one document on a terminal too.
+        for format in ["sarif", "json"] {
+            let args = ["--no-config", "--format", format]
+                .map(std::ffi::OsString::from)
+                .into_iter()
+                .chain([dup.clone().into_os_string()]);
+            let mut out = Vec::new();
+            super::run_with(args, false, true, &mut out).expect("a check");
+            let out = String::from_utf8(out).expect("UTF-8");
+            assert!(
+                serde_json::from_str::<serde_json::Value>(&out).is_ok(),
+                "{out}"
+            );
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 

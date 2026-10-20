@@ -1,5 +1,5 @@
 //! How problems are printed: `file:line:col: severity[rule] message`, plus a GitHub Actions
-//! annotation for each when running there, or one SARIF document for the whole run.
+//! annotation for each when running there, or one SARIF or JSON document for the whole run.
 
 use std::ffi::OsStr;
 use std::fmt::Write as _;
@@ -7,7 +7,7 @@ use std::io::{self, Write};
 
 use jsonvet::{Location, Problem, RelatedKind, Report, Severity};
 
-use crate::sarif;
+use crate::{json, sarif};
 pub(crate) use jsonvet::is_hidden;
 
 /// The output format, from `--format`.
@@ -15,6 +15,7 @@ pub(crate) use jsonvet::is_hidden;
 pub(crate) enum Format {
     Text,
     Sarif,
+    Json,
 }
 
 /// A file name or message with control characters made visible: a newline would start a line
@@ -75,16 +76,20 @@ pub(crate) struct Printer<W: Write> {
     sarif: Option<Vec<String>>,
     /// SARIF results past [`sarif::MAX_RESULTS`], counted but not kept.
     dropped: usize,
+    /// For JSON output, whether the document has started; `None` for the other formats.
+    json: Option<bool>,
 }
 
 impl<W: Write> Printer<W> {
     pub(crate) fn new(out: W, format: Format, annotate: bool) -> Self {
         let sarif = format == Format::Sarif;
+        let json = format == Format::Json;
         Printer {
             out,
-            annotate: annotate && !sarif,
+            annotate: annotate && format == Format::Text,
             sarif: sarif.then(Vec::new),
             dropped: 0,
+            json: json.then_some(false),
         }
     }
 
@@ -96,7 +101,7 @@ impl<W: Write> Printer<W> {
         problem: &Problem,
     ) -> io::Result<()> {
         let at = report.location(problem.offset());
-        // Where the related offset is, and its labels in the text message and in SARIF.
+        // Where the related offset is, and its labels in the text message and in SARIF or JSON.
         let related = problem.related().map(|related| {
             let labels = match related.kind {
                 RelatedKind::FirstOccurrence => ("first at", "first copy"),
@@ -104,25 +109,25 @@ impl<W: Write> Printer<W> {
                 // NOTE: `RelatedKind` is non-exhaustive; `Start` is the only other kind so far.
                 _ => ("started at", "starts here"),
             };
-            (report.location(related.offset), labels)
+            (report.location(related.offset), related.offset, labels)
         });
         let mut message = problem.to_string();
-        if let Some((first, (what, _))) = related {
+        if let Some((first, _, (what, _))) = related {
             let _ = write!(message, " ({what} {}:{})", first.line, first.column);
         }
-        let related = related.map(|(first, (_, what))| (first, what));
+        let related = related.map(|(first, offset, (_, what))| (first, offset, what));
         self.line(
             file,
             problem.rule().id(),
             problem.severity(),
             &message,
-            Some(at),
+            Some((at, problem.offset())),
             related,
         )
     }
 
     /// A value the `--schema` schema rejects, at `offset`. A `summary` of the errors not listed
-    /// is left out of SARIF, where each result is one finding.
+    /// is left out of SARIF and JSON, where each result is one finding.
     pub(crate) fn schema_error(
         &mut self,
         file: &OsStr,
@@ -131,7 +136,7 @@ impl<W: Write> Printer<W> {
         message: &str,
         summary: bool,
     ) -> io::Result<()> {
-        if summary && self.sarif.is_some() {
+        if summary && (self.sarif.is_some() || self.json.is_some()) {
             return Ok(());
         }
         let at = report.location(offset);
@@ -140,7 +145,7 @@ impl<W: Write> Printer<W> {
             sarif::SCHEMA,
             Severity::Error,
             message,
-            Some(at),
+            Some((at, offset)),
             None,
         )
     }
@@ -157,18 +162,31 @@ impl<W: Write> Printer<W> {
         )
     }
 
-    /// One problem, in whichever format: a text line and maybe an annotation, or a SARIF
-    /// result. `related` is only for SARIF; the text message already names it. With no `at`,
-    /// for a file that could not be read, the text shows neither a position nor the rule.
+    /// One problem, in whichever format: a text line and maybe an annotation, a SARIF result
+    /// or a JSON diagnostic. `at` and `related` carry a position and its byte offset. `related`
+    /// is only for SARIF and JSON; the text message already names it. With no `at`, for a file
+    /// that could not be read, the text shows neither a position nor the rule.
     fn line(
         &mut self,
         file: &OsStr,
         rule: &str,
         severity: Severity,
         message: &str,
-        at: Option<Location>,
-        related: Option<(Location, &str)>,
+        at: Option<(Location, usize)>,
+        related: Option<(Location, usize, &str)>,
     ) -> io::Result<()> {
+        if let Some(started) = &mut self.json {
+            let before = if *started {
+                ",\n".to_owned()
+            } else {
+                json::start()
+            };
+            *started = true;
+            let diagnostic = json::diagnostic(file, rule, severity, message, at, related);
+            return write!(self.out, "{before}{diagnostic}");
+        }
+        let at = at.map(|(at, _)| at);
+        let related = related.map(|(first, _, what)| (first, what));
         if self.sarif.is_some() {
             // GitHub code scanning needs a line in every result.
             let at = at.unwrap_or(Location::START);
@@ -197,9 +215,9 @@ impl<W: Write> Printer<W> {
         Ok(())
     }
 
-    /// A line of text output, such as the summary; nothing in SARIF.
+    /// A line of text output, such as the summary; nothing in SARIF or JSON.
     pub(crate) fn text_line(&mut self, line: &str) -> io::Result<()> {
-        if self.sarif.is_none() {
+        if self.sarif.is_none() && self.json.is_none() {
             writeln!(self.out, "{line}")?;
         }
         Ok(())
@@ -216,8 +234,14 @@ impl<W: Write> Printer<W> {
         }
     }
 
-    /// Write what was held back until every file was checked: the SARIF document.
+    /// Write what was held back until every file was checked: the SARIF document, or the end
+    /// of the JSON one.
     pub(crate) fn finish(&mut self) -> io::Result<()> {
+        match self.json {
+            Some(true) => writeln!(self.out, "\n]}}")?,
+            Some(false) => writeln!(self.out, "{}]}}", json::start())?,
+            None => {}
+        }
         if let Some(results) = &self.sarif {
             if self.dropped > 0 {
                 eprintln!("jsonvet: {}", sarif::dropped_message(self.dropped));

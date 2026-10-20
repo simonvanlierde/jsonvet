@@ -30,8 +30,9 @@ Options:
       --warn RULE               Report RULE as a warning.
       --ignore RULE             Do not check RULE.
       --max-warnings N          Fail when there are more than N warnings.
-      --format FORMAT           Print problems as text (the default) or as one SARIF 2.1.0
-                                document, for GitHub code scanning.
+      --format FORMAT           Print problems as text (the default), as one SARIF 2.1.0
+                                document, for GitHub code scanning, or as one JSON document
+                                (its fields: docs/usage.md in the repository).
       --schema FILE             Also check each file against the JSON Schema in FILE, reported
                                 under the rule schema. Limits: docs/usage.md in the repository.
       --stdin-filename PATH     Name standard input PATH in the output, and pick its dialect
@@ -88,9 +89,12 @@ fn parse_format(name: &str) -> Result<Format, String> {
     match name {
         "text" => Ok(Format::Text),
         "sarif" => Ok(Format::Sarif),
+        "json" => Ok(Format::Json),
         _ => {
-            let hint = jsonvet::did_you_mean(name, ["text", "sarif"]);
-            Err(format!("--format takes text or sarif, not `{name}`{hint}"))
+            let hint = jsonvet::did_you_mean(name, ["text", "sarif", "json"]);
+            Err(format!(
+                "--format takes text, sarif or json, not `{name}`{hint}"
+            ))
         }
     }
 }
@@ -315,11 +319,16 @@ mod tests {
         assert_eq!(args.config, ConfigSource::None);
         assert_eq!(args.format, Format::Sarif);
         assert_eq!(check(&["x.json"]).format, Format::Text);
-        assert!(parse(["--format", "json"].iter().map(Into::into)).is_err());
+        assert_eq!(check(&["--format=text", "x.json"]).format, Format::Text);
+        assert_eq!(check(&["--format", "json", "x.json"]).format, Format::Json);
+        assert!(parse(["--format", "jsonl"].iter().map(Into::into)).is_err());
         // Value names are case-sensitive, as in clap and ruff, but a wrong case gets a hint.
         assert_eq!(
             parse(["--format", "SARIF"].iter().map(Into::into)).err(),
-            Some("--format takes text or sarif, not `SARIF` (did you mean `sarif`?)".to_owned())
+            Some(
+                "--format takes text, sarif or json, not `SARIF` (did you mean `sarif`?)"
+                    .to_owned()
+            )
         );
         assert!(parse(["--error", "nope"].iter().map(Into::into)).is_err());
         assert!(parse(["--dialect", "yaml"].iter().map(Into::into)).is_err());

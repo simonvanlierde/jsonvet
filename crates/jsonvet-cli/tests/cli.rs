@@ -868,6 +868,119 @@ fn sarif_columns_count_code_points() {
     );
 }
 
+/// `--format json` holds every problem, schema errors and unreadable files included, one
+/// diagnostic per line, in the order text output prints them, with its exit codes.
+#[test]
+fn json_holds_every_problem_and_keeps_the_exit_codes() {
+    let dir = workdir(&[
+        ("schema.json", r#"{"type": "object"}"#),
+        ("bad.json", "[1,"),
+        ("dup.json", "{\n  \"a\": 1,\n  \"a\": 2\n}"),
+        ("bom.json", "\u{FEFF}{}"),
+        ("arr.json", "[]"),
+    ]);
+    let args = [
+        "--format",
+        "json",
+        "--schema",
+        "schema.json",
+        "--strict",
+        "*.json",
+        "bad.json",
+        "dup.json",
+        "bom.json",
+        "arr.json",
+        "gone.json",
+    ];
+    // JSON replaces the workflow annotations, even in GitHub Actions, and adds no summary.
+    let (code, out, err) = run_jsonvet(&dir, &args, true);
+    assert_eq!((code, err.as_str()), (1, ""));
+    let expected = r#"{"version":1,"diagnostics":[
+{"file":"bad.json","rule":"syntax","severity":"error","message":"unclosed `[`: expected a value, found the end of the file (opened at 1:1)","line":1,"column":4,"offset":3,"related":[{"message":"opened here","line":1,"column":1,"offset":0}]},
+{"file":"dup.json","rule":"duplicate-key","severity":"error","message":"duplicate key $.a (first at 2:3)","line":3,"column":3,"offset":14,"related":[{"message":"first copy","line":2,"column":3,"offset":4}]},
+{"file":"bom.json","rule":"byte-order-mark","severity":"warning","message":"byte order mark at the start of the file","line":1,"column":1,"offset":0,"related":[]},
+{"file":"arr.json","rule":"schema","severity":"error","message":"[] is not of type \"object\" (at $)","line":1,"column":1,"offset":0,"related":[]},
+{"file":"gone.json","rule":"unreadable","severity":"error","message":"no such file","line":null,"column":null,"offset":null,"related":[]}
+]}
+"#;
+    assert_eq!(out, expected);
+    let json: serde_json::Value = serde_json::from_str(&out).expect("JSON output");
+    assert_eq!(json["diagnostics"].as_array().map(Vec::len), Some(5));
+
+    // A warning passes unless --max-warnings says otherwise; no problems is an empty list.
+    let (code, out, _) = jsonvet_stderr(&dir, &["--format=json", "--strict", "*", "bom.json"]);
+    assert_eq!(code, 0);
+    assert!(out.contains(r#""severity":"warning""#), "{out}");
+    let args = [
+        "--format=json",
+        "--strict",
+        "*",
+        "--max-warnings=0",
+        "bom.json",
+    ];
+    assert_eq!(jsonvet_stderr(&dir, &args).0, 1);
+    for args in [&["--format", "json", "arr.json"][..], &["--format", "json"]] {
+        assert_eq!(
+            jsonvet_stderr(&dir, args),
+            (
+                0,
+                "{\"version\":1,\"diagnostics\":[\n]}\n".to_owned(),
+                String::new()
+            )
+        );
+    }
+}
+
+/// A file name or message in JSON is a valid JSON string whatever it holds, escaped as SARIF
+/// escapes it: control characters, bidi controls and the `[` of `##[` as `\uXXXX`.
+#[test]
+fn json_strings_stay_valid_whatever_the_names_hold() {
+    let dir = workdir(&[]);
+    let name = "q\"b\\s\n::error::\u{1b}[2J\u{202e}##[x.json";
+    let key = "\u{7}\u{202a}##[k";
+    let args = ["--format", "json", "--stdin-filename", name];
+    let (code, out, _) = jsonvet_stdin(&dir, &args, &format!("{{\"{key}\":1,\"{key}\":2}}"));
+    assert_eq!(code, 1);
+    assert!(out.starts_with(
+        "{\"version\":1,\"diagnostics\":[\n{\"file\":\"q\\\"b\\\\s\\u000a::error::\\u001b[2J\\u202e##\\u005bx.json\""
+    ), "{out}");
+    assert!(
+        out.lines()
+            .all(|line| !line.contains("##[") && !line.starts_with("::")),
+        "{out}"
+    );
+    let json: serde_json::Value = serde_json::from_str(&out).expect("JSON output");
+    let diagnostic = &json["diagnostics"][0];
+    assert_eq!(diagnostic["file"], name);
+    // The message shows the key's control characters as `\u0007`, as text output does, and
+    // JSON escapes that backslash once more.
+    assert_eq!(
+        diagnostic["message"],
+        "duplicate key $[\"\\u0007\\u202a##[k\"] (first at 1:2)"
+    );
+}
+
+/// A name that is not UTF-8 shows as text output shows it, with U+FFFD for the bad bytes.
+#[cfg(target_os = "linux")]
+#[test]
+fn json_shows_a_name_that_is_not_utf8_lossily() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+    let dir = workdir(&[]);
+    let out = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
+        .args(["--format", "json"])
+        .arg(OsStr::from_bytes(b"\xed\xa0\x80\xff.json"))
+        .current_dir(&dir)
+        .output()
+        .expect("run jsonvet");
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).expect("JSON output");
+    assert_eq!(
+        json["diagnostics"][0]["file"],
+        "\u{FFFD}\u{FFFD}\u{FFFD}\u{FFFD}.json"
+    );
+    assert_eq!(json["diagnostics"][0]["rule"], "unreadable");
+}
+
 #[test]
 fn the_last_matching_dialect_wins_and_auto_means_the_extension() {
     let dir = workdir(&[
@@ -1709,7 +1822,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
     }
 
     #[test]
-    fn past_100_errors_text_counts_the_rest_and_sarif_leaves_the_count_out() {
+    fn past_100_errors_text_counts_the_rest_and_sarif_and_json_leave_the_count_out() {
         let numbers: Vec<String> = (0..101).map(|i| i.to_string()).collect();
         let dir = workdir(&[
             ("schema.json", r#"{"items": {"type": "string"}}"#),
@@ -1735,6 +1848,15 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         let sarif: serde_json::Value = serde_json::from_str(&out).expect("JSON output");
         let results = sarif["runs"][0]["results"].as_array().expect("results");
         assert_eq!(results.len(), 100);
+        let (code, out, _) = jsonvet_stderr(
+            &dir,
+            &["--format", "json", "--schema", "schema.json", "n.json"],
+        );
+        assert_eq!(code, 1);
+        let json: serde_json::Value = serde_json::from_str(&out).expect("JSON output");
+        let diagnostics = json["diagnostics"].as_array().expect("diagnostics");
+        assert_eq!(diagnostics.len(), 100);
+        assert_eq!(diagnostics[99]["offset"], 288);
     }
 
     #[test]
