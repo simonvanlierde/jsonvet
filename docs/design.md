@@ -256,6 +256,14 @@ Behind that interface:
 - in text that is not all ASCII, a count of the code points before every 4 KiB, built only as far
   as a lookup needs, so finding a column counts the characters of at most two chunks.
 
+There is no `unsafe` code: `unsafe_code = "forbid"` in the workspace lints. jsonvet reads
+untrusted files in hooks and CI, so the worst a crafted file can do today is a panic, never memory
+corruption. The speed-ups measured so far do not need `unsafe`: SIMD UTF-8 validation saved about
+1% of a run on an 82 MB file, SSE2 and NEON intrinsics are safe to call since Rust 1.87, and the
+gap to serde_json is instructions per token, which `unsafe` does not remove. An opt-in would not
+help either: a runtime flag still ships the code, and a cargo feature doubles what fuzzing and
+mutation testing must cover.
+
 ### Python packaging
 
 pre-commit installs a `language: python` hook by running `pip install .` on the repository. The
