@@ -685,71 +685,13 @@ fn sarif_holds_every_problem_and_keeps_the_exit_codes() {
         (code, sarif)
     };
 
-    let (code, sarif) = run(&["--format", "sarif", "dup.json", "gone.json", "ok.json"]);
+    let (code, mut sarif) = run(&["--format", "sarif", "dup.json", "gone.json", "ok.json"]);
     assert_eq!(code, 1);
-    assert_eq!(sarif["version"], "2.1.0");
-    assert_eq!(
-        sarif["$schema"],
-        "https://json.schemastore.org/sarif-2.1.0.json"
-    );
-    let run0 = &sarif["runs"][0];
-    assert_eq!(run0["tool"]["driver"]["name"], "jsonvet");
-    assert_eq!(run0["tool"]["driver"]["version"], env!("CARGO_PKG_VERSION"));
-    let rules = run0["tool"]["driver"]["rules"].as_array().expect("rules");
-    let ids: Vec<&str> = rules.iter().filter_map(|r| r["id"].as_str()).collect();
-    assert_eq!(
-        ids,
-        [
-            "syntax",
-            "duplicate-key",
-            "invalid-number",
-            "invalid-code-point",
-            "byte-order-mark",
-            "missing-final-newline",
-            "unreadable",
-            "schema",
-        ]
-    );
-    // Code scanning shows each rule's help and links its section of docs/usage.md.
-    assert_eq!(
-        rules[1]["helpUri"],
-        "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#duplicate-key"
-    );
-    assert!(rules.iter().all(|r| {
-        r["help"]["text"].as_str().is_some_and(|t| t.len() > 40)
-            && r["fullDescription"]["text"]
-                .as_str()
-                .is_some_and(|t| t.ends_with('.'))
-    }));
-    assert!(rules.iter().all(|r| {
-        !r["shortDescription"]["text"]
-            .as_str()
-            .unwrap_or("")
-            .is_empty()
-    }));
-    assert_eq!(
-        rules[0]["shortDescription"]["text"],
-        "the first syntax error; checking stops there"
-    );
-    assert_eq!(run0["columnKind"], "unicodeCodePoints");
-    assert!(run0["originalUriBaseIds"]["%SRCROOT%"]["description"]["text"].is_string());
-    let results = run0["results"].as_array().expect("results");
-    assert_eq!(results.len(), 2);
-    let dup = &results[0];
-    assert_eq!(dup["ruleId"], "duplicate-key");
-    assert_eq!(dup["level"], "error");
-    assert_eq!(dup["message"]["text"], "duplicate key $.a (first at 2:3)");
-    let at = &dup["locations"][0]["physicalLocation"];
-    assert_eq!(at["artifactLocation"]["uri"], "dup.json");
-    assert_eq!(at["artifactLocation"]["uriBaseId"], "%SRCROOT%");
-    assert_eq!(at["region"]["startLine"], 3);
-    assert_eq!(at["region"]["startColumn"], 3);
-    let first = &dup["relatedLocations"][0];
-    assert_eq!(first["message"]["text"], "first copy");
-    assert_eq!(first["physicalLocation"]["region"]["startLine"], 2);
-    assert_eq!(first["physicalLocation"]["region"]["startColumn"], 3);
-    assert_eq!(results[1]["ruleId"], "unreadable");
-    assert_eq!(results[1]["message"]["text"], "no such file");
+    // The whole document, rules and their help included, with the version kept out of it.
+    let version = &mut sarif["runs"][0]["tool"]["driver"]["version"];
+    assert_eq!(*version, env!("CARGO_PKG_VERSION"));
+    *version = "[version]".into();
+    insta::assert_snapshot!(serde_json::to_string_pretty(&sarif).expect("JSON"));
 
     // A warning passes unless --max-warnings says otherwise, as with text output.
     let (code, sarif) = run(&["--format=sarif", "--strict", "*.json", "bom.json"]);
