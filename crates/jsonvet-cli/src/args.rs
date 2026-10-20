@@ -236,6 +236,8 @@ fn rest(parser: &mut lexopt::Parser) -> OsString {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::{Command, ConfigSource, Format, HELP, parse};
     use jsonvet::{Dialect, Rule, Severity};
 
@@ -253,6 +255,32 @@ mod tests {
         assert!(missing.is_empty(), "not in the help: {missing:?}");
         let wide: Vec<&str> = HELP.lines().filter(|l| l.chars().count() > 96).collect();
         assert!(wide.is_empty(), "help lines over 96 columns: {wide:?}");
+    }
+
+    /// usage.md's option list names the options `--help` does, and the parser knows each one.
+    /// Their wording differs, so only the names are compared. `--help` and `--version` need no
+    /// line in usage.md.
+    #[test]
+    fn usage_md_lists_the_options_help_does() {
+        let usage = include_str!("../../../docs/usage.md").replace("\r\n", "\n");
+        let block = |text: &str, start: &str, end: &str| {
+            let (_, rest) = text.split_once(start).expect(start);
+            rest.split_once(end).expect(end).0.to_owned()
+        };
+        let options = |text: &str| -> BTreeSet<String> {
+            text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-'))
+                .filter(|word| word.len() > 2 && word.starts_with("--"))
+                .map(ToOwned::to_owned)
+                .collect()
+        };
+        let mut help = options(&block(HELP, "\nOptions:\n", "\n\nRules:"));
+        for option in &help {
+            let error = parse([option.as_str()].iter().map(Into::into)).err();
+            assert_ne!(error, Some(format!("unknown option `{option}`")));
+        }
+        help.retain(|option| option != "--help" && option != "--version");
+        let docs = options(&block(&usage, "## Options\n\n```text\n", "```"));
+        assert_eq!(help, docs, "options in --help and in docs/usage.md");
     }
 
     fn check(args: &[&str]) -> super::Args {
