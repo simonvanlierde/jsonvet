@@ -305,6 +305,12 @@ jobs:
   # `--no-verify` packages and uploads without compiling, so this job, which holds the token,
   # runs no build scripts. CI and the smoke job have already built this commit. jsonvet goes
   # first because jsonvet-cli pins it; cargo waits until the index has it.
+  #
+  # crates.io refuses a version it already has, and cargo has no flag to skip one, so a rerun after
+  # a partial publish asks the sparse index first and skips a crate that is up, as skip-existing
+  # does for PyPI. The index is the static file cargo itself reads, with no rate limit. Only a
+  # listed version skips; a 404 means the crate is not there yet, and any other answer or a network
+  # error fails the job. An index that lags behind a fresh upload makes cargo fail, never skip.
   publish-crates:
     needs: [versions, smoke, github-release]
     runs-on: ubuntu-latest
@@ -322,11 +328,28 @@ jobs:
           toolchain: stable
       - uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
         id: auth
-      - run: |
-          cargo publish --locked --no-verify -p jsonvet
-          cargo publish --locked --no-verify -p jsonvet-cli
+      - name: Publish the crates that crates.io does not have yet
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+          CRATES_INDEX: https://index.crates.io
+        run: |
+          # Assignments, not pipes, so a failed command stops the step.
+          metadata=$(cargo metadata --locked --no-deps --format-version 1)
+          for crate in jsonvet jsonvet-cli; do
+            version=$(jq -er --arg c "$crate" '.packages[] | select(.name == $c) | .version' <<<"$metadata")
+            # The index path of a name with four or more characters, as both have.
+            response=$(curl -sS --retry 3 -w '\n%{http_code}' "$CRATES_INDEX/${crate:0:2}/${crate:2:2}/$crate")
+            case ${response##*$'\n'} in
+              200) published=$(jq -s --arg v "$version" 'any(.vers == $v)' <<<"${response%$'\n'*}") ;;
+              404) published=false ;;
+              *) echo "the index answered ${response##*$'\n'} for $crate"; exit 1 ;;
+            esac
+            if [[ "$published" == true ]]; then
+              echo "$crate $version is already on crates.io; skipping it"
+            else
+              cargo publish --locked --no-verify -p "$crate"
+            fi
+          done
 
   # Publishes the draft once every package is up. Only the newest vX.Y.Z becomes the latest
   # release, so a patch to an older minor or a pre-release does not take over the release page.
