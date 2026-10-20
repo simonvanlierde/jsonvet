@@ -60,7 +60,10 @@ the hook and in CI, has no such line.
   a word such as `True`. Select a dialect with `--dialect jsonc:GLOB`, or a `dialects` entry in
   the configuration file.
 - A UTF-16 or UTF-32 file fails with `file is UTF-16 (LE); jsonvet reads UTF-8`. jsonvet knows
-  one by its byte order mark, or without one by the zero bytes in its first four bytes. Any other
+  one by its byte order mark, or without one by the zero bytes in its first four bytes. A
+  little-endian file without a mark that starts with a quote is the exception: it fails as a
+  syntax error, because JSON5 allows a raw U+0000 in a string, so UTF-8 can start the same way.
+  Any other
   file that is not UTF-8 fails with `not valid UTF-8 (byte N)`.
 - In GitHub Actions, each problem is also printed as an annotation.
 
@@ -317,8 +320,9 @@ jsonvet --format json config.json5 | jq -r '.diagnostics[] | "\(.file):\(.line) 
 
 - Strings escape control characters, bidi controls and the `[` of `##[` as SARIF does (see
   [design.md](design.md#output)), so a JSON reader gets the name and message back unchanged.
-- Each diagnostic is on a line of its own, written as soon as its file is checked: there is no
-  limit on their number, and output starts before the run ends.
+- Each diagnostic is on a line of its own, and none is held back for the end: there is no limit
+  on their number. Output comes in blocks as files are checked, as with text, so a reader cannot
+  count on one line per file as it finishes.
 - The exit status and `--max-warnings` work as with text. No annotations or count are printed.
 
 ## JSON Schema limits

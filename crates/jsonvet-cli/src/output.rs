@@ -71,26 +71,34 @@ fn escape(value: &str, property: bool) -> String {
 
 pub(crate) struct Printer<W: Write> {
     out: W,
-    annotate: bool,
-    /// SARIF results, held until `finish` writes the document; `None` for text output.
-    sarif: Option<Vec<String>>,
-    /// SARIF results past [`sarif::MAX_RESULTS`], counted but not kept.
-    dropped: usize,
-    /// For JSON output, whether the document has started; `None` for the other formats.
-    json: Option<bool>,
+    sink: Sink,
+}
+
+/// What each format keeps while the run goes on.
+enum Sink {
+    /// With `annotate`, each problem is also a GitHub Actions annotation.
+    Text { annotate: bool },
+    /// The results, held until `finish` writes the document, and how many past
+    /// [`sarif::MAX_RESULTS`] were counted but not kept.
+    Sarif {
+        results: Vec<String>,
+        dropped: usize,
+    },
+    /// Whether the document has started.
+    Json { started: bool },
 }
 
 impl<W: Write> Printer<W> {
     pub(crate) fn new(out: W, format: Format, annotate: bool) -> Self {
-        let sarif = format == Format::Sarif;
-        let json = format == Format::Json;
-        Printer {
-            out,
-            annotate: annotate && format == Format::Text,
-            sarif: sarif.then(Vec::new),
-            dropped: 0,
-            json: json.then_some(false),
-        }
+        let sink = match format {
+            Format::Text => Sink::Text { annotate },
+            Format::Sarif => Sink::Sarif {
+                results: Vec::new(),
+                dropped: 0,
+            },
+            Format::Json => Sink::Json { started: false },
+        };
+        Printer { out, sink }
     }
 
     /// A problem in a file's contents.
@@ -136,7 +144,7 @@ impl<W: Write> Printer<W> {
         message: &str,
         summary: bool,
     ) -> io::Result<()> {
-        if summary && (self.sarif.is_some() || self.json.is_some()) {
+        if summary && !matches!(self.sink, Sink::Text { .. }) {
             return Ok(());
         }
         let at = report.location(offset);
@@ -175,27 +183,33 @@ impl<W: Write> Printer<W> {
         at: Option<(Location, usize)>,
         related: Option<(Location, usize, &str)>,
     ) -> io::Result<()> {
-        if let Some(started) = &mut self.json {
-            let before = if *started {
-                ",\n".to_owned()
-            } else {
-                json::start()
-            };
-            *started = true;
-            let diagnostic = json::diagnostic(file, rule, severity, message, at, related);
-            return write!(self.out, "{before}{diagnostic}");
-        }
-        let at = at.map(|(at, _)| at);
-        let related = related.map(|(first, _, what)| (first, what));
-        if self.sarif.is_some() {
-            // GitHub code scanning needs a line in every result.
-            let at = at.unwrap_or(Location::START);
-            self.push(|| sarif::result(file, rule, severity, message, at, related));
-            return Ok(());
-        }
+        let annotate = match &mut self.sink {
+            Sink::Json { started } => {
+                if *started {
+                    self.out.write_all(b",\n")?;
+                } else {
+                    self.out.write_all(json::start().as_bytes())?;
+                }
+                *started = true;
+                let diagnostic = json::diagnostic(file, rule, severity, message, at, related);
+                return self.out.write_all(diagnostic.as_bytes());
+            }
+            Sink::Sarif { results, dropped } => {
+                if results.len() < sarif::MAX_RESULTS {
+                    // GitHub code scanning needs a line in every result.
+                    let at = at.map_or(Location::START, |(at, _)| at);
+                    let related = related.map(|(first, _, what)| (first, what));
+                    results.push(sarif::result(file, rule, severity, message, at, related));
+                } else {
+                    *dropped += 1;
+                }
+                return Ok(());
+            }
+            Sink::Text { annotate } => *annotate,
+        };
         let file = &file.to_string_lossy();
         let message = &printable(message);
-        let (position, title) = match at {
+        let (position, title) = match at.map(|(at, _)| at) {
             Some(at) => (
                 format!(":{}:{}: {severity}[{rule}]", at.line, at.column),
                 format!(",line={},col={},title=jsonvet ({rule})", at.line, at.column),
@@ -203,7 +217,7 @@ impl<W: Write> Printer<W> {
             None => (format!(": {severity}:"), ",title=jsonvet".to_owned()),
         };
         writeln!(self.out, "{}{position} {message}", line_start(file))?;
-        if self.annotate {
+        if annotate {
             writeln!(
                 self.out,
                 "::{} file={}{title}::{}",
@@ -217,36 +231,25 @@ impl<W: Write> Printer<W> {
 
     /// A line of text output, such as the summary; nothing in SARIF or JSON.
     pub(crate) fn text_line(&mut self, line: &str) -> io::Result<()> {
-        if self.sarif.is_none() && self.json.is_none() {
+        if matches!(self.sink, Sink::Text { .. }) {
             writeln!(self.out, "{line}")?;
         }
         Ok(())
     }
 
-    /// Keep a SARIF result, or only count it once [`sarif::MAX_RESULTS`] are kept.
-    fn push(&mut self, result: impl FnOnce() -> String) {
-        if let Some(results) = &mut self.sarif {
-            if results.len() < sarif::MAX_RESULTS {
-                results.push(result());
-            } else {
-                self.dropped += 1;
-            }
-        }
-    }
-
     /// Write what was held back until every file was checked: the SARIF document, or the end
     /// of the JSON one.
     pub(crate) fn finish(&mut self) -> io::Result<()> {
-        match self.json {
-            Some(true) => writeln!(self.out, "\n]}}")?,
-            Some(false) => writeln!(self.out, "{}]}}", json::start())?,
-            None => {}
-        }
-        if let Some(results) = &self.sarif {
-            if self.dropped > 0 {
-                eprintln!("jsonvet: {}", sarif::dropped_message(self.dropped));
+        match &self.sink {
+            Sink::Text { .. } => {}
+            Sink::Json { started: true } => writeln!(self.out, "\n]}}")?,
+            Sink::Json { started: false } => writeln!(self.out, "{}]}}", json::start())?,
+            Sink::Sarif { results, dropped } => {
+                if *dropped > 0 {
+                    eprintln!("jsonvet: {}", sarif::dropped_message(*dropped));
+                }
+                writeln!(self.out, "{}", sarif::document(results, *dropped))?;
             }
-            writeln!(self.out, "{}", sarif::document(results, self.dropped))?;
         }
         self.out.flush()
     }
