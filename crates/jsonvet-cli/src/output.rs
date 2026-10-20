@@ -5,10 +5,9 @@ use std::ffi::OsStr;
 use std::fmt::Write as _;
 use std::io::{self, Write};
 
-use jsonvet::{Location, Problem, RelatedKind, Report, Severity};
+use jsonvet::{Location, Problem, RelatedKind, Report, Severity, is_hidden};
 
 use crate::{json, sarif};
-pub(crate) use jsonvet::is_hidden;
 
 /// The output format, from `--format`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
