@@ -74,6 +74,8 @@ version for a new option or output, the patch version for a fix.
 - Files are checked on every core, so a run over many files is about 4x faster on 12 cores. The
   output is unchanged and in the order the files were given. Memory now covers the files
   checked together: about 64 MB of text, or one file per core when files are larger than that.
+  With `--schema`, a file counts 20 times its size, so a file of 3.2 MB or more is checked on
+  its own: twelve 10 MB files take 0.30 GB instead of 3.4 GB, in 2.6 s instead of 1.3 s.
 - Strings are scanned 16 bytes at a time: files of long strings check up to 1.8x faster.
 - Objects with many keys check up to 2.5x faster in a third less memory: one object of 2 million
   keys takes 0.34 s and 158 MB instead of 0.84 s and 246 MB. Files of many small objects check
@@ -85,6 +87,12 @@ version for a new option or output, the patch version for a fix.
   free: 78 MB of nested records check 3x faster on 12 cores. The output is unchanged.
 - The parser skips the space between tokens faster: 88 MB of minified JSON checks 21% faster,
   71 MB of pretty-printed JSON 7% faster, and the 2.7 MB benchmark file 5% faster.
+- Thousands of files named on the command line start checking sooner: jsonvet asks which are
+  folders on every core. 10,000 named files check in 50 ms instead of 67 ms.
+- `exclude` and `dialects` patterns cost about 60 times less per file: each pattern is prepared
+  once when the config file is read, and each path made relative once. A folder walk over
+  10,000 files with 10 `exclude` patterns takes 62 ms instead of 128 ms, and with 1,000
+  patterns 0.13 s instead of 9.9 s.
 
 ### Fixed
 

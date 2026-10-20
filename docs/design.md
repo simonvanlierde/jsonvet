@@ -186,7 +186,12 @@ The limits are listed in the [reference](usage.md#json-schema-limits). Why each 
   `definitions`, jsonvet checks the schema without `items` on the whole array, then `items` on
   one element at a time: 0.37 GB both ways, with the same output. jsonschema runs `contains`
   after `items` and every other keyword before it, so the errors keep that order. Any other
-  schema is checked in one pass.
+  schema is checked in one pass. Files are read a chunk at a time, until they hold 64 MB. With
+  `--schema` each byte counts 20 times, and the chunk is cut from the files' sizes before any
+  is read, so a file of 3.2 MB or more is checked on its own. Counted only after reading, every
+  core took a file at once: twelve 10 MB files took 3.4 GB instead of 0.30 GB, though in half
+  the time (1.3 s against 2.6 s). Without `--schema` the text is counted as it is read, since
+  sizing 10,000 files first cost 7 ms.
 - **Schema depth and `$ref` chains.** Without the check, 1,000 `allOf` and `$ref` hops overflow the
   64 MB stack at once against a 512-level array. A `$ref` back to a schema on the way to it is
   recursion and adds nothing. The error lands at the `$ref` that crosses the line. A `$ref`

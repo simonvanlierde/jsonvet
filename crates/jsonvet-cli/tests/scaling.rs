@@ -134,3 +134,41 @@ fn json5_hex_numbers_in_the_diff_json5_target() {
         instructions(Path::new(&target), &["hex.json5"], &dir)
     });
 }
+
+/// Walk a folder of `files` files under a config with `patterns` exclude and `patterns` dialect
+/// patterns, none of which match.
+fn walk_with_patterns(patterns: usize, files: usize) -> u64 {
+    let globs: Vec<String> = (0..patterns)
+        .map(|i| format!("\"nomatch{i}/*.json\""))
+        .collect();
+    let dialects: Vec<String> = (0..patterns)
+        .map(|i| format!("{{ files = \"nomatch{i}/*.json\", dialect = \"json\" }}"))
+        .collect();
+    let config = format!(
+        "exclude = [{}]\ndialects = [{}]\n",
+        globs.join(", "),
+        dialects.join(", ")
+    );
+    let names: Vec<String> = (0..files).map(|i| format!("f{i}.json")).collect();
+    let mut tree: Vec<(&str, &str)> = names.iter().map(|name| (name.as_str(), "{}")).collect();
+    tree.push(("jsonvet.toml", &config));
+    let dir = workdir("patterns", &tree);
+    instructions(Path::new(env!("CARGO_BIN_EXE_jsonvet")), &["."], &dir)
+}
+
+#[test]
+#[ignore = "needs valgrind: just scaling"]
+fn exclude_and_dialect_patterns_on_many_files() {
+    // Each pattern is split into characters and each base normalized once, when the config is
+    // read, and each file is made absolute and relative once: not once for each pattern.
+    assert_linear(500, |n| walk_with_patterns(100, n));
+    let (files, patterns) = (1_000, 200);
+    let none = walk_with_patterns(0, files);
+    let each = (walk_with_patterns(patterns, files) - none) / (files * patterns) as u64;
+    eprintln!("{each} instructions for each pattern and file");
+    // A file is matched against each pattern twice, once to exclude it and once for its dialect.
+    assert!(
+        each < 1_000,
+        "a pattern costs {each} instructions on each file"
+    );
+}

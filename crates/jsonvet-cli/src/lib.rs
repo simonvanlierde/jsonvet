@@ -35,8 +35,12 @@ const SCHEMA_MAX_DEPTH: usize = 512;
 /// are committed, so a plain check costs no more memory.
 const STACK: usize = 64 << 20;
 
-/// How many bytes of file text a run reads before it checks and prints them.
+/// How much memory the files read at once may take before they are checked and printed.
 const CHUNK_BYTES: usize = 64 << 20;
+
+/// How many bytes of memory a byte of file text takes with `--schema`, which holds the file's
+/// events and value: 14 to 27 (docs/design.md, "Memory").
+const SCHEMA_BYTES: usize = 20;
 
 /// From this size, a JSON Lines file is split at newlines and its parts checked on the cores
 /// its chunk leaves free.
@@ -102,7 +106,8 @@ fn run_with(
     };
     let resolver = Arc::new(Mutex::new(Resolver::new(&args.config, args.settings)?));
     let settings_for = |path: &Path| lock(&resolver).for_file(path);
-    let files = expand(args.files, &resolver)?;
+    let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
+    let files = expand(args.files, &resolver, threads)?;
     let schema = args
         .schema
         .as_deref()
@@ -126,12 +131,18 @@ fn run_with(
         .collect::<Result<Vec<_>, String>>()?;
     let mut printer = Printer::new(out, args.format, annotate);
     let mut counts = Counts::default();
-    let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     // Files are read and checked on every core, a chunk at a time, then printed here in the
-    // order given. A chunk ends once its files hold CHUNK_BYTES, so memory stays near that.
+    // order given. A chunk ends once its files hold CHUNK_BYTES, so memory stays near that. With
+    // `--schema` a file takes 20 times its size, so the chunk is cut from the sizes before any
+    // file is read: else every core takes a file at once. Without, sizing every file first made
+    // a walk of 10,000 files 7 ms slower.
     // shortcut: each chunk waits for its slowest file before the next starts; hand files out
     // one at a time across chunks if one big file among many small ones holds a run up.
     let mut rest = &files[..];
+    let shares = match schema {
+        Some(_) => parallel(&files, threads, || false, |(_, file)| schema_share(file)),
+        None => Vec::new(),
+    };
     let written = loop {
         if rest.is_empty() {
             let line = (summary && !files.is_empty()).then(|| counts.summary(files.len()));
@@ -139,17 +150,11 @@ fn run_with(
                 .map_or(Ok(()), |line| printer.text_line(&line))
                 .and_then(|()| printer.finish());
         }
-        let bytes = AtomicUsize::new(0);
-        let full = || bytes.load(Ordering::Relaxed) >= CHUNK_BYTES;
-        let texts = parallel(rest, threads, full, |(_, file)| {
-            let text = if file == STDIN {
-                read_stdin()
-            } else {
-                read(Path::new(file))
-            };
-            bytes.fetch_add(text.as_ref().map_or(0, String::len), Ordering::Relaxed);
-            text
-        });
+        let offered = match shares.get(files.len() - rest.len()..) {
+            Some(shares) if !shares.is_empty() => &rest[..chunk_len(shares)],
+            _ => rest,
+        };
+        let texts = read_chunk(offered, threads);
         let chunk;
         (chunk, rest) = rest.split_at(texts.len());
         let jobs: Vec<_> = chunk.iter().zip(&texts).collect();
@@ -198,14 +203,69 @@ fn run_with(
     Ok(u8::from(counts.errors > 0 || too_many_warnings))
 }
 
+/// The texts of the first of `files`, read on up to `threads` threads until they hold
+/// [`CHUNK_BYTES`], and always the first.
+fn read_chunk<S: Sync>(files: &[(S, OsString)], threads: usize) -> Vec<Result<String, String>> {
+    let bytes = AtomicUsize::new(0);
+    let full = || bytes.load(Ordering::Relaxed) >= CHUNK_BYTES;
+    parallel(files, threads, full, |(_, file)| {
+        let text = if file == STDIN {
+            read_stdin()
+        } else {
+            read(Path::new(file))
+        };
+        bytes.fetch_add(text.as_ref().map_or(0, String::len), Ordering::Relaxed);
+        text
+    })
+}
+
+/// The memory a file takes while `--schema` checks it, as far as a chunk counts it:
+/// [`SCHEMA_BYTES`] times its size, capped at [`CHUNK_BYTES`]. Standard input's size is known
+/// only once it is read, so it takes a chunk's worth. A file that cannot be read takes nothing:
+/// `read` reports why.
+fn schema_share(file: &OsStr) -> usize {
+    if file == STDIN {
+        return CHUNK_BYTES;
+    }
+    let size = std::fs::metadata(file).map_or(0, |meta| meta.len());
+    usize::try_from(size)
+        .unwrap_or(usize::MAX)
+        .saturating_mul(SCHEMA_BYTES)
+        .min(CHUNK_BYTES)
+}
+
+/// How many of the files with these shares the next chunk takes: up to and including the one
+/// that fills [`CHUNK_BYTES`], so always at least one.
+fn chunk_len(shares: &[usize]) -> usize {
+    let mut total = 0;
+    shares
+        .iter()
+        .position(|share| {
+            total += share;
+            total >= CHUNK_BYTES
+        })
+        .map_or(shares.len(), |last| last + 1)
+}
+
 /// The files to check: each argument as given, except that a directory stands for the files under
 /// it that jsonvet checks by default, in sorted order. The walk skips hidden files and what
 /// `.gitignore`, `.ignore` and the `exclude` setting of each folder's settings name, as ripgrep
 /// would.
-fn expand(args: Vec<OsString>, resolver: &Arc<Mutex<Resolver>>) -> Result<Vec<OsString>, String> {
+fn expand(
+    args: Vec<OsString>,
+    resolver: &Arc<Mutex<Resolver>>,
+    threads: usize,
+) -> Result<Vec<OsString>, String> {
     let mut files = Vec::with_capacity(args.len());
-    for arg in args {
-        if arg == STDIN || !Path::new(&arg).is_dir() {
+    // Each argument costs a call to the system, so thousands of them are asked about in parallel.
+    let dirs = parallel(
+        &args,
+        threads,
+        || false,
+        |arg| arg != STDIN && Path::new(arg).is_dir(),
+    );
+    for (arg, dir) in args.into_iter().zip(dirs) {
+        if !dir {
             files.push(arg);
             continue;
         }
@@ -455,7 +515,10 @@ mod tests {
 
     use jsonvet::Dialect;
 
-    use super::{SPLIT_BYTES, Schema, Settings, check, parallel, split};
+    use super::{
+        CHUNK_BYTES, SCHEMA_BYTES, SPLIT_BYTES, Schema, Settings, check, chunk_len, parallel,
+        schema_share, split,
+    };
 
     #[test]
     fn only_json_lines_of_the_split_size_is_split_one_part_per_thread() {
@@ -531,6 +594,31 @@ mod tests {
             parallel(&[] as &[u8], 4, || false, |&b| b),
             Vec::<u8>::new()
         );
+    }
+
+    #[test]
+    fn a_chunk_ends_with_the_file_that_fills_it() {
+        assert_eq!(chunk_len(&[]), 0);
+        assert_eq!(chunk_len(&[1, 2, 3]), 3);
+        assert_eq!(chunk_len(&[CHUNK_BYTES, 1]), 1);
+        assert_eq!(chunk_len(&[CHUNK_BYTES - 1, 1, 1]), 2);
+        assert_eq!(chunk_len(&[CHUNK_BYTES - 2, 1, 1]), 3);
+        assert_eq!(chunk_len(&[0, CHUNK_BYTES - 1, 0, 2, 5]), 4);
+    }
+
+    #[test]
+    fn a_file_counts_its_size_twenty_times_with_a_schema() {
+        let dir = std::env::temp_dir().join(format!("jsonvet-share-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a temp dir");
+        let path = dir.join("a.json");
+        std::fs::write(&path, " ".repeat(1000)).expect("write");
+        let path = path.as_os_str();
+        assert_eq!(schema_share(path), 1000 * SCHEMA_BYTES);
+        std::fs::write(path, " ".repeat(CHUNK_BYTES / SCHEMA_BYTES + 1)).expect("write");
+        assert_eq!(schema_share(path), CHUNK_BYTES, "capped");
+        assert_eq!(schema_share(dir.join("gone.json").as_os_str()), 0);
+        assert_eq!(schema_share(std::ffi::OsStr::new("-")), CHUNK_BYTES);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
