@@ -1,0 +1,194 @@
+---
+source: crates/jsonvet-cli/tests/cli.rs
+expression: "serde_json::to_string_pretty(&sarif).expect(\"JSON\")"
+---
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "columnKind": "unicodeCodePoints",
+      "originalUriBaseIds": {
+        "%SRCROOT%": {
+          "description": {
+            "text": "the working directory jsonvet ran in"
+          }
+        }
+      },
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "dup.json",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startColumn": 3,
+                  "startLine": 3
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "duplicate key $.a (first at 2:3)"
+          },
+          "relatedLocations": [
+            {
+              "message": {
+                "text": "first copy"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "dup.json",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startColumn": 3,
+                  "startLine": 2
+                }
+              }
+            }
+          ],
+          "ruleId": "duplicate-key"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "gone.json",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startColumn": 1,
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "no such file"
+          },
+          "ruleId": "unreadable"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/simonvanlierde/jsonvet",
+          "name": "jsonvet",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "the first syntax error; checking stops there."
+              },
+              "help": {
+                "text": "The file is not valid in its dialect: a missing or extra comma, a comment in strict JSON, an unclosed string. jsonvet reports the first one and stops there, since what follows cannot be read reliably.\n\n  Bad (json):  {\"a\": 1,}\n  Good (json): {\"a\": 1}"
+              },
+              "helpUri": "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#syntax",
+              "id": "syntax",
+              "shortDescription": {
+                "text": "the first syntax error; checking stops there"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "a key repeated in one object."
+              },
+              "help": {
+                "text": "Most parsers keep the last copy of a repeated key and drop the others without a word, so a value is lost; RFC 8259 leaves the result undefined. The message gives the key's JSONPath and where its first copy is.\n\n  Bad:  {\"port\": 80, \"port\": 8080}\n  Good: {\"port\": 8080}"
+              },
+              "helpUri": "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#duplicate-key",
+              "id": "duplicate-key",
+              "shortDescription": {
+                "text": "a key repeated in one object"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "a number a double cannot hold, or an integer past 2^53 - 1."
+              },
+              "help": {
+                "text": "I-JSON (RFC 7493) asks for numbers a double can hold, and for integers within 2^53 - 1 either side of zero, so that every parser reads them the same. jsonvet reports an overflow, and an integer written as digits alone past that limit.\n\n  Bad (i-json):  {\"id\": 9007199254740993}\n  Good (i-json): {\"id\": \"9007199254740993\"}"
+              },
+              "helpUri": "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#invalid-number",
+              "id": "invalid-number",
+              "shortDescription": {
+                "text": "a number a double cannot hold, or an integer past 2^53 - 1"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "a lone surrogate or a noncharacter in a string."
+              },
+              "help": {
+                "text": "I-JSON (RFC 7493) forbids lone surrogates and noncharacters in strings: many decoders reject them or replace them with U+FFFD.\n\n  Bad (i-json):  {\"a\": \"\\ud800\"}\n  Good (i-json): {\"a\": \"\\ud83d\\ude00\"}"
+              },
+              "helpUri": "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#invalid-code-point",
+              "id": "invalid-code-point",
+              "shortDescription": {
+                "text": "a lone surrogate or a noncharacter in a string"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "a byte order mark at the start of the file."
+              },
+              "help": {
+                "text": "RFC 8259 says JSON text must not start with a byte order mark (U+FEFF), and many parsers fail on one. Save the file as UTF-8 without a BOM.\n\n  Bad:  <U+FEFF>{\"a\": 1}\n  Good: {\"a\": 1}"
+              },
+              "helpUri": "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#byte-order-mark",
+              "id": "byte-order-mark",
+              "shortDescription": {
+                "text": "a byte order mark at the start of the file"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "a JSON Lines file that does not end with a newline."
+              },
+              "help": {
+                "text": "JSON Lines ends every record with a newline. Without one, the next record appended joins the last line and breaks it.\n\n  Bad (jsonl):  {\"a\": 1}<end of file>\n  Good (jsonl): {\"a\": 1}<newline>"
+              },
+              "helpUri": "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#missing-final-newline",
+              "id": "missing-final-newline",
+              "shortDescription": {
+                "text": "a JSON Lines file that does not end with a newline"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "a file that is not a regular file, could not be read, or is not UTF-8."
+              },
+              "help": {
+                "text": "jsonvet could not check the file at all: it does not exist, is a directory, device, FIFO or socket, could not be read, or is not UTF-8. It always fails the run, and no option changes that."
+              },
+              "helpUri": "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#unreadable",
+              "id": "unreadable",
+              "shortDescription": {
+                "text": "a file that is not a regular file, could not be read, or is not UTF-8"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "a value the JSON Schema given with --schema rejects."
+              },
+              "help": {
+                "text": "A value the JSON Schema given with --schema rejects, such as a missing required key or a string where the schema wants a number. Always an error: --error, --warn, --ignore and settings files do not take this rule."
+              },
+              "helpUri": "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#schema",
+              "id": "schema",
+              "shortDescription": {
+                "text": "a value the JSON Schema given with --schema rejects"
+              }
+            }
+          ],
+          "version": "[version]"
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}
