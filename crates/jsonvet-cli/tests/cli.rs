@@ -1102,7 +1102,6 @@ fn a_file_that_cannot_be_read_says_why() {
     assert_eq!(lines[1], "gone.json: error: no such file");
 }
 
-/// SARIF strings escape a `[` only where it follows `##`.
 /// Run jsonvet in `dir` with `input` on its standard input; return its exit code, stdout and
 /// stderr.
 fn jsonvet_stdin(dir: &Path, args: &[&str], input: &str) -> (i32, String, String) {
@@ -1203,6 +1202,7 @@ fn piped_input_with_no_file_is_not_read() {
     );
 }
 
+/// SARIF strings escape a `[` only where it follows `##`.
 #[test]
 fn sarif_keeps_other_brackets() {
     let dir = workdir(&[("a.json", "[{\"a\": 1, \"a\": 2}]")]);
