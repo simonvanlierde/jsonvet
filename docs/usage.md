@@ -353,10 +353,12 @@ These hold for `--schema`. Why each one exists is in [design.md](design.md#--sch
   `--warn`, `--ignore` and the config file do not take `schema`, and exit 2 if you give it to
   them.
 - **Errors.** A document lists at most 100 schema errors. They are the first 100 that jsonschema
-  finds, and it takes an object's keys in sorted order, not file order. They print in file order.
-  Then one more line, `... and N more schema errors in this document`, sits at the document's
-  start. SARIF and JSON leave that line out. `additionalProperties` gives one error per key it does not
-  allow, at that key, and each one counts toward the 100.
+  finds, and it takes an object's keys in sorted order, not file order. A top-level object checked
+  one member at a time (see Memory) gives them by member instead of by keyword. They print in
+  file order. If there are more, one more line, `... and more schema errors in this document`,
+  sits at the document's start. jsonvet stops looking at the 101st, so it gives no count. SARIF
+  and JSON leave that line out. `additionalProperties` gives one error per key it does not allow,
+  at that key, and each one counts toward the 100.
 - **Messages.** Each message ends with the JSONPath of the value, as duplicate keys do. A message
   quotes the value unless that makes it long; then it says `value`. A message, with its path, is
   cut at 200 bytes and ends in `...`. The wording comes from the jsonschema crate and may change
@@ -371,8 +373,12 @@ These hold for `--schema`. Why each one exists is in [design.md](design.md#--sch
 - **Memory.** jsonvet holds each file's values in memory: 14 to 27 times the file's size, the most
   for many small records such as JSON Lines. Without `--schema`, memory stays near the file's
   size. A top-level array that fails everywhere takes no more than a valid one when only `items`
-  checks its elements, as in `{"type": "array", "items": {"$ref": "#/$defs/record"}}`. Otherwise
-  each error takes about 340 bytes until the first 100 are picked: 1.7 GB for 5,000,000 errors.
+  checks its elements, as in `{"type": "array", "items": {"$ref": "#/$defs/record"}}`, and so
+  does a top-level object when only `properties`, `patternProperties` and `additionalProperties`
+  check its members. jsonvet then checks one element or member at a time. Otherwise jsonschema
+  finds every error in the document before jsonvet sees the first. Each takes about 340 bytes,
+  1.7 GB for 5,000,000 errors, and more when it holds part of the schema: an `anyOf` error holds
+  every branch's errors, and an `enum` error a copy of its values.
 - **Regexes.** A pattern with a back-reference or lookaround may backtrack 5,000 times per string.
   A key or string that needs more is an error at that key or string: the pattern could not be
   checked. jsonvet tries each `patternProperties` pattern on every key, and each `pattern` on
@@ -381,10 +387,14 @@ These hold for `--schema`. Why each one exists is in [design.md](design.md#--sch
   2020-12. A `$ref` must point inside the file: jsonvet fetches nothing, from the network or from
   disk. A schema jsonvet cannot read or use is a usage error (exit 2). That covers:
   - a `$ref` to another file;
+  - a `$ref` that points at nothing in the file, even one nothing uses. A `$ref` resolves as
+    jsonschema resolves it, against the base the `$id`s above it set;
   - nesting deeper than 128 levels, where each `$ref` followed counts as a level;
   - more than 5,000,000 objects and arrays once each `$ref` is replaced by what it points at,
-    every time it is followed. SchemaStore's 1.6 MB `azure-pipelines.json` comes to about
-    2,560,000.
+    every time it is followed, with every value in each `enum` and `const`. Beside
+    `unevaluatedProperties` or `unevaluatedItems`, the schemas that apply to the same value
+    (`allOf`, `anyOf`, `oneOf`, `if`, `then`, `else`, `dependentSchemas` and `$ref`s) count
+    twice. SchemaStore's 1.6 MB `azure-pipelines.json` comes to about 3,210,000.
 
   A `$ref` back to a schema it is inside, as in `{"items": {"$ref": "#"}}`, is recursion and is
   fine: jsonvet does not follow it again.

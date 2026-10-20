@@ -36,7 +36,8 @@ jsonvet = { path = "../jsonvet", version = "=3.0.0" }
 # No default features: they fetch remote `$ref`s over HTTP and read them from disk.
 jsonschema = { version = "0.58.6", default-features = false }
 lexopt = "0.3.2"
-percent-encoding = "2.3.2"
+# jsonschema's own `$ref` resolution, so the schema size check follows the `$ref`s it does.
+referencing = { version = "0.58.6", default-features = false }
 serde_json = "1.0.154"
 toml = { version = "1.1.8", default-features = false, features = ["parse", "serde"] }
 ignore = "0.4.33"

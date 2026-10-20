@@ -185,17 +185,40 @@ The limits are listed in the [reference](usage.md#json-schema-limits). Why each 
   but `items` checks a top-level array's elements, and every `$ref` points into `$defs` or
   `definitions`, jsonvet checks the schema without `items` on the whole array, then `items` on
   one element at a time: 0.37 GB both ways, with the same output. jsonschema runs `contains`
-  after `items` and every other keyword before it, so the errors keep that order. Any other
-  schema is checked in one pass.
+  after `items` and every other keyword before it, so the errors keep that order. A top-level
+  object whose members only `properties`, `patternProperties` and `additionalProperties` check
+  is split the same way, each member checked as an object of its own. Its errors past the first
+  100 differ: jsonschema in one pass gives them keyword by keyword, the split member by member.
+  Any other schema is checked in one pass.
+- **Errors.** A jsonschema error holds more than its message. An `anyOf` error holds every
+  branch's errors, and an `enum` error a copy of its values, so 40 errors from a 1 KB schema took
+  3.2 GB when jsonvet kept them until it placed them. jsonvet keeps each error's message and path
+  as it comes and drops the rest. Past the 100th it stops asking: counting the other 4,900 errors
+  of a 5,000-element array took 57 s, so the last line says there are more but not how many.
+  What one jsonschema call collects is still all in memory at once. That is one element or
+  member for a split schema, and the whole document otherwise, so an `anyOf` around
+  `additionalProperties`, or an `enum` under a member's `additionalProperties`, can still take
+  gigabytes on a document of many failing values.
 - **Schema depth and `$ref` chains.** Without the check, 1,000 `allOf` and `$ref` hops overflow the
   64 MB stack at once against a 512-level array. A `$ref` back to a schema on the way to it is
-  recursion and adds nothing. The error lands at the `$ref` that crosses the line. A `$ref`
-  jsonvet can follow inside the file is a JSON Pointer, an anchor, or a URI naming an `$id` there.
+  recursion and adds nothing. The error lands at the `$ref` that crosses the line. jsonvet
+  resolves each `$ref` with the `referencing` crate jsonschema itself uses, against the base the
+  `$id`s above it set, so the two follow the same schemas. Matched by text alone, two resources
+  with the same relative `$id` let a small one be measured while jsonschema checked the other,
+  which doubled at each level, and looking each `$ref` up among 20,000 `$id`s took 24 s. A
+  `$ref` that resolves to nothing is an error at that `$ref`, as the count cannot follow it.
 - **Schema size.** jsonschema may check every schema a value reaches, so a schema where each level
   `$ref`s the next twice doubles the work per level, well under the depth cap: 24 levels took
   12.9 s and 11.4 GB for one `{}`. jsonvet counts the objects and arrays with each `$ref` replaced
   by what it points at, and stops at 5,000,000. That lets 18 such levels through (about 3.9
-  million, 1 s and 340 MB) and SchemaStore's 1.6 MB `azure-pipelines.json` (about 2.56 million).
+  million, 1 s and 340 MB per failing value) and SchemaStore's 1.6 MB `azure-pipelines.json`
+  (about 3.2 million). The values in each `enum` and `const` count too: an `enum` error copies
+  them all. `unevaluatedProperties` and `unevaluatedItems` make jsonschema check the schemas
+  beside them that apply to the same value a second time, to find what they evaluated, so
+  those count twice there. Nested in each other's `anyOf`, each level doubled the time: 27
+  levels took 22 s on `{"c": 1}`. The cap now stops 20 such levels, which took 0.16 s. A
+  `$ref` from `properties` is not checked again, so OpenAPI 3.1's schema, with
+  `unevaluatedProperties` on most objects, comes to about 1.25 million.
   A schema measured while a `$ref` back up to a schema above it was skipped is measured again
   wherever it is reached, as it can be deeper there.
 - **Regex backtracking.** Schema regexes with back-references or lookaround run on fancy-regex,

@@ -93,6 +93,15 @@ version for a new option or output, the patch version for a fix.
   instead of 2.0 GB, and checks 2.7x faster. The errors reported are unchanged.
 - A JSON Lines file of 1 MB or more is split at newlines and checked on the cores its chunk leaves
   free: 78 MB of nested records check 3x faster on 12 cores. The output is unchanged.
+- `--schema` also checks a top-level object one member at a time when only `properties`,
+  `patternProperties` and `additionalProperties` check its members. Up to 100 errors, the output
+  is unchanged. Past that, the 100 reported are the first by member, in key order, instead of by
+  keyword.
+- A document with more than 100 schema errors now ends with `... and more schema errors in this
+  document`, without a count. Counting the rest meant finding every one of them.
+- A schema with a `$ref` that points at nothing in the file is a usage error at that `$ref`, also
+  when nothing uses it. Before, an unused one passed and a used one was reported at the schema's
+  first line.
 
 ### Fixed
 
@@ -118,6 +127,21 @@ version for a new option or output, the patch version for a fix.
   was quadratic: 40,000 such keys took over a minute.
 - `--dialect jsonl` with `--schema` no longer reads the schema as JSON Lines, which rejected any
   schema written over several lines.
+- A crafted `--schema` file could make jsonvet run for minutes or take gigabytes of memory, past
+  the limits docs/usage.md lists. Since a schema can sit in the repository a pull request edits,
+  this matters in CI. Fixed:
+  - After 100 errors, jsonvet went on asking jsonschema for every other error just to count it:
+    a 1 KB schema on a 15 KB file took 57 s. It now stops at the 101st: 1.7 s.
+  - Each kept error held what jsonschema stores in it, such as every branch's errors for an
+    `anyOf` or a copy of an `enum`'s values: 40 such errors took 3.2 GB. jsonvet now keeps only
+    the message and the place.
+  - The schema size limit left out the values in `enum` and `const`, and that
+    `unevaluatedProperties` and `unevaluatedItems` make jsonschema check the schemas beside them
+    a second time. 27 nested levels of these took 22 s on `{"c": 1}`. Both count now.
+  - A `$ref` to a relative `$id` was matched to the first `$id` with that text, not resolved
+    against its base as jsonschema resolves it, so a small schema elsewhere could be measured in
+    place of the real one. jsonvet now resolves `$ref`s with jsonschema's own code.
+  - Looking up a `$ref` among the `$id`s was quadratic: 20,000 of them took 24 s, now 0.2 s.
 - A syntax error names a dialect that allows the syntax only when that dialect reads it in full.
   `[NaNx]`, `[0x]` or `{'a: 1}` in json no longer say `the json5 dialect allows this`, and an
   unclosed `/*` no longer says `the jsonc dialect allows this`, as those dialects reject them

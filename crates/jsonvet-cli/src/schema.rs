@@ -7,9 +7,12 @@ use std::ops::Range;
 use std::path::Path;
 
 use jsonschema::error::ValidationErrorKind;
-use jsonschema::{PatternOptions, ReferencingError, ValidationError, ValidationOptions, Validator};
+use jsonschema::{
+    Draft, PatternOptions, ReferencingError, Registry, ValidationError, ValidationOptions,
+    Validator,
+};
 use jsonvet::{Dialect, Event, EventKind, PathStep, Severity, key_text};
-use percent_encoding::percent_decode_str;
+use referencing::{Resolver, ResourceRef};
 use serde_json::{Map, Number, Value};
 
 use crate::settings::Settings;
@@ -28,7 +31,7 @@ const SAME_KEYS: &str =
     "this key and an earlier one in the object are the same once lone surrogates become U+FFFD";
 
 /// How many schema errors one document reports, in the order jsonschema finds them; one more
-/// line counts the rest.
+/// line says there are more.
 const MAX_ERRORS: usize = 100;
 
 /// Past this many bytes, a message says "value" instead of quoting the value, and past it
@@ -39,20 +42,39 @@ const MAX_MESSAGE: usize = 200;
 /// schemas stay well under it.
 const MAX_SCHEMA_DEPTH: usize = 128;
 
-/// How many objects and arrays a schema may hold once each local `$ref` is replaced by what it
-/// points at. jsonschema may check every one of them for one value, so `$ref`s that each point
-/// twice at the next schema, 24 levels deep, took 12.9 s and 11.4 GB.
+/// How many objects and arrays a schema may hold once each `$ref` is replaced by what it points
+/// at, with the values in each `enum` and `const`. jsonschema may check every one of them for
+/// one value, so `$ref`s that each point twice at the next schema, 24 levels deep, took 12.9 s
+/// and 11.4 GB.
 const MAX_SCHEMA_SIZE: usize = 5_000_000;
 
 /// The keys whose value points at another schema.
 const REF_KEYS: [&str; 3] = ["$ref", "$dynamicRef", "$recursiveRef"];
 
+/// The keywords that make jsonschema check the schemas beside them that apply to the same
+/// value once more, to find what they evaluated: those under [`IN_PLACE`] and the `$ref`s.
+const UNEVALUATED: [&str; 2] = ["unevaluatedProperties", "unevaluatedItems"];
+
+/// The keywords whose schemas apply to the value itself, not to its elements or members.
+const IN_PLACE: [&str; 7] = [
+    "allOf",
+    "anyOf",
+    "oneOf",
+    "if",
+    "then",
+    "else",
+    "dependentSchemas",
+];
+
+/// The base URI jsonschema gives a schema without an `$id`.
+const DEFAULT_BASE: &str = "json-schema:///";
+
 /// How many times one regex match may backtrack before it fails. About one step per character
 /// for a lookaround over the whole string, so a string over a few thousand characters can hit it.
 const BACKTRACK_LIMIT: usize = 5_000;
 
-/// The keys of a schema that check nothing themselves, kept beside `items` when it is checked
-/// on its own so that its `$ref`s resolve as before.
+/// The keys of a schema that check nothing themselves, kept beside the part checked on its own
+/// when a schema is split, so that its `$ref`s resolve as before.
 const NOT_CHECKS: [&str; 9] = [
     "$schema",
     "$id",
@@ -65,11 +87,10 @@ const NOT_CHECKS: [&str; 9] = [
     "$comment",
 ];
 
-/// The keywords besides `items` that can check an array's elements, or that change what `items`
-/// checks.
-const ON_ELEMENTS: [&str; 15] = [
-    "prefixItems",
-    "unevaluatedItems",
+/// The keywords that can apply a schema to an array's elements or an object's members besides
+/// `items`, `properties`, `patternProperties` and `additionalProperties`, or change what those
+/// check.
+const ON_CHILDREN: [&str; 13] = [
     "allOf",
     "anyOf",
     "oneOf",
@@ -85,8 +106,11 @@ const ON_ELEMENTS: [&str; 15] = [
     "extends",
 ];
 
-/// Where `items` is moved to when it is checked on its own.
-const ITEMS: &str = "jsonvet-items";
+/// The keywords that check each member of an object on its own.
+const ON_MEMBERS: [&str; 3] = ["properties", "patternProperties", "additionalProperties"];
+
+/// Where the part of a split schema checked on each element or member is moved to.
+const EACH: &str = "jsonvet-each";
 
 pub(crate) struct Schema {
     validator: Validator,
@@ -94,12 +118,32 @@ pub(crate) struct Schema {
     /// once on the whole array, and `items` alone, checked on each element. jsonschema collects
     /// every error before handing out the first, so a 10 MB array failing everywhere took 2.0 GB
     /// in one pass; one element at a time, it holds at most one element's errors.
-    split: Option<(Validator, Validator)>,
+    items: Option<Split>,
+    /// The same for an object whose members only `properties`, `patternProperties` and
+    /// `additionalProperties` check, each member checked as an object of its own.
+    members: Option<Split>,
     /// `{"pattern": p}` for each regex in the schema tried on keys: `patternProperties` and a
     /// `pattern` under `propertyNames`.
     key_patterns: Vec<(String, Validator)>,
     /// `{"pattern": p}` for each `pattern` in the schema, tried on strings.
     string_patterns: Vec<(String, Validator)>,
+}
+
+/// A schema split in two: the part checked on the whole value, and the part checked on each
+/// element or member.
+struct Split {
+    whole: Validator,
+    each: Validator,
+}
+
+/// The members of an object by key, or the elements of an array by index; nothing for any other
+/// value.
+fn children(value: &Value) -> impl Iterator<Item = (Cow<'_, str>, &Value)> {
+    let members = value.as_object().into_iter().flatten();
+    let items = value.as_array().into_iter().flatten().enumerate();
+    members
+        .map(|(key, member)| (Cow::Borrowed(key.as_str()), member))
+        .chain(items.map(|(i, item)| (Cow::Owned(i.to_string()), item)))
 }
 
 /// Whether `error` says a regex match ran past [`BACKTRACK_LIMIT`].
@@ -118,36 +162,90 @@ fn patterns<'v>(
     keys: &mut BTreeSet<&'v str>,
     strings: &mut BTreeSet<&'v str>,
 ) {
-    match schema {
-        Value::Object(members) => {
-            for (key, member) in members {
-                match (key.as_str(), member) {
-                    ("patternProperties", Value::Object(regexes)) => {
-                        keys.extend(regexes.keys().map(String::as_str));
-                    }
-                    ("pattern", Value::String(regex)) => {
-                        strings.insert(regex);
-                        if names {
-                            keys.insert(regex);
-                        }
-                    }
-                    _ => {}
+    for (key, member) in children(schema) {
+        match (key.as_ref(), member) {
+            ("patternProperties", Value::Object(regexes)) => {
+                keys.extend(regexes.keys().map(String::as_str));
+            }
+            ("pattern", Value::String(regex)) => {
+                strings.insert(regex);
+                if names {
+                    keys.insert(regex);
                 }
-                patterns(member, names || key == "propertyNames", keys, strings);
             }
+            _ => {}
         }
-        Value::Array(items) => {
-            for item in items {
-                patterns(item, names, keys, strings);
-            }
-        }
-        _ => {}
+        patterns(member, names || key == "propertyNames", keys, strings);
     }
 }
 
-/// An error about a key or a value, placed by its object's path and the key, or by the value's
-/// path alone: the path, the key, and the message.
-type Keyed = (Vec<String>, Option<String>, String);
+/// A schema error ready to be placed: the path of the value it is about, the keys in that value
+/// it is placed at (the first one found), and its message. With `key`, it is about the one key
+/// in `keys` itself, and names that member's path.
+struct Found {
+    path: Vec<String>,
+    keys: Vec<String>,
+    key: bool,
+    message: String,
+}
+
+/// The first [`MAX_ERRORS`] errors in a document, and whether there are more.
+#[derive(Default)]
+struct Errors {
+    kept: Vec<Found>,
+    more: bool,
+}
+
+impl Errors {
+    /// Keep each of `found` while there is room, and say whether to look for more.
+    fn add(&mut self, found: impl IntoIterator<Item = Found>) -> bool {
+        for found in found {
+            if self.kept.len() == MAX_ERRORS {
+                self.more = true;
+                break;
+            }
+            self.kept.push(found);
+        }
+        !self.more
+    }
+}
+
+/// `error`, on the element at `index` if any, as the errors to report: none for a regex that ran
+/// past [`BACKTRACK_LIMIT`], which is reported on its own; one per key for unexpected
+/// properties, up to one more than [`MAX_ERRORS`]; otherwise one.
+fn found(index: Option<usize>, value: &Value, error: &ValidationError<'_>) -> Vec<Found> {
+    if backtracked(error) {
+        return Vec::new();
+    }
+    let path = pointer_path(index, error);
+    if let Some(keys) = unexpected(value, error) {
+        return keys
+            .into_iter()
+            .take(MAX_ERRORS + 1)
+            .map(|key| Found {
+                path: path.clone(),
+                message: format!("Additional properties are not allowed ('{key}' was unexpected)"),
+                keys: vec![key],
+                key: true,
+            })
+            .collect();
+    }
+    let keys = match error.kind() {
+        ValidationErrorKind::UnevaluatedProperties { unexpected } => unexpected.clone(),
+        ValidationErrorKind::PropertyNames { error } => error
+            .instance()
+            .as_str()
+            .map(|key| vec![key.to_owned()])
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    vec![Found {
+        path,
+        keys,
+        key: false,
+        message: message(error),
+    }]
+}
 
 /// The keys an `additionalProperties` error is about, to report one error each: those it lists,
 /// or every key for `"additionalProperties": false` with no `properties` or `patternProperties`
@@ -204,39 +302,37 @@ impl Schema {
             return Err(format!("the schema {name} must hold one value"));
         }
         let document = documents.swap_remove(0);
+        let events = &events[document.events.clone()];
         if let Some((offset, reason)) = document.unchecked {
             return Err(at(offset, &reason));
         }
+        let schema = &document.value;
+        let outside = |error: &ReferencingError| match error {
+            ReferencingError::Unretrievable { uri, .. } => Some(format!(
+                "the schema {name} has a `$ref` to {uri}, outside the file; jsonvet fetches no \
+                 schemas"
+            )),
+            _ => None,
+        };
+        // The same index of `$id`s and anchors jsonschema builds, offline.
+        let registry = registry(schema)
+            .map_err(|error| outside(&error).unwrap_or_else(|| at(events[0].offset, &error)))?;
         // jsonschema also validates recursively through each `$ref`, so a long chain of them
         // takes the stack or hours, however shallow the schema is.
-        if let Some(Over { path, key, size }) = Reach::new(&document.value).over() {
-            let (offset, _) = place(
-                &events[document.events.clone()],
-                &[(path, vec![key.to_owned()])],
-            )[0];
-            let problem = if size {
-                format!(
-                    "this `{key}` takes the schema past {MAX_SCHEMA_SIZE} objects and arrays, \
-                     counting what each `$ref` points at every time it is followed"
-                )
-            } else {
-                format!(
-                    "this `{key}` leads more than {MAX_SCHEMA_DEPTH} levels deep, counting each \
-                     `$ref` followed as a level"
-                )
-            };
-            return Err(at(offset, &problem));
-        }
+        let kept = Reach::new(schema).measure(&registry).map_err(|over| {
+            let (offset, _) = place(events, &[(over.path.clone(), vec![over.key.clone()])])[0];
+            at(offset, &over.message())
+        })?;
         // Offline: a `$ref` to anything outside the schema file fails here.
         let options = jsonschema::options()
             .offline()
             // fancy-regex backtracks for back-references and lookaround, and its default limit
             // of a million lets one 30-byte string take 30 ms.
             .with_pattern_options(PatternOptions::fancy_regex().backtrack_limit(BACKTRACK_LIMIT));
-        let error = match options.build(&document.value) {
+        let error = match options.build(schema) {
             Ok(validator) => {
                 let (mut keys, mut strings) = (BTreeSet::new(), BTreeSet::new());
-                patterns(&document.value, false, &mut keys, &mut strings);
+                patterns(schema, false, &mut keys, &mut strings);
                 // A regex jsonschema could not compile already failed the build above.
                 let compile = |regexes: BTreeSet<&str>| {
                     regexes
@@ -249,7 +345,8 @@ impl Schema {
                 };
                 return Ok(Schema {
                     validator,
-                    split: split(&document.value, &options),
+                    items: split(schema, kept, false, &options),
+                    members: split(schema, kept, true, &options),
                     key_patterns: compile(keys),
                     string_patterns: compile(strings),
                 });
@@ -257,21 +354,17 @@ impl Schema {
             Err(error) => error,
         };
         // A failed `$ref` has no instance path to place it by.
-        if let ValidationErrorKind::Referencing(ReferencingError::Unretrievable { uri, .. }) =
-            error.kind()
+        if let ValidationErrorKind::Referencing(error) = error.kind()
+            && let Some(message) = outside(error)
         {
-            return Err(format!(
-                "the schema {name} has a `$ref` to {uri}, outside the file; jsonvet fetches no \
-                 schemas"
-            ));
+            return Err(message);
         }
-        let error = [(None, error)];
-        let (offset, _) = locate(&events[document.events], &error)[0];
-        Err(at(offset, &error[0].1))
+        let (offset, _) = place_found(events, &found(None, schema, &error))[0];
+        Err(at(offset, &error))
     }
 
     /// The schema errors in one file's values, as (offset, message, summary): each document's
-    /// in order, then a summary counting any past [`MAX_ERRORS`].
+    /// in order, then a summary if it has more than [`MAX_ERRORS`].
     pub(crate) fn errors(&self, events: &[Event<'_>]) -> Vec<(usize, String, bool)> {
         let mut errors = Vec::new();
         for document in documents(events) {
@@ -283,101 +376,27 @@ impl Schema {
                 ));
                 continue;
             }
-            // jsonschema counts a regex that runs past the backtrack limit as not matching, so
-            // `patternProperties` and any `pattern` under `not` or `if` would pass silently.
-            // Every key and string is tried here instead, and jsonschema's own errors for it,
-            // which this repeats, are dropped.
-            // shortcut: each regex is tried on every key or string, not only where the schema
-            // applies it; follow the schema's applicators if that fails a file wrongly.
-            let mut keyed = Vec::new();
-            if !(self.key_patterns.is_empty() && self.string_patterns.is_empty()) {
-                self.unmatched(&document.value, &mut Vec::new(), &mut keyed);
-            }
-            let mut more = keyed.len().saturating_sub(MAX_ERRORS);
-            keyed.truncate(MAX_ERRORS);
-            let value = &document.value;
-            // Each error, with the element it is on and its index, if not the whole document.
-            // Lazy, so a split schema holds one element's errors at a time.
-            let all: Box<dyn Iterator<Item = (Option<usize>, &Value, ValidationError<'_>)>> =
-                match (&self.split, value) {
-                    _ if self.validator.is_valid(value) => Box::new(std::iter::empty()),
-                    (Some((whole, each)), Value::Array(items)) => {
-                        // jsonschema checks `contains` after `items`, and the rest before.
-                        let (after, before): (Vec<_>, Vec<_>) =
-                            whole.iter_errors(value).partition(|error| {
-                                segments(error.schema_path().as_str()).next().is_some_and(
-                                    |keyword| {
-                                        ["contains", "minContains", "maxContains"]
-                                            .contains(&keyword.as_str())
-                                    },
-                                )
-                            });
-                        let each = items.iter().enumerate().flat_map(move |(i, item)| {
-                            each.iter_errors(item)
-                                .map(move |error| (Some(i), item, error))
-                        });
-                        let whole = |errors: Vec<_>| errors.into_iter().map(|e| (None, value, e));
-                        Box::new(whole(before).chain(each).chain(whole(after)))
-                    }
-                    _ => Box::new(
-                        self.validator
-                            .iter_errors(value)
-                            .map(|error| (None, value, error)),
-                    ),
-                };
-            let mut found: Vec<(Option<usize>, ValidationError<'_>)> = Vec::new();
-            for (index, value, error) in all.filter(|(.., error)| !backtracked(error)) {
-                let room = MAX_ERRORS - keyed.len() - found.len();
-                match unexpected(value, &error) {
-                    Some(keys) => {
-                        more += keys.len().saturating_sub(room);
-                        let path = pointer_path(index, &error);
-                        keyed.extend(keys.into_iter().take(room).map(|key| {
-                            let message = format!(
-                                "Additional properties are not allowed ('{key}' was unexpected)"
-                            );
-                            (path.clone(), Some(key), message)
-                        }));
-                    }
-                    None if room > 0 => found.push((index, error)),
-                    None => more += 1,
-                }
-            }
-            if found.is_empty() && keyed.is_empty() {
+            let found = self.collect(&document.value);
+            if found.kept.is_empty() {
                 continue;
             }
             let events = &events[document.events];
-            let mut placed: Vec<(usize, String, bool)> = locate(events, &found)
+            let spots = place_found(events, &found.kept);
+            let mut placed: Vec<(usize, String, bool)> = found
+                .kept
                 .into_iter()
-                .zip(&found)
-                .map(|((offset, at), (_, error))| {
-                    (offset, cut(format!("{} (at {at})", message(error))), false)
+                .zip(spots)
+                .map(|(found, (offset, at))| {
+                    (offset, cut(format!("{} (at {at})", found.message)), false)
                 })
                 .collect();
-            // For a key, its own offset and the path of its value.
-            let targets: Vec<(Vec<String>, Vec<String>)> = keyed
-                .iter()
-                .flat_map(|(path, key, _)| {
-                    let mut value = path.clone();
-                    value.extend(key.clone());
-                    [
-                        (path.clone(), key.iter().cloned().collect()),
-                        (value, Vec::new()),
-                    ]
-                })
-                .collect();
-            let spots = place(events, &targets);
-            for ((.., message), spot) in keyed.iter().zip(spots.chunks(2)) {
-                let at = &spot[1].1;
-                placed.push((spot[0].0, cut(format!("{message} (at {at})")), false));
-            }
             // Stable, so errors at one value keep the schema's order.
             placed.sort_by_key(|(offset, ..)| *offset);
             errors.append(&mut placed);
-            if more > 0 {
+            if found.more {
                 errors.push((
                     events[0].offset,
-                    format!("... and {more} more schema errors in this document"),
+                    "... and more schema errors in this document".to_owned(),
                     true,
                 ));
             }
@@ -385,9 +404,77 @@ impl Schema {
         errors
     }
 
+    /// The first [`MAX_ERRORS`] errors in `value`: keys and strings no regex could be matched
+    /// on, then jsonschema's own, which stop being asked for once there is one too many.
+    fn collect(&self, value: &Value) -> Errors {
+        let mut errors = Errors::default();
+        // jsonschema counts a regex that runs past the backtrack limit as not matching, so
+        // `patternProperties` and any `pattern` under `not` or `if` would pass silently.
+        // Every key and string is tried here instead, and jsonschema's own errors for it,
+        // which this repeats, are dropped.
+        // shortcut: each regex is tried on every key or string, not only where the schema
+        // applies it; follow the schema's applicators if that fails a file wrongly.
+        if !(self.key_patterns.is_empty() && self.string_patterns.is_empty()) {
+            self.unmatched(value, &mut Vec::new(), &mut errors);
+        }
+        if errors.more || self.validator.is_valid(value) {
+            return errors;
+        }
+        // Each error is turned into what is reported as it comes, as jsonschema's own holds
+        // much of the schema: an `enum`'s values, or every branch's errors for an `anyOf`.
+        match (value, &self.items, &self.members) {
+            (Value::Array(items), Some(Split { whole, each }), _) => {
+                // jsonschema checks `contains` after `items`, and the rest before.
+                let mut after = Vec::new();
+                for error in whole.iter_errors(value) {
+                    let found = found(None, value, &error);
+                    let keyword = segments(error.schema_path().as_str()).next();
+                    if keyword.is_some_and(|k| {
+                        ["contains", "minContains", "maxContains"].contains(&k.as_str())
+                    }) {
+                        after.extend(found);
+                    } else if !errors.add(found) {
+                        return errors;
+                    }
+                }
+                for (i, item) in items.iter().enumerate() {
+                    for error in each.iter_errors(item) {
+                        if !errors.add(found(Some(i), item, &error)) {
+                            return errors;
+                        }
+                    }
+                }
+                errors.add(after);
+            }
+            (Value::Object(members), _, Some(Split { whole, each })) => {
+                for error in whole.iter_errors(value) {
+                    if !errors.add(found(None, value, &error)) {
+                        return errors;
+                    }
+                }
+                for (key, member) in members {
+                    let one = Value::Object(Map::from_iter([(key.clone(), member.clone())]));
+                    for error in each.iter_errors(&one) {
+                        if !errors.add(found(None, &one, &error)) {
+                            return errors;
+                        }
+                    }
+                }
+            }
+            _ => {
+                for error in self.validator.iter_errors(value) {
+                    if !errors.add(found(None, value, &error)) {
+                        break;
+                    }
+                }
+            }
+        }
+        errors
+    }
+
     /// The keys and strings in `value`, which is at `path`, that a regex in the schema could
-    /// not be matched on within [`BACKTRACK_LIMIT`].
-    fn unmatched(&self, value: &Value, path: &mut Vec<String>, out: &mut Vec<Keyed>) {
+    /// not be matched on within [`BACKTRACK_LIMIT`], until there is one error too many.
+    fn unmatched(&self, value: &Value, path: &mut Vec<String>, errors: &mut Errors) {
         let fails = |regex: &Validator, value: &Value| {
             regex
                 .validate(value)
@@ -399,95 +486,90 @@ impl Schema {
                  takes more than {BACKTRACK_LIMIT} backtracking steps"
             )
         };
-        match value {
-            Value::Object(members) => {
-                for (key, member) in members {
-                    if !self.key_patterns.is_empty() {
-                        let name = Value::String(key.clone());
-                        for (regex, validator) in &self.key_patterns {
-                            if fails(validator, &name) {
-                                out.push((path.clone(), Some(key.clone()), message("key", regex)));
-                            }
-                        }
+        if value.is_string() {
+            for (regex, validator) in &self.string_patterns {
+                if fails(validator, value)
+                    && !errors.add([Found {
+                        path: path.clone(),
+                        keys: Vec::new(),
+                        key: false,
+                        message: message("string", regex),
+                    }])
+                {
+                    return;
+                }
+            }
+        }
+        for (key, member) in children(value) {
+            if value.is_object() {
+                let name = Value::String(key.clone().into_owned());
+                for (regex, validator) in &self.key_patterns {
+                    if fails(validator, &name)
+                        && !errors.add([Found {
+                            path: path.clone(),
+                            keys: vec![key.clone().into_owned()],
+                            key: true,
+                            message: message("key", regex),
+                        }])
+                    {
+                        return;
                     }
-                    path.push(key.clone());
-                    self.unmatched(member, path, out);
-                    path.pop();
                 }
             }
-            Value::Array(items) => {
-                for (i, item) in items.iter().enumerate() {
-                    path.push(i.to_string());
-                    self.unmatched(item, path, out);
-                    path.pop();
-                }
+            path.push(key.into_owned());
+            self.unmatched(member, path, errors);
+            path.pop();
+            if errors.more {
+                return;
             }
-            Value::String(_) => {
-                for (regex, validator) in &self.string_patterns {
-                    if fails(validator, value) {
-                        out.push((path.clone(), None, message("string", regex)));
-                    }
-                }
-            }
-            _ => {}
         }
     }
 }
 
-/// The schema without `items`, and `items` alone with what its `$ref`s may point at, if nothing
-/// but `items` checks an array's elements. `None` also when either fails to build, as when a
-/// `$ref` points into `items`: the whole schema is then checked in one pass.
-fn split(schema: &Value, options: &ValidationOptions) -> Option<(Validator, Validator)> {
-    let members = schema.as_object()?;
-    let items = members
-        .get("items")
-        .filter(|items| items.is_object() || items.is_boolean())?;
-    if ON_ELEMENTS.iter().any(|key| members.contains_key(*key)) {
+/// `schema` split for its arrays, or with `members` for its objects, if nothing but `items`, or
+/// `properties`, `patternProperties` and `additionalProperties`, checks their elements or
+/// members, and every `$ref` in it points into one of [`NOT_CHECKS`] at the root (`kept`), as
+/// those are kept in both parts. `None` also when either part fails to build: the whole schema
+/// is then checked in one pass.
+fn split(schema: &Value, kept: bool, members: bool, options: &ValidationOptions) -> Option<Split> {
+    let all = schema.as_object()?;
+    let (moved, also): (&[&str], &[&str]) = if members {
+        (&ON_MEMBERS, &["unevaluatedProperties"])
+    } else {
+        (&["items"], &["prefixItems", "unevaluatedItems"])
+    };
+    let checks = |key: &&str| all.contains_key(*key);
+    if !kept || ON_CHILDREN.iter().chain(also).any(checks) || !moved.iter().any(checks) {
         return None;
     }
-    // A `$ref` to the root, or into a key one of the two leaves out, would mean another schema.
-    let reach = Reach::new(schema);
-    if !refs_kept(&reach, schema) {
-        return None;
+    let mut whole = all.clone();
+    let mut part = Map::new();
+    for key in moved {
+        if let Some(value) = whole.remove(*key) {
+            part.insert((*key).to_owned(), value);
+        }
     }
-    let mut whole = members.clone();
-    whole.remove("items");
-    let mut each: Map<String, Value> = members
+    let part = match (members, part.remove("items")) {
+        // `items` with an array of schemas checks elements by position.
+        (false, Some(items)) if items.is_object() || items.is_boolean() => items,
+        (false, _) => return None,
+        (true, _) => Value::Object(part),
+    };
+    let mut each: Map<String, Value> = all
         .iter()
         .filter(|(key, _)| NOT_CHECKS.contains(&key.as_str()))
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
-    each.insert(ITEMS.to_owned(), items.clone());
-    // Under `allOf`, so a draft 7 `$id` beside it still sets the base for `items`' `$ref`s.
+    each.insert(EACH.to_owned(), part);
+    // Under `allOf`, so a draft 7 `$id` beside it still sets the base for the part's `$ref`s.
     each.insert(
         "allOf".to_owned(),
-        serde_json::json!([{ "$ref": format!("#/{ITEMS}") }]),
+        serde_json::json!([{ "$ref": format!("#/{EACH}") }]),
     );
-    Some((
-        options.build(&Value::Object(whole)).ok()?,
-        options.build(&Value::Object(each)).ok()?,
-    ))
-}
-
-/// Whether every `$ref` in `value` points into one of [`NOT_CHECKS`] at the root, as the
-/// `$defs` of a schema split by [`split`] are kept in both of its halves.
-fn refs_kept(reach: &Reach<'_>, value: &Value) -> bool {
-    match value {
-        Value::Object(members) => members.iter().all(|(key, member)| {
-            let kept = match (REF_KEYS.contains(&key.as_str()), member) {
-                (true, Value::String(reference)) => {
-                    reach.resolve(reference).is_some_and(|(_, path)| {
-                        path.first()
-                            .is_some_and(|first| NOT_CHECKS.contains(&first.as_str()))
-                    })
-                }
-                _ => true,
-            };
-            kept && refs_kept(reach, member)
-        }),
-        Value::Array(items) => items.iter().all(|item| refs_kept(reach, item)),
-        _ => true,
-    }
+    Some(Split {
+        whole: options.build(&Value::Object(whole)).ok()?,
+        each: options.build(&Value::Object(each)).ok()?,
+    })
 }
 
 /// The segments of `error`'s instance path, under element `index` if it is on one.
@@ -585,29 +667,30 @@ type Slot<'e> = Result<usize, (Cow<'e, str>, &'e [u8], usize)>;
 /// An open container: its node if any error is inside it, its offset, and its next index or key.
 type Container<'e> = (Option<usize>, usize, Slot<'e>);
 
-/// Where each error is, found in one walk over its document's events: its value; for unexpected
-/// properties, the first such key; for a property name, that key. With it, the value's path.
-/// Each error is under the element at its index, if it has one.
-fn locate(
-    events: &[Event<'_>],
-    errors: &[(Option<usize>, ValidationError<'_>)],
-) -> Vec<(usize, String)> {
-    let targets: Vec<(Vec<String>, Vec<String>)> = errors
+/// Where each error's value is, found in one walk over its document's events, and that value's
+/// path; for an error about a key, the path of the key's member.
+fn place_found(events: &[Event<'_>], found: &[Found]) -> Vec<(usize, String)> {
+    let mut targets = Vec::with_capacity(found.len() * 2);
+    for found in found {
+        targets.push((found.path.clone(), found.keys.clone()));
+        if found.key {
+            let mut member = found.path.clone();
+            member.extend(found.keys.iter().cloned());
+            targets.push((member, Vec::new()));
+        }
+    }
+    let mut spots = place(events, &targets).into_iter();
+    found
         .iter()
-        .map(|(index, error)| {
-            let keys = match error.kind() {
-                ValidationErrorKind::UnevaluatedProperties { unexpected } => unexpected.clone(),
-                ValidationErrorKind::PropertyNames { error } => error
-                    .instance()
-                    .as_str()
-                    .map(|key| vec![key.to_owned()])
-                    .unwrap_or_default(),
-                _ => Vec::new(),
-            };
-            (pointer_path(*index, error), keys)
+        .filter_map(|found| {
+            let (offset, at) = spots.next()?;
+            if found.key {
+                spots.next().map(|(_, at)| (offset, at))
+            } else {
+                Some((offset, at))
+            }
         })
-        .collect();
-    place(events, &targets)
+        .collect()
 }
 
 /// Where each target is, found in one walk over its document's events: given as a value's path
@@ -699,123 +782,161 @@ fn place(events: &[Event<'_>], targets: &[(Vec<String>, Vec<String>)]) -> Vec<(u
         .collect()
 }
 
-/// How deep and how big a schema gets when its local `$ref`s are followed: `#` with a JSON
-/// Pointer or an anchor (`$anchor`, `$dynamicAnchor`, or an `$id` of `#name`), or a URI naming an
-/// `$id` in the file. A `$ref` back to a schema on the way to it is recursion, which jsonschema
-/// handles: it adds nothing.
-// shortcut: a URI matches an `$id` by its text or last path segments, not by full RFC 3986
-// resolution against each base, and a relative `#` reference resolves against the root; a
-// missed match only undercounts. Resolve as jsonschema's `referencing` crate does if one slips by.
-struct Reach<'v> {
-    root: &'v Value,
-    anchors: HashMap<&'v str, (&'v Value, Vec<String>)>,
-    ids: Vec<(&'v str, &'v Value, Vec<String>)>,
-    /// The levels at and under each schema already measured, and its objects and arrays with
-    /// every `$ref` followed, by address. Only for a schema measured without skipping a `$ref`
-    /// back to a schema above it, as that one is shorter where the skipped schema is not open.
-    measured: HashMap<*const Value, Measure>,
-    /// The schemas on the way to the current one, with their levels.
-    open: HashMap<*const Value, usize>,
-    /// Where the current schema is in the file.
-    path: Vec<String>,
-    /// Where each `$ref` on the way is: its object's path and the key.
-    refs: Vec<(Vec<String>, &'static str)>,
+/// The registry jsonschema builds for `schema`, with every resource and anchor in it by its
+/// absolute URI, and no way to fetch another.
+fn registry(schema: &Value) -> Result<Registry<'_>, ReferencingError> {
+    let resource = ResourceRef::new(schema, Draft::default().detect(schema));
+    Registry::new()
+        .draft(resource.draft())
+        .add(resource.id().unwrap_or(DEFAULT_BASE), resource)?
+        .prepare()
 }
 
-impl<'v> Reach<'v> {
-    fn new(root: &'v Value) -> Self {
+/// How deep and how big a schema gets when its `$ref`s are followed, resolved as jsonschema
+/// resolves them: against the base each `$id` sets. A `$ref` back to a schema on the way to it
+/// is recursion, which jsonschema handles: it adds nothing.
+struct Reach<'r> {
+    root: &'r Value,
+    /// Each object and array under the root: its parent, and its key or index there.
+    parents: HashMap<*const Value, (&'r Value, Cow<'r, str>)>,
+    /// The levels at and under each schema (or, with `false`, each value that is not one, such
+    /// as an `enum`) already measured, and its size, by address. Only for a schema measured
+    /// without skipping a `$ref` back to a schema above it, as that one is shorter where the
+    /// skipped schema is not open.
+    measured: HashMap<(*const Value, bool), Measure>,
+    /// The schemas on the way to the current one, with their levels.
+    open: HashMap<*const Value, usize>,
+    /// Each `$ref` on the way: its object and key.
+    refs: Vec<(&'r Value, &'static str)>,
+    /// Whether every `$ref` so far points into one of [`NOT_CHECKS`] at the root.
+    kept: bool,
+}
+
+/// How a value is reached: as a schema, with the resolver for its base and its draft, or as a
+/// value under a schema, whose subschemas are `subs`, sorted by address.
+#[derive(Clone, Copy)]
+enum At<'a, 'r> {
+    Schema(&'a Resolver<'r>, Draft),
+    Under(&'a Resolver<'r>, Draft, &'a [*const Value]),
+}
+
+impl<'r> Reach<'r> {
+    fn new(root: &'r Value) -> Self {
         let mut reach = Reach {
             root,
-            anchors: HashMap::new(),
-            ids: Vec::new(),
+            parents: HashMap::new(),
             measured: HashMap::new(),
             open: HashMap::new(),
-            path: Vec::new(),
             refs: Vec::new(),
+            kept: true,
         };
-        reach.collect(root, &mut Vec::new());
+        reach.collect(root);
         reach
     }
 
-    /// Note the anchors and `$id`s in `value`, which is at `path`.
-    fn collect(&mut self, value: &'v Value, path: &mut Vec<String>) {
-        match value {
-            Value::Object(members) => {
-                for (key, member) in members {
-                    if let Value::String(name) = member {
-                        match key.as_str() {
-                            "$anchor" | "$dynamicAnchor" => {
-                                self.anchors.insert(name, (value, path.clone()));
-                            }
-                            "$id" | "id" => match name.strip_prefix('#') {
-                                Some(anchor) => {
-                                    self.anchors.insert(anchor, (value, path.clone()));
-                                }
-                                None => self.ids.push((name, value, path.clone())),
-                            },
-                            _ => {}
-                        }
-                    }
-                    path.push(key.clone());
-                    self.collect(member, path);
-                    path.pop();
-                }
+    /// Note the parent of each object and array in `value`.
+    fn collect(&mut self, value: &'r Value) {
+        for (key, child) in children(value) {
+            if child.is_object() || child.is_array() {
+                self.parents.insert(child, (value, key));
+                self.collect(child);
             }
-            Value::Array(items) => {
-                for (i, item) in items.iter().enumerate() {
-                    path.push(i.to_string());
-                    self.collect(item, path);
-                    path.pop();
-                }
-            }
-            _ => {}
         }
     }
 
-    /// The schema a reference points at, and its path, if it is in the file.
-    fn resolve(&self, reference: &str) -> Option<(&'v Value, Vec<String>)> {
-        let (uri, fragment) = reference.split_once('#').unwrap_or((reference, ""));
-        let (resource, mut path) = if uri.is_empty() {
-            (self.root, Vec::new())
-        } else {
-            let (_, value, path) = self.ids.iter().find(|(id, ..)| {
-                let id = id.split_once('#').map_or(*id, |(id, _)| id);
-                id == uri || id.ends_with(&format!("/{uri}")) || uri.ends_with(&format!("/{id}"))
-            })?;
-            (*value, path.clone())
-        };
-        if fragment.is_empty() {
-            return Some((resource, path));
+    /// The path of `value` in the file, or `None` if it is not in the file, as in a
+    /// meta-schema.
+    fn path(&self, mut value: &'r Value) -> Option<Vec<String>> {
+        let mut path = Vec::new();
+        while !std::ptr::eq(value, self.root) {
+            let (parent, key) = self.parents.get(&std::ptr::from_ref(value))?;
+            path.push(key.clone().into_owned());
+            value = parent;
         }
-        if !fragment.starts_with('/') {
-            return self.anchors.get(fragment).cloned();
-        }
-        let mut value = resource;
-        for segment in segments(&percent_decode_str(fragment).decode_utf8_lossy()) {
-            value = match value {
-                Value::Array(items) => items.get(segment.parse::<usize>().ok()?)?,
-                _ => value.get(&segment)?,
+        path.reverse();
+        Some(path)
+    }
+
+    /// Whether every `$ref` points into one of [`NOT_CHECKS`] at the root, or where a `$ref`
+    /// leads past [`MAX_SCHEMA_DEPTH`] levels or [`MAX_SCHEMA_SIZE`], or cannot be resolved.
+    fn measure(mut self, registry: &'r Registry<'r>) -> Result<bool, Over> {
+        let draft = Draft::default().detect(self.root);
+        let resource = ResourceRef::new(self.root, draft);
+        let base = referencing::uri::from_str(resource.id().unwrap_or(DEFAULT_BASE))
+            .map_err(|error| self.over_at(None, Problem::Unresolved(error.to_string())))?;
+        let resolver = registry
+            .resolver(base)
+            .in_subresource(resource)
+            .map_err(|error| self.over_at(None, Problem::Unresolved(error.to_string())))?;
+        self.visit(self.root, 1, At::Schema(&resolver, draft))?;
+        Ok(self.kept)
+    }
+
+    /// An error about `spot`, a key in an object, or else about the innermost `$ref` on the way
+    /// that is in the file.
+    fn over_at(&self, spot: Option<(&'r Value, &str)>, problem: Problem) -> Over {
+        let refs = self.refs.iter().rev().map(|&(at, key)| (at, key));
+        let (path, key) = spot
+            .into_iter()
+            .chain(refs)
+            .find_map(|(at, key)| Some((self.path(at)?, key.to_owned())))
+            // Containers alone stay within the parser's depth limit, so a `$ref` is on the way.
+            .unwrap_or_else(|| (Vec::new(), "$ref".to_owned()));
+        Over { path, key, problem }
+    }
+
+    /// Follow each `$ref` in the schema `value`, which is `level` levels deep, into `below`,
+    /// and say how big what they point at is.
+    fn follow(
+        &mut self,
+        value: &'r Value,
+        level: usize,
+        resolver: &Resolver<'r>,
+        draft: Draft,
+        below: &mut Visit,
+    ) -> Result<usize, Over> {
+        let mut size: usize = 0;
+        for key in REF_KEYS {
+            let Some(reference) = value.get(key).and_then(Value::as_str) else {
+                continue;
             };
-            path.push(segment);
+            if key != "$ref" && !draft.is_known_keyword(key) {
+                continue;
+            }
+            let lookup = match key {
+                "$recursiveRef" => resolver.lookup_recursive_ref(),
+                _ => resolver.lookup(reference),
+            };
+            let (target, target_resolver, target_draft) = match lookup {
+                Ok(target) => target.into_inner(),
+                Err(error) => {
+                    let problem = Problem::Unresolved(error.to_string());
+                    return Err(self.over_at(Some((value, key)), problem));
+                }
+            };
+            let top = self.path(target).and_then(|path| path.into_iter().next());
+            self.kept &= top.is_some_and(|top| NOT_CHECKS.contains(&top.as_str()));
+            if let Some(&open) = self.open.get(&std::ptr::from_ref(target)) {
+                below.cut = below.cut.min(open);
+                continue;
+            }
+            self.refs.push((value, key));
+            let child = self.visit(
+                target,
+                level + 1,
+                At::Schema(&target_resolver, target_draft),
+            )?;
+            size = size.saturating_add(child.measure.size);
+            if below.add(child) {
+                return Err(self.over_at(None, Problem::Big));
+            }
+            self.refs.pop();
         }
-        Some((value, path))
-    }
-
-    /// Where a `$ref` leads past [`MAX_SCHEMA_DEPTH`] levels or [`MAX_SCHEMA_SIZE`] objects
-    /// and arrays.
-    fn over(mut self) -> Option<Over> {
-        self.visit(self.root, 1).err()
-    }
-
-    /// Where the current `$ref` is, for an error about it.
-    fn over_here(&self, size: bool) -> Over {
-        // Containers alone stay within the parser's depth limit, so a `$ref` is on the way.
-        let (path, key) = self.refs.last().cloned().unwrap_or((Vec::new(), "$ref"));
-        Over { path, key, size }
+        Ok(size)
     }
 
     /// `value`, which is `level` levels deep, measured, or where it is too deep or too big.
-    fn visit(&mut self, value: &'v Value, level: usize) -> Result<Visit, Over> {
+    fn visit(&mut self, value: &'r Value, level: usize, at: At<'_, 'r>) -> Result<Visit, Over> {
         if !(value.is_object() || value.is_array()) {
             return Ok(Visit {
                 measure: Measure::default(),
@@ -823,9 +944,10 @@ impl<'v> Reach<'v> {
             });
         }
         let address: *const Value = value;
-        let known = self.measured.get(&address).copied();
+        let memo = (address, matches!(at, At::Schema(..)));
+        let known = self.measured.get(&memo).copied();
         if level + known.map_or(1, |m| m.height) - 1 > MAX_SCHEMA_DEPTH {
-            return Err(self.over_here(false));
+            return Err(self.over_at(None, Problem::Deep));
         }
         if let Some(measure) = known {
             return Ok(Visit {
@@ -838,63 +960,82 @@ impl<'v> Reach<'v> {
             measure: Measure { height: 0, size: 1 },
             cut: usize::MAX,
         };
-        match value {
-            Value::Array(items) => {
-                for (i, item) in items.iter().enumerate() {
-                    self.path.push(i.to_string());
-                    let child = self.visit(item, level + 1)?;
-                    if below.add(child) {
-                        return Err(self.over_here(true));
-                    }
-                    self.path.pop();
+        let (resolver, draft, subs) = match at {
+            At::Schema(resolver, draft) => {
+                let mut subs: Vec<*const Value> = draft
+                    .subresources_of(value)
+                    .map(std::ptr::from_ref)
+                    .collect();
+                subs.sort_unstable();
+                (resolver, draft, Cow::Owned(subs))
+            }
+            At::Under(resolver, draft, subs) => (resolver, draft, Cow::Borrowed(subs)),
+        };
+        let schema = matches!(at, At::Schema(..));
+        // The size of what an `unevaluated*` keyword here checks again.
+        let mut again: usize = 0;
+        for (key, member) in children(value) {
+            let mut child = if subs.binary_search(&std::ptr::from_ref(member)).is_ok() {
+                // A subschema with an `$id` sets a new base for what is under it.
+                let draft = draft.detect(member);
+                let resolver = resolver
+                    .in_subresource(ResourceRef::new(member, draft))
+                    .map_err(|e| {
+                        self.over_at(Some((member, "$id")), Problem::Unresolved(e.to_string()))
+                    })?;
+                self.visit(member, level + 1, At::Schema(&resolver, draft))?
+            } else {
+                self.visit(member, level + 1, At::Under(resolver, draft, &subs))?
+            };
+            // jsonschema may compare a value with each one in an `enum`, and copies them all
+            // into each error.
+            if schema && matches!(key.as_ref(), "enum" | "const") {
+                child.measure.size = child.measure.size.saturating_add(scalars(member));
+            }
+            if schema && IN_PLACE.contains(&key.as_ref()) {
+                again = again.saturating_add(child.measure.size);
+            }
+            if below.add(child) {
+                let spot = self.refs.is_empty().then_some((value, key.as_ref()));
+                return Err(self.over_at(spot, Problem::Big));
+            }
+        }
+        if schema {
+            again = again.saturating_add(self.follow(value, level, resolver, draft, &mut below)?);
+            // Nested in each other's `anyOf`s, each level of these doubles the work below it.
+            if let Some(key) = UNEVALUATED
+                .into_iter()
+                .find(|key| value.get(key).is_some() && draft.is_known_keyword(key))
+            {
+                below.measure.size = below.measure.size.saturating_add(again);
+                if below.measure.size > MAX_SCHEMA_SIZE {
+                    return Err(self.over_at(Some((value, key)), Problem::Twice));
                 }
             }
-            Value::Object(members) => {
-                for (key, member) in members {
-                    self.path.push(key.clone());
-                    let child = self.visit(member, level + 1)?;
-                    if below.add(child) {
-                        return Err(self.over_here(true));
-                    }
-                    self.path.pop();
-                }
-                for key in REF_KEYS {
-                    let Some((target, path)) = members
-                        .get(key)
-                        .and_then(Value::as_str)
-                        .and_then(|reference| self.resolve(reference))
-                    else {
-                        continue;
-                    };
-                    if let Some(&open) = self.open.get(&std::ptr::from_ref(target)) {
-                        below.cut = below.cut.min(open);
-                        continue;
-                    }
-                    self.refs.push((self.path.clone(), key));
-                    let here = std::mem::replace(&mut self.path, path);
-                    let child = self.visit(target, level + 1)?;
-                    if below.add(child) {
-                        return Err(self.over_here(true));
-                    }
-                    self.path = here;
-                    self.refs.pop();
-                }
-            }
-            _ => {}
         }
         self.open.remove(&address);
         below.measure.height += 1;
         // A skipped `$ref` back to `value` itself is skipped wherever `value` is reached.
         if below.cut >= level {
             below.cut = usize::MAX;
-            self.measured.insert(address, below.measure);
+            self.measured.insert(memo, below.measure);
         }
         Ok(below)
     }
 }
 
-/// A schema's levels, counting each `$ref` followed as one, and its objects and arrays with each
-/// `$ref` replaced by what it points at.
+/// How many values in `value` are neither objects nor arrays.
+fn scalars(value: &Value) -> usize {
+    match value {
+        Value::Object(_) | Value::Array(_) => {
+            children(value).map(|(_, child)| scalars(child)).sum()
+        }
+        _ => 1,
+    }
+}
+
+/// A schema's levels, counting each `$ref` followed as one, and its size: its objects and arrays
+/// with each `$ref` replaced by what it points at, and the values in its `enum`s and `const`s.
 #[derive(Clone, Copy, Default)]
 struct Measure {
     height: usize,
@@ -920,12 +1061,41 @@ impl Visit {
     }
 }
 
-/// Where a schema is too deep or, with `size`, too big: the path of the `$ref`'s object and the
-/// key.
+/// Why [`Reach`] turns a schema away.
+enum Problem {
+    Deep,
+    Big,
+    /// Too big once the schemas beside an `unevaluated*` keyword count twice.
+    Twice,
+    Unresolved(String),
+}
+
+/// Where a schema is turned away, and why: the path of an object and a key in it.
 struct Over {
     path: Vec<String>,
-    key: &'static str,
-    size: bool,
+    key: String,
+    problem: Problem,
+}
+
+impl Over {
+    fn message(&self) -> String {
+        let key = &self.key;
+        match &self.problem {
+            Problem::Deep => format!(
+                "this `{key}` leads more than {MAX_SCHEMA_DEPTH} levels deep, counting each \
+                 `$ref` followed as a level"
+            ),
+            Problem::Big => format!(
+                "this `{key}` takes the schema past {MAX_SCHEMA_SIZE} objects and arrays, \
+                 counting what each `$ref` points at every time it is followed"
+            ),
+            Problem::Twice => format!(
+                "this `{key}` takes the schema past {MAX_SCHEMA_SIZE} objects and arrays, \
+                 counting twice the schemas beside it that jsonschema checks again for it"
+            ),
+            Problem::Unresolved(error) => format!("this `{key}` cannot be resolved: {error}"),
+        }
+    }
 }
 
 /// An open container while the events are folded into values, with an object's current key
@@ -1044,13 +1214,14 @@ fn number(text: &str) -> Option<Value> {
     };
     Number::from_f64(if negative { -magnitude } else { magnitude }).map(Value::Number)
 }
-
 #[cfg(test)]
 mod tests {
     use super::{
-        MAX_MESSAGE, MAX_SCHEMA_SIZE, Measure, Reach, Schema, Visit, cut, documents, fits, locate,
-        message, number, place, segments, split,
+        DEFAULT_BASE, MAX_MESSAGE, MAX_SCHEMA_SIZE, Measure, Over, Problem, Reach, Schema, Visit,
+        cut, documents, fits, found, message, number, place, place_found, registry, segments,
+        split,
     };
+    use jsonschema::Draft;
     use jsonvet::{Config, Dialect};
     use proptest::prelude::*;
     use serde_json::{Value, json};
@@ -1066,30 +1237,57 @@ mod tests {
         assert!(schema.add(visit(1)));
     }
 
+    /// Where `schema` is turned away, if it is.
+    fn over(schema: &Value) -> Option<Over> {
+        let registry = registry(schema).expect("a registry");
+        Reach::new(schema).measure(&registry).err()
+    }
+
+    /// The path in `schema` of what `reference`, at the root, points at.
+    fn target(schema: &Value, reference: &str) -> Option<String> {
+        let registry = registry(schema).ok()?;
+        let resource = referencing::ResourceRef::new(schema, Draft::default().detect(schema));
+        let base = referencing::uri::from_str(resource.id().unwrap_or(DEFAULT_BASE)).ok()?;
+        let resolver = registry.resolver(base).in_subresource(resource).ok()?;
+        let lookup = resolver.lookup(reference).ok()?;
+        let path = Reach::new(schema).path(lookup.contents())?;
+        Some(path.join("/"))
+    }
+
     #[test]
-    fn local_refs_resolve_by_pointer_anchor_and_id() {
+    fn refs_resolve_by_pointer_anchor_and_id_against_their_base() {
         let schema = json!({
             "$id": "https://example.com/root.json",
             "$defs": {
-                "a/b": [{"$anchor": "x"}, {"type": "string"}],
-                "%": {"$id": "#old"},
-                "sub": {"$id": "sub.json", "$defs": {"c": true}},
+                "a/b": {"anyOf": [{"$anchor": "x"}, {"type": "string"}]},
+                "%": {"type": "null"},
+                "sub": {"$id": "sub.json", "$defs": {"c": {}}},
+                // Two resources with the same relative `$id`, each against its own base.
+                "p": {"$id": "p/", "$defs": {"l": {"$id": "l", "type": "string"}}},
+                "q": {"$id": "q/", "$defs": {"l": {"$id": "l", "type": "number"}}},
             },
         });
-        let reach = Reach::new(&schema);
-        let path = |reference: &str| reach.resolve(reference).map(|(_, path)| path.join("/"));
+        let path = |reference| target(&schema, reference);
         assert_eq!(path("#").as_deref(), Some(""));
-        assert_eq!(path("#/$defs/a~1b/1").as_deref(), Some("$defs/a/b/1"));
+        assert_eq!(
+            path("#/$defs/a~1b/anyOf/1").as_deref(),
+            Some("$defs/a/b/anyOf/1")
+        );
         assert_eq!(path("#/$defs/%25").as_deref(), Some("$defs/%"));
-        assert_eq!(path("#x").as_deref(), Some("$defs/a/b/0"));
-        assert_eq!(path("#old").as_deref(), Some("$defs/%"));
+        assert_eq!(path("#x").as_deref(), Some("$defs/a/b/anyOf/0"));
         assert_eq!(path("root.json#/$defs").as_deref(), Some("$defs"));
         assert_eq!(
             path("https://example.com/sub.json#/$defs/c").as_deref(),
             Some("$defs/sub/$defs/c")
         );
+        assert_eq!(path("q/l").as_deref(), Some("$defs/q/$defs/l"));
+        assert_eq!(path("p/l").as_deref(), Some("$defs/p/$defs/l"));
+        assert_eq!(path("l"), None);
         assert_eq!(path("#/$defs/none"), None);
         assert_eq!(path("other.json"), None);
+        // Before 2019-09, an `$id` of `#name` is an anchor.
+        let old = json!({"$schema": "http://json-schema.org/draft-07/schema#", "definitions": {"%": {"$id": "#old"}}});
+        assert_eq!(target(&old, "#old").as_deref(), Some("definitions/%"));
     }
 
     #[test]
@@ -1114,14 +1312,11 @@ mod tests {
         let validator = jsonschema::validator_for(&schema).expect("a schema");
         let errors: Vec<_> = validator
             .iter_errors(&documents[0].value)
-            .map(|e| (None, e))
+            .flat_map(|e| found(None, &documents[0].value, &e))
             .collect();
-        let pointers: Vec<_> = errors
-            .iter()
-            .map(|(_, e)| e.instance_path().as_str())
-            .collect();
-        assert_eq!(pointers, ["/a", "/b\u{e9}~1~0"]);
-        let located: Vec<_> = locate(&events, &errors)
+        let paths: Vec<_> = errors.iter().map(|e| e.path.join("/")).collect();
+        assert_eq!(paths, ["a", "b\u{e9}/~"]);
+        let located: Vec<_> = place_found(&events, &errors)
             .into_iter()
             .map(|(o, _)| o)
             .collect();
@@ -1222,9 +1417,8 @@ mod tests {
     #[test]
     fn ref_chains_count_through_arrays_and_from_each_place_they_are_reached() {
         let too_deep = |schema: &Value| {
-            Reach::new(schema)
-                .over()
-                .filter(|over| !over.size)
+            over(schema)
+                .filter(|over| matches!(over.problem, Problem::Deep))
                 .map(|over| (over.path.join("/"), over.key))
         };
         // `$defs/long` is first reached near the root, then again under 100 levels of `allOf`.
@@ -1234,7 +1428,7 @@ mod tests {
             "allOf": [nested(100, json!({"$ref": "#/$defs/long"}))],
         });
         let path = format!("allOf/0{}", "/allOf/0".repeat(50));
-        assert_eq!(too_deep(&schema), Some((path, "$ref")));
+        assert_eq!(too_deep(&schema), Some((path, "$ref".to_owned())));
         // The same `$ref` reached only near the root stays under the cap.
         let schema = json!({"$defs": {"long": nested(60, json!(true))}, "allOf": [{"$ref": "#/$defs/long"}]});
         assert_eq!(too_deep(&schema), None);
@@ -1272,9 +1466,9 @@ mod tests {
     fn a_height_measured_while_a_ref_back_up_was_skipped_is_not_reused() {
         // `y0` is first measured inside `x1`'s `allOf`, while `y1` and `x1` are open and the
         // `$ref` back to them is skipped. From the root, `y1` to `y0` is 2 + 122 + 122 levels.
-        let over = Reach::new(&cycles(2)).over().map(|over| over.size);
-        assert_eq!(over, Some(false));
-        assert!(Reach::new(&cycles(1)).over().is_none());
+        let deep = over(&cycles(2)).is_some_and(|over| matches!(over.problem, Problem::Deep));
+        assert!(deep);
+        assert!(over(&cycles(1)).is_none());
     }
 
     #[test]
@@ -1309,9 +1503,10 @@ mod tests {
             ),
         ];
         for (shape, key) in shapes {
-            let over = Reach::new(&fan_out(24, shape)).over();
-            assert!(over.is_some_and(|over| over.size && over.key == key));
-            assert!(Reach::new(&fan_out(16, shape)).over().is_none());
+            let big = over(&fan_out(24, shape))
+                .is_some_and(|over| matches!(over.problem, Problem::Big) && over.key == key);
+            assert!(big);
+            assert!(over(&fan_out(16, shape)).is_none());
         }
     }
 
@@ -1391,19 +1586,23 @@ mod tests {
     /// `text`'s schema errors under `schema`, checked in one pass and, if it can be, split.
     fn one_pass_and_split(schema: &Value, text: &str) -> (Errors, Option<Errors>) {
         let options = jsonschema::options();
-        let checked = |split| {
+        let checked = |items, members| {
             let schema = Schema {
                 validator: options.build(schema).expect("a schema"),
-                split,
+                items,
+                members,
                 key_patterns: Vec::new(),
                 string_patterns: Vec::new(),
             };
             let (_, events) = jsonvet::parse(text, &Config::new(Dialect::Json));
             schema.errors(&events.unwrap_or_default())
         };
-        let parts = split(schema, &options);
-        let split = parts.is_some().then(|| checked(parts));
-        (checked(None), split)
+        let registry = registry(schema).expect("a registry");
+        let kept = Reach::new(schema).measure(&registry).is_ok_and(|kept| kept);
+        let items = split(schema, kept, false, &options);
+        let members = split(schema, kept, true, &options);
+        let split = (items.is_some() || members.is_some()).then(|| checked(items, members));
+        (checked(None, None), split)
     }
 
     #[test]
@@ -1419,7 +1618,96 @@ mod tests {
         }
     }
 
+    /// Schemas that only `properties`, `patternProperties` and `additionalProperties` check the
+    /// members of, and so are split, then ones that are not.
+    fn member_schemas() -> [(Value, bool); 7] {
+        [
+            (
+                json!({"properties": {"a": {"type": "string"}, "b": {"const": 1}}, "required": ["c"], "maxProperties": 2}),
+                true,
+            ),
+            (
+                json!({"patternProperties": {"^a": {"type": "integer"}}, "additionalProperties": false, "propertyNames": {"maxLength": 2}}),
+                true,
+            ),
+            (
+                json!({"additionalProperties": false, "minProperties": 1}),
+                true,
+            ),
+            (
+                json!({"additionalProperties": {"$ref": "#/$defs/n"}, "$defs": {"n": {"type": ["object", "null"], "additionalProperties": {"$ref": "#/$defs/n"}}}}),
+                true,
+            ),
+            (
+                json!({"properties": {"a": true}, "unevaluatedProperties": false}),
+                false,
+            ),
+            (
+                json!({"properties": {"a": {"type": "string"}}, "anyOf": [{"required": ["a"]}]}),
+                false,
+            ),
+            (
+                json!({"additionalProperties": {"$ref": "#/properties/a"}, "properties": {"a": {"type": "null"}}}),
+                false,
+            ),
+        ]
+    }
+
+    #[test]
+    fn a_split_object_schema_reports_as_many_errors_past_the_cap() {
+        // 150 members, each failing, beside errors about the whole object. Past the cap, the
+        // first 100 are by member, not by keyword.
+        let members: Vec<String> = (0..150)
+            .map(|i| format!("\"a{i}\": {{\"b\": 1}}"))
+            .collect();
+        let text = format!("{{{}}}", members.join(","));
+        for (schema, splits) in member_schemas() {
+            let (one_pass, split) = one_pass_and_split(&schema, &text);
+            assert_eq!(split.is_some(), splits, "{schema}");
+            if let Some(split) = split {
+                assert_eq!(split.len(), one_pass.len(), "{schema}");
+                assert_eq!(split.last(), one_pass.last(), "{schema}");
+            }
+        }
+    }
+
+    #[test]
+    fn enum_and_const_values_count_toward_the_size() {
+        // 18 levels, each with two `$ref`s to the next, reach the last 262,144 times: about 1.6
+        // million objects and arrays, and 6.8 million values with the 20 numbers at the end.
+        let fan_out = |last: Value| {
+            let mut defs = serde_json::Map::new();
+            for i in 0..18 {
+                let next = format!("#/$defs/d{}", i + 1);
+                defs.insert(
+                    format!("d{i}"),
+                    json!({"anyOf": [{"$ref": next}, {"$ref": next}]}),
+                );
+            }
+            defs.insert("d18".to_owned(), last);
+            json!({"$defs": defs, "$ref": "#/$defs/d0"})
+        };
+        let numbers: Vec<usize> = (0..20).collect();
+        for last in [json!({"enum": numbers}), json!({"const": [numbers]})] {
+            let big = over(&fan_out(last)).is_some_and(|over| matches!(over.problem, Problem::Big));
+            assert!(big);
+        }
+        assert!(over(&fan_out(json!({"type": "string"}))).is_none());
+    }
+
     proptest! {
+        #[test]
+        fn a_split_object_schema_reports_what_one_pass_does(members in prop::collection::vec(("[ab]{1,2}", any_json()), 0..6)) {
+            let object: serde_json::Map<String, Value> = members.into_iter().collect();
+            let text = serde_json::to_string(&object).unwrap_or_default();
+            for (schema, _) in member_schemas() {
+                let (one_pass, split) = one_pass_and_split(&schema, &text);
+                if let Some(split) = split {
+                    prop_assert_eq!(split, one_pass, "{}", schema);
+                }
+            }
+        }
+
         #[test]
         fn a_split_schema_reports_what_one_pass_does(items in prop::collection::vec(any_json(), 0..6)) {
             let text = serde_json::to_string(&items).unwrap_or_default();
