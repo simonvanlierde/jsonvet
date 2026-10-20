@@ -813,6 +813,44 @@ fn a_utf16_or_utf32_file_names_its_encoding() {
 }
 
 #[test]
+fn a_utf16_or_utf32_file_without_a_mark_names_its_encoding() {
+    let dir = workdir(&[]);
+    let files = [
+        ("le16.json", &b"{\x00}\x00"[..], "UTF-16 (LE)"),
+        ("be16.json", b"\x00[\x00]", "UTF-16 (BE)"),
+        ("le32.json", b"[\x00\x00\x00]\x00\x00\x00", "UTF-32 (LE)"),
+        ("be32.json", b"\x00\x00\x00[\x00\x00\x00]", "UTF-32 (BE)"),
+    ];
+    for (name, bytes, encoding) in files {
+        fs::write(dir.join(name), bytes).expect("write file");
+        assert_eq!(
+            jsonvet(&dir, &[name]),
+            (
+                1,
+                format!("{name}: error: file is {encoding}; jsonvet reads UTF-8\n")
+            )
+        );
+    }
+    // UTF-8 with U+0000 raw inside a JSON5 string, which looks like UTF-16 (LE), still passes.
+    fs::write(dir.join("nul.json5"), b"'\x00a\x00'").expect("write file");
+    assert_eq!(jsonvet(&dir, &["nul.json5"]), (0, String::new()));
+    fs::write(dir.join("nul32.json5"), b"\"\x00\x00\x00\"").expect("write file");
+    assert_eq!(jsonvet(&dir, &["nul32.json5"]), (0, String::new()));
+    // Zero bytes in no encoding's pattern stay a syntax error.
+    for (name, bytes) in [
+        ("zeros.json", &b"\x00\x00\x00\x00"[..]),
+        ("odd.json", b"\x00[\x00\x00"),
+    ] {
+        fs::write(dir.join(name), bytes).expect("write file");
+        let (code, out) = jsonvet(&dir, &[name]);
+        assert_eq!(code, 1);
+        assert!(out.contains("error[syntax]"), "{name}: {out}");
+    }
+    fs::write(dir.join("plain.json"), b"[1]").expect("write file");
+    assert_eq!(jsonvet(&dir, &["plain.json"]), (0, String::new()));
+}
+
+#[test]
 fn sarif_columns_count_code_points() {
     // CRLF ends line 1; the emoji is one code point but two UTF-16 code units.
     let dir = workdir(&[("e.jsonc", "{\r\n\"\u{1F600}\": x}\r\n")]);

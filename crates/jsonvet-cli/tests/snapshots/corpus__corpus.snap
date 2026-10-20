@@ -19,7 +19,7 @@ json/comment.json -> 1
 json/duplicate-key.json -> 1
     json/duplicate-key.json:1:10: error[duplicate-key] duplicate key $.a (first at 1:2)
 json/infinity-runs-on.json -> 1
-    json/infinity-runs-on.json:1:1: error[syntax] NaN and Infinity are not allowed in json; the json5 dialect allows this
+    json/infinity-runs-on.json:1:1: error[syntax] NaN and Infinity are not allowed in json
 json/leading-zero.json -> 1
     json/leading-zero.json:1:1: error[syntax] leading zeros are not allowed
 json/lone-surrogates-are-distinct-keys.json -> 0
@@ -28,7 +28,7 @@ json/nan-and-infinity.json -> 1
 json/nan-runs-on.json -> 1
     json/nan-runs-on.json:1:2: error[syntax] NaN and Infinity are not allowed in json; the json5 dialect allows this
 json/negative-infinity-runs-on.json -> 1
-    json/negative-infinity-runs-on.json:1:2: error[syntax] NaN and Infinity are not allowed in json; the json5 dialect allows this
+    json/negative-infinity-runs-on.json:1:2: error[syntax] NaN and Infinity are not allowed in json
 json/plain.json -> 0
 json/trailing-comma-after-comment.json -> 1
     json/trailing-comma-after-comment.json:1:10: error[syntax] comments are not allowed in json; the jsonc dialect allows this

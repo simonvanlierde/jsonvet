@@ -95,6 +95,13 @@ version for a new option or output, the patch version for a fix.
   was quadratic: 40,000 such keys took over a minute.
 - `--dialect jsonl` with `--schema` no longer reads the schema as JSON Lines, which rejected any
   schema written over several lines.
+- A syntax error names a dialect that allows the syntax only when that dialect reads it in full.
+  `[NaNx]`, `[0x]`, `{'a: 1}` or an unclosed `/*` in json no longer say `the json5 dialect allows
+  this`, as json5 rejects them too. The error and its position are unchanged.
+- A UTF-16 or UTF-32 file without a byte order mark says `file is UTF-16 (LE); jsonvet reads
+  UTF-8`, as one with a mark does, instead of a syntax error at its first zero byte. jsonvet
+  tells the encoding from the zero bytes in the first four, so no UTF-8 file that passed before
+  fails now.
 
 ## [3.0.0] - 2026-10-18
 

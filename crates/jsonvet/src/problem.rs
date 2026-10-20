@@ -207,6 +207,10 @@ pub(crate) enum SyntaxKind {
         what: &'static str,
         /// The dialect being checked.
         dialect: Dialect,
+        /// Whether the larger dialect reads this syntax in full, so the message may name it:
+        /// not for `NaNx`, `0x` or an unclosed `/*`, which it rejects too, nor in JSON Lines,
+        /// which no larger dialect extends.
+        hint: bool,
     },
     /// A trailing comma before `]` or `}` in a dialect without them.
     TrailingComma {
@@ -272,7 +276,11 @@ impl fmt::Display for SyntaxError {
             SyntaxKind::Unexpected { found, expected } => {
                 write!(f, "expected {expected}, found {}", Shown(*found))
             }
-            SyntaxKind::NotAllowed { what, dialect } => {
+            SyntaxKind::NotAllowed {
+                what,
+                dialect,
+                hint,
+            } => {
                 write!(f, "{what} not allowed in {dialect}")?;
                 // Comments need only JSONC; everything else NotAllowed covers is JSON5's.
                 let allows = if *what == "comments are" {
@@ -280,10 +288,10 @@ impl fmt::Display for SyntaxError {
                 } else {
                     "json5"
                 };
-                match dialect {
-                    Dialect::JsonLines => Ok(()),
-                    _ => write!(f, "; the {allows} dialect allows this"),
+                if *hint {
+                    write!(f, "; the {allows} dialect allows this")?;
                 }
+                Ok(())
             }
             SyntaxKind::TrailingComma { close, dialect } => {
                 write!(

@@ -366,14 +366,53 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn not_allowed(&self, at: usize, what: &'static str) -> Fail {
+    /// `hint` says whether the larger dialect really reads the syntax at `at`, so that the
+    /// message may point to it. JSON Lines gets none: no larger dialect extends it, and a
+    /// file checked in parts must report what one pass does.
+    fn not_allowed(&self, at: usize, what: &'static str, hint: bool) -> Fail {
         Fail::at(
             at,
             SyntaxKind::NotAllowed {
                 what,
                 dialect: self.dialect,
+                hint: hint && !self.json_lines,
             },
         )
+    }
+
+    /// A single-quoted string at `at`, which only JSON5 allows; the hint holds only when JSON5
+    /// reads the string to its closing quote.
+    fn single_quoted(&mut self, at: usize) -> Fail {
+        let hint = self.json5_reads(at, |p| p.string(b'\'', false).map(|_| true));
+        self.not_allowed(at, "single-quoted strings are", hint)
+    }
+
+    /// Whether JSON5 reads the token at `at`: `scan` runs from there with JSON5's rules and
+    /// says whether the token it read ends where it should. The parser's state is restored.
+    fn json5_reads(
+        &mut self,
+        at: usize,
+        scan: impl FnOnce(&mut Self) -> Result<bool, Fail>,
+    ) -> bool {
+        let (pos, json5, problems) = (self.pos, self.json5, self.problems.len());
+        self.pos = at;
+        self.json5 = true;
+        let reads = scan(self).unwrap_or(false);
+        self.problems.truncate(problems);
+        (self.pos, self.json5) = (pos, json5);
+        reads
+    }
+
+    /// A number form only JSON5 allows, starting at `start`. The hint holds only when JSON5
+    /// reads the number whole: not `0x`, `+x` or `5.e`, and not `NaNx` or `0x1g`, where the
+    /// token runs on into a word.
+    fn json5_number(&mut self, start: usize, what: &'static str) -> Fail {
+        let hint = self.json5_reads(start, |p| {
+            p.number()?;
+            let c = p.char_at(p.pos);
+            Ok(p.pos == p.bytes.len() || !(c == '\\' || is_identifier_part(c)))
+        });
+        self.not_allowed(start, what, hint)
     }
 
     fn emit(&mut self, offset: usize, kind: EventKind<'a>) {
@@ -554,7 +593,7 @@ impl<'a> Parser<'a> {
                     None => return Ok(self.state_after_value()),
                 }
             }
-            b'\'' => return Err(self.not_allowed(self.pos, "single-quoted strings are")),
+            b'\'' => return Err(self.single_quoted(self.pos)),
             b'-' | b'+' | b'.' | b'0'..=b'9' | b'I' | b'N' => {
                 self.number()?;
                 EventKind::Number(&self.text[start..self.pos])
@@ -632,10 +671,11 @@ impl<'a> Parser<'a> {
         match self.peek() {
             Some(b'"') => self.string(b'"', decode),
             Some(b'\'') if self.json5 => self.string(b'\'', decode),
-            Some(b'\'') => Err(self.not_allowed(start, "single-quoted strings are")),
+            Some(b'\'') => Err(self.single_quoted(start)),
             Some(_) if self.identifier_start(start) => {
                 if !self.json5 {
-                    return Err(self.not_allowed(start, "unquoted keys are"));
+                    let hint = self.json5_reads(start, |p| p.identifier().map(|_| true));
+                    return Err(self.not_allowed(start, "unquoted keys are", hint));
                 }
                 self.identifier().map(Some)
             }
@@ -910,7 +950,9 @@ impl<'a> Parser<'a> {
     fn number(&mut self) -> Result<(), Fail> {
         let start = self.pos;
         match self.peek() {
-            Some(b'+') if !self.json5 => return Err(self.not_allowed(start, "this number form is")),
+            Some(b'+') if !self.json5 => {
+                return Err(self.json5_number(start, "this number form is"));
+            }
             Some(b'+' | b'-') => self.pos += 1,
             _ => {}
         }
@@ -927,7 +969,7 @@ impl<'a> Parser<'a> {
     /// The rest of a JSON5 hex number such as `-0x1F`, from its `0x`. `start` is at the sign.
     fn hex_number(&mut self, start: usize) -> Result<(), Fail> {
         if !self.json5 {
-            return Err(self.not_allowed(start, "this number form is"));
+            return Err(self.json5_number(start, "this number form is"));
         }
         self.pos += 2;
         let hex_start = self.pos;
@@ -961,7 +1003,7 @@ impl<'a> Parser<'a> {
             }
             if !self.json5 && int_digits != fraction_digits {
                 // Only JSON5 allows a point with digits on one side alone, as in `.5` and `5.`.
-                return Err(self.not_allowed(start, "this number form is"));
+                return Err(self.json5_number(start, "this number form is"));
             }
             self.pos += 1;
             self.skip_digits();
@@ -995,7 +1037,7 @@ impl<'a> Parser<'a> {
         if !self.json5 {
             return Err(
                 if self.text[self.pos..].starts_with(word.trim_matches('`')) {
-                    self.not_allowed(start, "NaN and Infinity are")
+                    self.json5_number(start, "NaN and Infinity are")
                 } else {
                     self.unexpected(self.after_sign(start))
                 },
@@ -1089,7 +1131,10 @@ impl<'a> Parser<'a> {
                 b' ' | b'\t' | b'\r' | b'\n' => self.pos += 1,
                 b'/' => match self.bytes.get(self.pos + 1) {
                     Some(b'/' | b'*') if !self.dialect.comments() => {
-                        return Err(self.not_allowed(self.pos, "comments are"));
+                        // Only a block comment can fail to end, and then JSONC rejects it too.
+                        let hint = self.bytes[self.pos + 1] == b'/'
+                            || memchr::memmem::find(&self.bytes[self.pos + 2..], b"*/").is_some();
+                        return Err(self.not_allowed(self.pos, "comments are", hint));
                     }
                     Some(b'/') => self.line_comment(),
                     Some(b'*') => self.block_comment()?,

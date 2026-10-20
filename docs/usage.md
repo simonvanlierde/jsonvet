@@ -58,9 +58,9 @@ the hook and in CI, has no such line.
   `comments are not allowed in json; the jsonc dialect allows this`, or `did you mean `true`?` for
   a word such as `True`. Select a dialect with `--dialect jsonc:GLOB`, or a `dialects` entry in
   the configuration file.
-- A file that starts with a UTF-16 or UTF-32 byte order mark fails with
-  `file is UTF-16 (LE); jsonvet reads UTF-8`. Any other file that is not UTF-8 fails with
-  `not valid UTF-8 (byte N)`.
+- A UTF-16 or UTF-32 file fails with `file is UTF-16 (LE); jsonvet reads UTF-8`. jsonvet knows
+  one by its byte order mark, or without one by the zero bytes in its first four bytes. Any other
+  file that is not UTF-8 fails with `not valid UTF-8 (byte N)`.
 - In GitHub Actions, each problem is also printed as an annotation.
 
 jsonvet escapes control, bidirectional and invisible characters in file names and messages. So no

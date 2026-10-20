@@ -512,3 +512,59 @@ fn a_word_after_a_sign_gets_no_literal_hint() {
         assert!(!message.contains("did you mean"), "{dialect}: {message}");
     }
 }
+
+/// A hint to use a larger dialect is given only where that dialect reads the token whole: not
+/// for a word that runs on, a number cut short, or a string or comment that never ends.
+#[test]
+fn a_dialect_hint_needs_the_whole_token() {
+    let first = |dialect, text: &str| check(text, &Config::new(dialect)).problems()[0].to_string();
+    let hinted = [
+        (Dialect::Json, "[NaN]"),
+        (Dialect::Json, "[NaN-1]"),
+        (Dialect::Json, "[-Infinity]"),
+        (Dialect::Json, "[0x1F]"),
+        (Dialect::Json, "[+1]"),
+        (Dialect::Json, "[+NaN]"),
+        (Dialect::Json, "[.5]"),
+        (Dialect::Json, "{a: 1}"),
+        (Dialect::Json, "{a-: 1}"),
+        (Dialect::Jwcc, "['a']"),
+        (Dialect::Json, "{'a': 1}"),
+        (Dialect::Json, "/* c */ 1"),
+        (Dialect::Json, "// c"),
+    ];
+    for (dialect, text) in hinted {
+        let message = first(dialect, text);
+        assert!(
+            message.ends_with("dialect allows this"),
+            "{text:?}: {message}"
+        );
+    }
+    let bare = [
+        ("[NaNx]", "NaN and Infinity are not allowed in json"),
+        ("[Infinityy]", "NaN and Infinity are not allowed in json"),
+        ("[-Infinity1]", "NaN and Infinity are not allowed in json"),
+        ("[NaN$]", "NaN and Infinity are not allowed in json"),
+        ("[NaN\\u0061]", "NaN and Infinity are not allowed in json"),
+        ("[NaN\u{301}]", "NaN and Infinity are not allowed in json"),
+        ("[0x]", "this number form is not allowed in json"),
+        ("[0x1g]", "this number form is not allowed in json"),
+        ("[+]", "this number form is not allowed in json"),
+        ("[+NaNx]", "this number form is not allowed in json"),
+        ("[.5x]", "this number form is not allowed in json"),
+        ("[5.e]", "this number form is not allowed in json"),
+        ("{a\\x: 1}", "unquoted keys are not allowed in json"),
+        ("['a]", "single-quoted strings are not allowed in json"),
+        ("{'a: 1}", "single-quoted strings are not allowed in json"),
+        ("/* c", "comments are not allowed in json"),
+    ];
+    for (text, message) in bare {
+        let report = check(text, &Config::new(Dialect::Json));
+        assert_eq!(report.problems()[0].to_string(), message, "{text:?}");
+        assert_eq!(
+            report.problems()[0].offset(),
+            usize::from(text.starts_with('[') || text.starts_with('{')),
+            "{text:?}"
+        );
+    }
+}

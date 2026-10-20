@@ -423,15 +423,24 @@ fn read_stdin() -> Result<String, String> {
     }
 }
 
-/// A file's bytes as UTF-8 text. A file that starts with a UTF-16 or UTF-32 byte order mark says
-/// so, rather than that its first byte is not UTF-8.
+/// A file's bytes as UTF-8 text. A UTF-16 or UTF-32 file says so, rather than that its first
+/// byte is not UTF-8: by its byte order mark, or without one by where the zero bytes of its first
+/// two characters fall, as RFC 4627 section 3 tells the encodings apart.
 fn decode(bytes: Vec<u8>) -> Result<String, String> {
+    // Without a mark, a match always failed as UTF-8 before: a zero byte is U+0000, and outside
+    // a string no dialect allows it. JSON5 does allow it raw inside one, so a first byte that
+    // opens a string is left alone.
+    let opens_string = |b: u8| b == b'"' || b == b'\'';
     // UTF-32 LE first: its mark starts with UTF-16 LE's.
-    let encoding = match bytes.as_slice() {
+    let encoding = match *bytes.as_slice() {
         [0xFF, 0xFE, 0, 0, ..] => Some("UTF-32 (LE)"),
         [0, 0, 0xFE, 0xFF, ..] => Some("UTF-32 (BE)"),
         [0xFF, 0xFE, ..] => Some("UTF-16 (LE)"),
         [0xFE, 0xFF, ..] => Some("UTF-16 (BE)"),
+        [0, 0, 0, a, ..] if a != 0 => Some("UTF-32 (BE)"),
+        [0, a, 0, b, ..] if a != 0 && b != 0 => Some("UTF-16 (BE)"),
+        [a, 0, 0, 0, ..] if a != 0 && !opens_string(a) => Some("UTF-32 (LE)"),
+        [a, 0, b, 0, ..] if a != 0 && b != 0 && !opens_string(a) => Some("UTF-16 (LE)"),
         _ => None,
     };
     if let Some(encoding) = encoding {
