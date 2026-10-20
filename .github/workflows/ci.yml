@@ -118,9 +118,11 @@ jobs:
         env:
           JSONVET_DIFF_JSON5: ${{ github.workspace }}/fuzz/target/release/diff_json5
 
-  # Instruction counts for `check` under callgrind: crates/jsonvet/benches/check.rs. Each run
-  # stands alone, so the job keeps the benchmarks working and prints the counts; it compares
-  # nothing.
+  # Instruction counts for `check` under callgrind: crates/jsonvet/benches/check.rs. On a pull
+  # request the job counts the base branch first (the merge commit's first parent), then the merge
+  # commit, and fails when a case's instructions (Ir) rise by more than 1%. Counts move by under
+  # 0.3% between runs. When the base has no benchmarks, or needs another gungraun-runner, its step
+  # fails without failing the job, and the second run saves its counts with nothing to compare.
   bench:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -128,13 +130,33 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 2 # the merge commit and the base branch
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       # Valgrind, and gungraun-runner at the gungraun version in Cargo.lock.
       - uses: gungraun/setup-gungraun@62591572561bb2f4ed2ae300b8a8bea99ea8ddaf # v1.1.3
-      - run: cargo bench --locked -p jsonvet --bench check
+      - name: Count the base branch
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          # Outside target/, so rust-cache never restores an old baseline.
+          GUNGRAUN_HOME: ${{ runner.temp }}/gungraun
+        run: |
+          git checkout --quiet HEAD^1
+          cargo bench --locked -p jsonvet --bench check -- --save-baseline=base
+      - name: Count, and compare with the base branch
+        shell: bash
+        env:
+          GUNGRAUN_HOME: ${{ runner.temp }}/gungraun
+          GUNGRAUN_CALLGRIND_LIMITS: ir=1%
+        run: |
+          git checkout --quiet "$GITHUB_SHA"
+          status=0
+          cargo bench --locked -p jsonvet --bench check -- --baseline=base | tee counts.txt || status=$?
+          { echo '```text'; sed 's/\x1b\[[0-9;]*m//g' counts.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
 
   # jsonvet against check-json5 1.4.1, file by file; see docs/design.md.
   differential:

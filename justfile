@@ -35,8 +35,9 @@ scaling:
         cargo test --release --locked -p jsonvet-cli --test scaling -- --ignored
 
 # ci.yml `bench`: instruction counts for `check` (needs valgrind and gungraun-runner, so Linux).
-counts:
-    cargo bench --locked -p jsonvet --bench check
+# ARGS go to gungraun, such as --save-baseline=base or --baseline=base.
+counts *ARGS:
+    cargo bench --locked -p jsonvet --bench check -- {{ ARGS }}
 
 # ci.yml `differential`: jsonvet against check-json5 1.4.1 on generated files (CI samples 5,000).
 differential CASES="5000" SEED="7":

@@ -70,10 +70,14 @@ cargo deny.
 - **Speed claims.** Measure with `just bench`: hyperfine without a shell, warm, 20 runs. Take the
   numbers on a quiet machine, not a loaded one, and report the median.
 - **Instruction counts.** `just counts` runs `crates/jsonvet/benches/check.rs` under callgrind
-  (gungraun) and prints each case's change since the last run. Counts move by under 0.1% between
-  runs, because hash keys are random, so a smaller change is noise. In a Docker container, set
+  (gungraun) and prints each case's change since the last run. Counts move by under 0.3% between
+  runs, because hash keys are random, so a smaller change is noise. On a pull request, CI counts
+  the base branch and then the pull request, and fails when a case rises by more than 1%. To
+  compare two commits locally, run `just counts --save-baseline=base` on one and
+  `just counts --baseline=base` on the other. In a Docker container, set
   `GUNGRAUN_ALLOW_ASLR=yes`: the default seccomp profile refuses the `setarch -R` gungraun runs
-  valgrind under.
+  valgrind under. `gungraun-runner` must be the gungraun version in `Cargo.lock`; on a mismatch
+  the benchmarks stop and name the `cargo install` command that fixes it.
 - **Scaling.** `just scaling` runs `crates/jsonvet-cli/tests/scaling.rs` under valgrind: each test
   counts the instructions on an input of size n and 10n and fails when the ratio reaches 15
   (linear gives about 10, quadratic about 100). It guards paths that were once quadratic: the
