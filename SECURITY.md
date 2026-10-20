@@ -8,7 +8,12 @@ crafted file that does any of these as a security bug:
   command;
 - makes the GitHub Action read or write outside the files it was given.
 
-The same goes for a crafted schema passed to `--schema`.
+The same goes for a crafted schema passed to `--schema`, with one known exception: jsonschema
+collects every error of one validation call before jsonvet sees any, so a schema that puts an
+`anyOf` or an `enum` around `additionalProperties` can still take gigabytes on a document with
+many failing values. [design.md](docs/design.md#--schema) has the details. Closing it needs a way
+in jsonschema to stop collecting errors early. Until then, review schema changes in pull requests
+from strangers before CI runs them.
 
 ## Reporting
 
