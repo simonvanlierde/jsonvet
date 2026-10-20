@@ -389,11 +389,15 @@ impl<'a> Parser<'a> {
 
     /// Whether JSON5 reads the token at `at`: `scan` runs from there with JSON5's rules and
     /// says whether the token it read ends where it should. The parser's state is restored.
+    /// Never in JSON Lines, which gets no hint.
     fn json5_reads(
         &mut self,
         at: usize,
         scan: impl FnOnce(&mut Self) -> Result<bool, Fail>,
     ) -> bool {
+        if self.json_lines {
+            return false;
+        }
         let (pos, json5, problems) = (self.pos, self.json5, self.problems.len());
         self.pos = at;
         self.json5 = true;
@@ -1132,8 +1136,11 @@ impl<'a> Parser<'a> {
                 b'/' => match self.bytes.get(self.pos + 1) {
                     Some(b'/' | b'*') if !self.dialect.comments() => {
                         // Only a block comment can fail to end, and then JSONC rejects it too.
-                        let hint = self.bytes[self.pos + 1] == b'/'
-                            || memchr::memmem::find(&self.bytes[self.pos + 2..], b"*/").is_some();
+                        // JSON Lines gets no hint, so it skips the search to the end of the text.
+                        let hint = !self.json_lines
+                            && (self.bytes[self.pos + 1] == b'/'
+                                || memchr::memmem::find(&self.bytes[self.pos + 2..], b"*/")
+                                    .is_some());
                         return Err(self.not_allowed(self.pos, "comments are", hint));
                     }
                     Some(b'/') => self.line_comment(),
