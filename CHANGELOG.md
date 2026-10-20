@@ -83,6 +83,8 @@ version for a new option or output, the patch version for a fix.
   instead of 2.0 GB, and checks 2.7x faster. The errors reported are unchanged.
 - A JSON Lines file of 1 MB or more is split at newlines and checked on the cores its chunk leaves
   free: 78 MB of nested records check 3x faster on 12 cores. The output is unchanged.
+- The parser skips the space between tokens faster: 88 MB of minified JSON checks 21% faster,
+  71 MB of pretty-printed JSON 7% faster, and the 2.7 MB benchmark file 5% faster.
 
 ### Fixed
 

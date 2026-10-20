@@ -40,6 +40,10 @@ exclude_re = [
   # No byte matches two of the per-byte tests, so XOR and OR agree there; the OR with `stop` is
   # tested.
   "parse.rs:\\d+:(37|52|65): replace \\| with \\^ in plain_run",
+  # Speed only: the slow white space loop decides every byte the same way, and 0x80 is a UTF-8
+  # continuation byte, which no token starts with.
+  "parse.rs:.* replace ends_trivia -> bool with false",
+  "parse.rs:.* replace < with (==|<=) in ends_trivia",
   # Speed only: a chunk that ends after every file still prints the same.
   "lib.rs:.* replace >= with < in run_with",
   # Speed only: how many threads a split JSON Lines file uses, which gives the same report.
