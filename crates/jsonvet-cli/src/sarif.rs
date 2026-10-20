@@ -5,9 +5,9 @@ use std::ffi::OsStr;
 use std::fmt::Write as _;
 use std::path::Path;
 
-use jsonvet::{Location, Severity};
+use jsonvet::{Location, Severity, is_hidden};
 
-use crate::output::{escape_utf16, is_hidden};
+use crate::output::escape_utf16;
 use crate::rules;
 
 /// A file that could not be read gets its own rule, so it shows as an alert. GitHub code scanning
