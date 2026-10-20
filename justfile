@@ -44,9 +44,7 @@ differential CASES="5000" SEED="7":
     cargo build --release --locked -p jsonvet-cli
     uv run scripts/differential.py --cases {{ CASES }} --seed {{ SEED }} --jsonvet {{ target }}/release/jsonvet
 
-# ci.yml `lint` and `test` on this OS. Not ci.yml's msrv, scaling, bench, differential, hook,
-# packaging or action jobs, nor semver.yml: `just msrv`, `just scaling`, `just counts` and
-# `just differential` run four.
+# ci.yml `lint` and `test` on this OS. CONTRIBUTING.md lists the CI jobs it leaves out.
 check: lint test
 
 # ci.yml `msrv`: the oldest Rust the crates support (`rust-version` in Cargo.toml).
