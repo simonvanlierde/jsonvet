@@ -342,7 +342,8 @@ impl<'a> Parser<'a> {
             return None;
         }
         let len = rest.iter().take(33).take_while(|b| part(b)).count();
-        // shortcut: a longer word shows as its first letter only; fine for typos of literals.
+        // shortcut: a word over 32 bytes, or followed by a non-ASCII byte, shows as its first
+        // letter only; show the whole word if users report long JSON5 identifiers shown that way.
         (len <= 32 && rest.get(len).is_none_or(u8::is_ascii)).then(|| &self.text[at..at + len])
     }
 
