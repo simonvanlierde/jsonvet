@@ -1,12 +1,17 @@
 # Decision records
 
 Each record is a design choice where we measured or argued an alternative and turned it down. It
-keeps the numbers, so nobody argues it again without new evidence. To reopen one, bring what its
-"Revisit if" asks for, and update the record in the same pull request as the code.
+keeps the numbers, so nobody argues it again without new evidence. A new decision lands in the
+same pull request as its code.
 
-A record has five short parts: Context (what forced a choice), Options (each with its numbers,
-their date and setting, or "argued, not measured"), Decision, Consequences, and Revisit if. A
-record that a later one replaces gets `Status: superseded by NNNN (YYYY-MM-DD)` and stays.
+A record has six short parts, after [MADR 4](https://adr.github.io/madr/): Context (what forced
+a choice), Options (each with its numbers, their date and setting, or "argued, not measured"),
+Decision, Consequences, Confirmation (the test or CI job that keeps it true), and Revisit if.
+
+An accepted record is not rewritten into a different decision. To change one, bring what its
+"Revisit if" asks for and add a new record. The old one gets
+`Status: superseded by NNNN (YYYY-MM-DD)` and stays. Fixing a typo, a link or a stale test name
+is an ordinary edit.
 
 | # | Decision | Date |
 | --- | --- | --- |

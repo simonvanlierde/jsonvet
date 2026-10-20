@@ -35,6 +35,12 @@ build since 3.0.0, the wheels, the hook and the Action included (#54).
   measured in #50 and #52 and explained in [design.md](../design.md#--schema). Building values
   takes 14 to 27 times the file's size.
 
+## Confirmation
+
+The tests in `cli.rs`'s `mod schema` hold each limit, such as `a_long_ref_chain_is_a_usage_error`
+and `a_backtracking_pattern_is_cut_short_and_reported`. The `packaging` CI job builds the wheels
+the release ships.
+
 ## Revisit if
 
 - users ask for schemas picked by file name: that needs a network policy, then a cached catalog;

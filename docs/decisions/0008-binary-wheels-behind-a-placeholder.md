@@ -32,6 +32,11 @@ the `check-json5` hook id, command and `--strict`, through 3.x; 4.0 drops them t
 - The release archives hold the binary from each wheel, so PyPI and GitHub ship the same bytes.
 - The shim and its tests cost about 120 lines until 4.0.
 
+## Confirmation
+
+The `hook` CI job installs the hook with pre-commit and prek on Linux, macOS and Windows, and the
+release workflow's `versions` job runs `scripts/check-versions.py` against the tag.
+
 ## Revisit if
 
 - pre-commit or prek can install a prebuilt binary without Python packaging;

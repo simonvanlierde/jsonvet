@@ -30,6 +30,10 @@ The usual reasons for `unsafe` in a parser are speed: SIMD loads, unchecked inde
 - Memory maps are out, and SIMD stays within what the compiler vectorizes or safe intrinsics
   allow.
 
+## Confirmation
+
+`forbid` makes any `unsafe` block a compile error, so every build and `cargo lint` refuse it.
+
 ## Revisit if
 
 - a profile shows a speed-up past 5% end to end that only `unsafe` can give, and we can fuzz it

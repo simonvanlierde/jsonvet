@@ -34,6 +34,13 @@ percent-encoded as GitHub requires.
 - Results are held until the end, 1.0 GB at 1,000,000 before the cap. Streaming waits for a
   memory complaint.
 - serde_json has been in the CLI since `--schema` (#50); the escaping argument stands.
+- `--format json` (#74) is written the same way, with the same escaping.
+
+## Confirmation
+
+`each_output_path_escapes_names_and_messages`, `usage_errors_show_control_characters_escaped` and
+`sarif_keeps_other_brackets` in `crates/jsonvet-cli/tests/cli.rs`, and the unit tests in
+`output.rs`.
 
 ## Revisit if
 

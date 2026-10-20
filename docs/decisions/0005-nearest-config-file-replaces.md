@@ -32,6 +32,11 @@ folder (since 3.0.0, #51); `--dialect` and `--strict` still match the path as ty
 - Cost, from #73: the `scripts/bench.py` cases and a walk of 10,000 files in 200 folders stayed
   within σ, once a memo of the last folder took the walk from 27% slower back.
 
+## Confirmation
+
+`each_file_takes_the_nearest_config_file` and `a_walk_takes_each_folders_nearest_exclude` in
+`crates/jsonvet-cli/tests/cli.rs`.
+
 ## Revisit if
 
 - users want shared settings across packages: add `extend`, not merging;

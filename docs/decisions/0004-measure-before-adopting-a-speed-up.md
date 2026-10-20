@@ -39,6 +39,12 @@ Argued, not measured:
 - A 5% change needs a quiet machine and the median, as
   [CONTRIBUTING.md](../../CONTRIBUTING.md#tests) says.
 
+## Confirmation
+
+A speed-up pull request shows its `hyperfine -N` numbers against main. The `bench` CI job counts
+the instructions of `check` and fails past +1%, and the `scaling` job fails on a path that turns
+quadratic.
+
 ## Revisit if
 
 - the parser changes enough that a PGO profile could differ, or a new compiler changes the

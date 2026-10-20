@@ -31,6 +31,12 @@ crafted files.
 - One mutant in `Keys::first_or_insert` cannot be killed: only two keys with colliding 32-bit
   hashes tell it apart, and no test can pick them. `.cargo/mutants.toml` lists it.
 
+## Confirmation
+
+No test can build colliding keys for random OS keys, so the hasher, `short_hash` in `parse.rs`,
+is checked in review. The `scaling` CI job checks that duplicate detection stays linear on
+ordinary keys.
+
 ## Revisit if
 
 - objects of hundreds of thousands of keys become common, and a keyed hasher as flood-resistant

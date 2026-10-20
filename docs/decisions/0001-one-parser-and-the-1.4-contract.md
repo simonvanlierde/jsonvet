@@ -34,6 +34,11 @@ stay equal; syntax-error wording is ours, marked **Breaking** in the changelog.
 - In the conformance matrix only four of 27 parser runs report duplicate keys, and jsonvet is
   the only Rust one ([conformance.md](../conformance.md#duplicate-keys)).
 
+## Confirmation
+
+The `differential` CI job checks the contract against 1.4.1 on every pull request, and the weekly
+fuzz workflow compares the parser with serde_json and json5.
+
 ## Revisit if
 
 - a maintained Rust crate offers strict dialect modes with byte offsets and duplicate reports,
