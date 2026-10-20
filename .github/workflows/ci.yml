@@ -118,6 +118,24 @@ jobs:
         env:
           JSONVET_DIFF_JSON5: ${{ github.workspace }}/fuzz/target/release/diff_json5
 
+  # Instruction counts for `check` under callgrind: crates/jsonvet/benches/check.rs. Each run
+  # stands alone, so the job keeps the benchmarks working and prints the counts; it compares
+  # nothing.
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # Valgrind, and gungraun-runner at the gungraun version in Cargo.lock.
+      - uses: gungraun/setup-gungraun@62591572561bb2f4ed2ae300b8a8bea99ea8ddaf # v1.1.3
+      - run: cargo bench --locked -p jsonvet --bench check
+
   # jsonvet against check-json5 1.4.1, file by file; see docs/design.md.
   differential:
     runs-on: ubuntu-latest

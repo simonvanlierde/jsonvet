@@ -34,13 +34,18 @@ scaling:
     JSONVET_DIFF_JSON5={{ absolute_path(env("CARGO_TARGET_DIR", "fuzz/target")) }}/release/diff_json5 \
         cargo test --release --locked -p jsonvet-cli --test scaling -- --ignored
 
+# ci.yml `bench`: instruction counts for `check` (needs valgrind and gungraun-runner, so Linux).
+counts:
+    cargo bench --locked -p jsonvet --bench check
+
 # ci.yml `differential`: jsonvet against check-json5 1.4.1 on generated files (CI samples 5,000).
 differential CASES="5000" SEED="7":
     cargo build --release --locked -p jsonvet-cli
     uv run scripts/differential.py --cases {{ CASES }} --seed {{ SEED }} --jsonvet {{ target }}/release/jsonvet
 
-# ci.yml `lint` and `test` on this OS. Not ci.yml's msrv, scaling, differential, hook, packaging
-# or action jobs, nor semver.yml: `just msrv`, `just scaling` and `just differential` run three.
+# ci.yml `lint` and `test` on this OS. Not ci.yml's msrv, scaling, bench, differential, hook,
+# packaging or action jobs, nor semver.yml: `just msrv`, `just scaling`, `just counts` and
+# `just differential` run four.
 check: lint test
 
 # ci.yml `msrv`: the oldest Rust the crates support (`rust-version` in Cargo.toml).

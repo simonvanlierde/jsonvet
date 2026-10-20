@@ -13,8 +13,9 @@ and the conformance page diff.
 The page diff fails while `README.md` or `docs/conformance.md` has unstaged edits, so stage them
 first.
 
-CI also runs the msrv, scaling, differential, hook, packaging, action-script, action and semver
-jobs. `just msrv`, `just scaling` and `just differential` run three of them locally.
+CI also runs the msrv, scaling, bench, differential, hook, packaging, action-script, action and
+semver jobs. `just msrv`, `just scaling`, `just counts` and `just differential` run four of them
+locally.
 Outside pull requests, `advisories.yml` runs `cargo deny check advisories` every Monday, so a new
 RustSec advisory against `Cargo.lock` fails a run without waiting for a pull request, and
 `scorecard.yml` rates the repository for the OpenSSF Scorecard badge.
@@ -68,6 +69,11 @@ cargo deny.
   block the merge.
 - **Speed claims.** Measure with `just bench`: hyperfine without a shell, warm, 20 runs. Take the
   numbers on a quiet machine, not a loaded one, and report the median.
+- **Instruction counts.** `just counts` runs `crates/jsonvet/benches/check.rs` under callgrind
+  (gungraun) and prints each case's change since the last run. Counts move by under 0.1% between
+  runs, because hash keys are random, so a smaller change is noise. In a Docker container, set
+  `GUNGRAUN_ALLOW_ASLR=yes`: the default seccomp profile refuses the `setarch -R` gungraun runs
+  valgrind under.
 - **Scaling.** `just scaling` runs `crates/jsonvet-cli/tests/scaling.rs` under valgrind: each test
   counts the instructions on an input of size n and 10n and fails when the ratio reaches 15
   (linear gives about 10, quadratic about 100). It guards paths that were once quadratic: the

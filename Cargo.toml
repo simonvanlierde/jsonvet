@@ -38,3 +38,9 @@ lto = "fat"
 codegen-units = 1
 panic = "abort"
 strip = true
+
+# gungraun finds the benchmark function by its symbol and maps counts to lines through the debug
+# info. The bench profile inherits `strip = true` from release, which leaves every count at 0.
+[profile.bench]
+debug = true
+strip = false

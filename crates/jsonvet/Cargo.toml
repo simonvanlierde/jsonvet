@@ -20,6 +20,12 @@ unicode-properties = { version = "0.1.4", default-features = false, features = [
 [lints]
 workspace = true
 
+# Instruction counts under valgrind, not a libtest harness: benches/check.rs.
+[[bench]]
+name = "check"
+harness = false
+
 [dev-dependencies]
+gungraun = "0.20.0"
 insta = "1.49.0"
 proptest = "1.12.0"
