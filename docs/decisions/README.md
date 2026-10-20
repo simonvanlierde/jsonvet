@@ -1,42 +1,12 @@
 # Decision records
 
-Each record here is a design decision where we measured or argued an alternative and turned it
-down. It keeps the numbers and the reasons, so nobody has to argue it again without new
-evidence. To reopen one, bring the evidence its "Revisit if" asks for, and change the record in
-the same pull request as the code.
+Each record is a design choice where we measured or argued an alternative and turned it down. It
+keeps the numbers, so nobody argues it again without new evidence. To reopen one, bring what its
+"Revisit if" asks for, and update the record in the same pull request as the code.
 
-## Template
-
-```markdown
-# N. Title
-
-Status: accepted (YYYY-MM-DD)
-
-## Context
-
-What forced a choice, in a few sentences.
-
-## Options
-
-Each option, with its measured numbers and their setting (date, machine, runs), or "argued, not
-measured".
-
-## Decision
-
-What we do.
-
-## Consequences
-
-What it costs, what it gives, and what follows from it.
-
-## Revisit if
-
-The concrete evidence that would reopen it.
-```
-
-A record that a later one replaces gets `Status: superseded by NNNN (YYYY-MM-DD)` and stays.
-
-## Index
+A record has five short parts: Context (what forced a choice), Options (each with its numbers,
+their date and setting, or "argued, not measured"), Decision, Consequences, and Revisit if. A
+record that a later one replaces gets `Status: superseded by NNNN (YYYY-MM-DD)` and stays.
 
 | # | Decision | Date |
 | --- | --- | --- |
