@@ -48,6 +48,7 @@ shows the wheels' own PEP 740 attestations on each file's page.
 checksums. Releases up to 3.0.0 have no attestations.
 
 The GitHub Action checks the wheel it downloads this way before installing it, from 3.1.0 on, and
-stops if the check fails. `verify: false` turns that off, for GitHub Enterprise Server or a runner
-without `gh`. The Action cannot pin a hash instead: the wheels are built after the tag it is
-pinned to.
+stops if the check fails. On a runner without `gh` it installs the wheel unchecked, with a
+notice: only the runner's owner can remove `gh`, not someone who controls the package index.
+`verify: false` turns the check off, for GitHub Enterprise Server. The Action cannot pin a hash
+instead: the wheels are built after the tag it is pinned to.

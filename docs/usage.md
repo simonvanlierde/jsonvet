@@ -285,9 +285,9 @@ commit. The step log names the version it installed.
 
 Pinning the Action does not pin the wheel's bytes, so before installing the wheel from PyPI the
 Action checks its build provenance attestation with `gh attestation verify`: it must come from
-jsonvet's `release.yml`. Hosted runners have `gh`. Set `verify: false` on GitHub Enterprise Server
-or on a runner without `gh`. Releases before 3.1.0 have no attestation, so they install unchecked,
-with a notice in the log.
+jsonvet's `release.yml`. Hosted runners have `gh`; on a runner without it, and for releases before
+3.1.0, which have no attestation, the wheel installs unchecked, with a notice in the log. Set
+`verify: false` on GitHub Enterprise Server.
 
 ## SARIF
 

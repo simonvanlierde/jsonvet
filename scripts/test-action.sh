@@ -138,8 +138,9 @@ for version in 3.1.0rc1 3.10.0 4.0.0; do
   GH_FAIL=1 PATH="$tmp/bin:$PATH" verify_wheel "$tmp/jsonvet-$version-py3-none-any.whl" true 2>/dev/null && fail "jsonvet $version passed unchecked"
 done
 verify_wheel "$wheel" yes 2>/dev/null && fail "verify accepted 'yes'"
-# Without gh the check fails rather than passing unchecked.
-PATH="$tmp/empty" "$BASH" -c ". '$here/action.sh'; verify_wheel '$wheel' true" 2>/dev/null && fail "a missing gh passed"
+# Without gh the wheel installs unchecked, with a notice.
+out=$(PATH="$tmp/empty" "$BASH" -c ". '$here/action.sh'; verify_wheel '$wheel' true" 2>&1) || fail "a missing gh failed the run"
+[[ "$out" == *"no GitHub CLI"* ]] || fail "a missing gh gave no notice: [$out]"
 
 if [[ $failures -gt 0 ]]; then
   echo "$failures failed"
