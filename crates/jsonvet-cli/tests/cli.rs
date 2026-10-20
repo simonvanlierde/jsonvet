@@ -493,6 +493,71 @@ fn config_globs_are_relative_to_the_config_file() {
 }
 
 #[test]
+fn each_file_takes_the_nearest_config_file() {
+    let dup = "{\"a\": 1, \"a\": 2}\n";
+    let dir = workdir(&[
+        ("jsonvet.toml", "rules = { duplicate-key = \"ignore\" }\n"),
+        ("d.json", dup),
+        (
+            "packages/a/jsonvet.toml",
+            "dialects = [{ files = \"*.json\", dialect = \"json\" }]\n",
+        ),
+        ("packages/a/x.json", dup),
+        ("packages/a/y.json", "{a: 1}\n"),
+        ("packages/b/d.json", dup),
+    ]);
+    // The nearer file replaces the root's, so duplicate keys are errors again under it.
+    let nested = "packages/a/x.json:1:10: error[duplicate-key] duplicate key $.a (first at 1:2)\npackages/a/y.json:1:2: error[syntax] unquoted keys are not allowed in json; the json5 dialect allows this\n";
+    let files = [
+        "d.json",
+        "packages/a/x.json",
+        "packages/a/y.json",
+        "packages/b/d.json",
+    ];
+    assert_eq!(jsonvet(&dir, &files), (1, nested.to_owned()));
+    // From a folder with no config file of its own, and through `..`.
+    let up = ["d.json", "../a/x.json", "../a/y.json", "../b/../../d.json"];
+    assert_eq!(
+        jsonvet(&dir.join("packages/b"), &up),
+        (1, nested.replace("packages/a", "../a"))
+    );
+    // The search climbs from packages/b, not back into packages/a.
+    assert_eq!(
+        jsonvet(&dir, &["packages/a/../b/d.json"]),
+        (0, String::new())
+    );
+    // Standard input takes the settings for its --stdin-filename.
+    let (code, out, _) = jsonvet_stdin(&dir, &["--stdin-filename", "packages/a/x.json"], dup);
+    assert_eq!((code, out.lines().next()), (1, nested.lines().next()));
+    // --config applies one file to all, and --no-config none.
+    let all = [
+        "--config",
+        "jsonvet.toml",
+        "packages/a/x.json",
+        "packages/a/y.json",
+    ];
+    assert_eq!(jsonvet(&dir, &all), (0, String::new()));
+    assert_eq!(jsonvet(&dir, &["--no-config", "d.json"]).0, 1);
+}
+
+#[test]
+fn a_bad_nested_config_file_stops_the_run() {
+    let dir = workdir(&[
+        ("ok.json", "{}"),
+        ("sub/jsonvet.toml", "rules = { nope = \"error\" }\n"),
+        ("sub/x.json", "{}"),
+    ]);
+    assert_eq!(jsonvet(&dir, &["ok.json"]), (0, String::new()));
+    let (code, out, err) = jsonvet_stderr(&dir, &["ok.json", "sub/x.json"]);
+    assert_eq!((code, out.as_str()), (2, ""));
+    assert!(
+        err.contains("sub/jsonvet.toml:1:11: unknown rule `nope`"),
+        "{err}"
+    );
+    assert_eq!(jsonvet_stderr(&dir, &["."]).0, 2);
+}
+
+#[test]
 fn config_search_stops_at_the_repository_root() {
     let outer = workdir(&[("jsonvet.toml", "rules = { duplicate-key = \"ignore\" }\n")]);
     let repo = outer.join("repo");
@@ -2093,6 +2158,30 @@ mod directories {
         assert_eq!(
             jsonvet(&dir, &["a"]),
             (1, [walked("a/y.json5"), walked("a/z.jsonc")].concat())
+        );
+    }
+
+    #[test]
+    fn a_walk_takes_each_folders_nearest_exclude() {
+        let dir = workdir(&[
+            ("jsonvet.toml", "exclude = [\"gen\"]\n"),
+            ("gen/d.json", DUP),
+            ("fixtures/d.json", DUP),
+            ("packages/a/jsonvet.toml", "exclude = [\"fixtures\"]\n"),
+            ("packages/a/fixtures/d.json", DUP),
+            ("packages/a/gen/d.json", DUP),
+        ]);
+        // Under packages/a only its own file applies, so its gen folder is walked.
+        assert_eq!(
+            jsonvet(&dir, &["."]),
+            (
+                1,
+                [
+                    walked("./fixtures/d.json"),
+                    walked("./packages/a/gen/d.json")
+                ]
+                .concat()
+            )
         );
     }
 

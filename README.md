@@ -142,8 +142,9 @@ dialects = [
 exclude = ["node_modules", "tests/fixtures/*"]
 ```
 
-jsonvet looks for it in the working directory and its parents, up to the repository root. Options
-on the command line win. How globs match is in the
+For each file, jsonvet uses the nearest one in the file's folder or a parent, up to the repository
+root, so each package in a monorepo can have its own. Options on the command line win. How globs
+match is in the
 [reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#globs).
 
 ## JSON Schema

@@ -1,14 +1,17 @@
 //! What to check for each file: the dialect patterns and rule severities from the config file
 //! and the command line, in that order, so the command line wins.
 
+use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 
 use jsonvet::{Config, Dialect, Rule, Severity};
 use toml::Spanned;
 use toml::Table;
 use toml::de::{DeTable, DeValue};
 
+use crate::args::ConfigSource;
 use crate::glob;
 use crate::output::printable;
 
@@ -143,24 +146,119 @@ fn in_base(
         .is_some_and(|relative| glob::matches(pattern, &relative))
 }
 
-/// The config file for a run started in `start`: the first `jsonvet.toml`, or `pyproject.toml`
-/// with a `[tool.jsonvet]` table, in `start` and its parents. The search stops at the first
-/// directory with a `.git` entry, so a file above the repository is never used.
-pub(crate) fn discover(start: &Path) -> Option<PathBuf> {
-    for dir in start.ancestors() {
-        let own = dir.join("jsonvet.toml");
-        if own.is_file() {
-            return Some(own);
+/// The settings for each file: the nearest config file above it, or the one `--config` names,
+/// with the command line's settings on top.
+pub(crate) struct Resolver {
+    /// The command line's settings: all there is when no config file applies.
+    cli: Arc<Settings>,
+    /// The settings for every file, with `--config` or `--no-config`: then nothing is searched.
+    fixed: Option<Arc<Settings>>,
+    /// The settings found for each folder searched so far, by its absolute path.
+    found: HashMap<PathBuf, Arc<Settings>>,
+    /// The working directory, asked for once rather than for each file. Empty unless searching.
+    cwd: PathBuf,
+    /// The folder of the last file looked up, as given, and its settings. Files come a folder at
+    /// a time, so this skips most lookups, which took 0.5 µs a file.
+    last: Option<(PathBuf, Arc<Settings>)>,
+}
+
+impl Resolver {
+    /// Read the file `--config` names, if any, so a bad one fails before any file is checked.
+    pub(crate) fn new(config: &ConfigSource, cli: Settings) -> Result<Resolver, String> {
+        let (fixed, cwd) = match config {
+            ConfigSource::Search => (
+                None,
+                std::env::current_dir()
+                    .map_err(|e| format!("cannot read the working directory: {e}"))?,
+            ),
+            ConfigSource::None => (Some(Arc::new(cli.clone())), PathBuf::new()),
+            ConfigSource::File(path) => (
+                Some(Arc::new(load(path)?.overridden_by(cli.clone()))),
+                PathBuf::new(),
+            ),
+        };
+        Ok(Resolver {
+            cli: Arc::new(cli),
+            fixed,
+            found: HashMap::new(),
+            cwd,
+            last: None,
+        })
+    }
+
+    /// The settings for the file at `path`, which need not exist: those of the first
+    /// `jsonvet.toml`, or `pyproject.toml` with a `[tool.jsonvet]` table, in its folder or a
+    /// folder above. The search stops at the first folder with a `.git` entry, so a file above
+    /// the repository is never used. `-`, standard input, is searched from the working directory.
+    pub(crate) fn for_file(&mut self, path: &Path) -> Result<Arc<Settings>, String> {
+        if let Some(fixed) = &self.fixed {
+            return Ok(Arc::clone(fixed));
         }
-        let pyproject = dir.join("pyproject.toml");
-        if fs::read_to_string(&pyproject).is_ok_and(|text| has_jsonvet_table(&text)) {
-            return Some(pyproject);
+        let folder = path.parent().unwrap_or(path);
+        if let Some((last, settings)) = &self.last
+            && last.as_os_str() == folder.as_os_str()
+        {
+            return Ok(Arc::clone(settings));
         }
-        if dir.join(".git").exists() {
-            return None;
+        let settings = self.search(path)?;
+        self.last = Some((folder.to_owned(), Arc::clone(&settings)));
+        Ok(settings)
+    }
+
+    fn search(&mut self, path: &Path) -> Result<Arc<Settings>, String> {
+        let path = lexical(&self.cwd.join(path));
+        let start = path.parent().unwrap_or(&path);
+        let mut searched = Vec::new();
+        let mut settings = None;
+        for dir in start.ancestors() {
+            if let Some(known) = self.found.get(dir) {
+                settings = Some(Arc::clone(known));
+                break;
+            }
+            searched.push(dir);
+            if let Some(config) = config_in(dir) {
+                let own = load(&config)?.overridden_by(Settings::clone(&self.cli));
+                settings = Some(Arc::new(own));
+                break;
+            }
+            if dir.join(".git").exists() {
+                break;
+            }
+        }
+        let settings = settings.unwrap_or_else(|| Arc::clone(&self.cli));
+        for dir in searched {
+            self.found.insert(dir.to_owned(), Arc::clone(&settings));
+        }
+        Ok(settings)
+    }
+}
+
+/// The absolute `path` with `..` folded away by name, as the globs fold it, so the search climbs
+/// the folders as written: from `a/../b` it goes to the parent of `b`, not to `a`. `components`
+/// already drops each `.` after the first part.
+fn lexical(path: &Path) -> PathBuf {
+    let mut folded = PathBuf::new();
+    for part in path.components() {
+        if part == Component::ParentDir {
+            folded.pop();
+        } else {
+            folded.push(part);
         }
     }
-    None
+    folded
+}
+
+/// The config file in `dir`: its `jsonvet.toml`, or its `pyproject.toml` with a
+/// `[tool.jsonvet]` table.
+fn config_in(dir: &Path) -> Option<PathBuf> {
+    let own = dir.join("jsonvet.toml");
+    if own.is_file() {
+        return Some(own);
+    }
+    let pyproject = dir.join("pyproject.toml");
+    fs::read_to_string(&pyproject)
+        .is_ok_and(|text| has_jsonvet_table(&text))
+        .then_some(pyproject)
 }
 
 /// Whether a `pyproject.toml` has a `[tool.jsonvet]` table, valid or not: `load` then reports

@@ -57,6 +57,13 @@ version for a new option or output, the patch version for a fix.
 
 ### Changed
 
+- Each file takes the nearest `jsonvet.toml` or `[tool.jsonvet]` above it, in its own folder or a
+  parent up to the repository root, so each package in a monorepo can have its own settings.
+  Before, one file was found from the working directory for all files. The nearest file replaces
+  any further up; nothing is merged. A folder walk skips what each folder's nearest file excludes,
+  and `--schema` reads the schema with the settings nearest to it. If you run jsonvet from the
+  repository root and a subfolder has its own config file, its files now follow that file: copy
+  any root settings they need into it. `--config` and `--no-config` work as before.
 - The README is shorter and starts with a quick start. The details (globs, exit status, SARIF,
   the Action's inputs, the JSON Schema limits) moved to
   [docs/usage.md](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md).

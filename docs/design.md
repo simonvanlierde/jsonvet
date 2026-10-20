@@ -208,9 +208,11 @@ The limits are listed in the [reference](usage.md#json-schema-limits). Why each 
 
 ## Configuration
 
-jsonvet reads `jsonvet.toml`, or a `[tool.jsonvet]` table in `pyproject.toml`. It looks in the
-working directory and its parents. It stops at the first directory that has a `.git` entry, so
-it never uses a stray file above the repository. A pattern given with `--dialect` or `--strict`
+jsonvet reads `jsonvet.toml`, or a `[tool.jsonvet]` table in `pyproject.toml`. For each file it
+looks in the file's folder and its parents, and the nearest file replaces any above it, as in
+ruff, so a package in a monorepo keeps its own settings. Each folder is looked up once a run. The
+search stops at the first directory that has a `.git` entry, so it never uses a stray file above
+the repository. A pattern given with `--dialect` or `--strict`
 matches the path as typed, as in 1.4. The [reference](usage.md#globs) has the glob rules.
 
 ## Architecture

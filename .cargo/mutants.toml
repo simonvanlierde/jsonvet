@@ -42,6 +42,8 @@ exclude_re = [
   "parse.rs:\\d+:(37|52|65): replace \\| with \\^ in plain_run",
   # Speed only: a chunk that ends after every file still prints the same.
   "lib.rs:.* replace >= with < in run_with",
+  # Speed only: how many threads a split JSON Lines file uses, which gives the same report.
+  "lib.rs:.* replace / with (%|\\*) in run_with",
   # Any other false schema is reported at its own value, which the comparison after the guard
   # turns away.
   "schema.rs:.* replace match guard error .* with true in unexpected",

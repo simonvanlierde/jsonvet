@@ -210,13 +210,17 @@ files do not take this rule.
   directory. pre-commit runs from the repository root.
 - In a config file, a glob is relative to the directory that holds the file. So `data/*.json` in
   the root's `jsonvet.toml` matches `data/x.json` when jsonvet runs in the root, in `data/`, or
-  with an absolute path. A file outside that directory matches none of its globs.
+  with an absolute path. With `--config`, a file outside that directory matches none of its globs.
 
 ## Configuration file
 
-jsonvet reads `jsonvet.toml`, or a `[tool.jsonvet]` table in `pyproject.toml`. It looks in the
-working directory and its parents, and stops at the repository root. Options on the command line
-win. `--config FILE` reads that file instead, and `--no-config` reads none.
+jsonvet reads `jsonvet.toml`, or a `[tool.jsonvet]` table in `pyproject.toml`. For each file it
+looks in the file's folder and its parents, and stops at the repository root. The nearest file
+wins, and it replaces any file further up: settings are not merged. Standard input is looked up by
+its `--stdin-filename`, or from the working directory. Options on the command line win.
+`--config FILE` reads that file for every file instead, and `--no-config` reads none.
+
+A folder walk skips what the `exclude` setting of each folder's nearest file names.
 
 The file takes three keys, `rules`, `dialects` and `exclude`. Any other key, at the top or in a
 `dialects` entry, is a usage error, so a typo never goes unnoticed. The error names the line and

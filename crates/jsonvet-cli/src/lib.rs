@@ -6,6 +6,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use jsonvet::{Dialect, Report, Severity};
 
@@ -17,10 +18,10 @@ mod sarif;
 mod schema;
 mod settings;
 
-use args::{Command, ConfigSource, STDIN};
+use args::{Command, STDIN};
 use output::Printer;
 use schema::Schema;
-use settings::Settings;
+use settings::{Resolver, Settings};
 
 /// How deep `--schema` reads a file. Past it, the file has a syntax error. jsonschema 0.58 takes
 /// memory quadratic in depth for an error deep under a recursive `$ref`: 1.3 GB for a 50 KB file
@@ -98,12 +99,13 @@ fn run_with(
         Command::Explain(text) => return print(out, &text),
         Command::Check(args) => args,
     };
-    let settings = from_file(&args.config)?.overridden_by(args.settings);
-    let files = expand(args.files, &settings)?;
+    let resolver = Arc::new(Mutex::new(Resolver::new(&args.config, args.settings)?));
+    let settings_for = |path: &Path| lock(&resolver).for_file(path);
+    let files = expand(args.files, &resolver)?;
     let schema = args
         .schema
         .as_deref()
-        .map(|path| Schema::load(path, &settings))
+        .map(|path| Schema::load(path, &*settings_for(path)?))
         .transpose()
         .map_err(|e| output::printable(&e))?;
 
@@ -116,6 +118,11 @@ fn run_with(
             file.to_owned()
         }
     };
+    // Every config file is read before any file is checked, so a bad one stops the run at once.
+    let files = files
+        .into_iter()
+        .map(|file| Ok((settings_for(Path::new(&shown(&file)))?, file)))
+        .collect::<Result<Vec<_>, String>>()?;
     let mut printer = Printer::new(out, args.format, annotate);
     let mut counts = Counts::default();
     let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
@@ -133,7 +140,7 @@ fn run_with(
         }
         let bytes = AtomicUsize::new(0);
         let full = || bytes.load(Ordering::Relaxed) >= CHUNK_BYTES;
-        let texts = parallel(rest, threads, full, |file| {
+        let texts = parallel(rest, threads, full, |(_, file)| {
             let text = if file == STDIN {
                 read_stdin()
             } else {
@@ -150,30 +157,31 @@ fn run_with(
             &jobs,
             threads,
             || false,
-            |(file, text)| {
+            |((settings, file), text)| {
                 let name = shown(file);
                 let name = name.to_string_lossy();
                 text.as_deref()
-                    .map(|text| check(&name, text, &settings, schema.as_ref(), parts))
+                    .map(|text| check(&name, text, settings, schema.as_ref(), parts))
             },
         );
-        let outcome = chunk
-            .iter()
-            .zip(checked)
-            .try_for_each(|(file, checked)| match checked {
-                Ok((report, schema_errors)) => print_file(
-                    &shown(file),
-                    &report,
-                    &schema_errors,
-                    &mut printer,
-                    &mut counts,
-                ),
-                Err(message) => {
-                    counts.errors += 1;
-                    counts.files += 1;
-                    printer.unreadable(&shown(file), message)
-                }
-            });
+        let outcome =
+            chunk
+                .iter()
+                .zip(checked)
+                .try_for_each(|((_, file), checked)| match checked {
+                    Ok((report, schema_errors)) => print_file(
+                        &shown(file),
+                        &report,
+                        &schema_errors,
+                        &mut printer,
+                        &mut counts,
+                    ),
+                    Err(message) => {
+                        counts.errors += 1;
+                        counts.files += 1;
+                        printer.unreadable(&shown(file), message)
+                    }
+                });
         if outcome.is_err() {
             break outcome;
         }
@@ -191,8 +199,9 @@ fn run_with(
 
 /// The files to check: each argument as given, except that a directory stands for the files under
 /// it that jsonvet checks by default, in sorted order. The walk skips hidden files and what
-/// `.gitignore`, `.ignore` and the `exclude` setting name, as ripgrep would.
-fn expand(args: Vec<OsString>, settings: &Settings) -> Result<Vec<OsString>, String> {
+/// `.gitignore`, `.ignore` and the `exclude` setting of each folder's settings name, as ripgrep
+/// would.
+fn expand(args: Vec<OsString>, resolver: &Arc<Mutex<Resolver>>) -> Result<Vec<OsString>, String> {
     let mut files = Vec::with_capacity(args.len());
     for arg in args {
         if arg == STDIN || !Path::new(&arg).is_dir() {
@@ -201,9 +210,14 @@ fn expand(args: Vec<OsString>, settings: &Settings) -> Result<Vec<OsString>, Str
         }
         let start = files.len();
         // The filter must own what it reads.
-        let settings = settings.clone();
+        let resolver = Arc::clone(resolver);
+        // A config file that cannot be read excludes nothing here: the run reports it when it
+        // looks up the settings of the files under it.
         let walk = ignore::WalkBuilder::new(&arg)
-            .filter_entry(move |entry| !settings.excluded(entry.path()))
+            .filter_entry(move |entry| {
+                let settings = lock(&resolver).for_file(entry.path());
+                !settings.is_ok_and(|settings| settings.excluded(entry.path()))
+            })
             .build();
         for entry in walk {
             let entry = entry.map_err(|e| output::printable(&format!("cannot walk: {e}")))?;
@@ -218,17 +232,11 @@ fn expand(args: Vec<OsString>, settings: &Settings) -> Result<Vec<OsString>, Str
     Ok(files)
 }
 
-/// The settings from the config file `config` names, or none.
-fn from_file(config: &ConfigSource) -> Result<Settings, String> {
-    match config {
-        ConfigSource::None => Ok(Settings::default()),
-        ConfigSource::File(path) => settings::load(path),
-        ConfigSource::Search => {
-            let cwd = std::env::current_dir()
-                .map_err(|e| format!("cannot read the working directory: {e}"))?;
-            settings::discover(&cwd).map_or_else(|| Ok(Settings::default()), |p| settings::load(&p))
-        }
-    }
+/// The resolver, even if a panic elsewhere left its lock poisoned: it holds only a cache.
+fn lock(resolver: &Mutex<Resolver>) -> std::sync::MutexGuard<'_, Resolver> {
+    resolver
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 #[derive(Default)]
@@ -544,6 +552,10 @@ mod tests {
         let (code, out) = run(true, &[&dup, &ok]);
         assert_eq!(code, 1);
         assert!(out.ends_with("\n1 error in 1 of 2 files\n"), "{out}");
+        // A file that cannot be read counts as a file with an error.
+        let gone = dir.join("gone.json");
+        let (_, out) = run(true, &[&dup, &gone, &ok]);
+        assert!(out.ends_with("\n2 errors in 2 of 3 files\n"), "{out}");
         assert_eq!(run(true, &[&ok]).1, "no problems in 1 file\n");
         // No summary off a terminal, nor for no files.
         assert!(!run(false, &[&dup]).1.contains(" in 1 of 1 file"));
