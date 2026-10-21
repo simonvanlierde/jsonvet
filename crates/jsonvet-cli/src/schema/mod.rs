@@ -87,6 +87,9 @@ pub(crate) struct Schema {
     /// `{"pattern": p}` for each `pattern` in the schema, to name the one a regex error on a
     /// string is about when its schema path does not.
     string_patterns: Vec<(String, Validator)>,
+    /// Whether every regex in the schema compiles for the `regex` crate. fancy-regex hands such
+    /// a regex to it, which runs in linear time, so no match stops at [`BACKTRACK_LIMIT`].
+    linear: bool,
 }
 
 /// A schema split in two: the part checked on the whole value, and the part checked on each
@@ -329,6 +332,14 @@ impl Schema {
             Ok(validator) => {
                 let (mut keys, mut strings) = (BTreeSet::new(), BTreeSet::new());
                 patterns(schema, false, &mut keys, &mut strings);
+                let regex = jsonschema::options()
+                    .offline()
+                    .with_pattern_options(PatternOptions::regex());
+                let linear = keys.iter().chain(&strings).all(|pattern| {
+                    regex
+                        .build(&serde_json::json!({ "pattern": pattern }))
+                        .is_ok()
+                });
                 // A regex jsonschema could not compile already failed the build above.
                 let compile = |regexes: BTreeSet<&str>| {
                     regexes
@@ -348,6 +359,7 @@ impl Schema {
                     members: split(schema, kept, true, &options),
                     key_patterns: compile(keys),
                     string_patterns: compile(strings),
+                    linear,
                 });
             }
             Err(error) => error,
@@ -407,6 +419,11 @@ impl Schema {
     /// too many.
     fn collect(&self, value: &Value) -> Errors {
         let mut errors = Errors::default();
+        // One pass over the whole document finds a valid one quickest. A regex that can stop at
+        // the backtrack limit makes that pass slow instead, as explained below.
+        if self.linear && self.compiled.validator.is_valid(value) {
+            return errors;
+        }
         // Each error is turned into what is reported as it comes, as jsonschema's own holds
         // much of the schema: an `enum`'s values, or every branch's errors for an `anyOf`.
         // A split schema is also checked for validity a part at a time: jsonschema checks a
@@ -730,6 +747,7 @@ mod tests {
                 members,
                 key_patterns: Vec::new(),
                 string_patterns: Vec::new(),
+                linear: true,
             };
             let (_, events) = jsonvet::parse(text, &Config::new(Dialect::Json));
             schema.errors(&events.unwrap_or_default())

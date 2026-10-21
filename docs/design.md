@@ -235,10 +235,12 @@ timeout, so a file gets the same verdict on every machine; see
   under each outcome, up to 64 times, and reports the match only when the outcomes disagree on
   the result: at the string, or for a key, at its object. jsonvet names the pattern from the
   error's schema path, and tries that pattern on the object's keys to place one error at each key
-  it could not be matched on. A split schema is also checked for validity a part at a time,
-  because one pass over a whole document repeats every over-cap match in it once per outcome:
-  2,000 over-cap keys took 10.7 s in one pass and 0.10 s a member at a time. A schema that cannot
-  be split still takes the long way ([SECURITY.md](../SECURITY.md#known-limits)).
+  it could not be matched on. A split schema with such a regex is also checked for validity a
+  part at a time, because one pass over a whole document repeats every over-cap match in it once
+  per outcome: 2,000 over-cap keys took 10.7 s in one pass and 0.10 s a member at a time. When
+  every regex compiles for the linear-time `regex` crate, no match can run past the cap, so a
+  valid document is found in one pass first: 7% quicker on a valid 17 MB object. A schema that
+  cannot be split still takes the long way ([SECURITY.md](../SECURITY.md#known-limits)).
 
 ## Configuration
 

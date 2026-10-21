@@ -30,9 +30,6 @@ exclude_re = [
   "glob.rs:\\d+:28: replace \\+ with \\* in wildcard",
   # Speed only: a number with a `.` or exponent fails the integer parse anyway.
   "schema/fold.rs:.* replace match guard integer with true in number",
-  # Speed only: a valid document has no errors to collect either way, and once there are more
-  # than 100, adding one stops at once.
-  "schema/mod.rs:.* replace \\|\\| with && in Schema::collect",
   # An array of schemas under `items` makes the part checked on each element fail to build.
   "schema/mod.rs:.* replace match guard items.is_object\\(\\) \\|\\| items.is_boolean\\(\\) with true in split",
   # Speed only: one part is the whole text either way, and the parts path gives the same report.
