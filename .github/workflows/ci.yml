@@ -275,6 +275,8 @@ jobs:
           target=$(printf 'missing.json' | git hash-object -w --stdin)
           git update-index --add --cacheinfo "120000,$target,link.json"
       - name: The default list passes (dup.json is untracked, link.json a symlink)
+        # $/ is GitHub's self-repository syntax: actionlint flags it, zizmor's
+        # self-repository audit wants it over ./
         uses: $/
       - name: args reach jsonvet
         id: strict

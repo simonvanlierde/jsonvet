@@ -70,7 +70,12 @@ cargo deny.
 - **Public API.** `cargo semver-checks` reports library API changes on a pull request. It does not
   block the merge.
 - **Speed claims.** Measure with `just bench`: hyperfine without a shell, warm, 20 runs. Take the
-  numbers on a quiet machine, not a loaded one, and report the median.
+  numbers on a quiet machine, not a loaded one, and report the median. `scripts/bench.py` also
+  times the check-json5 reference in every case, so a `--runs 40` pass takes about 8 minutes. To
+  compare two jsonvet builds, write the fixtures with `bench.fixtures(dir)` and run
+  `hyperfine -N -r 40` on the two binaries per case, both built the same way. A change that
+  touches every file also gets timed on a 10,000-small-file walk: the 1,100-file config case runs
+  in 4-7 ms, so 0.5 µs a file of overhead shows there as 10-25%.
 - **Instruction counts.** `just counts` runs `crates/jsonvet/benches/check.rs` under callgrind
   (gungraun) and prints each case's change since the last run. Counts move by under 0.3% between
   runs, because hash keys are random, so a smaller change is noise. On a pull request, CI counts
