@@ -78,17 +78,17 @@ differences are intended:
 
 ## Speed
 
-Median wall time of 20 runs over the files, from `uv run scripts/bench.py` on 12 cores of a
+Median wall time of 40 runs over the files, from `uv run scripts/bench.py` on 12 cores of a
 Ryzen 7 H 255 under Linux (2026-10-21, before 3.1.0). Both tools give the same verdict in every
 case:
 
 | Case                       | check-json5 1.4.1 | jsonvet 3.1 | Speed-up |
 | -------------------------- | ----------------: | ----------: | -------: |
-| 1,100 config files         |             39 ms |      4.0 ms |      10x |
-| 2.7 MB JSON                |             41 ms |      9.2 ms |       4x |
-| 2.7 MB JSON, duplicate key |            328 ms |     11.8 ms |      28x |
-| 120 KB JSONC               |             21 ms |      1.9 ms |      12x |
-| 1.8 MB JSON5               |         11,776 ms |      8.6 ms |   1,374x |
+| 1,100 config files         |             39 ms |      4.1 ms |       9x |
+| 2.7 MB JSON                |             40 ms |      9.3 ms |       4x |
+| 2.7 MB JSON, duplicate key |            323 ms |     11.9 ms |      27x |
+| 120 KB JSONC               |             21 ms |      1.9 ms |      11x |
+| 1.8 MB JSON5               |         11,755 ms |      8.4 ms |   1,407x |
 
 1.4 sent JSON, and JSONC with its comments stripped, to Python's C parser, so those were already
 fast. Other JSON5 syntax went to a pure-Python parser, and so did the second pass that finds a
