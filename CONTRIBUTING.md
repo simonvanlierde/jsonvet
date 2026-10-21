@@ -111,11 +111,14 @@ and cargo deny.
   the benchmarks stop and name the `cargo install` command that fixes it.
 - **CodSpeed.** `crates/jsonvet/benches/codspeed.rs` holds divan benchmarks of the library:
   `check` in every dialect, `parse` with its events, the JSON Lines split, and locations.
-  `codspeed.yml` runs them under CodSpeed's CPU simulation, which reports each pull request's
-  change against main in a comment and a dashboard with flamegraphs. Locally, `cargo bench -p
-  jsonvet --bench codspeed` times them with divan; `cargo codspeed build -p jsonvet --bench
-  codspeed` and `codspeed run -m simulation -- cargo codspeed run -p jsonvet` measure them as CI
-  does.
+  `crates/jsonvet-cli/benches/codspeed.rs` runs `--schema` in-process on the cases
+  `benches/schema.rs` counts. `codspeed.yml` runs both under CodSpeed's CPU simulation and its
+  memory instrument (peak memory and allocations), which report each pull request's change
+  against main in a comment and a dashboard with flamegraphs. Nothing fails on them yet: the
+  `bench` job is the gate. Locally, `cargo bench -p jsonvet -p jsonvet-cli --bench codspeed`
+  times them with divan; `cargo codspeed build -m simulation,memory -p jsonvet -p jsonvet-cli
+  --bench codspeed` and `codspeed run -m simulation -- cargo codspeed run -p jsonvet -p
+  jsonvet-cli` measure them as CI does.
 - **Scaling.** `just scaling` runs `crates/jsonvet-cli/tests/scaling.rs` under valgrind: each test
   counts the instructions on an input of size n and 10n and fails when the ratio reaches 15
   (linear gives about 10, quadratic about 100). It guards paths that were once quadratic: the

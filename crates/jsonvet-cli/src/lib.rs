@@ -84,8 +84,10 @@ fn run_here() -> ExitCode {
 
 /// The command, with its inputs passed in: 0 when no file has an error, 1 when one does.
 /// With `summary`, text output ends with a count of the problems. A usage error comes back as
-/// `Err`, which `run` turns into exit status 2.
-fn run_with(
+/// `Err`, which `run` turns into exit status 2. Public only for `benches/codspeed.rs`, which
+/// measures `--schema` in-process; not part of the crate's API.
+#[doc(hidden)]
+pub fn run_with(
     args: impl IntoIterator<Item = OsString>,
     annotate: bool,
     summary: bool,

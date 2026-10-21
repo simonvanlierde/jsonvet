@@ -47,7 +47,14 @@ ignore = "0.4.33"
 name = "schema"
 harness = false
 
+# divan benchmarks of `--schema` that CodSpeed measures in CI (.github/workflows/codspeed.yml):
+# benches/codspeed.rs.
+[[bench]]
+name = "codspeed"
+harness = false
+
 [dev-dependencies]
+divan = { version = "5.0.3", package = "codspeed-divan-compat" }
 gungraun = "0.20.0"
 insta = "1.49.0"
 proptest = "1.12.0"

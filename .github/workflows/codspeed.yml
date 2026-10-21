@@ -1,8 +1,11 @@
 name: codspeed
 
-# The divan benchmarks in crates/jsonvet/benches/codspeed.rs, under CodSpeed's CPU simulation, so
-# each pull request gets a performance report against main. Unlike ci.yml, this also runs on pushes
-# to main: CodSpeed compares a pull request with the results of its base commit on main.
+# The divan benchmarks in crates/jsonvet/benches/codspeed.rs (the library) and
+# crates/jsonvet-cli/benches/codspeed.rs (`--schema`), under CodSpeed's CPU simulation and its memory
+# instrument, so each pull request gets a CPU and memory report against main. ci.yml's `bench` job
+# gates on instruction counts; this adds memory, a history and flamegraphs. Unlike ci.yml, this
+# also runs on pushes to main: CodSpeed compares a pull request with the results of its base commit
+# on main.
 # workflow_dispatch lets CodSpeed backfill results for older commits.
 on:
   push:
@@ -38,8 +41,8 @@ jobs:
       - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-codspeed@5.0.3
-      - run: cargo codspeed build -m simulation -p jsonvet --bench codspeed --locked
+      - run: cargo codspeed build -m simulation,memory -p jsonvet -p jsonvet-cli --bench codspeed --locked
       - uses: CodSpeedHQ/action@821a40cd6c80e3cfe387caf55668287addd808da # v5.5.0
         with:
-          mode: simulation
-          run: cargo codspeed run -p jsonvet
+          mode: simulation,memory
+          run: cargo codspeed run -p jsonvet -p jsonvet-cli
