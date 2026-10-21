@@ -3,4 +3,4 @@ allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 allow-dbg-in-tests = true
 # Product and format names that are not code. ".." keeps clippy's own list.
-doc-valid-idents = ["HuJSON", "JSONPath", "JSONPaths", "NDJSON", "SipHash", "..",]
+doc-valid-idents = ["HuJSON", "JSONPath", "JSONPaths", "NDJSON", "SchemaStore", "SipHash", "..",]

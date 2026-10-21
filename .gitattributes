@@ -1,4 +1,5 @@
 # Line endings in the corpus are test data; git must not convert them.
 tests/corpus/** -text
-# So are the extra conformance inputs.
+# So are the extra conformance inputs, and the SchemaStore files as copied.
 conformance/extra/** -text
+tests/schemastore/** -text

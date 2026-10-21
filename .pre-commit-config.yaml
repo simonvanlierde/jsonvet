@@ -1,6 +1,7 @@
 # Renovate bumps these revs, so a hook run never edits this file.
-# The corpus files keep their bytes exactly: missing final newlines, CRs, trailing spaces.
-exclude: ^(tests/corpus|conformance/extra)/
+# The corpus files keep their bytes exactly: missing final newlines, CRs, trailing spaces. So do
+# the SchemaStore files, as copied.
+exclude: ^(tests/corpus|tests/schemastore|conformance/extra)/
 # `just setup` installs both stages.
 default_install_hook_types: [pre-commit, pre-push]
 default_stages: [pre-commit]

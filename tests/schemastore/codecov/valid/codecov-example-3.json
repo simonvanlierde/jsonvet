@@ -1,0 +1,16 @@
+{
+  "coverage": {
+    "status": {
+      "project": {
+        "app": {
+          "paths": "!tests/"
+        },
+        "default": false,
+        "tests": {
+          "paths": "tests/",
+          "target": "100%"
+        }
+      }
+    }
+  }
+}

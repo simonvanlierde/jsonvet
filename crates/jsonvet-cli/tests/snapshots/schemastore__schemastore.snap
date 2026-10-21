@@ -1,0 +1,307 @@
+---
+source: crates/jsonvet-cli/tests/schemastore.rs
+expression: out
+---
+codecov/invalid/missing-default.json
+    :7:15: error[schema] {"patch":false,"project":{"threshold":"0.5%"}} is not valid under any of the schemas listed in the 'anyOf' keyword (at $.coverage.status)
+codecov/invalid/wrong-patch.json
+    :3:15: error[schema] {"patch":"on"} is not valid under any of the schemas listed in the 'anyOf' keyword (at $.coverage.status)
+dependabot-2.0/invalid/allow-no-subkeys-present.json
+    :4:17: error[schema] {} is not valid under any of the schemas listed in the 'anyOf' keyword (at $.updates[0].allow[0])
+dependabot-2.0/invalid/allow-wrong-type.json
+    :4:16: error[schema] "anything" is not of type "array" (at $.updates[0].allow)
+dependabot-2.0/invalid/allow.dependency-type-wrong-value.json
+    :5:9: error[schema] {"dependency-type":"important-things"} is not valid under any of the schemas listed in the 'anyOf' keyword (at $.updates[0].allow[0])
+    :6:30: error[schema] "important-things" is not one of "direct", "indirect" or 3 other candidates (at $.updates[0].allow[0]["dependency-type"])
+dependabot-2.0/invalid/assignees-duplicate-values.json
+    :4:20: error[schema] ["duplicate","duplicate"] has non-unique elements (at $.updates[0].assignees)
+dependabot-2.0/invalid/assignees-no-values.json
+    :4:20: error[schema] [] has less than 1 item (at $.updates[0].assignees)
+dependabot-2.0/invalid/assignees-value-is-empty-string.json
+    :4:21: error[schema] "" is shorter than 1 character (at $.updates[0].assignees[0])
+dependabot-2.0/invalid/assignees-value-wrong-type.json
+    :4:21: error[schema] 1 is not of type "string" (at $.updates[0].assignees[0])
+dependabot-2.0/invalid/assignees-wrong-type.json
+    :4:20: error[schema] "myself" is not of type "array" (at $.updates[0].assignees)
+dependabot-2.0/invalid/commit-message-no-subkeys.json
+    :4:25: error[schema] {} is not valid under any of the schemas listed in the 'anyOf' keyword (at $.updates[0]["commit-message"])
+dependabot-2.0/invalid/commit-message-unknown-property.json
+    :4:25: error[schema] {"easy-street":"yes, please"} is not valid under any of the schemas listed in the 'anyOf' keyword (at $.updates[0]["commit-message"])
+    :4:27: error[schema] Additional properties are not allowed ('easy-street' was unexpected) (at $.updates[0]["commit-message"]["easy-street"])
+dependabot-2.0/invalid/commit-message-wrong-type.json
+    :4:25: error[schema] "update" is not of type "object" (at $.updates[0]["commit-message"])
+dependabot-2.0/invalid/commit-message.prefix-development-max-length-exceeded.json
+    :4:25: error[schema] {"prefix-development":"-------10|-------20|-------30|-------40|-------50|+"} is not valid under any of the schemas listed in the 'anyOf' keyword (at $.updates[0]["commit-message"])
+    :5:31: error[schema] "-------10|-------20|-------30|-------40|-------50|+" is longer than 50 characters (at $.updates[0]["commit-message"]["prefix-development"])
+dependabot-2.0/invalid/commit-message.prefix-development-wrong-type.json
+    :4:25: error[schema] {"prefix-development":true} is not valid under any of the schemas listed in the 'anyOf' keyword (at $.updates[0]["commit-message"])
+    :5:31: error[schema] true is not of type "string" (at $.updates[0]["commit-message"]["prefix-development"])
+dependabot-2.0/invalid/commit-message.prefix-max-length-exceeded.json
+    :4:25: error[schema] {"prefix":"-------10|-------20|-------30|-------40|-------50|+"} is not valid under any of the schemas listed in the 'anyOf' keyword (at $.updates[0]["commit-message"])
+    :5:19: error[schema] "-------10|-------20|-------30|-------40|-------50|+" is longer than 50 characters (at $.updates[0]["commit-message"].prefix)
+dependabot-2.0/invalid/commit-message.prefix-wrong-type.json
+    :4:25: error[schema] {"prefix":true} is not valid under any of the schemas listed in the 'anyOf' keyword (at $.updates[0]["commit-message"])
+    :5:19: error[schema] true is not of type "string" (at $.updates[0]["commit-message"].prefix)
+dependabot-2.0/invalid/commit-message.scope-wrong-type.json
+    :4:25: error[schema] {"scope":1} is not valid under any of the schemas listed in the 'anyOf' keyword (at $.updates[0]["commit-message"])
+    :5:9: error[schema] Additional properties are not allowed ('scope' was unexpected) (at $.updates[0]["commit-message"].scope)
+dependabot-2.0/invalid/commit-message.scope-wrong-value.json
+    :4:25: error[schema] {"scope":"enabled+"} is not valid under any of the schemas listed in the 'anyOf' keyword (at $.updates[0]["commit-message"])
+    :5:9: error[schema] Additional properties are not allowed ('scope' was unexpected) (at $.updates[0]["commit-message"].scope)
+dependabot-2.0/invalid/directory-and-directories.json
+    :3:5: error[schema] value is valid under more than one of the schemas listed in the 'oneOf' keyword (at $.updates[0])
+dependabot-2.0/invalid/directory-missing.json
+    :3:5: error[schema] {"package-ecosystem":"github-actions","schedule":{"interval":"monthly"}} is not valid under any of the schemas listed in the 'oneOf' keyword (at $.updates[0])
+dependabot-2.0/invalid/groups-no-subkeys.json
+    :5:17: error[schema] {} has less than 1 property (at $.updates[0].groups)
+dependabot-2.0/invalid/groups-subkey-is-empty-string.json
+    :7:23: error[schema] "*" is not of type "array" (at $.updates[0].groups[""].patterns)
+dependabot-2.0/invalid/groups-wrong-value.json
+    :5:17: error[schema] "the popular ones, thanks" is not of type "object" (at $.updates[0].groups)
+dependabot-2.0/invalid/groups.x-unknown-properties.json
+    :7:11: error[schema] Additional properties are not allowed ('just realized' was unexpected) (at $.updates[0].groups.x["just realized"])
+dependabot-2.0/invalid/groups.x-wrong-type.json
+    :6:29: error[schema] "group all of them" is not of type "object" (at $.updates[0].groups["npm-dependencies"])
+dependabot-2.0/invalid/groups.x.dependency-type-wrong-type.json
+    :7:30: error[schema] [] is not of type "string" (at $.updates[0].groups.x["dependency-type"])
+    :7:30: error[schema] [] is not one of "development" or "production" (at $.updates[0].groups.x["dependency-type"])
+dependabot-2.0/invalid/groups.x.dependency-type-wrong-value.json
+    :7:30: error[schema] "any and all" is not one of "development" or "production" (at $.updates[0].groups.x["dependency-type"])
+dependabot-2.0/invalid/groups.x.exclude-patterns-missing-values.json
+    :7:31: error[schema] [] has less than 1 item (at $.updates[0].groups.x["exclude-patterns"])
+    :8:23: error[schema] "*" is not of type "array" (at $.updates[0].groups.x.patterns)
+dependabot-2.0/invalid/groups.x.exclude-patterns-value-empty-string.json
+    :7:32: error[schema] "" is shorter than 1 character (at $.updates[0].groups.x["exclude-patterns"][0])
+    :8:23: error[schema] "*" is not of type "array" (at $.updates[0].groups.x.patterns)
+dependabot-2.0/invalid/groups.x.exclude-patterns-value-wrong-type.json
+    :7:32: error[schema] 1 is not of type "string" (at $.updates[0].groups.x["exclude-patterns"][0])
+    :8:23: error[schema] "*" is not of type "array" (at $.updates[0].groups.x.patterns)
+dependabot-2.0/invalid/groups.x.exclude-patterns-wrong-type.json
+    :7:31: error[schema] false is not of type "array" (at $.updates[0].groups.x["exclude-patterns"])
+    :8:23: error[schema] "*" is not of type "array" (at $.updates[0].groups.x.patterns)
+dependabot-2.0/invalid/groups.x.patterns-missing-values.json
+    :7:23: error[schema] [] has less than 1 item (at $.updates[0].groups.x.patterns)
+dependabot-2.0/invalid/groups.x.patterns-value-empty-string.json
+    :7:24: error[schema] "" is shorter than 1 character (at $.updates[0].groups.x.patterns[0])
+dependabot-2.0/invalid/groups.x.patterns-value-wrong-type.json
+    :7:24: error[schema] 1 is not of type "string" (at $.updates[0].groups.x.patterns[0])
+dependabot-2.0/invalid/groups.x.patterns-wrong-type.json
+    :7:23: error[schema] "*" is not of type "array" (at $.updates[0].groups.x.patterns)
+dependabot-2.0/invalid/groups.x.update-types-duplicate-values.json
+    :7:27: error[schema] ["major","major"] has non-unique elements (at $.updates[0].groups.x["update-types"])
+dependabot-2.0/invalid/groups.x.update-types-missing-values.json
+    :7:27: error[schema] [] has less than 1 item (at $.updates[0].groups.x["update-types"])
+dependabot-2.0/invalid/groups.x.update-types-wrong-type.json
+    :7:27: error[schema] "*" is not of type "array" (at $.updates[0].groups.x["update-types"])
+dependabot-2.0/invalid/groups.x.update-types-wrong-value.json
+    :7:28: error[schema] "all types" is not one of "major", "minor" or "patch" (at $.updates[0].groups.x["update-types"][0])
+dependabot-2.0/invalid/ignore-no-subkeys-present.json
+    :5:18: error[schema] {} is not valid under any of the schemas listed in the 'anyOf' keyword (at $.updates[0].ignore[0])
+dependabot-2.0/invalid/ignore-wrong-type.json
+    :5:17: error[schema] "everything" is not of type "array" (at $.updates[0].ignore)
+dependabot-2.0/invalid/ignore.update-types-duplicate-values.json
+    :6:9: error[schema] {"update-types":["version-update:semver-patch","version-update:semver-patch"]} is not valid under any of the schemas listed in the 'anyOf' keyword (at $.updates[0].ignore[0])
+    :7:27: error[schema] ["version-update:semver-patch","version-update:semver-patch"] has non-unique elements (at $.updates[0].ignore[0]["update-types"])
+dependabot-2.0/invalid/ignore.update-types-no-values.json
+    :6:9: error[schema] {"update-types":[]} is not valid under any of the schemas listed in the 'anyOf' keyword (at $.updates[0].ignore[0])
+    :7:27: error[schema] [] has less than 1 item (at $.updates[0].ignore[0]["update-types"])
+dependabot-2.0/invalid/ignore.update-types-wrong-value.json
+    :6:9: error[schema] {"update-types":["the bad ones"]} is not valid under any of the schemas listed in the 'anyOf' keyword (at $.updates[0].ignore[0])
+    :7:28: error[schema] "the bad ones" is not one of "version-update:semver-major", "version-update:semver-minor" or "version-update:semver-patch" (at $.updates[0].ignore[0]["update-types"][0])
+dependabot-2.0/invalid/ignore.versions-duplicate-values.json
+    :6:9: error[schema] {"versions":["duplicate","duplicate"]} is not valid under any of the schemas listed in the 'anyOf' keyword (at $.updates[0].ignore[0])
+    :7:23: error[schema] ["duplicate","duplicate"] is not valid under any of the schemas listed in the 'oneOf' keyword (at $.updates[0].ignore[0].versions)
+dependabot-2.0/invalid/ignore.versions-no-values.json
+    :6:9: error[schema] {"versions":[]} is not valid under any of the schemas listed in the 'anyOf' keyword (at $.updates[0].ignore[0])
+    :7:23: error[schema] [] is not valid under any of the schemas listed in the 'oneOf' keyword (at $.updates[0].ignore[0].versions)
+dependabot-2.0/invalid/labels-duplicate-values.json
+    :5:17: error[schema] ["duplicate","duplicate"] has non-unique elements (at $.updates[0].labels)
+dependabot-2.0/invalid/labels-value-empty-string.json
+    :5:18: error[schema] "" is shorter than 1 character (at $.updates[0].labels[0])
+dependabot-2.0/invalid/labels-value-wrong-type.json
+    :5:18: error[schema] 2.0 is not of type "string" (at $.updates[0].labels[0])
+dependabot-2.0/invalid/labels-wrong-type.json
+    :5:17: error[schema] "several" is not of type "array" (at $.updates[0].labels)
+dependabot-2.0/invalid/milestone-min-value-exceeded.json
+    :5:20: error[schema] 0 is less than the minimum of 1 (at $.updates[0].milestone)
+dependabot-2.0/invalid/milestone-wrong-type-float.json
+    :5:20: error[schema] 1.1 is not of type "integer" (at $.updates[0].milestone)
+dependabot-2.0/invalid/milestone-wrong-type-string.json
+    :5:20: error[schema] "milestone label not allowed" is not of type "integer" (at $.updates[0].milestone)
+dependabot-2.0/invalid/open-pull-requests-limit-min-value-exceeded.json
+    :5:35: error[schema] -1 is less than the minimum of 0 (at $.updates[0]["open-pull-requests-limit"])
+dependabot-2.0/invalid/open-pull-requests-limit-wrong-type.json
+    :5:35: error[schema] "5" is not of type "integer" (at $.updates[0]["open-pull-requests-limit"])
+dependabot-2.0/invalid/package-ecosystem-missing.json
+    :3:5: error[schema] "package-ecosystem" is a required property (at $.updates[0])
+dependabot-2.0/invalid/package-ecosystem-tool-name-not-yaml-value-elm-package.json
+    :5:28: error[schema] "elm-package" is not one of "bazel", "bun" or 31 other candidates (at $.updates[0]["package-ecosystem"])
+dependabot-2.0/invalid/package-ecosystem-tool-name-not-yaml-value-hex.json
+    :5:28: error[schema] "hex" is not one of "bazel", "bun" or 31 other candidates (at $.updates[0]["package-ecosystem"])
+dependabot-2.0/invalid/package-ecosystem-tool-name-not-yaml-value-pip-compile.json
+    :5:28: error[schema] "pip-compile" is not one of "bazel", "bun" or 31 other candidates (at $.updates[0]["package-ecosystem"])
+dependabot-2.0/invalid/package-ecosystem-tool-name-not-yaml-value-pipenv.json
+    :5:28: error[schema] "pipenv" is not one of "bazel", "bun" or 31 other candidates (at $.updates[0]["package-ecosystem"])
+dependabot-2.0/invalid/package-ecosystem-tool-name-not-yaml-value-pnpm.json
+    :5:28: error[schema] "pnpm" is not one of "bazel", "bun" or 31 other candidates (at $.updates[0]["package-ecosystem"])
+dependabot-2.0/invalid/package-ecosystem-tool-name-not-yaml-value-poetry.json
+    :5:28: error[schema] "poetry" is not one of "bazel", "bun" or 31 other candidates (at $.updates[0]["package-ecosystem"])
+dependabot-2.0/invalid/package-ecosystem-tool-name-not-yaml-value-yarn.json
+    :5:28: error[schema] "yarn" is not one of "bazel", "bun" or 31 other candidates (at $.updates[0]["package-ecosystem"])
+dependabot-2.0/invalid/package-ecosystem-value-min-length-exceeded-betas-enabled.json
+    :6:28: error[schema] "" is not valid under any of the schemas listed in the 'anyOf' keyword (at $.updates[0]["package-ecosystem"])
+dependabot-2.0/invalid/package-ecosystem-value-unknown-betas-disabled.json
+    :6:28: error[schema] "'enable-beta-ecosystems' is false" is not one of "bazel", "bun" or 31 other candidates (at $.updates[0]["package-ecosystem"])
+dependabot-2.0/invalid/package-ecosystem-value-unknown-betas-unspecified.json
+    :5:28: error[schema] "'enable-beta-ecosystems' is unspecified" is not one of "bazel", "bun" or 31 other candidates (at $.updates[0]["package-ecosystem"])
+dependabot-2.0/invalid/pull-request-branch-name-missing-required-property.json
+    :6:35: error[schema] "separator" is a required property (at $.updates[0]["pull-request-branch-name"])
+dependabot-2.0/invalid/pull-request-branch-name-unknown-property.json
+    :6:35: error[schema] "separator" is a required property (at $.updates[0]["pull-request-branch-name"])
+    :7:9: error[schema] Additional properties are not allowed ('unknown' was unexpected) (at $.updates[0]["pull-request-branch-name"].unknown)
+dependabot-2.0/invalid/pull-request-branch-name-wrong-type.json
+    :6:35: error[schema] "updates" is not of type "object" (at $.updates[0]["pull-request-branch-name"])
+dependabot-2.0/invalid/pull-request-branch-name.separator-wrong-type.json
+    :7:22: error[schema] false is not of type "string" (at $.updates[0]["pull-request-branch-name"].separator)
+    :7:22: error[schema] false is not one of "-", "_" or "/" (at $.updates[0]["pull-request-branch-name"].separator)
+dependabot-2.0/invalid/pull-request-branch-name.separator-wrong-value.json
+    :7:22: error[schema] "!" is not one of "-", "_" or "/" (at $.updates[0]["pull-request-branch-name"].separator)
+dependabot-2.0/invalid/rebase-strategy-wrong-type.json
+    :6:26: error[schema] true is not of type "string" (at $.updates[0]["rebase-strategy"])
+    :6:26: error[schema] true is not one of "auto" or "disabled" (at $.updates[0]["rebase-strategy"])
+dependabot-2.0/invalid/rebase-strategy-wrong-value.json
+    :6:26: error[schema] "constantly" is not one of "auto" or "disabled" (at $.updates[0]["rebase-strategy"])
+dependabot-2.0/invalid/registries-duplicate-values.json
+    :14:21: error[schema] ["my-custom-registry","my-custom-registry"] is not valid under any of the schemas listed in the 'oneOf' keyword (at $.updates[0].registries)
+dependabot-2.0/invalid/registries-missing-values.json
+    :14:21: error[schema] [] is not valid under any of the schemas listed in the 'oneOf' keyword (at $.updates[0].registries)
+dependabot-2.0/invalid/registries-scope-wrong-type.json
+    :4:16: error[schema] 42 is not valid under any of the schemas listed in the 'oneOf' keyword (at $.registries["github-packages"].scope)
+dependabot-2.0/invalid/registries-string-other-than-asterisk.json
+    :14:21: error[schema] "not *" is not valid under any of the schemas listed in the 'oneOf' keyword (at $.updates[0].registries)
+dependabot-2.0/invalid/registries-top-level-no-subkeys.json
+    :2:17: error[schema] {} has less than 1 property (at $.registries)
+dependabot-2.0/invalid/registries-top-level-subkey-empty-string.json
+    :3:9: error[schema] "url" is a required property (at $.registries[""])
+dependabot-2.0/invalid/registries-top-level-type-missing.json
+    :3:15: error[schema] "type" is a required property (at $.registries.custom)
+dependabot-2.0/invalid/registries-top-level-url-missing.json
+    :3:15: error[schema] "url" is a required property (at $.registries.custom)
+dependabot-2.0/invalid/registries-top-level-wrong-type.json
+    :2:17: error[schema] [] is not of type "object" (at $.registries)
+dependabot-2.0/invalid/registries-value-wrong-type.json
+    :14:21: error[schema] [true] is not valid under any of the schemas listed in the 'oneOf' keyword (at $.updates[0].registries)
+dependabot-2.0/invalid/registries-wrong-type.json
+    :14:21: error[schema] "my-custom-registry" is not valid under any of the schemas listed in the 'oneOf' keyword (at $.updates[0].registries)
+dependabot-2.0/invalid/reviewers-no-longer-valid-2025-08-08.json
+    :6:7: error[schema] Additional properties are not allowed ('reviewers' was unexpected) (at $.updates[0].reviewers)
+dependabot-2.0/invalid/schedule-missing.json
+    :3:5: error[schema] "schedule" is a required property (at $.updates[0])
+dependabot-2.0/invalid/schedule-wrong-type.json
+    :6:19: error[schema] "weekly" is not of type "object" (at $.updates[0].schedule)
+    :6:19: error[schema] "weekly" is not of type "object" (at $.updates[0].schedule)
+dependabot-2.0/invalid/schedule.interval-missing.json
+    :6:19: error[schema] "interval" is a required property (at $.updates[0].schedule)
+    :6:19: error[schema] "cronjob" is a required property (at $.updates[0].schedule)
+    :6:19: error[schema] "interval" is a required property (at $.updates[0].schedule)
+    :6:19: error[schema] "cronjob" is a required property (at $.updates[0].schedule)
+dependabot-2.0/invalid/schedule.interval-wrong-value.json
+    :7:21: error[schema] "often" is not one of "daily", "weekly" or 5 other candidates (at $.updates[0].schedule.interval)
+    :7:21: error[schema] "often" is not one of "daily", "weekly" or 5 other candidates (at $.updates[0].schedule.interval)
+dependabot-2.0/invalid/schedule.time-pattern-mismatch.json
+    :8:17: error[schema] "24:60" does not match "^([01][0-9]|2[0-3]):[0-5][0-9]$" (at $.updates[0].schedule.time)
+    :8:17: error[schema] "24:60" does not match "^([01][0-9]|2[0-3]):[0-5][0-9]$" (at $.updates[0].schedule.time)
+dependabot-2.0/invalid/schedule.timezone-wrong-value.json
+    :8:21: error[schema] "My/Timezone" is not one of "Africa/Abidjan", "Africa/Accra" or 595 other candidates (at $.updates[0].schedule.timezone)
+    :8:21: error[schema] "My/Timezone" is not one of "Africa/Abidjan", "Africa/Accra" or 595 other candidates (at $.updates[0].schedule.timezone)
+dependabot-2.0/invalid/target-branch-empty-string.json
+    :9:24: error[schema] "" is shorter than 1 character (at $.updates[0]["target-branch"])
+dependabot-2.0/invalid/target-branch-wrong-type.json
+    :9:24: error[schema] false is not of type "string" (at $.updates[0]["target-branch"])
+dependabot-2.0/invalid/updates-missing.json
+    :1:1: error[schema] "updates" is a required property (at $)
+dependabot-2.0/invalid/updates-wrong-type.json
+    :2:14: error[schema] {} is not of type "array" (at $.updates)
+    :2:14: error[schema] {} is not of type "array" (at $.updates)
+dependabot-2.0/invalid/vendor-wrong-type.json
+    :9:17: error[schema] "bundler" is not of type "boolean" (at $.updates[0].vendor)
+dependabot-2.0/invalid/version-int-must-be-2.json
+    :3:14: error[schema] 2 was expected (at $.version)
+dependabot-2.0/invalid/version-missing.json
+    :1:1: error[schema] "version" is a required property (at $)
+dependabot-2.0/invalid/version-str.json
+    :3:14: error[schema] "2" is not of type "integer" (at $.version)
+    :3:14: error[schema] 2 was expected (at $.version)
+dependabot-2.0/invalid/versioning-strategy-wrong-value.json
+    :9:30: error[schema] "perfection" is not one of "auto", "increase" or 3 other candidates (at $.updates[0]["versioning-strategy"])
+evidence-bundle/invalid/missing-required-field.json
+    :1:1: error[schema] "summary" is a required property (at $)
+github-action/invalid/composite-output-missing-value.json
+    :5:15: error[schema] "value" is a required property (at $.outputs.result)
+github-action/invalid/empty_json_must_always_fail.json
+    :1:1: error[schema] "name" is a required property (at $)
+    :1:1: error[schema] "description" is a required property (at $)
+    :1:1: error[schema] "runs" is a required property (at $)
+github-action/invalid/javascript-output-with-value.json
+    :7:7: error[schema] Additional properties are not allowed ('value' was unexpected) (at $.outputs.result.value)
+github-action/invalid/missing_items_in_run.json
+    :4:11: error[schema] {} is not valid under any of the schemas listed in the 'oneOf' keyword (at $.runs)
+github-issue-forms/invalid/check_additionalProperties_at_attribute.json
+    :5:9: error[schema] Additional properties are not allowed ('description' was unexpected) (at $.body[0].attributes.description)
+github-issue-forms/invalid/check_additionalProperties_at_body.json
+    :8:7: error[schema] Additional properties are not allowed ('unknown_variable' was unexpected) (at $.body[0].unknown_variable)
+github-issue-forms/invalid/check_additionalProperties_at_root.json
+    :1:1: error[schema] "body" is a required property (at $)
+    :4:3: error[schema] Additional properties are not allowed ('unknown_variable' was unexpected) (at $.unknown_variable)
+github-issue-forms/invalid/check_unknown_type.json
+    :7:15: error[schema] "unknown value type" is not one of "checkboxes", "dropdown" or 4 other candidates (at $.body[0].type)
+jsontron-0.1/invalid/assert-empty-string.json
+    :2:13: error[schema] "" is not valid under any of the schemas listed in the 'oneOf' keyword (at $.assert)
+jsontron-0.1/invalid/assert-missing-test.json
+    :2:13: error[schema] {"message":"missing test"} is not valid under any of the schemas listed in the 'oneOf' keyword (at $.assert)
+jsontron-0.1/invalid/context-empty-string.json
+    :9:18: error[schema] "" is shorter than 1 character (at $.rules[0].context)
+jsontron-0.1/invalid/rule-missing-asserts.json
+    :3:5: error[schema] "asserts" is a required property (at $.rules[0])
+jsontron-0.1/invalid/rule-missing-context.json
+    :3:5: error[schema] "context" is a required property (at $.rules[0])
+jsontron-0.1/invalid/rules-empty-array.json
+    :2:12: error[schema] [] has less than 1 item (at $.rules)
+luaurc/invalid/invalid-alias.json
+    :3:5: error[schema] Additional properties are not allowed ('pack/ages' was unexpected) (at $.aliases["pack/ages"])
+luaurc/invalid/invalid-alias1.json
+    :3:5: error[schema] Additional properties are not allowed ('..' was unexpected) (at $.aliases[".."])
+luaurc/invalid/invalid-alias2.json
+    :3:5: error[schema] Additional properties are not allowed ('.' was unexpected) (at $.aliases["."])
+luaurc/invalid/invalid-global.json
+    :2:15: error[schema] "5warn" does not match "^[a-zA-Z_]\w*" (at $.globals[0])
+luaurc/invalid/invalid-lint-option.json
+    :4:5: error[schema] Additional properties are not allowed ('*.enabled' was unexpected) (at $.lint["*.enabled"])
+luaurc/invalid/invalid-lint.json
+    :4:5: error[schema] Additional properties are not allowed ('chama' was unexpected) (at $.lint.chama)
+luaurc/invalid/unknown-config.json
+    :2:3: error[schema] Additional properties are not allowed ('cavalo' was unexpected) (at $.cavalo)
+mongodb-atlas-search-index-definition/invalid/customanalyzer-name-builtin.json
+    :4:15: error[schema] "builtin.bad" does not match "^(?!^lucene\.|builtin\.|mongodb\.).*" (at $.analyzers[0].name)
+mongodb-atlas-search-index-definition/invalid/customanalyzer-name-lucene.json
+    :4:15: error[schema] "lucene.bad" does not match "^(?!^lucene\.|builtin\.|mongodb\.).*" (at $.analyzers[0].name)
+mongodb-atlas-search-index-definition/invalid/customanalyzer-name-mongodb.json
+    :4:15: error[schema] "mongodb.bad" does not match "^(?!^lucene\.|builtin\.|mongodb\.).*" (at $.analyzers[0].name)
+web-types/invalid/pattern.web-types.json
+    :6:22: error[schema] {"delegate":true,"or":[["(","#item",")"],[{"priority":"lowest","template":["on-"]},"#...","#item"]]} is not valid under any of the schemas listed in the 'oneOf' keyword (at $.contributions.html.attrib...
+web-types/invalid/pattern2.web-types.json
+    :6:22: error[schema] {"bar":true} is not valid under any of the schemas listed in the 'oneOf' keyword (at $.contributions.html.attributes[0].pattern)
+zeropress-build-pages-config-1.0/invalid/html-file-outside-config-directory.json
+    :5:15: error[schema] "public/footer.html" does not match "^\.zeropress/.+\.html$" (at $.custom_html.body_end.file)
+zeropress-build-pages-config-1.0/invalid/missing-version.json
+    :1:1: error[schema] "version" is a required property (at $)
+zeropress-build-pages-config-1.0/invalid/search-object.json
+    :4:15: error[schema] {"enabled":true} is not of type "boolean" (at $.site.search)
+zeropress-build-pages-config-1.0/invalid/site-url-with-path.json
+    :4:12: error[schema] "https://example.com/docs/" is not valid under any of the schemas listed in the 'anyOf' keyword (at $.site.url)
+zeropress-build-pages-config-1.0/invalid/theme-index-with-file.json
+    :3:17: error[schema] {"anyOf":[{"required":["file"]},{"required":["layout"]}]} is not allowed for {"file":"index.md","type":"theme_index"} (at $.front_page)
+zeropress-build-pages-config-1.0/invalid/unknown-property.json
+    :3:3: error[schema] Additional properties are not allowed ('unrecognized' was unexpected) (at $.unrecognized)
+zeropress-build-pages-config-1.0/invalid/unsupported-version.json
+    :3:14: error[schema] "1.0" was expected (at $.version)
