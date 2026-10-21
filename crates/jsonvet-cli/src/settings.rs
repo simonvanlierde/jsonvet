@@ -450,16 +450,22 @@ mod tests {
 
     #[test]
     fn each_pattern_matches_relative_to_its_own_base() {
+        // Bases from the working directory, so they are absolute on Windows too.
+        let (r1, r2) = (
+            absolute("r1").expect("a base"),
+            absolute("r2").expect("a base"),
+        );
         let settings = Settings {
             exclude: vec![
-                (Glob::new("a.json"), "/r1".to_owned()),
-                (Glob::new("b.json"), "/r2".to_owned()),
+                (Glob::new("a.json"), r1.clone()),
+                (Glob::new("b.json"), r2.clone()),
             ],
             ..Settings::default()
         };
-        assert!(settings.excluded("/r1/a.json".as_ref()));
-        assert!(settings.excluded("/r2/b.json".as_ref()));
-        assert!(!settings.excluded("/r1/b.json".as_ref()));
+        let path = |base: &str, name: &str| std::path::PathBuf::from(format!("{base}/{name}"));
+        assert!(settings.excluded(&path(&r1, "a.json")));
+        assert!(settings.excluded(&path(&r2, "b.json")));
+        assert!(!settings.excluded(&path(&r1, "b.json")));
     }
 
     #[test]
