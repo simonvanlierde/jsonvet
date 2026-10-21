@@ -8,6 +8,8 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-10-21
+
 3.1 checks the files under a folder, takes the nearest config file for each file, explains its
 rules and prints JSON for scripts. Each release now has standalone binaries with build provenance
 attestations, and the Action checks the wheel's attestation before it installs it. Runs over many
@@ -473,7 +475,8 @@ hook's output, or imports `pre_commit_hooks.check_json5`, needs a change (see Ch
 
 - Renamed from `pre-commit-check-json5` to `check-json5`.
 
-[Unreleased]: https://github.com/simonvanlierde/jsonvet/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/simonvanlierde/jsonvet/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/simonvanlierde/jsonvet/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/simonvanlierde/jsonvet/compare/v2.0.0...v3.0.0
 [2.0.0]: https://github.com/simonvanlierde/jsonvet/compare/v1.4.1...v2.0.0
 [1.4.1]: https://github.com/simonvanlierde/jsonvet/compare/v1.4.0...v1.4.1
