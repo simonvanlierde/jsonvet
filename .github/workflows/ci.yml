@@ -253,6 +253,8 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+    # The Action installs the wheel this run built, which no release attested, so each step
+    # turns the wheel check off; scripts/test-action.sh tests the check itself.
     env:
       PIP_NO_INDEX: "1"
       PIP_FIND_LINKS: ${{ github.workspace }}/dist
@@ -278,12 +280,15 @@ jobs:
         # $/ is GitHub's self-repository syntax: actionlint flags it, zizmor's
         # self-repository audit wants it over ./
         uses: $/
+        with:
+          verify: false
       - name: args reach jsonvet
         id: strict
         continue-on-error: true
         uses: $/
         with:
           args: --strict conf.json5
+          verify: false
       - name: "** reaches nested files"
         id: globstar
         continue-on-error: true
@@ -291,6 +296,7 @@ jobs:
         with:
           files: "**/*.json"
           sarif: out.sarif
+          verify: false
       - name: Track dup.json
         shell: bash
         run: git add nested/deep/dup.json
@@ -298,12 +304,15 @@ jobs:
         id: tracked
         continue-on-error: true
         uses: $/
+        with:
+          verify: false
       - name: The version input is checked
         id: version
         continue-on-error: true
         uses: $/
         with:
           version: ">=2"
+          verify: false
       - name: Check the outcomes and the SARIF file
         shell: bash
         env:
