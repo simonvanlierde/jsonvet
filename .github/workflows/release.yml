@@ -191,10 +191,11 @@ jobs:
         with:
           version: ${{ env.PINNED_UV }}
           enable-cache: false
-      - run: uv run scripts/release-archives.py wheels release
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
         with:
           toolchain: stable
+      # After the toolchain: the script asks cargo for the crate's binaries.
+      - run: uv run scripts/release-archives.py wheels release
       - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-cyclonedx@0.5.9
@@ -370,32 +371,3 @@ jobs:
           latest=false
           [[ "$newest" == "$TAG" ]] && latest=true
           gh release edit "$TAG" --repo "$REPO" --draft=false --latest="$latest"
-
-  # The Action's major tag (`uses: simonvanlierde/jsonvet@v3`) follows the newest X.Y.Z release
-  # once its wheels are on PyPI, since `@v3` installs the newest 3.x from there. A pre-release
-  # (vX.Y.Z-rc.1), or a patch to an older minor, leaves it where it is.
-  major-tag:
-    needs: publish-jsonvet
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: write # to move the tag
-    steps:
-      - env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
-          # On a tag push, the commit the tag points at.
-          SHA: ${{ github.sha }}
-        run: |-
-          [[ "$TAG" =~ ^v([0-9]+)\.[0-9]+\.[0-9]+$ ]] || { echo "$TAG is not vX.Y.Z; no major tag"; exit 0; }
-          major="v${BASH_REMATCH[1]}"
-          newest=$(gh api "repos/$REPO/git/matching-refs/tags/$major." --jq '.[].ref' |
-            sed -n "s|^refs/tags/\($major\.[0-9]*\.[0-9]*\)$|\1|p" | sort -V | tail -n 1)
-          [[ "$newest" == "$TAG" ]] || { echo "$newest is newer than $TAG; $major stays"; exit 0; }
-          if gh api "repos/$REPO/git/ref/tags/$major" > /dev/null 2>&1; then
-            gh api -X PATCH "repos/$REPO/git/refs/tags/$major" -f sha="$SHA" -F force=true > /dev/null
-          else
-            gh api -X POST "repos/$REPO/git/refs" -f ref="refs/tags/$major" -f sha="$SHA" > /dev/null
-          fi
-          echo "$major now points at $TAG ($SHA)"

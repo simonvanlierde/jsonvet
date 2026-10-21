@@ -126,8 +126,12 @@ tag runs `release.yml`. It checks the tag against the versions and builds the wh
 archives and the SBOM, attests them, and drafts the GitHub release with the archives attached and
 the version's CHANGELOG section as notes. Then it publishes the wheels to PyPI, the `check-json5`
 package, and the crates to crates.io, all by trusted publishing, and publishes the release last.
-The release is immutable, so it cannot take files after that. If a publish job fails, rerun it:
-it skips the files PyPI already has and the crate versions crates.io already has. A tag with a `-` (`v3.1.0-rc.1`)
-makes a pre-release. Once the wheels are on PyPI, the `major-tag` job moves the `v<major>` tag
-(`v3`), which `uses: simonvanlierde/jsonvet@v3` follows. It moves the tag only when the new tag is
-the newest `vX.*.*`, so a patch to an older minor leaves it alone. It skips pre-releases.
+With immutable releases turned on in the repository settings, it cannot take files after that.
+If a publish job fails, rerun it: it skips the files PyPI already has and the crate versions
+crates.io already has. A tag with a `-` (`v3.1.0-rc.1`) makes a pre-release.
+
+Once the release is published, move the major tag (`v3`), which `uses: simonvanlierde/jsonvet@v3`
+follows: `git push --force origin vX.Y.Z^{commit}:refs/tags/v3`. Do it only when the new tag is
+the newest `vX.*.*`, not for a pre-release or a patch to an older minor. It is a manual step
+because the workflow's token cannot move a tag past changes to `.github/workflows/`, and a token
+that can would give CI write access to the workflows.

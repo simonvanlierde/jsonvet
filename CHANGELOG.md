@@ -8,6 +8,11 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
+### Fixed
+
+- `cargo binstall jsonvet-cli` found the 3.1.0 release binaries but stopped, because each archive held
+  only `jsonvet` and not the crate's other binary, `check-json5`. The archives now hold both.
+
 ## [3.1.0] - 2026-10-21
 
 3.1 checks the files under a folder, takes the nearest config file for each file, explains its
