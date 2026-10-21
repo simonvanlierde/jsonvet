@@ -197,8 +197,8 @@ Good (jsonl): {"a": 1}<newline>
 
 ### unreadable
 
-jsonvet could not check the file at all: it does not exist, is a directory, device, FIFO or
-socket, could not be read, or is not UTF-8. It always fails the run, and no option changes that.
+jsonvet could not check the file at all: it does not exist, is a device, FIFO or socket, could
+not be read, or is not UTF-8. It always fails the run, and no option changes that.
 Text output shows no rule for it; SARIF and JSON output file it under `unreadable`.
 
 ### schema
