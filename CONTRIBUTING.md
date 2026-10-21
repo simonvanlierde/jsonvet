@@ -115,20 +115,43 @@ A release changes the version in these places, in one commit on a branch:
 3. the pin in `setup.py`
 4. `version` and the `jsonvet==` pin in `compat/check-json5/pyproject.toml`
 5. `rev: vX.Y.Z` in the README's hook example
-6. in `CHANGELOG.md`, the Unreleased entries moved under a new `## [X.Y.Z] - date` heading
+6. in `CHANGELOG.md`, the Unreleased entries moved under a new `## [X.Y.Z] - date` heading, and
+   the compare links at the bottom
 
-`uv run scripts/check-versions.py` fails when any of them disagrees, or when the CHANGELOG has no
+[cargo-release](https://github.com/crate-ci/cargo-release) makes all of them
+(`cargo install --locked cargo-release` or `cargo binstall cargo-release`). `release.toml` holds
+the workspace settings and `crates/jsonvet-cli/release.toml` the replacements. It only bumps and
+commits: it never tags, pushes or publishes, and it refuses to run on `main`
+([0011](docs/decisions/0011-release-tooling.md)). Write the Unreleased entries first; the
+release commit only moves them.
+
+```sh
+git fetch && git switch -c release/X.Y.Z origin/main
+cargo release X.Y.Z                       # dry run: shows every change
+cargo release X.Y.Z --execute             # commits "chore: release X.Y.Z"
+uv run scripts/check-versions.py
+git push -u origin release/X.Y.Z          # then open the pull request and squash-merge it
+git switch main && git pull --ff-only
+git tag vX.Y.Z && git push origin vX.Y.Z  # the squash commit, now main's HEAD
+```
+
+The "Publishing jsonvet, jsonvet-cli" line cargo-release prints publishes nothing.
+`uv run scripts/check-versions.py` fails when any place disagrees, or when the CHANGELOG has no
 heading for the version. Renovate owns the dependency pins, so do not bump those by hand.
 
-After the pull request merges, tag the merge commit and push the tag:
-`git tag vX.Y.Z <sha> && git push origin vX.Y.Z`. Do not create the GitHub release by hand. The
-tag runs `release.yml`. It checks the tag against the versions and builds the wheels, the binary
-archives and the SBOM, attests them, and drafts the GitHub release with the archives attached and
-the version's CHANGELOG section as notes. Then it publishes the wheels to PyPI, the `check-json5`
-package, and the crates to crates.io, all by trusted publishing, and publishes the release last.
-With immutable releases turned on in the repository settings, it cannot take files after that.
-If a publish job fails, rerun it: it skips the files PyPI already has and the crate versions
-crates.io already has. A tag with a `-` (`v3.1.0-rc.1`) makes a pre-release.
+Do not create the GitHub release by hand. The tag runs `release.yml`. It checks the tag against
+the versions and builds the wheels, the binary archives and the SBOM, attests them, and drafts the
+GitHub release with the archives attached and the version's CHANGELOG section as notes. Then it
+publishes the wheels to PyPI, the `check-json5` package, and the crates to crates.io, all by
+trusted publishing, and publishes the release last. Each publish job waits for an approval: the
+`pypi` environment twice (the wheels, then `check-json5`) and `crates-io` once. With immutable
+releases turned on in the repository settings, the release cannot take files after that. If a
+publish job fails, rerun it: it skips the files PyPI already has and the crate versions crates.io
+already has.
+
+A pre-release has a `-` in its tag (`v3.1.0-rc.1`). cargo-release bumps only the crates for one
+(`cargo release 3.2.0-rc.1 --execute`); edit the other places by hand, with the PEP 440 form
+(`3.2.0rc1`) in `setup.py` and the compatibility package.
 
 Once the release is published, move the major tag (`v3`), which `uses: simonvanlierde/jsonvet@v3`
 follows: `git push --force origin vX.Y.Z^{commit}:refs/tags/v3`. Do it only when the new tag is

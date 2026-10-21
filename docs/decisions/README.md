@@ -24,3 +24,4 @@ a link or a renamed test is fine.
 | [0008](0008-binary-wheels-behind-a-placeholder.md) | A Rust binary in PyPI wheels, installed through a `setup.py` placeholder | 2026-10-13 |
 | [0009](0009-where-the-config-search-stops.md) | Where the config search stops, and what a bad config may show | 2026-10-20 |
 | [0010](0010-schema-limits-are-deterministic-caps.md) | `--schema` limits are deterministic caps, not a timeout | 2026-10-20 |
+| [0011](0011-release-tooling.md) | cargo-release bumps the version, the tag starts the rest | 2026-10-21 |

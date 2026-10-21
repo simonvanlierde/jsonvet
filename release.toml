@@ -1,0 +1,13 @@
+# cargo-release settings for the whole workspace. `cargo release X.Y.Z --execute` on a release
+# branch bumps the version, makes the replacements in crates/jsonvet-cli/release.toml and commits.
+# The tag goes on the squash-merged commit on main afterwards, and release.yml publishes the crates
+# by trusted publishing, so this tags, pushes and publishes nothing.
+allow-branch = ["*", "!main", "!HEAD"]
+shared-version = true
+consolidate-commits = true
+pre-release-commit-message = "chore: release {{version}}"
+publish = false
+tag = false
+# The name `cargo release changes` looks for; release.yml runs on it.
+tag-name = "v{{version}}"
+push = false
