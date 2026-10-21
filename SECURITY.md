@@ -8,19 +8,22 @@ crafted file that does any of these as a security bug:
   command;
 - makes the GitHub Action read or write outside the files it was given.
 
-The same goes for a crafted config file (`jsonvet.toml`, `pyproject.toml`), ignore file
-(`.gitignore`, `.ignore`) or schema passed to `--schema`. One case is known and still open:
-jsonschema collects every error of one validation call before jsonvet sees any, so a schema that
-puts an `anyOf` or an `enum` around `additionalProperties` can still take gigabytes on a document
-with many failing values ([design.md](docs/design.md#--schema)). Closing it needs a way in
-jsonschema to stop early. Until then, review schema changes in pull requests from strangers before
-CI runs them.
+That holds for every file jsonvet reads: the files it checks, a config file (`jsonvet.toml`,
+`pyproject.toml`), an ignore file (`.gitignore`, `.ignore`) and a schema passed to `--schema`.
 
-Output grows linearly with the input, but can be many times its size: the worst case I could build,
-a JSON5 file of 200,000 duplicate keys of 4 bytes each under a path cut at 256 bytes, printed 82
-times its size as text, 119 times with `--format json`, and 172 times in GitHub Actions, where
-each problem also prints as an annotation. Each problem also repeats the file's name. Duplicate-key
-reports stay complete, as 1.4's are, so a CI log can be large.
+## Known limits
+
+One case is known and still open. jsonschema collects every error of one validation call before
+jsonvet sees any. So a schema that puts an `anyOf` or an `enum` around `additionalProperties` can
+still take gigabytes on a document with many failing values
+([design.md](docs/design.md#--schema)). Closing it needs a way in jsonschema to stop early. Until
+then, review schema changes in pull requests from strangers before CI runs them.
+
+Output grows linearly with the input, but can be many times its size. The worst case I could
+build is a JSON5 file of 200,000 duplicate keys of 4 bytes each, under a path cut at 256 bytes.
+It printed 82 times its size as text, 119 times with `--format json`, and 172 times in GitHub
+Actions, where each problem also prints as an annotation. Each problem also repeats the file's
+name. Duplicate-key reports stay complete, as 1.4's are, so a CI log can be large.
 
 ## Reporting
 
@@ -41,19 +44,20 @@ the same code, so it gets the same fixes.
 
 Every file a release builds has a build provenance attestation: the PyPI wheels and sdist, the
 binary archives on the GitHub release, and its SBOM. It records that the file came from this
-repository's `release.yml`, for that tag. With the [GitHub CLI](https://cli.github.com/):
+repository's `release.yml`, for that tag. Releases up to 3.0.0 have no attestations. To check a
+file, use the [GitHub CLI](https://cli.github.com/):
 
 ```bash
 gh attestation verify jsonvet-x86_64-unknown-linux-gnu.tar.gz --repo simonvanlierde/jsonvet
 ```
 
 The same works on a wheel downloaded from PyPI (`pip download jsonvet --no-deps`). PyPI also
-shows the wheels' own PEP 740 attestations on each file's page.
-`sha256sum --check --ignore-missing SHA256SUMS` checks downloaded archives against the release's
-checksums. Releases up to 3.0.0 have no attestations.
+shows the wheels' own PEP 740 attestations on each file's page. To check downloaded archives
+against the release's checksums, run `sha256sum --check --ignore-missing SHA256SUMS`.
 
-The GitHub Action checks the wheel it downloads this way before installing it, from 3.1.0 on, and
-stops if the check fails. On a runner without `gh` it installs the wheel unchecked, with a
-notice: only the runner's owner can remove `gh`, not someone who controls the package index.
-`verify: false` turns the check off, for GitHub Enterprise Server. The Action cannot pin a hash
-instead: the wheels are built after the tag it is pinned to.
+The GitHub Action runs this check on the wheel it downloads, from 3.1.0 on, and stops if it fails.
+It cannot pin a hash instead, because the wheels are built after the tag it is pinned to. On a
+runner without `gh`, it installs the wheel unchecked, with a notice. Someone who controls the
+package index cannot use that, because only the runner's owner can remove `gh`. The `verify` input
+turns the check off, for GitHub Enterprise Server
+([reference](docs/usage.md#github-action)).

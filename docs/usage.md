@@ -8,7 +8,8 @@ The details behind the [README](../README.md). Why things work this way is in
 ```text
 --dialect DIALECT[:GLOB]   check files matching GLOB (every file, without one) as DIALECT,
                            or as `auto`, the extension's default; the last match wins
---strict GLOB              the same as --dialect json:GLOB, kept from check-json5
+--strict GLOB              the same as --dialect json:GLOB, kept from check-json5;
+                           --strict '!GLOB' means --dialect auto:GLOB
 --error RULE, --warn RULE, --ignore RULE
 --max-warnings N
 --format text|sarif|json   text lines (the default), one SARIF 2.1.0 document, or one JSON
@@ -65,8 +66,7 @@ the hook and in CI, has no such line.
   one by its byte order mark, or without one by the zero bytes in its first four bytes. A
   little-endian file without a mark that starts with a quote is the exception: it fails as a
   syntax error, because JSON5 allows a raw U+0000 in a string, so UTF-8 can start the same way.
-  Any other
-  file that is not UTF-8 fails with `not valid UTF-8 (byte N)`.
+  Any other file that is not UTF-8 fails with `not valid UTF-8 (byte N)`.
 - In GitHub Actions, each problem is also printed as an annotation.
 
 jsonvet escapes control, bidirectional and invisible characters in file names and messages. So no
@@ -82,8 +82,8 @@ output line can drive a terminal or pass for a GitHub workflow command. The exac
 |    2 | a usage error, such as an unknown option or a bad schema |
 
 jsonvet reads regular files only, and follows a symlink to one. A device, FIFO or socket prints
-`error: not a regular file`; a directory is walked (see [Folders](#folders)). The hook (`types: [text]`) skips tracked symlinks and
-submodules.
+`error: not a regular file`. A directory is walked (see [Folders](#folders)). The hook
+(`types: [text]`) skips tracked symlinks and submodules.
 
 When the output pipe closes early, as in `jsonvet … | head -1`, jsonvet stops quietly. It exits
 with the verdict for the files it has checked.
@@ -114,7 +114,8 @@ To be sure, put `--` before the file names: `jsonvet -- --x.json`.
 
 - Extensions match in lower case only, so `DATA.JSONL` is checked as JSON5, not JSON Lines.
 - `--dialect` and the configuration file also take the names `ijson` (for `i-json`), `hujson`
-  (for `jwcc`), and `ndjson` and `json-lines` (for `jsonl`). Dialect names are case-sensitive: `--dialect JSON` is an error that suggests `json`.
+  (for `jwcc`), and `ndjson` and `json-lines` (for `jsonl`). Dialect names are case-sensitive:
+  `--dialect JSON` is an error that suggests `json`.
 - JSONC rejects trailing commas, as the [JSONC spec](https://jsonc.org/) and Microsoft's
   reference parser do by default. For files that use them, such as `tsconfig.json` or VS Code's
   `settings.json`, select `jwcc`, which is JSONC with trailing commas.
@@ -275,8 +276,12 @@ All inputs are optional:
 | `version` | the jsonvet version to install: `X.Y.Z` (also with a suffix such as `rc1` or `.post1`), `X.*`, `X.Y.*` or `latest` |
 | `verify`  | `true` (the default) checks the wheel's attestation before installing it; `false` skips that |
 
-In `files`, `**` matches folders at any depth on every runner. The Action skips symlinks, and by
-default also submodules. Any other `version` value stops the step.
+In `files`, `**` matches folders at any depth on every runner, and a glob matches files only. The
+Action skips symlinks, and by default also submodules. Any other `version` or `verify` value stops
+the step.
+
+With the default `files`, the step fails when the working directory is not a git checkout: run
+`actions/checkout` first. When it finds no JSON files, it passes with a warning.
 
 By default the Action installs the release that matches its own tag: `@v3` gets the newest 3.x,
 and `@v3.0.0` gets 3.0.0. Pinned to a commit SHA or a branch, it installs the release named in
@@ -355,9 +360,9 @@ These hold for `--schema`. Why each one exists is in [design.md](design.md#--sch
 - **Errors.** A document lists at most 100 schema errors. They are the first 100 that jsonschema
   finds, and it takes an object's keys in sorted order, not file order. A top-level object checked
   one member at a time (see Memory) gives them by member instead of by keyword. They print in
-  file order. If there are more, one more line, `... and more schema errors in this document`,
-  sits at the document's start. jsonvet stops looking at the 101st, so it gives no count. SARIF
-  and JSON leave that line out. `additionalProperties` gives one error per key it does not allow,
+  file order. If there are more, one more line follows them,
+  `... and more schema errors in this document`, at the document's start. jsonvet stops looking
+  at the 101st, so it gives no count. SARIF and JSON leave that line out. `additionalProperties` gives one error per key it does not allow,
   at that key, and each one counts toward the 100.
 - **Messages.** Each message ends with the JSONPath of the value, as duplicate keys do. A message
   quotes the value unless that makes it long; then it says `value`. A message, with its path, is
@@ -401,8 +406,7 @@ These hold for `--schema`. Why each one exists is in [design.md](design.md#--sch
 
 ## Coming from check-json5
 
-The `check-json5` hook id, the `check-json5` command, `--strict` and the `check-json5` package on
-PyPI (which now installs jsonvet) keep working through 3.x.
+The `check-json5` package on PyPI also keeps working through 3.x: it now installs jsonvet.
 
 Besides the dialect change in the README, the output line, the syntax-error wording, positions
 after a lone CR or U+2028, the new `.jsonl` and `.ndjson` files and the removed Python module
