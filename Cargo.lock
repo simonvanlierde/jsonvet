@@ -561,6 +561,7 @@ dependencies = [
 name = "jsonvet-cli"
 version = "3.1.1"
 dependencies = [
+ "gungraun",
  "ignore",
  "insta",
  "jsonschema",

@@ -97,7 +97,8 @@ and cargo deny.
   `hyperfine -N -r 40` on the two binaries per case, both built the same way. A change that
   touches every file also gets timed on a 10,000-small-file walk: the 1,100-file config case runs
   in 4-7 ms, so 0.5 µs a file of overhead shows there as 10-25%.
-- **Instruction counts.** `just counts` runs `crates/jsonvet/benches/check.rs` under callgrind
+- **Instruction counts.** `just counts` runs `crates/jsonvet/benches/check.rs`, the parser, and
+  `crates/jsonvet-cli/benches/schema.rs`, whole `--schema` runs of the binary, under callgrind
   (gungraun) and prints each case's change since the last run. Counts move by under 0.3% between
   runs, because hash keys are random, so a smaller change is noise. On a pull request, CI counts
   the base branch and then the pull request, and fails when a case rises by more than 1%. To

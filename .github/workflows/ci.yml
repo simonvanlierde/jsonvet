@@ -118,9 +118,10 @@ jobs:
         env:
           JSONVET_DIFF_JSON5: ${{ github.workspace }}/fuzz/target/release/diff_json5
 
-  # Instruction counts for `check` under callgrind: crates/jsonvet/benches/check.rs. On a pull
-  # request the job counts the base branch first (the merge commit's first parent), then the merge
-  # commit, and fails when a case's instructions (Ir) rise by more than 1% (CONTRIBUTING.md, Tests).
+  # Instruction counts under callgrind for `check` (crates/jsonvet/benches/check.rs) and for whole
+  # `--schema` runs (crates/jsonvet-cli/benches/schema.rs). On a pull request the job counts the
+  # base branch first (the merge commit's first parent), then the merge commit, and fails when a
+  # case's instructions (Ir) rise by more than 1% (CONTRIBUTING.md, Tests).
   # When the base has no benchmarks, or needs another gungraun-runner, its step fails without
   # failing the job, and the second run saves its counts with nothing to compare and a warning.
   bench:
@@ -147,6 +148,7 @@ jobs:
         run: |
           git checkout --quiet HEAD^1
           cargo bench --locked -p jsonvet --bench check -- --save-baseline=base
+          cargo bench --locked -p jsonvet-cli --bench schema -- --save-baseline=base
       - name: Count, and compare with the base branch
         shell: bash
         env:
@@ -160,6 +162,7 @@ jobs:
           git checkout --quiet "$GITHUB_SHA"
           status=0
           cargo bench --locked -p jsonvet --bench check -- --baseline=base | tee counts.txt || status=$?
+          cargo bench --locked -p jsonvet-cli --bench schema -- --baseline=base | tee -a counts.txt || status=$?
           { echo '```text'; sed 's/\x1b\[[0-9;]*m//g' counts.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
 
