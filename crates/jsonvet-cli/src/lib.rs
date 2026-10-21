@@ -540,7 +540,31 @@ mod tests {
 
     use jsonvet::Dialect;
 
-    use super::{SPLIT_BYTES, Schema, Settings, check, parallel, split};
+    use super::{
+        MAX_CONFIG_BYTES, SPLIT_BYTES, Schema, Settings, check, parallel, read_small, split,
+        unsafe_ignore_file,
+    };
+
+    #[test]
+    fn small_files_are_read_up_to_their_limit_and_no_further() {
+        let dir = std::env::temp_dir().join(format!("jsonvet-small-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a temporary directory");
+        let path = dir.join("f");
+        std::fs::write(&path, "0123456789").expect("written");
+        assert_eq!(read_small(&path, 10).expect("ten bytes"), "0123456789");
+        assert!(read_small(&path, 9).is_err());
+        // An ignore file is judged by its size alone; sparse files, so nothing is written.
+        let sized = |len: u64| {
+            std::fs::File::create(dir.join(".gitignore"))
+                .and_then(|file| file.set_len(len))
+                .expect("a large file");
+        };
+        sized(MAX_CONFIG_BYTES);
+        assert_eq!(unsafe_ignore_file(&dir), None);
+        sized(MAX_CONFIG_BYTES + 1);
+        assert!(unsafe_ignore_file(&dir).is_some_and(|e| e.ends_with("larger than 16 MB")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn only_json_lines_of_the_split_size_is_split_one_part_per_thread() {

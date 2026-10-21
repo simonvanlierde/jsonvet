@@ -2793,8 +2793,8 @@ mod file_reads {
         )
         .expect("move");
         assert_eq!(run(&dir.join("a"), &user, &["x.json"]).0, 1);
-        // Up to 16 MB is read, one byte more is too large: sparse files, so the test writes
-        // nothing.
+        // One byte past 16 MB is too large; the unit tests in lib.rs check exactly 16 MB, which
+        // a debug build takes seconds to parse. Sparse files, so the test writes nothing.
         let big = dir.join("big");
         fs::create_dir_all(&big).expect("create dir");
         let sized = |name: &str, len: u64| {
@@ -2803,9 +2803,6 @@ mod file_reads {
                 .expect("a large file");
         };
         fs::write(big.join("x.json"), "{}").expect("write");
-        sized("pyproject.toml", 16 << 20);
-        sized(".gitignore", 16 << 20);
-        assert_eq!(run(&big, &user, &["x.json", "."]).0, 0);
         sized(".gitignore", (16 << 20) + 1);
         let (code, _, err) = run(&big, &user, &["."]);
         assert_eq!(
