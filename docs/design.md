@@ -1,13 +1,14 @@
 # jsonvet design
 
-What jsonvet promises, and why it is built the way it is. jsonvet 2.0 rewrote check-json5 1.4
-(Python) in Rust. Items marked *since 3.0* changed after 2.0.0. For how to use it, see the
-[reference](usage.md). Choices where we turned down a measured or argued alternative have their
-own records in [decisions/](decisions/README.md).
+What jsonvet promises, and how it is built. jsonvet 2.0 rewrote check-json5 1.4 (Python) in Rust.
+Items marked *since 3.0* changed after 2.0.0. For how to use it, see the [reference](usage.md).
+Each choice where we turned down a measured or argued alternative has its own record in
+[decisions/](decisions/README.md), with the numbers.
 
 ## The contract with 1.4
 
-jsonvet 2.0 replaces check-json5 1.4 in place. These stay the same:
+jsonvet 2.0 replaces check-json5 1.4 in place, with one hand-written parser; see
+[0001](decisions/0001-one-parser-and-the-1.4-contract.md). These stay the same:
 
 - the pass or fail verdict for every file in the two dialects 1.4 knows: JSON5 (the default for
   `.json`, `.json5`, `.geojson`, `.jsonld`, `.webmanifest` and `.babelrc` files, and for any other
@@ -43,8 +44,8 @@ These change, and the changelog marks them **Breaking**:
 A syntax error points at the first character that cannot continue the document, or at the end of
 the input. Two point earlier: a missing `,` points just after the value before it, and a number
 with a leading zero at that zero. A word that cannot continue it, such as `True`, is named whole,
-at its first letter. Where that differs from 1.4, the difference and its reason are listed below. Any other
-difference is a bug.
+at its first letter. Where that differs from 1.4, the difference and its reason are listed below.
+Any other difference is a bug.
 
 ### Known differences from 1.4
 
@@ -69,37 +70,41 @@ differences are intended:
 - A `\u` escape in an unquoted key must stand for a character the key could hold literally,
   as ECMAScript 5.1 says. 1.4 passed any escape, so `{\u0301: 1}` passed there, and so did
   `{\ud800: 1}`, though a lone surrogate is no character at all. Literal characters agree:
-  both go by general category (letters to start a key, then marks, digits and connectors too), as
-  the spec and the JS reference do, not by Unicode's `ID_Start`.
+  both go by general category (letters to start a key, then marks, digits and connectors too),
+  as the spec and the JS reference do, not by Unicode's `ID_Start`.
 - After a duplicate key, 1.4 stops at the duplicates. jsonvet goes on and also reports a later
   syntax error. The verdict is the same.
 - Syntax-error wording, and some syntax-error positions, follow the rule above.
 
 ## Speed
 
-Median wall time of one run over the files, from `uv run scripts/bench.py` on 12 cores of a
-Ryzen 7 H 255 under Linux. Both tools give the same verdict in every case:
+Median wall time of 20 runs over the files, from `uv run scripts/bench.py` on 12 cores of a
+Ryzen 7 H 255 under Linux (2026-10-21, before 3.1.0). Both tools give the same verdict in every
+case:
 
-| Case                       | check-json5 1.4.1 | jsonvet 3.0 | Speed-up |
+| Case                       | check-json5 1.4.1 | jsonvet 3.1 | Speed-up |
 | -------------------------- | ----------------: | ----------: | -------: |
-| 1,100 config files         |             40 ms |     12.5 ms |       3x |
-| 2.7 MB JSON                |             41 ms |      9.8 ms |       4x |
-| 2.7 MB JSON, duplicate key |            330 ms |     11.6 ms |      29x |
-| 120 KB JSONC               |             22 ms |      1.5 ms |      15x |
-| 1.8 MB JSON5               |         11,641 ms |      8.3 ms |   1,398x |
+| 1,100 config files         |             39 ms |      4.0 ms |      10x |
+| 2.7 MB JSON                |             41 ms |      9.2 ms |       4x |
+| 2.7 MB JSON, duplicate key |            328 ms |     11.8 ms |      28x |
+| 120 KB JSONC               |             21 ms |      1.9 ms |      12x |
+| 1.8 MB JSON5               |         11,776 ms |      8.6 ms |   1,374x |
 
 1.4 sent JSON, and JSONC with its comments stripped, to Python's C parser, so those were already
 fast. Other JSON5 syntax went to a pure-Python parser, and so did the second pass that finds a
-duplicate key's position. jsonvet does everything in one pass of one parser.
+duplicate key's position. jsonvet does everything in one pass of one parser, and checks files on
+every core.
 
 A JSON Lines file of 1 MB or more is cut at newlines into one part for each core its chunk of
 files leaves free, and the parts are checked at once. A newline inside a JSON string must be
 escaped, and JSON Lines has no comments, so every raw newline ends a record. Each part counts
 offsets from the start of the file, problems stop at the first syntax error as in one pass, and
-the output is the same. With `hyperfine` on the same machine, 78 MB of nested records took 264 ms
-before and 89 ms after (3.0x). 100 MB of records that are mostly one long string took 83 ms
-before and 64 ms after: the string scan is already fast, and reading the file (19 ms for `cat`)
-stays on one thread.
+the output is the same. Reading the file stays on one thread, so records that are mostly one
+long string gain little.
+
+We adopt a speed-up only when it measures at least 5% faster end to end; see
+[0004](decisions/0004-measure-before-adopting-a-speed-up.md), which also lists what we turned
+down.
 
 ## Dialects
 
@@ -135,9 +140,9 @@ open, and these rules do not flag them:
 In GitHub Actions each problem is also printed as a `::warning` or `::error` annotation.
 `--format sarif` prints one SARIF 2.1.0 document instead, with no annotations. `--format json`
 prints jsonvet's own, smaller document. jsonvet writes both by hand, so both escape strings as
-below; serde_json would leave bidi controls and `##[` as they are. SARIF holds its results until
-the end, to cap them at GitHub's limit. JSON has no limit, so it writes each diagnostic as it
-comes, and memory stays flat however many problems a run finds.
+below; see [0007](decisions/0007-hand-written-output-with-one-escaping-rule.md). SARIF holds its
+results until the end and keeps the first 25,000. JSON has no limit, so it writes each
+diagnostic as it comes, and memory stays flat however many problems a run finds.
 
 ### Output
 
@@ -146,8 +151,8 @@ break the line or a terminal. A control character prints as `\u001b`, with CR an
 `\n`. A bidirectional control or invisible character (U+00AD, U+061C, U+180E, U+200B to U+200F,
 U+2028 to U+202E, U+2060 to U+2064, U+2066 to U+2069, U+FEFF, U+E0000 to U+E007F) prints as
 `\u202e`, past U+FFFF as a UTF-16 pair such as `\udb40\udc01`. SARIF and JSON strings escape the
-same characters the same way. A name that starts with `::`, after any white space, prints as `./::…`,
-and a `[` straight after `##` prints as `\u005b`. So no line looks like a GitHub workflow
+same characters the same way. A name that starts with `::`, after any white space, gets `./` in
+front, and a `[` straight after `##` prints as `\u005b`. So no line looks like a GitHub workflow
 command, old (`##[command]`) or new (`::command`). An annotation's `file=` value holds the name
 as the text line prints it, with those escapes, then percent-encoded as GitHub requires.
 
@@ -158,20 +163,18 @@ schemas. The library's `parse` returns the file's values as events, each with it
 The CLI folds them into `serde_json` values and validates those with the `jsonschema` crate, with
 default features off so nothing is fetched. It then maps each error's instance path, a JSON
 Pointer, back to the offset of its value. One walk over a document's events finds every error's
-value, with no pointer kept per value.
+value, with no pointer kept per value. Every build has `--schema`, the PyPI wheels too; see
+[0006](decisions/0006-offline-json-schema-in-every-build.md).
 
 The message names the value by JSONPath, through the same code as `duplicate-key`, so one file's
 problems use one path style. A pointer reads the same for `[0]` and `["0"]`, so a segment counts
 as an index only where the value it steps into is an array. Schema errors follow the file's other
 problems. A file with a syntax error has no events, so it gets none.
 
-Every build has `--schema`, the PyPI wheels too, so the hook and the Action can use it.
-jsonschema and its regex engines take the binary from about 0.7 MB to about 5 MB on Linux
-x86-64, still smaller than prek's or ruff's wheel, and a plain check starts no slower. It adds
-about 70 crates, whose code runs only with `--schema`. One build means one help text and one
-set of tests.
-
-The limits are listed in the [reference](usage.md#json-schema-limits). Why each exists:
+A crafted schema or file can cost far more than its size. The limits below are fixed caps, not a
+timeout, so a file gets the same verdict on every machine; see
+[0010](decisions/0010-schema-limits-are-deterministic-caps.md). Their values are in the
+[reference](usage.md#json-schema-limits). Why each exists:
 
 - **File depth.** jsonschema validates recursively. Its memory grows with the square of the depth
   when an error sits deep under a recursive `$ref`: 1.3 GB for a 50 KB file nested 10,000 levels.
@@ -182,74 +185,75 @@ The limits are listed in the [reference](usage.md#json-schema-limits). Why each 
   cannot start leave their files to the others.
 - **Memory.** Folded values take 14 to 27 times the file's size, the most for many small records
   such as JSON Lines. jsonschema collects every error before handing out the first, so a 10 MB
-  array of 5,000,000 failing numbers took 2.0 GB, against 0.37 GB when it passes. When nothing
-  but `items` checks a top-level array's elements, and every `$ref` points into `$defs` or
-  `definitions`, jsonvet checks the schema without `items` on the whole array, then `items` on
-  one element at a time: 0.37 GB both ways, with the same output. jsonschema runs `contains`
-  after `items` and every other keyword before it, so the errors keep that order. A top-level
-  object whose members only `properties`, `patternProperties` and `additionalProperties` check
-  is split the same way, each member checked as an object of its own. Its errors past the first
-  100 differ: jsonschema in one pass gives them keyword by keyword, the split member by member.
-  Any other schema is checked in one pass. Files are read a chunk at a time, until they hold 64 MB. With
-  `--schema` each byte counts 20 times, and the chunk is cut from the files' sizes before any
-  is read, so a file of 3.2 MB or more is checked on its own. Counted only after reading, every
-  core took a file at once: twelve 10 MB files took 3.4 GB instead of 0.30 GB, though in half
-  the time (1.3 s against 2.6 s). Without `--schema` the text is counted as it is read, since
-  sizing 10,000 files first cost 7 ms.
+  array of 5,000,000 failing numbers took 2.0 GB, against 0.37 GB when it passes. So jsonvet
+  splits two shapes of schema:
+  - When nothing but `items` checks a top-level array's elements, and every `$ref` points into
+    `$defs` or `definitions`, jsonvet checks the schema without `items` on the whole array, then
+    `items` on one element at a time: 0.37 GB both ways, with the same output. jsonschema runs
+    `contains` after `items` and every other keyword before it, so the errors keep that order.
+  - A top-level object whose members only `properties`, `patternProperties` and
+    `additionalProperties` check is split the same way, each member checked as an object of its
+    own. Its errors past the first 100 differ: jsonschema in one pass gives them keyword by
+    keyword, the split member by member.
+
+  Any other schema is checked in one pass. Files are read a chunk at a time, until they hold
+  64 MB. With `--schema` each byte counts 20 times, and the chunk is cut from the files' sizes
+  before any is read, so a file of 3.2 MB or more is checked on its own. Counted only after
+  reading, every core took a file at once: twelve 10 MB files took 3.4 GB instead of 0.30 GB.
+  Without `--schema` the text is counted as it is read, since sizing 10,000 files first cost
+  7 ms.
 - **Errors.** A jsonschema error holds more than its message. An `anyOf` error holds every
   branch's errors, and an `enum` error a copy of its values, so 40 errors from a 1 KB schema took
   3.2 GB when jsonvet kept them until it placed them. jsonvet keeps each error's message and path
-  as it comes and drops the rest. Past the 100th it stops asking: counting the other 4,900 errors
-  of a 5,000-element array took 57 s, so the last line says there are more but not how many.
-  What one jsonschema call collects is still all in memory at once. That is one element or
-  member for a split schema, and the whole document otherwise, so an `anyOf` around
-  `additionalProperties`, or an `enum` under a member's `additionalProperties`, can still take
-  gigabytes on a document of many failing values.
-- **Schema depth and `$ref` chains.** Without the check, 1,000 `allOf` and `$ref` hops overflow the
-  64 MB stack at once against a 512-level array. A `$ref` back to a schema on the way to it is
-  recursion and adds nothing. The error lands at the `$ref` that crosses the line. jsonvet
+  as it comes and drops the rest. Past the 100th it stops asking, so the last line says there are
+  more but not how many. What one jsonschema call collects is still all in memory at once. That
+  is one element or member for a split schema, and the whole document otherwise, so an `anyOf`
+  around `additionalProperties`, or an `enum` under a member's `additionalProperties`, can still
+  take gigabytes on a document of many failing values.
+- **Schema depth and `$ref` chains.** Without the check, 1,000 `allOf` and `$ref` hops overflow
+  the 64 MB stack at once against a 512-level array. A `$ref` back to a schema on the way to it
+  is recursion and adds nothing. The error lands at the `$ref` that crosses the line. jsonvet
   resolves each `$ref` with the `referencing` crate jsonschema itself uses, against the base the
-  `$id`s above it set, so the two follow the same schemas. Matched by text alone, two resources
-  with the same relative `$id` let a small one be measured while jsonschema checked the other,
-  which doubled at each level, and looking each `$ref` up among 20,000 `$id`s took 24 s. A
-  `$ref` that resolves to nothing is an error at that `$ref`, as the count cannot follow it.
-- **Schema size.** jsonschema may check every schema a value reaches, so a schema where each level
-  `$ref`s the next twice doubles the work per level, well under the depth cap: 24 levels took
-  12.9 s and 11.4 GB for one `{}`. jsonvet counts the objects and arrays with each `$ref` replaced
-  by what it points at, and stops at 5,000,000. That lets 18 such levels through (about 3.9
-  million, 1 s and 340 MB per failing value) and SchemaStore's 1.6 MB `azure-pipelines.json`
+  `$id`s above it set, so the two follow the same schemas. A `$ref` that resolves to nothing is
+  an error at that `$ref`, as the count cannot follow it.
+- **Schema size.** jsonschema may check every schema a value reaches, so a schema where each
+  level `$ref`s the next twice doubles the work per level, well under the depth cap: 24 levels
+  took 12.9 s and 11.4 GB for one `{}`. jsonvet counts the objects and arrays with each `$ref`
+  replaced by what it points at, and stops at 5,000,000. That lets 18 such levels through (about
+  3.9 million, 1 s and 340 MB per failing value) and SchemaStore's 1.6 MB `azure-pipelines.json`
   (about 3.2 million). The values in each `enum` and `const` count too: an `enum` error copies
   them all. `unevaluatedProperties` and `unevaluatedItems` make jsonschema check the schemas
-  beside them that apply to the same value a second time, to find what they evaluated, so
-  those count twice there. Nested in each other's `anyOf`, each level doubled the time: 27
-  levels took 22 s on `{"c": 1}`. The cap now stops 20 such levels, which took 0.16 s. A
-  `$ref` from `properties` is not checked again, so OpenAPI 3.1's schema, with
-  `unevaluatedProperties` on most objects, comes to about 1.25 million.
-  A schema measured while a `$ref` back up to a schema above it was skipped is measured again
-  wherever it is reached, as it can be deeper there.
+  beside them that apply to the same value a second time, to find what they evaluated, so those
+  count twice there. Nested in each other's `anyOf`, each level doubled the time, and the cap
+  stops 20 such levels. A `$ref` from `properties` is not checked again, so OpenAPI 3.1's
+  schema, with `unevaluatedProperties` on most objects, comes to about 1.25 million. A schema
+  measured while a `$ref` back up to a schema above it was skipped is measured again wherever it
+  is reached, as it can be deeper there.
 - **Regex backtracking.** Schema regexes with back-references or lookaround run on fancy-regex,
   which backtracks. With the cap, `^(a|a)*\1b` over 5,000 strings takes under a second, not
-  minutes. `patternProperties` (and `additionalProperties` beside it) count an over-cap key as not
-  matching, because jsonschema 0.58 drops the regex error there (`is_match(..).unwrap_or(false)`),
-  and so does `pattern` under `not`, `if` or `oneOf`. So jsonvet tries every `patternProperties`
-  regex, and every `pattern` under `propertyNames`, on every key, and every `pattern` on every
-  string, with the same cap. An over-cap match is an error at that key or string. Trying each
-  regex everywhere, not only where the schema applies it, keeps the check short but can fail a
-  string the regex never checks. With three lookaround patterns, a 5.9 MB file takes 241 ms
-  instead of 105 ms.
+  minutes. `patternProperties` (and `additionalProperties` beside it) count an over-cap key as
+  not matching, because jsonschema 0.58 drops the regex error there
+  (`is_match(..).unwrap_or(false)`), and so does `pattern` under `not`, `if` or `oneOf`. So
+  jsonvet tries every `patternProperties` regex, and every `pattern` under `propertyNames`, on
+  every key, and every `pattern` on every string, with the same cap. An over-cap match is an
+  error at that key or string. Trying each regex everywhere, not only where the schema applies
+  it, keeps the check short but can fail a string the regex never checks. With three lookaround
+  patterns, a 5.9 MB file takes 241 ms instead of 105 ms.
 
 ## Configuration
 
 jsonvet reads `jsonvet.toml`, or a `[tool.jsonvet]` table in `pyproject.toml`. For each file it
-looks in the file's folder and its parents, and the nearest file replaces any above it, as in
-ruff, so a package in a monorepo keeps its own settings. Each folder is looked up once a run. The
-search stops at the first directory that has a `.git` entry, so it never uses a stray file above
-the repository. Without a `.git`, as after actions/checkout falls back to a tarball, it stops at
-the working directory, or for a file outside it at the file's own folder: on a shared runner,
-anyone can write a `jsonvet.toml` above the job's folder. Only when the search finds nothing does
-the user's own `jsonvet.toml` apply, as ruff's does. It sits in no project, so its globs are
-relative to the working directory, also as in ruff. A pattern given with `--dialect` or `--strict`
-matches the path as typed, as in 1.4. The [reference](usage.md#globs) has the glob rules.
+looks in the file's folder and its parents. The nearest file replaces any above it, as in ruff,
+so a package in a monorepo keeps its own settings; see
+[0005](decisions/0005-nearest-config-file-replaces.md). Each folder is looked up once a run.
+
+The search stops at the first directory that has a `.git` entry. Without a `.git`, it stops at
+the working directory, or for a file outside it at the file's own folder. Only when the search
+finds nothing does the user's own `jsonvet.toml` apply, as ruff's does. It sits in no project,
+so its globs are relative to the working directory, also as in ruff. Why the search stops there,
+and why a bad config shows no value, is in [0009](decisions/0009-where-the-config-search-stops.md).
+A pattern given with `--dialect` or `--strict` matches the path as typed, as in 1.4. The
+[reference](usage.md#globs) has the glob rules.
 
 Config, schema and ignore files are read only when they are regular files (or symlinks to one) of
 a bounded size, as checked files are: a committed link to `/dev/zero` would fill memory and a FIFO
@@ -294,27 +298,24 @@ Behind that interface:
   JSONPath of a duplicate key;
 - keys compared by their decoded value, borrowed from the input unless they contain an escape;
 - an object's keys checked by a scan up to 16 keys, then through a hash index. The index uses the
-  standard library's SipHash with keys from the OS, so a crafted file cannot make its keys collide
-  and the check stays linear in the file's size, as [SECURITY.md](../SECURITY.md) promises;
+  standard library's SipHash with keys from the OS, so the check stays linear in the file's size,
+  as [SECURITY.md](../SECURITY.md) promises. We keep SipHash; see
+  [0003](decisions/0003-siphash-for-duplicate-keys.md);
 - line starts found once with memchr, and only when the first location is asked for;
 - in text that is not all ASCII, a count of the code points before every 4 KiB, built only as far
   as a lookup needs, so finding a column counts the characters of at most two chunks.
 
-There is no `unsafe` code: `unsafe_code = "forbid"` in the workspace lints. jsonvet reads
-untrusted files in hooks and CI, so the worst a crafted file can do today is a panic, never memory
-corruption. The speed-ups measured so far do not need `unsafe`: SIMD UTF-8 validation saved about
-1% of a run on an 82 MB file, SSE2 and NEON intrinsics are safe to call since Rust 1.87, and the
-gap to serde_json is instructions per token, which `unsafe` does not remove. An opt-in would not
-help either: a runtime flag still ships the code, and a cargo feature doubles what fuzzing and
-mutation testing must cover.
+There is no `unsafe` code: `unsafe_code = "forbid"` in the workspace lints, so the worst a
+crafted file can do is a panic. See [0002](decisions/0002-no-unsafe-code.md).
 
 ### Python packaging
 
 pre-commit installs a `language: python` hook by running `pip install .` on the repository. The
 root `setup.py` is a placeholder that depends on the exact released `jsonvet` wheel, so a hook
-install downloads a prebuilt binary and never compiles Rust. typos ships the same way. maturin
-builds the wheels with `bindings = "bin"`, for Linux (glibc and musl, x86-64 and arm64), macOS
-(x86-64 and arm64) and Windows (x64 and arm64).
+install downloads a prebuilt binary and never compiles Rust; see
+[0008](decisions/0008-binary-wheels-behind-a-placeholder.md). maturin builds the wheels with
+`bindings = "bin"`, for Linux (glibc and musl, x86-64 and arm64), macOS (x86-64 and arm64) and
+Windows (x64 and arm64).
 
 ## Testing
 
@@ -325,7 +326,7 @@ and Windows, plus the oldest supported Rust (1.88). Each layer exists for one re
   pass or fail.
 - **Corpus:** one file per case keeps every edge case, survey finding and fuzz finding from
   coming back. One reviewed snapshot pins every exit code and output line.
-- **Conformance matrix:** the same files through 18 other parsers in four languages, in
+- **Conformance matrix:** the same files through other parsers in four languages, in
   [docs/conformance.md](conformance.md).
 - **Differential:** the promise to 1.4 is a verdict match, so it is checked against 1.4 itself.
 - **Fuzzing:** finds panics, offsets inside a character, and disagreements with serde_json and the
@@ -350,6 +351,7 @@ the GitHub release ship the same bytes. Each file gets a build provenance attest
 PyPI upload adds PEP 740 attestations. The binaries are not built with `cargo auditable`: maturin
 cannot run it without a cargo wrapper inside every build container, so the SBOM lists the
 dependencies instead.
+
 The `check-json5` package uploads after the `jsonvet` wheels, and `jsonvet-cli` after the
 `jsonvet` crate. crates.io only allows trusted publishing for a crate that already exists, so
 2.0.0 went up by hand.
