@@ -283,6 +283,10 @@ the step.
 With the default `files`, the step fails when the working directory is not a git checkout: run
 `actions/checkout` first. When it finds no JSON files, it passes with a warning.
 
+The Action passes every file on one command line. Windows limits a command line to 32,767
+characters, so on a Windows runner a repository with thousands of JSON files can fail there. Narrow
+`files` to the folders you need, or run the Action on Linux.
+
 By default the Action installs the release that matches its own tag: `@v3` gets the newest 3.x,
 and `@v3.0.0` gets 3.0.0. Pinned to a commit SHA or a branch, it installs the release named in
 that commit's `Cargo.toml`. Between releases that is the last release, not the code in the
