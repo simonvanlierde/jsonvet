@@ -134,7 +134,8 @@ cargo release X.Y.Z --execute             # commits "chore: release X.Y.Z"
 uv run scripts/check-versions.py
 git push -u origin release/X.Y.Z          # then open the pull request and squash-merge it
 git switch main && git pull --ff-only
-git tag vX.Y.Z && git push origin vX.Y.Z  # the squash commit, now main's HEAD
+git log -1 --oneline                      # must be "chore: release X.Y.Z (#NN)"
+git tag vX.Y.Z && git push origin vX.Y.Z
 ```
 
 The "Publishing jsonvet, jsonvet-cli" line cargo-release prints publishes nothing.
