@@ -8,6 +8,8 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
+## [3.1.1] - 2026-10-21
+
 ### Fixed
 
 - `cargo binstall jsonvet-cli` found the 3.1.0 release binaries but stopped, because each archive held
@@ -480,7 +482,8 @@ hook's output, or imports `pre_commit_hooks.check_json5`, needs a change (see Ch
 
 - Renamed from `pre-commit-check-json5` to `check-json5`.
 
-[Unreleased]: https://github.com/simonvanlierde/jsonvet/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/simonvanlierde/jsonvet/compare/v3.1.1...HEAD
+[3.1.1]: https://github.com/simonvanlierde/jsonvet/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/simonvanlierde/jsonvet/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/simonvanlierde/jsonvet/compare/v2.0.0...v3.0.0
 [2.0.0]: https://github.com/simonvanlierde/jsonvet/compare/v1.4.1...v2.0.0

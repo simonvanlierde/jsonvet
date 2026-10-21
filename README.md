@@ -35,7 +35,7 @@ Add this to `.pre-commit-config.yaml` (for [pre-commit](https://pre-commit.com) 
 
 ```yaml
 - repo: https://github.com/simonvanlierde/jsonvet
-  rev: v3.1.0
+  rev: v3.1.1
   hooks:
     - id: jsonvet
 ```
