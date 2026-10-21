@@ -8,6 +8,18 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
+### Fixed
+
+- `--schema` no longer fails a file because a string in it is too costly to match against a
+  pattern the schema never applies there. jsonvet tried every pattern on every string, so any Expo
+  `app.json` with a string of 5,000 characters or more failed against SchemaStore's schema.
+
+### Changed
+
+- `--schema` uses jsonschema 0.59.0, which decides where each pattern applies. A key or string too
+  costly to match is an error only where the pattern applies and its outcome changes the result.
+  A document that also has another schema error reports only that one.
+
 ## [3.1.1] - 2026-10-21
 
 ### Fixed

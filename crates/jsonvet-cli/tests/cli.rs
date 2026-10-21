@@ -2283,20 +2283,158 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
     }
 
     #[test]
-    fn every_key_and_string_too_costly_for_every_pattern_is_reported() {
+    fn each_costly_key_is_reported_once_and_a_match_that_decides_nothing_not_at_all() {
         let slow = format!("{}!", "a".repeat(30));
-        let schema = r#"{"patternProperties": {"^(a|a)*\\1b|!": true, "^(a|a)*\\1c|!": true}, "items": {"pattern": "^(a|a)*\\1b|!"}, "allOf": [{"pattern": "^(a|a)*\\1c|!"}]}"#;
         let dir = workdir(&[
-            ("schema.json", schema),
+            (
+                "false.json",
+                r#"{"patternProperties": {"^(a|a)*\\1b|!": false, "^(a|a)*\\1c|!": false}}"#,
+            ),
+            // Matching or not, `true` accepts the member, so the outcome changes nothing.
+            (
+                "true.json",
+                r#"{"patternProperties": {"^(a|a)*\\1b|!": true}, "anyOf": [{"pattern": "^(a|a)*\\1b|!"}, {"type": "object"}]}"#,
+            ),
             ("k.json", &format!("{{\"{slow}\": 1, \"{slow}{slow}\": 2}}")),
-            ("s.json", &format!("\"{slow}\"")),
         ]);
-        // Two patterns on two keys, then two on one string.
-        for (file, errors) in [("k.json", 4), ("s.json", 2)] {
-            let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "schema.json", file]);
-            assert_eq!(code, 1, "{file}");
-            assert_eq!(out.lines().count(), errors, "{file}: {out}");
-        }
+        let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "false.json", "k.json"]);
+        assert_eq!(code, 1);
+        assert_eq!(out.lines().count(), 2, "{out}");
+        assert!(
+            out.lines()
+                .all(|line| line.contains("this key could not be checked against the pattern")),
+            "{out}"
+        );
+        let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "true.json", "k.json"]);
+        assert_eq!((code, out.as_str()), (0, ""));
+    }
+
+    #[test]
+    fn a_costly_key_is_reported_only_for_the_pattern_jsonschema_names() {
+        // Under `allOf`, the object is checked in one pass. Its `c` key is too costly for the
+        // second pattern too, but that one accepts any member, so only the `a` key is an error.
+        let dir = workdir(&[
+            (
+                "schema.json",
+                r#"{"allOf": [{"patternProperties": {"^(a|a)*\\1b": false, "^(c|c)*\\1d": true}}]}"#,
+            ),
+            (
+                "k.json",
+                &format!("{{\"{}!\": 1, \"{}!\": 2}}", "a".repeat(30), "c".repeat(30)),
+            ),
+        ]);
+        let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "schema.json", "k.json"]);
+        assert_eq!(code, 1);
+        assert_eq!(
+            out,
+            format!(
+                "k.json:1:2: error[schema] this key could not be checked against the pattern \
+                 \"^(a|a)*\\1b\": matching it takes more than 5000 backtracking steps \
+                 (at $[\"{}!\"])\n",
+                "a".repeat(30)
+            )
+        );
+    }
+
+    #[test]
+    fn a_costly_string_is_named_with_the_pattern_the_schema_applies_there() {
+        // Both patterns are too costly for the string, and the unused one sorts first.
+        let dir = workdir(&[
+            (
+                "schema.json",
+                r#"{"$defs": {"unused": {"pattern": "^(a|a)*\\1b"}}, "properties": {"x": {"pattern": "^(a|a)*\\1c"}}}"#,
+            ),
+            ("x.json", &format!("{{\"x\": \"{}!\"}}", "a".repeat(30))),
+        ]);
+        let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "schema.json", "x.json"]);
+        assert_eq!(code, 1);
+        assert_eq!(
+            out,
+            "x.json:1:7: error[schema] this string could not be checked against the pattern \
+             \"^(a|a)*\\1c\": matching it takes more than 5000 backtracking steps (at $.x)\n"
+        );
+    }
+
+    #[test]
+    fn costly_keys_in_one_pass_stop_at_the_error_cap() {
+        // Under `allOf`, jsonschema reports the object once; jsonvet finds each costly key in it.
+        let slow = format!("{}!", "a".repeat(30));
+        let keys: Vec<String> = (0..101).map(|i| format!("\"{slow}{i}\": {i}")).collect();
+        let dir = workdir(&[
+            (
+                "schema.json",
+                r#"{"allOf": [{"patternProperties": {"^(a|a)*\\1b|!": false}}]}"#,
+            ),
+            ("k.json", &format!("{{{}}}", keys.join(", "))),
+        ]);
+        let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "schema.json", "k.json"]);
+        assert_eq!(code, 1);
+        assert_eq!(out.lines().count(), 101, "{out}");
+        assert!(
+            out.ends_with("... and more schema errors in this document\n"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn a_costly_string_the_schema_does_not_match_on_is_not_an_error() {
+        // A pattern on `code` only: `bio`, which is too costly for it, is never matched on.
+        let dir = workdir(&[
+            (
+                "schema.json",
+                r#"{"properties": {"code": {"type": "string", "pattern": "(\\w)\\1"}, "age": {"type": "integer"}}}"#,
+            ),
+            (
+                "d.json",
+                &format!("{{\"bio\": \"{}\", \"age\": \"old\"}}", "ab-".repeat(7_000)),
+            ),
+        ]);
+        let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "schema.json", "d.json"]);
+        assert_eq!(code, 1);
+        assert_eq!(
+            out,
+            "d.json:1:21020: error[schema] \"old\" is not of type \"integer\" (at $.age)\n"
+        );
+    }
+
+    #[test]
+    fn a_costly_pattern_behind_a_ref_to_its_own_id_is_still_named() {
+        let dir = workdir(&[
+            (
+                "schema.json",
+                r#"{"$id": "https://example.com/root", "$defs": {"s": {"$id": "s", "pattern": "^(a|a)*\\1b"}}, "properties": {"x": {"$ref": "s"}}}"#,
+            ),
+            ("x.json", &format!("{{\"x\": \"{}!\"}}", "a".repeat(30))),
+        ]);
+        let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "schema.json", "x.json"]);
+        assert_eq!(code, 1);
+        assert_eq!(
+            out,
+            "x.json:1:7: error[schema] this string could not be checked against the pattern \
+             \"^(a|a)*\\1b\": matching it takes more than 5000 backtracking steps (at $.x)\n"
+        );
+    }
+
+    #[test]
+    fn a_costly_match_beside_an_error_every_outcome_shares_is_left_out() {
+        // Under `allOf`, the object is checked in one pass: the error at `y` holds whether or
+        // not `x` matches, so jsonschema reports only that one.
+        let dir = workdir(&[
+            (
+                "schema.json",
+                r#"{"allOf": [{"properties": {"x": {"pattern": "^(a|a)*\\1b"}, "y": {"type": "integer"}}}]}"#,
+            ),
+            (
+                "d.json",
+                &format!("{{\"x\": \"{}!\", \"y\": \"s\"}}", "a".repeat(30)),
+            ),
+        ]);
+        let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "schema.json", "d.json"]);
+        assert_eq!(code, 1);
+        assert_eq!(
+            out,
+            "d.json:1:47: error[schema] \"s\" is not of type \"integer\" (at $.y)\n"
+        );
     }
 
     #[test]
@@ -2306,7 +2444,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         let dir = workdir(&[
             (
                 "schema.json",
-                r#"{"patternProperties": {"^(a|a)*\\1b|!": true}}"#,
+                r#"{"patternProperties": {"^(a|a)*\\1b|!": false}}"#,
             ),
             ("k.json", &format!("{{{}}}", keys.join(", "))),
         ]);

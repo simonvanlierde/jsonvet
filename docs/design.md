@@ -231,14 +231,14 @@ timeout, so a file gets the same verdict on every machine; see
   is reached, as it can be deeper there.
 - **Regex backtracking.** Schema regexes with back-references or lookaround run on fancy-regex,
   which backtracks. With the cap, `^(a|a)*\1b` over 5,000 strings takes under a second, not
-  minutes. `patternProperties` (and `additionalProperties` beside it) count an over-cap key as
-  not matching, because jsonschema 0.58 drops the regex error there
-  (`is_match(..).unwrap_or(false)`), and so does `pattern` under `not`, `if` or `oneOf`. So
-  jsonvet tries every `patternProperties` regex, and every `pattern` under `propertyNames`, on
-  every key, and every `pattern` on every string, with the same cap. An over-cap match is an
-  error at that key or string. Trying each regex everywhere, not only where the schema applies
-  it, keeps the check short but can fail a string the regex never checks. With three lookaround
-  patterns, a 5.9 MB file takes 241 ms instead of 105 ms.
+  minutes. An over-cap match is neither a match nor a miss, so jsonschema checks the value again
+  under each outcome, up to 64 times, and reports the match only when the outcomes disagree on
+  the result: at the string, or for a key, at its object. jsonvet names the pattern from the
+  error's schema path, and tries that pattern on the object's keys to place one error at each key
+  it could not be matched on. A split schema is also checked for validity a part at a time,
+  because one pass over a whole document repeats every over-cap match in it once per outcome:
+  2,000 over-cap keys took 10.7 s in one pass and 0.10 s a member at a time. A schema that cannot
+  be split still takes the long way ([SECURITY.md](../SECURITY.md#known-limits)).
 
 ## Configuration
 

@@ -162,6 +162,20 @@ fn schema_errors_past_the_first_100() {
 
 #[test]
 #[ignore = "needs valgrind: just scaling"]
+fn schema_keys_too_costly_for_a_pattern_past_the_first_100() {
+    // Each member is checked on its own, for validity too, so jsonschema's checks under each
+    // outcome of a costly match stay within that member, and stop once 100 errors are kept.
+    let schema = r#"{"patternProperties": {"^(a|a)*\\1b|!": false}}"#;
+    assert_flat(150, |n| {
+        let keys: Vec<String> = (0..n)
+            .map(|i| format!("\"{}!{i}\": {i}", "a".repeat(30)))
+            .collect();
+        with_schema("costly-keys", schema, &format!("{{{}}}", keys.join(", ")))
+    });
+}
+
+#[test]
+#[ignore = "needs valgrind: just scaling"]
 fn schema_refs_to_many_ids() {
     // Each `$ref` is looked up by its absolute URI, not compared with every `$id`.
     assert_linear(300, |n| {

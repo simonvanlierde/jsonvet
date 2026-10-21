@@ -72,7 +72,7 @@ const ON_MEMBERS: [&str; 3] = ["properties", "patternProperties", "additionalPro
 const EACH: &str = "jsonvet-each";
 
 pub(crate) struct Schema {
-    validator: Validator,
+    compiled: Compiled,
     /// For a schema whose elements only `items` checks: the schema without `items`, checked
     /// once on the whole array, and `items` alone, checked on each element. jsonschema collects
     /// every error before handing out the first, so a 10 MB array failing everywhere took 2.0 GB
@@ -82,17 +82,35 @@ pub(crate) struct Schema {
     /// `additionalProperties` check, each member checked as an object of its own.
     members: Option<Split>,
     /// `{"pattern": p}` for each regex in the schema tried on keys: `patternProperties` and a
-    /// `pattern` under `propertyNames`.
+    /// `pattern` under `propertyNames`, to find the keys a regex error on an object is about.
     key_patterns: Vec<(String, Validator)>,
-    /// `{"pattern": p}` for each `pattern` in the schema, tried on strings.
+    /// `{"pattern": p}` for each `pattern` in the schema, to name the one a regex error on a
+    /// string is about when its schema path does not.
     string_patterns: Vec<(String, Validator)>,
 }
 
 /// A schema split in two: the part checked on the whole value, and the part checked on each
 /// element or member.
 struct Split {
-    whole: Validator,
-    each: Validator,
+    whole: Compiled,
+    each: Compiled,
+}
+
+/// A validator and the schema it was built from, which its errors' schema paths point into.
+struct Compiled {
+    validator: Validator,
+    schema: Value,
+}
+
+impl Compiled {
+    /// `value`'s errors, after a quicker check that it has any.
+    fn errors<'i>(&'i self, value: &'i Value) -> impl Iterator<Item = ValidationError<'i>> {
+        let invalid = !self.validator.is_valid(value);
+        invalid
+            .then(|| self.validator.iter_errors(value))
+            .into_iter()
+            .flatten()
+    }
 }
 
 /// The members of an object by key, or the elements of an array by index; nothing for any other
@@ -105,13 +123,36 @@ fn children(value: &Value) -> impl Iterator<Item = (Cow<'_, str>, &Value)> {
         .chain(items.map(|(i, item)| (Cow::Owned(i.to_string()), item)))
 }
 
-/// Whether `error` says a regex match ran past [`BACKTRACK_LIMIT`].
+/// Whether `error` says a regex match ran past [`BACKTRACK_LIMIT`] where its outcome decides
+/// the result.
 fn backtracked(error: &ValidationError<'_>) -> bool {
-    match error.kind() {
-        ValidationErrorKind::BacktrackLimitExceeded { .. } => true,
-        ValidationErrorKind::PropertyNames { error } => backtracked(error),
-        _ => false,
+    matches!(
+        error.kind(),
+        ValidationErrorKind::BacktrackLimitExceeded { .. }
+    )
+}
+
+/// The regex at `schema_path` in `schema`: a `patternProperties` key, or a `pattern`. For a path
+/// relative to a subschema's own `$id`, this can be the wrong one, or none.
+fn pattern_at(schema: &Value, schema_path: &str) -> Option<String> {
+    let segments: Vec<String> = segments(schema_path).collect();
+    match segments.as_slice() {
+        [.., parent, regex] if parent == "patternProperties" => Some(regex.clone()),
+        _ => schema.pointer(schema_path)?.as_str().map(str::to_owned),
     }
+}
+
+/// The message for a `what` that could not be matched on within [`BACKTRACK_LIMIT`], naming
+/// `regex` if known.
+fn costly(what: &str, regex: Option<&str>) -> String {
+    let pattern = regex.map_or_else(
+        || "a pattern".to_owned(),
+        |r| format!("the pattern \"{r}\""),
+    );
+    format!(
+        "this {what} could not be checked against {pattern}: matching it takes more than \
+         {BACKTRACK_LIMIT} backtracking steps"
+    )
 }
 
 /// The regexes in `schema`: those tried on keys, and every `pattern`, tried on strings.
@@ -169,13 +210,9 @@ impl Errors {
     }
 }
 
-/// `error`, on the element at `index` if any, as the errors to report: none for a regex that ran
-/// past [`BACKTRACK_LIMIT`], which is reported on its own; one per key for unexpected
-/// properties, up to one more than [`MAX_ERRORS`]; otherwise one.
+/// `error`, on the element at `index` if any, as the errors to report: one per key for
+/// unexpected properties, up to one more than [`MAX_ERRORS`]; otherwise one.
 fn found(index: Option<usize>, value: &Value, error: &ValidationError<'_>) -> Vec<Found> {
-    if backtracked(error) {
-        return Vec::new();
-    }
     let path = pointer_path(index, error);
     if let Some(keys) = unexpected(value, error) {
         return keys
@@ -303,7 +340,10 @@ impl Schema {
                         .collect()
                 };
                 return Ok(Schema {
-                    validator,
+                    compiled: Compiled {
+                        validator,
+                        schema: schema.clone(),
+                    },
                     items: split(schema, kept, false, &options),
                     members: split(schema, kept, true, &options),
                     key_patterns: compile(keys),
@@ -363,30 +403,21 @@ impl Schema {
         errors
     }
 
-    /// The first [`MAX_ERRORS`] errors in `value`: keys and strings no regex could be matched
-    /// on, then jsonschema's own, which stop being asked for once there is one too many.
+    /// The first [`MAX_ERRORS`] errors in `value`, which stop being asked for once there is one
+    /// too many.
     fn collect(&self, value: &Value) -> Errors {
         let mut errors = Errors::default();
-        // jsonschema counts a regex that runs past the backtrack limit as not matching, so
-        // `patternProperties` and any `pattern` under `not` or `if` would pass silently.
-        // Every key and string is tried here instead, and jsonschema's own errors for it,
-        // which this repeats, are dropped.
-        // shortcut: each regex is tried on every key or string, not only where the schema
-        // applies it; follow the schema's applicators if that fails a file wrongly.
-        if !(self.key_patterns.is_empty() && self.string_patterns.is_empty()) {
-            self.unmatched(value, &mut Vec::new(), &mut errors);
-        }
-        if errors.more || self.validator.is_valid(value) {
-            return errors;
-        }
         // Each error is turned into what is reported as it comes, as jsonschema's own holds
         // much of the schema: an `enum`'s values, or every branch's errors for an `anyOf`.
+        // A split schema is also checked for validity a part at a time: jsonschema checks a
+        // value again for each outcome of a regex match it cannot finish, so one pass over a
+        // whole document repeats every costly match in it, past the error cap.
         match (value, &self.items, &self.members) {
             (Value::Array(items), Some(Split { whole, each }), _) => {
                 // jsonschema checks `contains` after `items`, and the rest before.
                 let mut after = Vec::new();
-                for error in whole.iter_errors(value) {
-                    let found = found(None, value, &error);
+                for error in whole.errors(value) {
+                    let found = self.found(whole, None, value, &error);
                     let keyword = segments(error.schema_path().as_str()).next();
                     if keyword.is_some_and(|k| {
                         ["contains", "minContains", "maxContains"].contains(&k.as_str())
@@ -397,8 +428,8 @@ impl Schema {
                     }
                 }
                 for (i, item) in items.iter().enumerate() {
-                    for error in each.iter_errors(item) {
-                        if !errors.add(found(Some(i), item, &error)) {
+                    for error in each.errors(item) {
+                        if !errors.add(self.found(each, Some(i), item, &error)) {
                             return errors;
                         }
                     }
@@ -406,23 +437,23 @@ impl Schema {
                 errors.add(after);
             }
             (Value::Object(members), _, Some(Split { whole, each })) => {
-                for error in whole.iter_errors(value) {
-                    if !errors.add(found(None, value, &error)) {
+                for error in whole.errors(value) {
+                    if !errors.add(self.found(whole, None, value, &error)) {
                         return errors;
                     }
                 }
                 for (key, member) in members {
                     let one = Value::Object(Map::from_iter([(key.clone(), member.clone())]));
-                    for error in each.iter_errors(&one) {
-                        if !errors.add(found(None, &one, &error)) {
+                    for error in each.errors(&one) {
+                        if !errors.add(self.found(each, None, &one, &error)) {
                             return errors;
                         }
                     }
                 }
             }
             _ => {
-                for error in self.validator.iter_errors(value) {
-                    if !errors.add(found(None, value, &error)) {
+                for error in self.compiled.errors(value) {
+                    if !errors.add(self.found(&self.compiled, None, value, &error)) {
                         break;
                     }
                 }
@@ -431,57 +462,62 @@ impl Schema {
         errors
     }
 
-    /// The keys and strings in `value`, which is at `path`, that a regex in the schema could
-    /// not be matched on within [`BACKTRACK_LIMIT`], until there is one error too many.
-    fn unmatched(&self, value: &Value, path: &mut Vec<String>, errors: &mut Errors) {
-        let fails = |regex: &Validator, value: &Value| {
-            regex
-                .validate(value)
-                .is_err_and(|error| backtracked(&error))
+    /// [`found`], except for a regex match past [`BACKTRACK_LIMIT`] that decides the result,
+    /// which jsonschema reports once, at the object for a key. That one names its pattern, and
+    /// on an object it is one error per key that pattern could not be matched on.
+    fn found(
+        &self,
+        compiled: &Compiled,
+        index: Option<usize>,
+        value: &Value,
+        error: &ValidationError<'_>,
+    ) -> Vec<Found> {
+        if !backtracked(error) {
+            return found(index, value, error);
+        }
+        let path = pointer_path(index, error);
+        let at = pattern_at(&compiled.schema, error.schema_path().as_str());
+        // The pattern at the error's schema path, if it is one of `patterns`; else, as a path
+        // relative to a subschema's own `$id` points elsewhere, the first that is costly too.
+        let named = |patterns: &[(String, Validator)], subject: &str| {
+            let subject = Value::String(subject.to_owned());
+            let known = patterns.iter().any(|(regex, _)| Some(regex) == at.as_ref());
+            patterns
+                .iter()
+                .filter(|(regex, _)| !known || Some(regex) == at.as_ref())
+                .find(|(_, regex)| regex.validate(&subject).is_err_and(|e| backtracked(&e)))
+                .map(|(regex, _)| regex.clone())
         };
-        let message = |what: &str, regex: &str| {
-            format!(
-                "this {what} could not be checked against the pattern \"{regex}\": matching it \
-                 takes more than {BACKTRACK_LIMIT} backtracking steps"
-            )
-        };
-        if value.is_string() {
-            for (regex, validator) in &self.string_patterns {
-                if fails(validator, value)
-                    && !errors.add([Found {
+        let keys: Vec<Found> = match error.instance().as_ref() {
+            Value::Object(members) => members
+                .keys()
+                .filter_map(|key| {
+                    Some(Found {
                         path: path.clone(),
-                        keys: Vec::new(),
-                        key: false,
-                        message: message("string", regex),
-                    }])
-                {
-                    return;
-                }
-            }
+                        message: costly("key", Some(&named(&self.key_patterns, key)?)),
+                        keys: vec![key.clone()],
+                        key: true,
+                    })
+                })
+                .take(MAX_ERRORS + 1)
+                .collect(),
+            _ => Vec::new(),
+        };
+        if !keys.is_empty() {
+            return keys;
         }
-        for (key, member) in children(value) {
-            if value.is_object() {
-                let name = Value::String(key.clone().into_owned());
-                for (regex, validator) in &self.key_patterns {
-                    if fails(validator, &name)
-                        && !errors.add([Found {
-                            path: path.clone(),
-                            keys: vec![key.clone().into_owned()],
-                            key: true,
-                            message: message("key", regex),
-                        }])
-                    {
-                        return;
-                    }
-                }
+        let message = match error.instance().as_ref() {
+            Value::String(string) => {
+                costly("string", named(&self.string_patterns, string).as_deref())
             }
-            path.push(key.into_owned());
-            self.unmatched(member, path, errors);
-            path.pop();
-            if errors.more {
-                return;
-            }
-        }
+            _ => costly("value", at.as_deref()),
+        };
+        vec![Found {
+            path,
+            keys: Vec::new(),
+            key: false,
+            message,
+        }]
     }
 }
 
@@ -525,9 +561,14 @@ fn split(schema: &Value, kept: bool, members: bool, options: &ValidationOptions)
         "allOf".to_owned(),
         serde_json::json!([{ "$ref": format!("#/{EACH}") }]),
     );
+    let compile = |schema: Map<String, Value>| {
+        let schema = Value::Object(schema);
+        let validator = options.build(&schema).ok()?;
+        Some(Compiled { validator, schema })
+    };
     Some(Split {
-        whole: options.build(&Value::Object(whole)).ok()?,
-        each: options.build(&Value::Object(each)).ok()?,
+        whole: compile(whole)?,
+        each: compile(each)?,
     })
 }
 
@@ -577,7 +618,7 @@ fn cut(mut message: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::limits::{Reach, registry};
-    use super::{MAX_MESSAGE, Schema, cut, fits, message, split};
+    use super::{Compiled, MAX_MESSAGE, Schema, cut, fits, message, split};
     use jsonvet::{Config, Dialect};
     use proptest::prelude::*;
     use serde_json::{Value, json};
@@ -681,7 +722,10 @@ mod tests {
         let options = jsonschema::options();
         let checked = |items, members| {
             let schema = Schema {
-                validator: options.build(schema).expect("a schema"),
+                compiled: Compiled {
+                    validator: options.build(schema).expect("a schema"),
+                    schema: schema.clone(),
+                },
                 items,
                 members,
                 key_patterns: Vec::new(),
