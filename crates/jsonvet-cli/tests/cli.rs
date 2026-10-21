@@ -2380,6 +2380,38 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
     }
 
     #[test]
+    fn keys_too_costly_for_a_pattern_stop_at_the_error_cap() {
+        let slow = format!("{}!", "a".repeat(30));
+        let keys: Vec<String> = (0..150).map(|i| format!("\"{slow}{i}\": {i}")).collect();
+        let dir = workdir(&[
+            (
+                "schema.json",
+                r#"{"patternProperties": {"^(a|a)*\\1b|!": true}}"#,
+            ),
+            ("k.json", &format!("{{{}}}", keys.join(", "))),
+        ]);
+        let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "schema.json", "k.json"]);
+        assert_eq!(code, 1);
+        assert_eq!(out.lines().count(), 101, "{out}");
+        assert!(out.ends_with("... and more schema errors in this document\n"));
+    }
+
+    #[test]
+    fn an_id_that_is_not_a_uri_is_a_usage_error() {
+        let dir = workdir(&[
+            (
+                "schema.json",
+                r#"{"$defs": {"a": {"$id": "http://[", "type": "string"}}}"#,
+            ),
+            ("x.json", "{}"),
+        ]);
+        let (code, out, err) = jsonvet_stderr(&dir, &["--schema", "schema.json", "x.json"]);
+        assert_eq!((code, out.as_str()), (2, ""), "{err}");
+        // jsonschema refuses it while building its registry, before jsonvet walks the schema.
+        assert!(err.contains("Invalid URI reference 'http://['"), "{err}");
+    }
+
+    #[test]
     fn nested_unevaluated_properties_are_a_usage_error() {
         // Each level checks the one below it twice: 27 levels took 22.6 s on `{"c": 1}`.
         let mut level = "{\"properties\": {\"a\": true}}".to_owned();
@@ -2879,6 +2911,30 @@ mod file_reads {
         // A relative XDG_CONFIG_HOME is ignored, as the XDG spec says.
         #[cfg(not(windows))]
         assert_eq!(run(&dir, Path::new("user"), &["p/x.json"]).0, 1);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_user_configs_exclude_is_relative_to_the_working_directory() {
+        let dir = workdir(&[
+            ("user/jsonvet/jsonvet.toml", "exclude = [\"skip\"]\n"),
+            ("p/x.json", DUP),
+            ("p/skip/x.json", DUP),
+            ("p/sub/x.json", DUP),
+        ]);
+        let user = dir.join("user");
+        let (code, out, _) = run(&dir.join("p"), &user, &["."]);
+        assert_eq!(code, 1);
+        let walked: Vec<&str> = out
+            .lines()
+            .map(|l| l.split(':').next().unwrap_or(l))
+            .collect();
+        let sep = std::path::MAIN_SEPARATOR;
+        assert_eq!(
+            walked,
+            [format!(".{sep}sub{sep}x.json"), format!(".{sep}x.json")],
+            "{out}"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 }
