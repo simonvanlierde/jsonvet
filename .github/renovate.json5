@@ -66,6 +66,14 @@
       groupName: "dependencies",
     },
     {
+      // A lock refresh has no release date to age against, so the minimumReleaseAge above would
+      // hold it at renovate/stability-days for good. Cargo has no release-age setting of its own,
+      // so the refresh can take a crate published that day: the PR waits for review, never merges
+      // itself.
+      matchUpdateTypes: ["lockFileMaintenance"],
+      minimumReleaseAge: null,
+    },
+    {
       // uv in CI and mise.toml, and uv_build, which builds check-json5: one pull request, so the
       // backend stays at the version of the uv that runs it.
       matchPackageNames: ["uv", "astral-sh/uv", "uv_build", "uv-build"],
