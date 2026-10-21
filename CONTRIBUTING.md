@@ -40,6 +40,8 @@ open a pull request. Write commit subjects as [Conventional Commits](https://www
 such as `fix(parser): reject a lone CR in a JWCC comment`. The pull request number is added on merge.
 A change that reopens a choice in [docs/decisions/](docs/decisions/README.md) brings the evidence
 its record asks for under "Revisit if".
+A change in behaviour comes with a test that fails without it, and a bug fix with a test that
+reproduces the bug.
 
 Commit hooks run `cargo fmt --check`, ruff, zizmor and the version check. `git push` runs clippy
 and cargo deny.
