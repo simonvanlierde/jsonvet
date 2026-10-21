@@ -22,7 +22,7 @@ events.jsonl:12:1: error[syntax] blank line; JSON Lines needs a value on every l
   column. It never fetches anything from the network.
 - **Fits CI.** Use it as a pre-commit or prek hook, a GitHub Action, a command or a Rust library.
   It writes text, SARIF for GitHub code scanning, or JSON for scripts and editors.
-- **Fast.** It was check-json5, a Python hook, until 2.0 rewrote it in Rust. It is up to 1,398
+- **Fast.** It was check-json5, a Python hook, until 2.0 rewrote it in Rust. It is up to 1,374
   times faster than check-json5 1.4.1
   ([figures](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#speed)).
 
