@@ -220,7 +220,7 @@ are now checked as JSONC, and `.hujson` and `.jwcc` files as JWCC. To keep the o
 ## How it is tested
 
 jsonvet runs the json5-tests suite, edge-case snapshots, property tests, fuzzing, mutation testing,
-a comparison with check-json5 1.4.1 and `--schema` on 11 SchemaStore schemas and their test files,
+a comparison with check-json5 1.4.1 and `--schema` on 12 SchemaStore schemas and their test files,
 on Linux, macOS and Windows. A
 [conformance matrix](https://github.com/simonvanlierde/jsonvet/blob/main/docs/conformance.md)
 runs the same files against 18 other parsers in four languages:

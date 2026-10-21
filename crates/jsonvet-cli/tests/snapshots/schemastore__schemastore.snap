@@ -1,5 +1,6 @@
 ---
 source: crates/jsonvet-cli/tests/schemastore.rs
+assertion_line: 73
 expression: out
 ---
 codecov/invalid/missing-default.json
@@ -291,6 +292,8 @@ web-types/invalid/pattern.web-types.json
     :6:22: error[schema] {"delegate":true,"or":[["(","#item",")"],[{"priority":"lowest","template":["on-"]},"#...","#item"]]} is not valid under any of the schemas listed in the 'oneOf' keyword (at $.contributions.html.attrib...
 web-types/invalid/pattern2.web-types.json
     :6:22: error[schema] {"bar":true} is not valid under any of the schemas listed in the 'oneOf' keyword (at $.contributions.html.attributes[0].pattern)
+webjob-publish-settings/invalid/scheduled-missing-fields.json
+    :1:1: error[schema] {"runMode":"Scheduled"} is not valid under any of the schemas listed in the 'oneOf' keyword (at $)
 zeropress-build-pages-config-1.0/invalid/html-file-outside-config-directory.json
     :5:15: error[schema] "public/footer.html" does not match "^\.zeropress/.+\.html$" (at $.custom_html.body_end.file)
 zeropress-build-pages-config-1.0/invalid/missing-version.json

@@ -19,8 +19,8 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "tests" / "schemastore"
 
 # Chosen for what they exercise: lookaround and back-references (the first five),
-# `patternProperties`, `propertyNames`, `if`, `not` and `oneOf`, draft 7 and 2020-12, and files
-# many projects keep. Every `$ref` in them points inside the file.
+# `patternProperties`, `propertyNames`, `if`, `not` and `oneOf`, keywords beside `$ref`, draft 7
+# and 2020-12, and files many projects keep. Every `$ref` in them points inside the file.
 SCHEMAS = [
     "expo-57.0.0",
     "zeropress-build-pages-config-1.0",
@@ -33,6 +33,7 @@ SCHEMAS = [
     "codecov",
     "jsontron-0.1",
     "evidence-bundle",
+    "webjob-publish-settings",
 ]
 
 

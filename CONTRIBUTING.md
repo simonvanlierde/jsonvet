@@ -57,9 +57,10 @@ and cargo deny.
   missing final newlines, CRs and trailing spaces stay. `.gitattributes` sets `-text` on it and
   the hooks skip it, so do not let an editor reformat those files.
 - **SchemaStore.** `tests/schemastore/` holds real schemas with the files SchemaStore's own tests
-  accept and reject, and `tests/schemastore.rs` checks that jsonvet accepts and rejects the
-  same ones. Refresh them with `uv run scripts/schemastore-fixtures.py <a SchemaStore clone>`,
-  which lists the schemas, and add jsonvet's own cases under a schema's `extra/`.
+  accept and reject, and `crates/jsonvet-cli/tests/schemastore.rs` checks that jsonvet accepts
+  and rejects the same ones. Refresh them with
+  `uv run scripts/schemastore-fixtures.py <a SchemaStore clone>`, which lists the schemas, and
+  add jsonvet's own cases under a schema's `extra/`.
 - **`\uXXXX` escapes.** Tests and snapshots contain them. Edit those files with a script, not an
   editor that unescapes them, and check the diff.
 - **File lists.** The hooks in `.pre-commit-hooks.yaml` and the Action's `scripts/action.sh`
