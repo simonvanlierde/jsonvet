@@ -1409,7 +1409,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         );
         assert_eq!(
             lines[101],
-            "l.jsonl:3:1: error[schema] ... and 1 more schema errors in this document"
+            "l.jsonl:3:1: error[schema] ... and more schema errors in this document"
         );
     }
 
@@ -1618,9 +1618,11 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         assert_eq!(code, 1);
         // At most 100 errors per document, then a count of the rest.
         assert_eq!(out.lines().count(), 101);
-        assert!(out.ends_with(
-            "r.json:1:1: error[schema] ... and 400 more schema errors in this document\n"
-        ));
+        assert!(
+            out.ends_with(
+                "r.json:1:1: error[schema] ... and more schema errors in this document\n"
+            )
+        );
         assert!(out.starts_with(
             "r.json:1:2: error[schema] this string could not be checked against the pattern \"^(a|a)*\\1b\": matching it takes more than 5000 backtracking steps (at $[0])\n"
         ), "{out}");
@@ -1735,14 +1737,14 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         assert_eq!(out.lines().count(), 101);
         assert!(
             out.ends_with(
-                "n.json:1:1: error[schema] ... and 51 more schema errors in this document\n"
+                "n.json:1:1: error[schema] ... and more schema errors in this document\n"
             ),
             "{out}"
         );
     }
 
     #[test]
-    fn past_100_errors_text_counts_the_rest_and_sarif_and_json_leave_the_count_out() {
+    fn past_100_errors_text_says_there_are_more_and_sarif_and_json_leave_that_out() {
         let numbers: Vec<String> = (0..101).map(|i| i.to_string()).collect();
         let dir = workdir(&[
             ("schema.json", r#"{"items": {"type": "string"}}"#),
@@ -1758,7 +1760,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         );
         assert_eq!(
             lines[100],
-            "n.json:1:1: error[schema] ... and 1 more schema errors in this document"
+            "n.json:1:1: error[schema] ... and more schema errors in this document"
         );
         let (code, out, _) = jsonvet_stderr(
             &dir,
@@ -1915,7 +1917,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
             );
             assert_eq!(
                 lines[100],
-                "many.json:1:1: error[schema] ... and 900 more schema errors in this document"
+                "many.json:1:1: error[schema] ... and more schema errors in this document"
             );
         }
     }
@@ -2189,9 +2191,231 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         );
         assert!(
             stdout.ends_with(
-                "many.json:1:1: error[schema] ... and 999900 more schema errors in this document\n"
+                "many.json:1:1: error[schema] ... and more schema errors in this document\n"
             ),
             "{stdout}"
+        );
+    }
+
+    /// `$defs` `l0` to `l{levels}`, each an `anyOf` of two `$ref`s to the next, ending in
+    /// `last`: jsonschema checks `last` 2^levels times for one value.
+    fn doubling(levels: usize, last: &str) -> String {
+        let defs: Vec<String> = (0..levels)
+            .map(|i| {
+                let next = format!("{{\"$ref\": \"#/$defs/l{}\"}}", i + 1);
+                format!("\"l{i}\": {{\"anyOf\": [{next}, {next}]}}")
+            })
+            .collect();
+        format!("{}, \"l{levels}\": {last}", defs.join(", "))
+    }
+
+    /// Run jsonvet under `ulimit -v` (in KB) on `file` with `--schema schema.json`.
+    #[cfg(target_os = "linux")]
+    fn capped(dir: &Path, kilobytes: usize, file: &str) -> (Option<i32>, String) {
+        let out = Command::new("sh")
+            .arg("-c")
+            .arg(format!(
+                "ulimit -v {kilobytes} && exec \"$0\" --schema schema.json {file}"
+            ))
+            .arg(env!("CARGO_BIN_EXE_jsonvet"))
+            .current_dir(dir)
+            .env_remove("GITHUB_ACTIONS")
+            .output()
+            .expect("run jsonvet");
+        (
+            out.status.code(),
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+        )
+    }
+
+    /// `ulimit -v` caps the address space on Linux only; macOS accepts it and ignores it.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn errors_that_hold_much_of_the_schema_are_dropped_as_they_come() {
+        // Each `anyOf` error holds every branch's errors, 16,384 here, and each `enum` error a
+        // copy of 20,000 numbers: 40 such errors took 760 MB, and 2,000 took 1.3 GB.
+        let enum_ = (1..=20_000).map(|n| n.to_string()).collect::<Vec<_>>();
+        let members: Vec<String> = (0..2_000).map(|i| format!("\"k{i}\": 0")).collect();
+        let cases = [
+            (
+                format!(
+                    "{{\"$defs\": {{{}}}, \"items\": {{\"$ref\": \"#/$defs/l0\"}}}}",
+                    doubling(14, "{\"type\": \"string\"}")
+                ),
+                format!("[{}]", vec!["0"; 40].join(",")),
+                40,
+            ),
+            (
+                format!(
+                    "{{\"additionalProperties\": {{\"enum\": [{}]}}}}",
+                    enum_.join(",")
+                ),
+                format!("{{{}}}", members.join(",")),
+                101,
+            ),
+        ];
+        for (schema, text, lines) in cases {
+            let dir = workdir(&[("schema.json", &schema), ("many.json", &text)]);
+            let (code, out) = capped(&dir, 300_000, "many.json");
+            assert_eq!(code, Some(1), "{out}");
+            assert_eq!(out.lines().count(), lines, "{out}");
+        }
+    }
+
+    #[test]
+    fn errors_past_the_first_100_are_not_looked_for() {
+        // jsonschema built every error of the 5,000 elements only to count them: 56.7 s with 14
+        // levels.
+        let schema = format!(
+            "{{\"$defs\": {{{}}}, \"items\": {{\"$ref\": \"#/$defs/l0\"}}}}",
+            doubling(10, "{\"type\": \"string\"}")
+        );
+        let text = format!("[{}]", vec!["0"; 5_000].join(","));
+        let dir = workdir(&[("schema.json", &schema), ("many.json", &text)]);
+        let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "schema.json", "many.json"]);
+        assert_eq!(code, 1);
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines.len(), 101);
+        assert_eq!(
+            lines[100],
+            "many.json:1:1: error[schema] ... and more schema errors in this document"
+        );
+    }
+
+    #[test]
+    fn every_key_and_string_too_costly_for_every_pattern_is_reported() {
+        let slow = format!("{}!", "a".repeat(30));
+        let schema = r#"{"patternProperties": {"^(a|a)*\\1b|!": true, "^(a|a)*\\1c|!": true}, "items": {"pattern": "^(a|a)*\\1b|!"}, "allOf": [{"pattern": "^(a|a)*\\1c|!"}]}"#;
+        let dir = workdir(&[
+            ("schema.json", schema),
+            ("k.json", &format!("{{\"{slow}\": 1, \"{slow}{slow}\": 2}}")),
+            ("s.json", &format!("\"{slow}\"")),
+        ]);
+        // Two patterns on two keys, then two on one string.
+        for (file, errors) in [("k.json", 4), ("s.json", 2)] {
+            let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "schema.json", file]);
+            assert_eq!(code, 1, "{file}");
+            assert_eq!(out.lines().count(), errors, "{file}: {out}");
+        }
+    }
+
+    #[test]
+    fn keys_too_costly_for_a_pattern_stop_at_the_error_cap() {
+        let slow = format!("{}!", "a".repeat(30));
+        let keys: Vec<String> = (0..150).map(|i| format!("\"{slow}{i}\": {i}")).collect();
+        let dir = workdir(&[
+            (
+                "schema.json",
+                r#"{"patternProperties": {"^(a|a)*\\1b|!": true}}"#,
+            ),
+            ("k.json", &format!("{{{}}}", keys.join(", "))),
+        ]);
+        let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "schema.json", "k.json"]);
+        assert_eq!(code, 1);
+        assert_eq!(out.lines().count(), 101, "{out}");
+        assert!(out.ends_with("... and more schema errors in this document\n"));
+    }
+
+    #[test]
+    fn an_id_that_is_not_a_uri_is_a_usage_error() {
+        let dir = workdir(&[
+            (
+                "schema.json",
+                r#"{"$defs": {"a": {"$id": "http://[", "type": "string"}}}"#,
+            ),
+            ("x.json", "{}"),
+        ]);
+        let (code, out, err) = jsonvet_stderr(&dir, &["--schema", "schema.json", "x.json"]);
+        assert_eq!((code, out.as_str()), (2, ""), "{err}");
+        // jsonschema refuses it while building its registry, before jsonvet walks the schema.
+        assert!(err.contains("Invalid URI reference 'http://['"), "{err}");
+    }
+
+    #[test]
+    fn nested_unevaluated_properties_are_a_usage_error() {
+        // Each level checks the one below it twice: 27 levels took 22.6 s on `{"c": 1}`.
+        let mut level = "{\"properties\": {\"a\": true}}".to_owned();
+        for _ in 0..22 {
+            level = format!(
+                "{{\"anyOf\": [{level}, {{\"properties\": {{\"b\": true}}}}], \"unevaluatedProperties\": false}}"
+            );
+        }
+        let schema = format!(
+            "{{\"$schema\": \"https://json-schema.org/draft/2020-12/schema\", \"allOf\": [{level}]}}"
+        );
+        let dir = workdir(&[("schema.json", &schema), ("c.json", "{\"c\": 1}")]);
+        let (code, out, err) = jsonvet_stderr(&dir, &["--schema", "schema.json", "c.json"]);
+        assert_eq!((code, out.as_str()), (2, ""));
+        assert!(
+            err.ends_with(
+                "this `unevaluatedProperties` takes the schema past 5000000 objects and arrays, \
+                 counting twice the schemas beside it that jsonschema checks again for it\n"
+            ),
+            "{err}"
+        );
+        // A `$ref` from `properties` is checked once, so a chain of them is fine.
+        let defs: Vec<String> = (0..40)
+            .map(|i| {
+                format!(
+                    "\"d{i}\": {{\"properties\": {{\"a\": {{\"$ref\": \"#/$defs/d{}\"}}}}, \"unevaluatedProperties\": false}}",
+                    i + 1
+                )
+            })
+            .collect();
+        let schema = format!(
+            "{{\"$defs\": {{{}, \"d40\": {{}}}}, \"$ref\": \"#/$defs/d0\"}}",
+            defs.join(", ")
+        );
+        let dir = workdir(&[("schema.json", &schema), ("c.json", "{\"c\": 1}")]);
+        let (code, _, err) = jsonvet_stderr(&dir, &["--schema", "schema.json", "c.json"]);
+        assert_eq!(code, 1, "{err}");
+    }
+
+    #[test]
+    fn a_ref_resolves_against_its_own_base_not_a_like_named_id_elsewhere() {
+        // `b/l{i}` doubles at each level; `a/l{i}`, with the same relative `$id`s, is small.
+        let (levels, decoys, chain) = (21, &mut Vec::new(), &mut Vec::new());
+        for i in 0..=levels {
+            decoys.push(format!(
+                "\"t{i}\": {{\"$id\": \"l{i}\", \"type\": \"string\"}}"
+            ));
+            chain.push(if i == levels {
+                format!("\"c{i}\": {{\"$id\": \"l{i}\", \"type\": \"string\"}}")
+            } else {
+                let next = format!("{{\"$ref\": \"l{}\"}}", i + 1);
+                format!("\"c{i}\": {{\"$id\": \"l{i}\", \"anyOf\": [{next}, {next}]}}")
+            });
+        }
+        let schema = format!(
+            "{{\"$id\": \"https://x.example/root\", \"$defs\": {{\n\
+             \"A\": {{\"$id\": \"https://x.example/a/\", \"$defs\": {{{}}}}},\n\
+             \"B\": {{\"$id\": \"https://x.example/b/\", \"$defs\": {{{}}}}}}},\n\
+             \"items\": {{\"$ref\": \"https://x.example/b/l0\"}}}}",
+            decoys.join(", "),
+            chain.join(", ")
+        );
+        let dir = workdir(&[
+            ("schema.json", &schema),
+            ("one.json", "[0]"),
+            (
+                "unresolved.json",
+                "{\n  \"$defs\": {\"a\": {\"$ref\": \"#/$defs/none\"}}\n}",
+            ),
+        ]);
+        let (code, out, err) = jsonvet_stderr(&dir, &["--schema", "schema.json", "one.json"]);
+        assert_eq!((code, out.as_str()), (2, ""));
+        assert!(
+            err.starts_with("jsonvet: the schema schema.json:3:"),
+            "{err}"
+        );
+        assert!(err.contains("takes the schema past 5000000"), "{err}");
+        // A `$ref` that points at nothing is an error at that `$ref`, even where nothing uses it.
+        let (code, out, err) = jsonvet_stderr(&dir, &["--schema", "unresolved.json", "one.json"]);
+        assert_eq!((code, out.as_str()), (2, ""));
+        assert_eq!(
+            err,
+            "jsonvet: the schema unresolved.json:2:19: this `$ref` cannot be resolved: Pointer \
+             '/$defs/none' does not exist\n"
         );
     }
 }
@@ -2368,5 +2592,266 @@ mod directories {
             jsonvet(&dir, &["empty", "gone"]),
             (1, "gone: error: no such file\n".to_owned())
         );
+    }
+}
+
+/// Config, schema and ignore files: what is read, how far up, and what an error shows.
+mod file_reads {
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+
+    use super::workdir;
+
+    /// Run jsonvet in `dir` with `XDG_CONFIG_HOME` and `APPDATA` set to `user`, and kill it
+    /// after 10 seconds; return its exit code, stdout and stderr.
+    fn run(dir: &Path, user: &Path, args: &[&str]) -> (i32, String, String) {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
+            .args(args)
+            .current_dir(dir)
+            .env_remove("GITHUB_ACTIONS")
+            .env("XDG_CONFIG_HOME", user)
+            .env("APPDATA", user)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("run jsonvet");
+        let start = Instant::now();
+        while child.try_wait().expect("wait").is_none() {
+            if start.elapsed() > Duration::from_secs(10) {
+                let _ = child.kill();
+                panic!("jsonvet {args:?} still running after 10 seconds");
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let out = child.wait_with_output().expect("output");
+        (
+            out.status.code().expect("an exit code"),
+            String::from_utf8(out.stdout).expect("UTF-8 output"),
+            String::from_utf8(out.stderr).expect("UTF-8 errors"),
+        )
+    }
+
+    /// A folder for one test outside any repository, as a CI job without `.git` has.
+    fn bare(name: &str, files: &[(&str, &str)]) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("jsonvet-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        for (file, text) in files {
+            let path = dir.join(file);
+            fs::create_dir_all(path.parent().expect("a parent")).expect("create dirs");
+            fs::write(path, text).expect("write file");
+        }
+        assert!(
+            !dir.ancestors().any(|d| d.join(".git").exists()),
+            "{} is in a repository",
+            dir.display()
+        );
+        dir
+    }
+
+    #[cfg(unix)]
+    fn fifo(path: &Path) {
+        let made = Command::new("mkfifo")
+            .arg(path)
+            .status()
+            .expect("run mkfifo");
+        assert!(made.success());
+    }
+
+    const DUP: &str = "{\"a\": 1, \"a\": 2}";
+    const DUP_ERROR: &str = "x.json:1:10: error[duplicate-key] duplicate key $.a (first at 1:2)\n";
+
+    #[cfg(unix)]
+    #[test]
+    fn config_schema_and_ignore_files_that_are_not_regular_files_are_not_read() {
+        let dir = workdir(&[("a/x.json", DUP), ("b/x.json", DUP), ("c/x.json", DUP)]);
+        let user = dir.join("no-user");
+        // A FIFO stands for any file that is not a regular file: it hangs a read, as
+        // `/dev/zero` fills memory.
+        fifo(&dir.join("a/pyproject.toml"));
+        // Skipped as a missing file is, so the search goes on up.
+        assert_eq!(
+            run(&dir.join("a"), &user, &["x.json"]),
+            (1, DUP_ERROR.to_owned(), String::new())
+        );
+        fifo(&dir.join("schema.json"));
+        let (code, _, err) = run(&dir, &user, &["--schema", "schema.json", "a/x.json"]);
+        assert_eq!(
+            (code, err.as_str()),
+            (
+                2,
+                "jsonvet: cannot read the schema schema.json: not a regular file\n"
+            )
+        );
+        fifo(&dir.join("b/.gitignore"));
+        let (code, _, err) = run(&dir, &user, &["."]);
+        assert_eq!(
+            (code, err.as_str()),
+            (
+                2,
+                "jsonvet: cannot walk: ./b/.gitignore: not a regular file\n"
+            )
+        );
+        // The walk's own folder and those above it are read before any filter runs.
+        let (code, _, err) = run(&dir, &user, &["b"]);
+        assert_eq!(code, 2);
+        assert_eq!(
+            err,
+            "jsonvet: cannot walk: b/.gitignore: not a regular file\n"
+        );
+        fifo(&dir.join("c/.ignore"));
+        let (code, _, err) = run(&dir.join("c"), &user, &["."]);
+        assert_eq!(code, 2);
+        assert_eq!(err, "jsonvet: cannot walk: ./.ignore: not a regular file\n");
+        // A pyproject.toml that is not UTF-8 has no jsonvet table, so it is skipped too.
+        fs::write(dir.join("a/pyproject.toml.tmp"), b"\xff[tool.jsonvet]\n").expect("write");
+        fs::remove_file(dir.join("a/pyproject.toml")).expect("remove the FIFO");
+        fs::rename(
+            dir.join("a/pyproject.toml.tmp"),
+            dir.join("a/pyproject.toml"),
+        )
+        .expect("move");
+        assert_eq!(run(&dir.join("a"), &user, &["x.json"]).0, 1);
+        // One byte past 16 MB is too large; the unit tests in lib.rs check exactly 16 MB, which
+        // a debug build takes seconds to parse. Sparse files, so the test writes nothing.
+        let big = dir.join("big");
+        fs::create_dir_all(&big).expect("create dir");
+        let sized = |name: &str, len: u64| {
+            fs::File::create(big.join(name))
+                .and_then(|file| file.set_len(len))
+                .expect("a large file");
+        };
+        fs::write(big.join("x.json"), "{}").expect("write");
+        sized(".gitignore", (16 << 20) + 1);
+        let (code, _, err) = run(&big, &user, &["."]);
+        assert_eq!(
+            (code, err.as_str()),
+            (2, "jsonvet: cannot walk: ./.gitignore: larger than 16 MB\n")
+        );
+        sized("pyproject.toml", (16 << 20) + 1);
+        let (code, _, err) = run(&big, &user, &["x.json"]);
+        assert_eq!(code, 2);
+        assert!(
+            err.ends_with("pyproject.toml: larger than 16 MB\n"),
+            "{err}"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_error_in_a_symlinked_config_file_shows_no_value_from_it() {
+        let dir = workdir(&[
+            ("secret.toml", "[rules]\nsyntax = \"ghp_SECRETTOKEN123\"\n"),
+            ("r/x.json", "{}"),
+        ]);
+        let user = dir.join("no-user");
+        std::os::unix::fs::symlink("../secret.toml", dir.join("r/jsonvet.toml")).expect("link");
+        let (code, _, err) = run(&dir.join("r"), &user, &["x.json"]);
+        assert_eq!(code, 2);
+        assert!(
+            err.ends_with(
+                "/r/jsonvet.toml:2:10: invalid setting, not shown because the file is a symlink\n"
+            ),
+            "{err}"
+        );
+        // The same file, not linked, says what is wrong.
+        let (_, _, err) = run(&dir, &user, &["--config", "secret.toml", "r/x.json"]);
+        assert!(err.contains("ghp_SECRETTOKEN123"), "{err}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn without_git_the_search_stops_at_the_working_directory() {
+        let off = "[rules]\nduplicate-key = \"off\"\n";
+        let dir = bare(
+            "no-git",
+            &[
+                ("jsonvet.toml", off),
+                ("job/x.json", DUP),
+                ("job/sub/x.json", DUP),
+                ("other/x.json", DUP),
+                ("other/sub/x.json", DUP),
+                ("own/jsonvet.toml", off),
+                ("own/x.json", DUP),
+            ],
+        );
+        let user = dir.join("no-user");
+        // A config file above the working directory never applies.
+        assert_eq!(run(&dir.join("job"), &user, &["x.json"]).0, 1);
+        assert_eq!(run(&dir.join("job"), &user, &["sub/x.json"]).0, 1);
+        // One in the working directory still does.
+        assert_eq!(run(&dir, &user, &["job/sub/x.json"]).0, 0);
+        // A file outside the working directory takes only its own folder's.
+        let job = dir.join("job");
+        assert_eq!(run(&job, &user, &["../other/x.json"]).0, 1);
+        assert_eq!(run(&job, &user, &["../other/sub/x.json"]).0, 1);
+        assert_eq!(run(&job, &user, &["../own/x.json"]).0, 0);
+        // With a `.git` above it, it climbs to that folder as before.
+        fs::create_dir_all(dir.join("other/.git")).expect("mark a repository");
+        fs::write(dir.join("other/jsonvet.toml"), off).expect("write");
+        assert_eq!(run(&job, &user, &["../other/sub/x.json"]).0, 0);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_user_config_applies_only_without_a_project_config() {
+        let dir = workdir(&[
+            (
+                "user/jsonvet/jsonvet.toml",
+                "[rules]\nduplicate-key = \"warning\"\n\n[[dialects]]\nfiles = \"data/*.txt\"\ndialect = \"jsonl\"\n",
+            ),
+            ("p/x.json", DUP),
+            ("p/data/x.txt", "{}\n{}\n"),
+            ("q/jsonvet.toml", ""),
+            ("q/x.json", DUP),
+        ]);
+        let user = dir.join("user");
+        let warning = "x.json:1:10: warning[duplicate-key] duplicate key $.a (first at 1:2)\n";
+        let p = dir.join("p");
+        assert_eq!(
+            run(&p, &user, &["x.json"]),
+            (0, warning.to_owned(), String::new())
+        );
+        // Its globs are relative to the working directory.
+        assert_eq!(run(&p, &user, &["data/x.txt"]).0, 0);
+        assert_eq!(run(&p.join("data"), &user, &["x.txt"]).0, 1);
+        // A project config file replaces it, and the options skip it.
+        let q = dir.join("q");
+        assert_eq!(run(&q, &user, &["x.json"]).0, 1);
+        assert_eq!(run(&p, &user, &["--no-config", "x.json"]).0, 1);
+        assert_eq!(
+            run(&p, &user, &["--config", "../q/jsonvet.toml", "x.json"]).0,
+            1
+        );
+        // A relative XDG_CONFIG_HOME is ignored, as the XDG spec says.
+        #[cfg(not(windows))]
+        assert_eq!(run(&dir, Path::new("user"), &["p/x.json"]).0, 1);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_user_configs_exclude_is_relative_to_the_working_directory() {
+        let dir = workdir(&[
+            ("user/jsonvet/jsonvet.toml", "exclude = [\"skip\"]\n"),
+            ("p/x.json", DUP),
+            ("p/skip/x.json", DUP),
+            ("p/sub/x.json", DUP),
+        ]);
+        let user = dir.join("user");
+        let (code, out, _) = run(&dir.join("p"), &user, &["."]);
+        assert_eq!(code, 1);
+        let walked: Vec<&str> = out
+            .lines()
+            .map(|l| l.split(':').next().unwrap_or(l))
+            .collect();
+        let sep = std::path::MAIN_SEPARATOR;
+        assert_eq!(
+            walked,
+            [format!(".{sep}sub{sep}x.json"), format!(".{sep}x.json")],
+            "{out}"
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
 }

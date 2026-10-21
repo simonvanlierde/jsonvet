@@ -270,12 +270,33 @@ fn expand(
             continue;
         }
         let start = files.len();
+        // The walk reads the ignore files of the folder, and of every folder above it when it
+        // can find them, before the filter sees anything.
+        let above = std::fs::canonicalize(&arg).ok();
+        if let Some(problem) = std::iter::once(Path::new(&arg))
+            .chain(above.iter().flat_map(|dir| dir.ancestors()))
+            .find_map(unsafe_ignore_file)
+        {
+            return Err(problem);
+        }
+        let skipped = Arc::new(Mutex::new(None));
+        let skip = Arc::clone(&skipped);
         // The filter must own what it reads.
         let resolver = Arc::clone(resolver);
         // A config file that cannot be read excludes nothing here: the run reports it when it
         // looks up the settings of the files under it.
         let walk = ignore::WalkBuilder::new(&arg)
             .filter_entry(move |entry| {
+                // The walk reads a folder's ignore files once the filter lets the folder in.
+                if entry.file_type().is_some_and(|t| t.is_dir())
+                    && let Some(problem) = unsafe_ignore_file(entry.path())
+                {
+                    // A poisoned lock still holds the message.
+                    skip.lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .get_or_insert(problem);
+                    return false;
+                }
                 let settings = lock(&resolver).for_file(entry.path());
                 !settings.is_ok_and(|settings| settings.excluded(entry.path()))
             })
@@ -287,6 +308,13 @@ fn expand(
             {
                 files.push(entry.into_path().into_os_string());
             }
+        }
+        if let Some(problem) = skipped
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+        {
+            return Err(problem);
         }
         files[start..].sort_unstable();
     }
@@ -501,6 +529,53 @@ fn decode(bytes: Vec<u8>) -> Result<String, String> {
         .map_err(|e| format!("not valid UTF-8 (byte {})", e.utf8_error().valid_up_to()))
 }
 
+/// The most a config file or an ignore file may hold: real ones take a few kilobytes.
+pub(crate) const MAX_CONFIG_BYTES: u64 = 16 << 20;
+
+/// The most a `--schema` file may hold: 40 times the largest schema on schemastore.org
+/// (1.6 MB), and room for the 5,000,000 objects and arrays a schema may hold at 2 to 3 bytes each.
+pub(crate) const MAX_SCHEMA_BYTES: u64 = 64 << 20;
+
+/// The text of a config or schema file of at most `max` bytes. As in [`read`], only a regular
+/// file, or a symlink to one, is opened, so a FIFO cannot hang the run and `/dev/zero` cannot
+/// fill memory.
+pub(crate) fn read_small(path: &Path, max: u64) -> io::Result<String> {
+    if !std::fs::metadata(path)?.is_file() {
+        return Err(io::Error::other("not a regular file"));
+    }
+    let mut text = String::new();
+    // The cap holds even for a file that grows after the check.
+    std::fs::File::open(path)?
+        .take(max + 1)
+        .read_to_string(&mut text)?;
+    if text.len() as u64 > max {
+        return Err(io::Error::other(format!("larger than {} MB", max >> 20)));
+    }
+    Ok(text)
+}
+
+/// Why a folder walk must not read the `.gitignore` or `.ignore` in `dir`, if it must not. The
+/// `ignore` crate reads them to the end with no check of what they are, so a link to
+/// `/dev/zero` takes memory until the run is killed and a FIFO hangs it. A file that cannot be
+/// looked at is no problem: the crate skips it too.
+fn unsafe_ignore_file(dir: &Path) -> Option<String> {
+    [".gitignore", ".ignore"].into_iter().find_map(|name| {
+        let path = dir.join(name);
+        let meta = std::fs::metadata(&path).ok()?;
+        let problem = if !meta.is_file() {
+            "not a regular file".to_owned()
+        } else if meta.len() > MAX_CONFIG_BYTES {
+            format!("larger than {} MB", MAX_CONFIG_BYTES >> 20)
+        } else {
+            return None;
+        };
+        Some(output::printable(&format!(
+            "cannot walk: {}: {problem}",
+            path.display()
+        )))
+    })
+}
+
 fn print(mut out: impl Write, text: &str) -> Result<u8, String> {
     match writeln!(out, "{text}").and_then(|()| out.flush()) {
         Err(e) if e.kind() != io::ErrorKind::BrokenPipe => Err(format!("cannot write output: {e}")),
@@ -516,9 +591,30 @@ mod tests {
     use jsonvet::Dialect;
 
     use super::{
-        CHUNK_BYTES, SCHEMA_BYTES, SPLIT_BYTES, Schema, Settings, check, chunk_len, parallel,
-        schema_share, split,
+        CHUNK_BYTES, MAX_CONFIG_BYTES, SCHEMA_BYTES, SPLIT_BYTES, Schema, Settings, check,
+        chunk_len, parallel, read_small, schema_share, split, unsafe_ignore_file,
     };
+
+    #[test]
+    fn small_files_are_read_up_to_their_limit_and_no_further() {
+        let dir = std::env::temp_dir().join(format!("jsonvet-small-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a temporary directory");
+        let path = dir.join("f");
+        std::fs::write(&path, "0123456789").expect("written");
+        assert_eq!(read_small(&path, 10).expect("ten bytes"), "0123456789");
+        assert!(read_small(&path, 9).is_err());
+        // An ignore file is judged by its size alone; sparse files, so nothing is written.
+        let sized = |len: u64| {
+            std::fs::File::create(dir.join(".gitignore"))
+                .and_then(|file| file.set_len(len))
+                .expect("a large file");
+        };
+        sized(MAX_CONFIG_BYTES);
+        assert_eq!(unsafe_ignore_file(&dir), None);
+        sized(MAX_CONFIG_BYTES + 1);
+        assert!(unsafe_ignore_file(&dir).is_some_and(|e| e.ends_with("larger than 16 MB")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn only_json_lines_of_the_split_size_is_split_one_part_per_thread() {

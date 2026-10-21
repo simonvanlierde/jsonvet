@@ -196,6 +196,11 @@ pub(crate) struct Resolver {
     found: HashMap<PathBuf, Arc<Settings>>,
     /// The working directory, asked for once rather than for each file. Empty unless searching.
     cwd: PathBuf,
+    /// The nearest folder at or above the working directory with a `.git` entry, if any.
+    repo: Option<PathBuf>,
+    /// The settings of the user's own config file, read the first time a search finds no
+    /// project config file: `None` until then.
+    user: Option<Arc<Settings>>,
     /// The folder of the last file looked up, as given, and its settings. Files come a folder at
     /// a time, so this skips most lookups, which took 0.5 µs a file.
     last: Option<(PathBuf, Arc<Settings>)>,
@@ -216,11 +221,17 @@ impl Resolver {
                 PathBuf::new(),
             ),
         };
+        let repo = cwd
+            .ancestors()
+            .find(|dir| dir.join(".git").exists())
+            .map(Path::to_owned);
         Ok(Resolver {
             cli: Arc::new(cli),
             fixed,
             found: HashMap::new(),
             cwd,
+            repo,
+            user: None,
             last: None,
         })
     }
@@ -228,7 +239,10 @@ impl Resolver {
     /// The settings for the file at `path`, which need not exist: those of the first
     /// `jsonvet.toml`, or `pyproject.toml` with a `[tool.jsonvet]` table, in its folder or a
     /// folder above. The search stops at the first folder with a `.git` entry, so a file above
-    /// the repository is never used. `-`, standard input, is searched from the working directory.
+    /// the repository is never used. With no `.git` above the file, it stops at the working
+    /// directory, or for a file outside it, at the file's own folder: a file planted above the
+    /// job's folder on a shared machine never applies. With no project config file, the user's
+    /// own applies, if any. `-`, standard input, is searched from the working directory.
     pub(crate) fn for_file(&mut self, path: &Path) -> Result<Arc<Settings>, String> {
         if let Some(fixed) = &self.fixed {
             return Ok(Arc::clone(fixed));
@@ -247,6 +261,20 @@ impl Resolver {
     fn search(&mut self, path: &Path) -> Result<Arc<Settings>, String> {
         let path = lexical(&self.cwd.join(path));
         let start = path.parent().unwrap_or(&path);
+        // Where the search stops if it meets no `.git` first.
+        let last = if self
+            .repo
+            .as_ref()
+            .is_some_and(|repo| start.starts_with(repo))
+        {
+            None
+        } else if start.starts_with(&self.cwd) {
+            Some(self.cwd.as_path())
+        } else if start.ancestors().any(|dir| dir.join(".git").exists()) {
+            None
+        } else {
+            Some(start)
+        };
         let mut searched = Vec::new();
         let mut settings = None;
         for dir in start.ancestors() {
@@ -260,16 +288,63 @@ impl Resolver {
                 settings = Some(Arc::new(own));
                 break;
             }
-            if dir.join(".git").exists() {
+            if Some(dir) == last || dir.join(".git").exists() {
                 break;
             }
         }
-        let settings = settings.unwrap_or_else(|| Arc::clone(&self.cli));
+        let settings = match settings {
+            Some(settings) => settings,
+            None => self.user()?,
+        };
         for dir in searched {
             self.found.insert(dir.to_owned(), Arc::clone(&settings));
         }
         Ok(settings)
     }
+
+    /// The settings of the user's own `jsonvet.toml`, as ruff has, with the command line's on
+    /// top; the command line's alone without one.
+    fn user(&mut self) -> Result<Arc<Settings>, String> {
+        if let Some(user) = &self.user {
+            return Ok(Arc::clone(user));
+        }
+        let user = match user_config() {
+            Some(path) => {
+                let mut own = load(&path)?;
+                // Its globs are relative to the working directory, as in ruff: it sits in no
+                // project.
+                let cwd = self.cwd.to_string_lossy().into_owned();
+                for pattern in &mut own.dialects {
+                    pattern.base = Some(cwd.clone());
+                }
+                for (_, base) in &mut own.exclude {
+                    base.clone_from(&cwd);
+                }
+                Arc::new(own.overridden_by(Settings::clone(&self.cli)))
+            }
+            None => Arc::clone(&self.cli),
+        };
+        self.user = Some(Arc::clone(&user));
+        Ok(user)
+    }
+}
+
+/// The user's own config file, if there is one: `jsonvet/jsonvet.toml` in `%APPDATA%` on
+/// Windows, and elsewhere in `$XDG_CONFIG_HOME` or `~/.config`, as ruff looks for its own on
+/// Linux and macOS. A relative `XDG_CONFIG_HOME` is ignored, as the XDG spec says.
+fn user_config() -> Option<PathBuf> {
+    let absolute = |name| {
+        std::env::var_os(name)
+            .map(PathBuf::from)
+            .filter(|dir| dir.is_absolute())
+    };
+    let dir = if cfg!(windows) {
+        absolute("APPDATA")
+    } else {
+        absolute("XDG_CONFIG_HOME").or_else(|| absolute("HOME").map(|home| home.join(".config")))
+    };
+    let path = dir?.join("jsonvet").join("jsonvet.toml");
+    path.is_file().then_some(path)
 }
 
 /// The absolute `path` with `..` folded away by name, as the globs fold it, so the search climbs
@@ -295,9 +370,13 @@ fn config_in(dir: &Path) -> Option<PathBuf> {
         return Some(own);
     }
     let pyproject = dir.join("pyproject.toml");
-    fs::read_to_string(&pyproject)
-        .is_ok_and(|text| has_jsonvet_table(&text))
-        .then_some(pyproject)
+    // One that is not a regular file is skipped, as a `jsonvet.toml` is; one that is too large
+    // is left for `load` to report.
+    match crate::read_small(&pyproject, crate::MAX_CONFIG_BYTES) {
+        Ok(text) => has_jsonvet_table(&text).then_some(pyproject),
+        Err(e) if e.kind() == std::io::ErrorKind::Other => pyproject.is_file().then_some(pyproject),
+        Err(_) => None,
+    }
 }
 
 /// Whether a `pyproject.toml` has a `[tool.jsonvet]` table, valid or not: `load` then reports
@@ -320,18 +399,21 @@ fn has_jsonvet_table(text: &str) -> bool {
 pub(crate) fn load(path: &Path) -> Result<Settings, String> {
     // A key or value from the file shows escaped, so it cannot start a line of its own on stderr.
     let in_file = |e: &dyn std::fmt::Display| printable(&format!("{}: {e}", path.display()));
-    let text = fs::read_to_string(path).map_err(|e| in_file(&e))?;
+    let text = crate::read_small(path, crate::MAX_CONFIG_BYTES).map_err(|e| in_file(&e))?;
+    // A symlink can lead to any file on the machine, such as a secret that a pull request links
+    // to, so an error in one names the place only, never a key or value from it.
+    let linked = fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink());
+    let hidden = "invalid setting, not shown because the file is a symlink";
     // The same, with the line and column of the byte offset `at` after the name.
     let at = |at: usize, e: &dyn std::fmt::Display| {
         let before = &text[..at];
         let line = before.matches('\n').count() + 1;
         let column = before.rsplit('\n').next().map_or(0, |l| l.chars().count()) + 1;
+        let e: &dyn std::fmt::Display = if linked { &hidden } else { e };
         printable(&format!("{}:{line}:{column}: {e}", path.display()))
     };
-    let table = DeTable::parse(&text).map_err(|e| match e.span() {
-        Some(span) => at(span.start, &e.message()),
-        None => in_file(&e.message()),
-    })?;
+    let table = DeTable::parse(&text)
+        .map_err(|e| at(e.span().map_or(0, |span| span.start), &e.message()))?;
     let table = table.get_ref();
     let file = if path.file_name().is_some_and(|n| n == "pyproject.toml") {
         match table

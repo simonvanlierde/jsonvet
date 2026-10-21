@@ -29,9 +29,12 @@ exclude_re = [
   "path.rs:\\d+:16: replace > with >= in bounded",
   "glob.rs:\\d+:28: replace \\+ with \\* in wildcard",
   # Speed only: a number with a `.` or exponent fails the integer parse anyway.
-  "schema.rs:.* replace match guard integer with true in number",
-  # Speed only: a valid document has no errors to collect either way.
-  "schema.rs:.* replace match guard self.validator.is_valid\\(value\\) with false in Schema::errors",
+  "schema/fold.rs:.* replace match guard integer with true in number",
+  # Speed only: a valid document has no errors to collect either way, and once there are more
+  # than 100, adding one stops at once.
+  "schema/mod.rs:.* replace \\|\\| with && in Schema::collect",
+  # An array of schemas under `items` makes the part checked on each element fail to build.
+  "schema/mod.rs:.* replace match guard items.is_object\\(\\) \\|\\| items.is_boolean\\(\\) with true in split",
   # Speed only: one part is the whole text either way, and the parts path gives the same report.
   "jsonvet-cli/src/lib.rs:.* replace > with >= in split",
   "jsonvet-cli/src/lib.rs:.* replace > with < in check",
@@ -55,5 +58,5 @@ exclude_re = [
   "lib.rs:.* replace / with (%|\\*) in run_with",
   # Any other false schema is reported at its own value, which the comparison after the guard
   # turns away.
-  "schema.rs:.* replace match guard error .* with true in unexpected",
+  "schema/mod.rs:.* replace match guard error .* with true in unexpected",
 ]

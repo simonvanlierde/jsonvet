@@ -22,3 +22,5 @@ a link or a renamed test is fine.
 | [0006](0006-offline-json-schema-in-every-build.md) | `--schema` on the jsonschema crate, offline, in every build | 2026-10-18 |
 | [0007](0007-hand-written-output-with-one-escaping-rule.md) | SARIF written by hand, with one escaping rule for every output | 2026-10-14 |
 | [0008](0008-binary-wheels-behind-a-placeholder.md) | A Rust binary in PyPI wheels, installed through a `setup.py` placeholder | 2026-10-13 |
+| [0009](0009-where-the-config-search-stops.md) | Where the config search stops, and what a bad config may show | 2026-10-20 |
+| [0010](0010-schema-limits-are-deterministic-caps.md) | `--schema` limits are deterministic caps, not a timeout | 2026-10-20 |

@@ -148,8 +148,8 @@ U+2028 to U+202E, U+2060 to U+2064, U+2066 to U+2069, U+FEFF, U+E0000 to U+E007F
 `\u202e`, past U+FFFF as a UTF-16 pair such as `\udb40\udc01`. SARIF and JSON strings escape the
 same characters the same way. A name that starts with `::`, after any white space, prints as `./::…`,
 and a `[` straight after `##` prints as `\u005b`. So no line looks like a GitHub workflow
-command, old (`##[command]`) or new (`::command`). An annotation's `file=` value holds the real
-name, percent-encoded as GitHub requires.
+command, old (`##[command]`) or new (`::command`). An annotation's `file=` value holds the name
+as the text line prints it, with those escapes, then percent-encoded as GitHub requires.
 
 ### `--schema`
 
@@ -186,22 +186,45 @@ The limits are listed in the [reference](usage.md#json-schema-limits). Why each 
   but `items` checks a top-level array's elements, and every `$ref` points into `$defs` or
   `definitions`, jsonvet checks the schema without `items` on the whole array, then `items` on
   one element at a time: 0.37 GB both ways, with the same output. jsonschema runs `contains`
-  after `items` and every other keyword before it, so the errors keep that order. Any other
-  schema is checked in one pass. Files are read a chunk at a time, until they hold 64 MB. With
+  after `items` and every other keyword before it, so the errors keep that order. A top-level
+  object whose members only `properties`, `patternProperties` and `additionalProperties` check
+  is split the same way, each member checked as an object of its own. Its errors past the first
+  100 differ: jsonschema in one pass gives them keyword by keyword, the split member by member.
+  Any other schema is checked in one pass. Files are read a chunk at a time, until they hold 64 MB. With
   `--schema` each byte counts 20 times, and the chunk is cut from the files' sizes before any
   is read, so a file of 3.2 MB or more is checked on its own. Counted only after reading, every
   core took a file at once: twelve 10 MB files took 3.4 GB instead of 0.30 GB, though in half
   the time (1.3 s against 2.6 s). Without `--schema` the text is counted as it is read, since
   sizing 10,000 files first cost 7 ms.
+- **Errors.** A jsonschema error holds more than its message. An `anyOf` error holds every
+  branch's errors, and an `enum` error a copy of its values, so 40 errors from a 1 KB schema took
+  3.2 GB when jsonvet kept them until it placed them. jsonvet keeps each error's message and path
+  as it comes and drops the rest. Past the 100th it stops asking: counting the other 4,900 errors
+  of a 5,000-element array took 57 s, so the last line says there are more but not how many.
+  What one jsonschema call collects is still all in memory at once. That is one element or
+  member for a split schema, and the whole document otherwise, so an `anyOf` around
+  `additionalProperties`, or an `enum` under a member's `additionalProperties`, can still take
+  gigabytes on a document of many failing values.
 - **Schema depth and `$ref` chains.** Without the check, 1,000 `allOf` and `$ref` hops overflow the
   64 MB stack at once against a 512-level array. A `$ref` back to a schema on the way to it is
-  recursion and adds nothing. The error lands at the `$ref` that crosses the line. A `$ref`
-  jsonvet can follow inside the file is a JSON Pointer, an anchor, or a URI naming an `$id` there.
+  recursion and adds nothing. The error lands at the `$ref` that crosses the line. jsonvet
+  resolves each `$ref` with the `referencing` crate jsonschema itself uses, against the base the
+  `$id`s above it set, so the two follow the same schemas. Matched by text alone, two resources
+  with the same relative `$id` let a small one be measured while jsonschema checked the other,
+  which doubled at each level, and looking each `$ref` up among 20,000 `$id`s took 24 s. A
+  `$ref` that resolves to nothing is an error at that `$ref`, as the count cannot follow it.
 - **Schema size.** jsonschema may check every schema a value reaches, so a schema where each level
   `$ref`s the next twice doubles the work per level, well under the depth cap: 24 levels took
   12.9 s and 11.4 GB for one `{}`. jsonvet counts the objects and arrays with each `$ref` replaced
   by what it points at, and stops at 5,000,000. That lets 18 such levels through (about 3.9
-  million, 1 s and 340 MB) and SchemaStore's 1.6 MB `azure-pipelines.json` (about 2.56 million).
+  million, 1 s and 340 MB per failing value) and SchemaStore's 1.6 MB `azure-pipelines.json`
+  (about 3.2 million). The values in each `enum` and `const` count too: an `enum` error copies
+  them all. `unevaluatedProperties` and `unevaluatedItems` make jsonschema check the schemas
+  beside them that apply to the same value a second time, to find what they evaluated, so
+  those count twice there. Nested in each other's `anyOf`, each level doubled the time: 27
+  levels took 22 s on `{"c": 1}`. The cap now stops 20 such levels, which took 0.16 s. A
+  `$ref` from `properties` is not checked again, so OpenAPI 3.1's schema, with
+  `unevaluatedProperties` on most objects, comes to about 1.25 million.
   A schema measured while a `$ref` back up to a schema above it was skipped is measured again
   wherever it is reached, as it can be deeper there.
 - **Regex backtracking.** Schema regexes with back-references or lookaround run on fancy-regex,
@@ -221,8 +244,19 @@ jsonvet reads `jsonvet.toml`, or a `[tool.jsonvet]` table in `pyproject.toml`. F
 looks in the file's folder and its parents, and the nearest file replaces any above it, as in
 ruff, so a package in a monorepo keeps its own settings. Each folder is looked up once a run. The
 search stops at the first directory that has a `.git` entry, so it never uses a stray file above
-the repository. A pattern given with `--dialect` or `--strict`
+the repository. Without a `.git`, as after actions/checkout falls back to a tarball, it stops at
+the working directory, or for a file outside it at the file's own folder: on a shared runner,
+anyone can write a `jsonvet.toml` above the job's folder. Only when the search finds nothing does
+the user's own `jsonvet.toml` apply, as ruff's does. It sits in no project, so its globs are
+relative to the working directory, also as in ruff. A pattern given with `--dialect` or `--strict`
 matches the path as typed, as in 1.4. The [reference](usage.md#globs) has the glob rules.
+
+Config, schema and ignore files are read only when they are regular files (or symlinks to one) of
+a bounded size, as checked files are: a committed link to `/dev/zero` would fill memory and a FIFO
+would hang the run. A config file may still be a symlink. It can lead anywhere on the machine, so
+an error in one names the line and column only, never a key or value that could be a secret.
+The `ignore` crate reads `.gitignore` and `.ignore` to the end without such a check, so the walk
+looks at those two in each folder before it enters it and stops with an error at a bad one.
 
 ## Architecture
 

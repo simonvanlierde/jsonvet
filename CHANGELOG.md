@@ -10,6 +10,13 @@ version for a new option or output, the patch version for a fix.
 
 ### Added
 
+- A user config file, as ruff has: `jsonvet/jsonvet.toml` in `$XDG_CONFIG_HOME` (or `~/.config`)
+  on Linux and macOS, or in `%APPDATA%` on Windows. It applies only when no project config file is
+  found, and its globs are relative to the working directory. `--config` and `--no-config` skip it.
+- The Action checks the wheel's build provenance attestation with `gh attestation verify` before
+  installing it, for jsonvet 3.1.0 and later, and stops if the check fails. On a runner without
+  `gh` it installs unchecked, with a notice. A new `verify` input turns the check off, as GitHub
+  Enterprise Server needs.
 - A folder as an argument checks the files under it with an extension or name jsonvet knows,
   in sorted order. The walk skips hidden files and what `.gitignore` and `.ignore` name, as
   ripgrep does. Files named on the command line are checked as before. Before, a folder was
@@ -61,6 +68,9 @@ version for a new option or output, the patch version for a fix.
 
 ### Changed
 
+- Without a `.git` anywhere above a file, as after actions/checkout's tarball fallback, the config
+  search stops at the working directory, or for a file outside it at the file's own folder. Before,
+  it climbed to `/`, so a `jsonvet.toml` above the job's folder on a shared runner applied.
 - Each file takes the nearest `jsonvet.toml` or `[tool.jsonvet]` above it, in its own folder or a
   parent up to the repository root, so each package in a monorepo can have its own settings.
   Before, one file was found from the working directory for all files. The nearest file replaces
@@ -93,9 +103,27 @@ version for a new option or output, the patch version for a fix.
   once when the config file is read, and each path made relative once. A folder walk over
   10,000 files with 10 `exclude` patterns takes 62 ms instead of 128 ms, and with 1,000
   patterns 0.13 s instead of 9.9 s.
+- `--schema` also checks a top-level object one member at a time when only `properties`,
+  `patternProperties` and `additionalProperties` check its members. Up to 100 errors, the output
+  is unchanged. Past that, the 100 reported are the first by member, in key order, instead of by
+  keyword.
+- A document with more than 100 schema errors now ends with `... and more schema errors in this
+  document`, without a count. Counting the rest meant finding every one of them.
+- A schema with a `$ref` that points at nothing in the file is a usage error at that `$ref`, also
+  when nothing uses it. Before, an unused one passed and a used one was reported at the schema's
+  first line.
 
 ### Fixed
 
+- A `pyproject.toml`, `--schema` file, `.gitignore` or `.ignore` that is a FIFO or a link to a
+  device such as `/dev/zero` no longer hangs jsonvet or fills memory. Such a `pyproject.toml` is
+  skipped, as such a `jsonvet.toml` already was; a schema or ignore file like that is a usage
+  error. Config and ignore files may hold up to 16 MB, a schema up to 64 MB.
+- An error in a config file that is a symlink names its line and column but no longer quotes the
+  key or value, which could be a secret from the file the link leads to.
+- The Action checks a file named `-` that a `files` glob matches. It passed it as `-`, so jsonvet
+  read standard input instead.
+- docs/design.md now says an annotation's `file=` holds the escaped name the text line shows.
 - `jsonvet -` no longer fails with `no such file`; it reads standard input.
 - `jsonvet --help` no longer says that `--schema` is missing from the PyPI wheels. It has been in
   them since 3.0.0.
@@ -109,6 +137,21 @@ version for a new option or output, the patch version for a fix.
   was quadratic: 40,000 such keys took over a minute.
 - `--dialect jsonl` with `--schema` no longer reads the schema as JSON Lines, which rejected any
   schema written over several lines.
+- A crafted `--schema` file could make jsonvet run for minutes or take gigabytes of memory, past
+  the limits docs/usage.md lists. Since a schema can sit in the repository a pull request edits,
+  this matters in CI. Fixed:
+  - After 100 errors, jsonvet went on asking jsonschema for every other error just to count it:
+    a 1 KB schema on a 15 KB file took 57 s. It now stops at the 101st: 1.7 s.
+  - Each kept error held what jsonschema stores in it, such as every branch's errors for an
+    `anyOf` or a copy of an `enum`'s values: 40 such errors took 3.2 GB. jsonvet now keeps only
+    the message and the place.
+  - The schema size limit left out the values in `enum` and `const`, and that
+    `unevaluatedProperties` and `unevaluatedItems` make jsonschema check the schemas beside them
+    a second time. 27 nested levels of these took 22 s on `{"c": 1}`. Both count now.
+  - A `$ref` to a relative `$id` was matched to the first `$id` with that text, not resolved
+    against its base as jsonschema resolves it, so a small schema elsewhere could be measured in
+    place of the real one. jsonvet now resolves `$ref`s with jsonschema's own code.
+  - Looking up a `$ref` among the `$id`s was quadratic: 20,000 of them took 24 s, now 0.2 s.
 - A syntax error names a dialect that allows the syntax only when that dialect reads it in full.
   `[NaNx]`, `[0x]` or `{'a: 1}` in json no longer say `the json5 dialect allows this`, and an
   unclosed `/*` no longer says `the jsonc dialect allows this`, as those dialects reject them
