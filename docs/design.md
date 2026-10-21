@@ -2,7 +2,8 @@
 
 What jsonvet promises, and why it is built the way it is. jsonvet 2.0 rewrote check-json5 1.4
 (Python) in Rust. Items marked *since 3.0* changed after 2.0.0. For how to use it, see the
-[reference](usage.md).
+[reference](usage.md). Choices where we turned down a measured or argued alternative have their
+own records in [decisions/](decisions/README.md).
 
 ## The contract with 1.4
 

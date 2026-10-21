@@ -29,6 +29,8 @@ from the others.
 `main` is protected, and the `no-commit-to-branch` hook stops a commit on it. Work on a branch and
 open a pull request. Write commit subjects as [Conventional Commits](https://www.conventionalcommits.org/),
 such as `fix(parser): reject a lone CR in a JWCC comment`. The pull request number is added on merge.
+A change that reopens a choice in [docs/decisions/](docs/decisions/README.md) brings the evidence
+its record asks for under "Revisit if".
 
 Commit hooks run `cargo fmt --check`, ruff and the version check; `git push` runs clippy and
 cargo deny.
