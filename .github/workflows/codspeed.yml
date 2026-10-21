@@ -1,0 +1,45 @@
+name: codspeed
+
+# The divan benchmarks in crates/jsonvet/benches/codspeed.rs, under CodSpeed's CPU simulation, so
+# each pull request gets a performance report against main. Unlike ci.yml, this also runs on pushes
+# to main: CodSpeed compares a pull request with the results of its base commit on main.
+# workflow_dispatch lets CodSpeed backfill results for older commits.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  benchmarks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write # OpenID Connect authentication with CodSpeed, no token secret
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: cargo-codspeed@5.0.3
+      - run: cargo codspeed build -m simulation -p jsonvet --bench codspeed --locked
+      - uses: CodSpeedHQ/action@821a40cd6c80e3cfe387caf55668287addd808da # v5.5.0
+        with:
+          mode: simulation
+          run: cargo codspeed run -p jsonvet

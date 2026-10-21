@@ -27,6 +27,8 @@ Other workflows run besides `ci.yml`. On a pull request, `semver.yml` runs `carg
 week, `fuzz.yml` and `mutants.yml` run in full. Every Monday, `advisories.yml` runs
 `cargo deny check advisories`, so a new RustSec advisory against `Cargo.lock` fails a run without
 waiting for a pull request. `scorecard.yml` rates the repository for the OpenSSF Scorecard badge.
+`codspeed.yml` runs the divan benchmarks on every pull request and push to main, and CodSpeed
+comments with the change against main.
 
 User-facing docs live in three places: the README for getting started, `docs/usage.md` for the
 reference, and `docs/design.md` for the design as it is now. The choices behind it, with their
@@ -107,6 +109,13 @@ and cargo deny.
   `GUNGRAUN_ALLOW_ASLR=yes`: the default seccomp profile refuses the `setarch -R` gungraun runs
   valgrind under. `gungraun-runner` must be the gungraun version in `Cargo.lock`; on a mismatch
   the benchmarks stop and name the `cargo install` command that fixes it.
+- **CodSpeed.** `crates/jsonvet/benches/codspeed.rs` holds divan benchmarks of the library:
+  `check` in every dialect, `parse` with its events, the JSON Lines split, and locations.
+  `codspeed.yml` runs them under CodSpeed's CPU simulation, which reports each pull request's
+  change against main in a comment and a dashboard with flamegraphs. Locally, `cargo bench -p
+  jsonvet --bench codspeed` times them with divan; `cargo codspeed build -p jsonvet --bench
+  codspeed` and `codspeed run -m simulation -- cargo codspeed run -p jsonvet` measure them as CI
+  does.
 - **Scaling.** `just scaling` runs `crates/jsonvet-cli/tests/scaling.rs` under valgrind: each test
   counts the instructions on an input of size n and 10n and fails when the ratio reaches 15
   (linear gives about 10, quadratic about 100). It guards paths that were once quadratic: the
