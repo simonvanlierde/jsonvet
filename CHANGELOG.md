@@ -8,159 +8,178 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
+3.1 checks the files under a folder, takes the nearest config file for each file, explains its
+rules and prints JSON for scripts. Each release now has standalone binaries with build provenance
+attestations, and the Action checks the wheel's attestation before it installs it. Runs over many
+files or large files are faster, and a crafted schema or repository can no longer hang jsonvet or
+fill memory.
+
+To upgrade, set `rev: v3.1.0`; `uses: simonvanlierde/jsonvet@v3` takes it by itself. Most users
+need no other change. Check these if they apply to you:
+
+1. If a subfolder has its own `jsonvet.toml` or `[tool.jsonvet]`, its files now follow only that
+   file, not the one at the repository root. Copy any root settings they need into it.
+2. If you run jsonvet with no `.git` above the files, as after actions/checkout's tarball
+   fallback, a `jsonvet.toml` above the working directory no longer applies. Run jsonvet from the
+   folder that holds it, or pass `--config`.
+3. If a script reads the count in `... and N more schema errors`, change it: the line is now
+   `... and more schema errors in this document`, with no count.
+4. If your schema has a `$ref` that points at nothing, fix it: jsonvet now refuses the schema
+   with exit 2, also when nothing uses that `$ref`. Nested `unevaluatedProperties` or
+   `unevaluatedItems`, and the values in `enum` and `const`, now count toward the schema size
+   limit, so a schema that passed before can now be too big.
+5. On GitHub Enterprise Server, set the Action's `verify` input to `false`.
+
+With `--schema`, a file of 3.2 MB or more is now checked on its own, not beside others. A run over
+many large files takes longer and much less memory; see Changed.
+
 ### Added
 
-- A user config file, as ruff has: `jsonvet/jsonvet.toml` in `$XDG_CONFIG_HOME` (or `~/.config`)
-  on Linux and macOS, or in `%APPDATA%` on Windows. It applies only when no project config file is
-  found, and its globs are relative to the working directory. `--config` and `--no-config` skip it.
-- The Action checks the wheel's build provenance attestation with `gh attestation verify` before
-  installing it, for jsonvet 3.1.0 and later, and stops if the check fails. On a runner without
-  `gh` it installs unchecked, with a notice. A new `verify` input turns the check off, as GitHub
-  Enterprise Server needs.
-- A folder as an argument checks the files under it with an extension or name jsonvet knows,
-  in sorted order. The walk skips hidden files and what `.gitignore` and `.ignore` name, as
-  ripgrep does. Files named on the command line are checked as before. Before, a folder was
-  reported as `not a regular file`.
+- A folder as an argument checks the files under it with an extension or name jsonvet knows, in
+  sorted order. The walk skips hidden files and what `.gitignore` and `.ignore` name, as ripgrep
+  does. Files named on the command line are checked as before. Before, jsonvet reported a folder
+  as `not a regular file`.
 - An `exclude` setting: globs, relative to the config file, for paths a folder walk skips.
+- A user config file, as ruff has: `jsonvet/jsonvet.toml` in `$XDG_CONFIG_HOME` (or `~/.config`)
+  on Linux and macOS, or in `%APPDATA%` on Windows. It applies only when no project config file
+  is found, and its globs are relative to the working directory. `--config` and `--no-config`
+  skip it.
 - `-` as a file reads standard input, and `--stdin-filename PATH` names it for the output, the
   dialect and the settings. With `--stdin-filename` and no file, jsonvet reads standard input.
 - `--list-rules` lists the rules with their default severity in each dialect, and
   `--explain RULE` explains one, with a bad and a good example. A mistyped rule gets a
   suggestion, such as ``(did you mean `duplicate-key`?)``.
 - `--format json` prints one JSON document for scripts and editors: a `version` and a list of
-  diagnostics, each with the file, rule, severity, message, line, column and byte offset, and
-  the related place where there is one, such as a duplicate key's first copy. Unreadable files
-  and `--schema` errors are in the list too. docs/usage.md describes every field.
+  diagnostics. Each has the file, rule, severity, message, line, column and byte offset, and the
+  related place where there is one, such as a duplicate key's first copy. Unreadable files and
+  `--schema` errors are in the list too. docs/usage.md describes every field.
 - SARIF output gives each rule its help text and a link to its section of docs/usage.md, so
   GitHub code scanning shows them on each alert.
 - When stdout is a terminal, text output ends with a count, such as `3 errors in 2 of 5 files`.
   Piped output, as in the hook and in CI, is unchanged.
-- `SECURITY.md`: how to report a file that crashes or hangs jsonvet, privately through GitHub.
-- Each GitHub release has the `jsonvet` binary for eight targets (Linux glibc and musl, macOS and
-  Windows, on x86-64 and ARM64) as `jsonvet-<target>.tar.gz` or `.zip`, with a `SHA256SUMS` file
-  and a CycloneDX SBOM of its dependencies.
-- `cargo binstall jsonvet-cli` downloads that binary instead of compiling it.
-- Build provenance attestations for the wheels, the sdist and the release files, which
-  `gh attestation verify` checks. `SECURITY.md` shows how.
 - Clearer syntax errors. Verdicts, exit codes and duplicate-key reports are unchanged:
-  - A missing comma says `missing `,`` and points just after the value before it, not at the next
-    key.
+  - A missing comma says ``missing `,` `` and points just after the value before it, not at the
+    next key.
   - An object or array still open at the end of the file says which one and where it opened:
-    `unclosed `{`: expected `,` or `}`, found the end of the file (opened at 1:1)`. SARIF adds
+    ``unclosed `{`: expected `,` or `}`, found the end of the file (opened at 1:1)``. SARIF adds
     the opening bracket as a related location.
   - A bad word shows whole, with a hint for other languages' literals:
-    `expected a value, found `True`; did you mean `true`?`. This also fixes JSON5's
-    `{"a": None}`, which said ``expected `NaN`, found `o` ``.
+    ``expected a value, found `True`; did you mean `true`?``.
   - A number such as `01` says `leading zeros are not allowed`.
   - Syntax that a stricter dialect rejects names the dialect that allows it:
     `comments are not allowed in json; the jsonc dialect allows this`, and for a trailing comma
-    `the jwcc and json5 dialects allow this`.
-- A file with a UTF-16 or UTF-32 byte order mark says `file is UTF-16 (LE); jsonvet reads UTF-8`
-  instead of `not valid UTF-8 (byte 0)`.
-- An unknown rule, key, severity or dialect in the configuration file gets its line and column
-  and the closest known name: `jsonvet.toml:2:1: unknown rule `duplicate-keys` (did you mean
-  `duplicate-key`?)`. Unknown values for `--dialect`, `--format`, `--error`, `--warn` and
+    `the jwcc and json5 dialects allow this`. The hint names a dialect only when that dialect
+    reads the syntax in full, so `[NaNx]` or an unclosed `/*` gets none.
+- A UTF-16 or UTF-32 file, with or without a byte order mark, says
+  `file is UTF-16 (LE); jsonvet reads UTF-8` instead of `not valid UTF-8 (byte 0)` or a syntax
+  error at its first zero byte. jsonvet tells the encoding from the zero bytes in the first four,
+  so no UTF-8 file that passed before fails now.
+- An unknown rule, key, severity or dialect in the config file gets its line and column and the
+  closest known name: ``jsonvet.toml:2:1: unknown rule `duplicate-keys` (did you mean
+  `duplicate-key`?)``. Unknown values for `--dialect`, `--format`, `--error`, `--warn` and
   `--ignore` get the same hint, also for a wrong case such as `--format SARIF`.
 - `jsonvet --help`, the reference and the unknown-dialect error list the dialect aliases
   `ijson`, `hujson`, `ndjson` and `json-lines`, which jsonvet already accepted.
+- The Action checks the wheel's build provenance attestation with `gh attestation verify` before
+  it installs jsonvet 3.1.0 or later, and stops if the check fails. On a runner without `gh` it
+  installs the wheel unchecked, with a notice. A new `verify` input turns the check off, as
+  GitHub Enterprise Server needs.
+- Each GitHub release has the `jsonvet` binary for eight targets (Linux glibc and musl, macOS and
+  Windows, on x86-64 and ARM64) as `jsonvet-<target>.tar.gz` or `.zip`, with a `SHA256SUMS` file
+  and a CycloneDX SBOM of its dependencies. `cargo binstall jsonvet-cli` downloads that binary
+  instead of compiling it.
+- Build provenance attestations for the wheels, the sdist and the release files, which
+  `gh attestation verify` checks. `SECURITY.md` shows how.
+- `SECURITY.md`: how to report a file that crashes or hangs jsonvet, privately through GitHub.
 - Library: `RelatedKind::Opened`, the related location of an unclosed object or array, and
   `Dialect::ALIASES`.
 
 ### Changed
 
-- Without a `.git` anywhere above a file, as after actions/checkout's tarball fallback, the config
-  search stops at the working directory, or for a file outside it at the file's own folder. Before,
-  it climbed to `/`, so a `jsonvet.toml` above the job's folder on a shared runner applied.
 - Each file takes the nearest `jsonvet.toml` or `[tool.jsonvet]` above it, in its own folder or a
   parent up to the repository root, so each package in a monorepo can have its own settings.
-  Before, one file was found from the working directory for all files. The nearest file replaces
-  any further up; nothing is merged. A folder walk skips what each folder's nearest file excludes,
-  and `--schema` reads the schema with the settings nearest to it. If you run jsonvet from the
-  repository root and a subfolder has its own config file, its files now follow that file: copy
-  any root settings they need into it. `--config` and `--no-config` work as before.
-- The README is shorter and starts with a quick start. The details (globs, exit status, SARIF,
-  the Action's inputs, the JSON Schema limits) moved to
-  [docs/usage.md](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md).
-- Files are checked on every core, so a run over many files is about 4x faster on 12 cores. The
-  output is unchanged and in the order the files were given. Memory now covers the files
-  checked together: about 64 MB of text, or one file per core when files are larger than that.
-  With `--schema`, a file counts 20 times its size, so a file of 3.2 MB or more is checked on
-  its own: twelve 10 MB files take 0.30 GB instead of 3.4 GB, in 2.6 s instead of 1.3 s.
-- Strings are scanned 16 bytes at a time: files of long strings check up to 1.8x faster.
-- Objects with many keys check up to 2.5x faster in a third less memory: one object of 2 million
-  keys takes 0.34 s and 158 MB instead of 0.84 s and 246 MB. Files of many small objects check
-  about 10% faster.
-- `--schema` checks a top-level array one element at a time when only `items` checks its
-  elements. A 10 MB array failing everywhere now takes as much memory as a valid one, 0.37 GB
-  instead of 2.0 GB, and checks 2.7x faster. The errors reported are unchanged.
-- A JSON Lines file of 1 MB or more is split at newlines and checked on the cores its chunk leaves
-  free: 78 MB of nested records check 3x faster on 12 cores. The output is unchanged.
-- The parser skips the space between tokens faster: 88 MB of minified JSON checks 21% faster,
-  71 MB of pretty-printed JSON 7% faster, and the 2.7 MB benchmark file 5% faster.
-- Thousands of files named on the command line start checking sooner: jsonvet asks which are
-  folders on every core. 10,000 named files check in 50 ms instead of 67 ms.
-- `exclude` and `dialects` patterns cost about 60 times less per file: each pattern is prepared
-  once when the config file is read, and each path made relative once. A folder walk over
-  10,000 files with 10 `exclude` patterns takes 62 ms instead of 128 ms, and with 1,000
-  patterns 0.13 s instead of 9.9 s.
-- `--schema` also checks a top-level object one member at a time when only `properties`,
-  `patternProperties` and `additionalProperties` check its members. Up to 100 errors, the output
-  is unchanged. Past that, the 100 reported are the first by member, in key order, instead of by
-  keyword.
+  Before, jsonvet found one file from the working directory for all files. The nearest file
+  replaces any further up; nothing is merged. A folder walk skips what each folder's nearest file
+  excludes, and `--schema` reads the schema with the settings nearest to it. `--config` and
+  `--no-config` work as before.
+- Without a `.git` anywhere above a file, as after actions/checkout's tarball fallback, the config
+  search stops at the working directory, or for a file outside it at the file's own folder.
+  Before, it climbed to `/`, so a `jsonvet.toml` above the job's folder on a shared runner
+  applied.
 - A document with more than 100 schema errors now ends with `... and more schema errors in this
   document`, without a count. Counting the rest meant finding every one of them.
 - A schema with a `$ref` that points at nothing in the file is a usage error at that `$ref`, also
   when nothing uses it. Before, an unused one passed and a used one was reported at the schema's
   first line.
+- Files are checked on every core, so a run over many files is about 4x faster on 12 cores. The
+  output is unchanged and in the order the files were given. Memory now covers the files checked
+  together: about 64 MB of text, or one file per core when files are larger than that. With
+  `--schema`, a file counts 20 times its size, so a file of 3.2 MB or more is checked on its own:
+  twelve 10 MB files take 0.30 GB instead of 3.4 GB, in 2.6 s instead of 1.3 s.
+- `--schema` checks a top-level array one element at a time when only `items` checks its
+  elements. A 10 MB array failing everywhere now takes as much memory as a valid one, 0.37 GB
+  instead of 2.0 GB, and checks 2.7x faster. The errors reported are unchanged.
+- `--schema` also checks a top-level object one member at a time when only `properties`,
+  `patternProperties` and `additionalProperties` check its members. Up to 100 errors, the output
+  is unchanged. Past that, the 100 reported are the first by member, in key order, instead of by
+  keyword.
+- A JSON Lines file of 1 MB or more is split at newlines and checked on the cores its chunk leaves
+  free: 78 MB of nested records check 3x faster on 12 cores. The output is unchanged.
+- Strings are scanned 16 bytes at a time: files of long strings check up to 1.8x faster.
+- Objects with many keys check up to 2.5x faster in a third less memory: one object of 2 million
+  keys takes 0.34 s and 158 MB instead of 0.84 s and 246 MB. Files of many small objects check
+  about 10% faster.
+- The parser skips the space between tokens faster: 88 MB of minified JSON checks 21% faster,
+  71 MB of pretty-printed JSON 7% faster, and the 2.7 MB benchmark file 5% faster.
+- Thousands of files named on the command line start checking sooner, because jsonvet asks
+  which are folders on every core. 10,000 named files check in 50 ms instead of 67 ms.
+- `exclude` and `dialects` patterns cost about 60 times less per file. A folder walk over 10,000
+  files with 10 `exclude` patterns takes 62 ms instead of 128 ms, and with 1,000 patterns 0.13 s
+  instead of 9.9 s.
+- The README is shorter and starts with a quick start. The details (globs, exit status, SARIF,
+  the Action's inputs, the JSON Schema limits) moved to
+  [docs/usage.md](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md).
 
 ### Fixed
 
-- A `pyproject.toml`, `--schema` file, `.gitignore` or `.ignore` that is a FIFO or a link to a
-  device such as `/dev/zero` no longer hangs jsonvet or fills memory. Such a `pyproject.toml` is
-  skipped, as such a `jsonvet.toml` already was; a schema or ignore file like that is a usage
-  error. Config and ignore files may hold up to 16 MB, a schema up to 64 MB.
-- An error in a config file that is a symlink names its line and column but no longer quotes the
-  key or value, which could be a secret from the file the link leads to.
-- The Action checks a file named `-` that a `files` glob matches. It passed it as `-`, so jsonvet
-  read standard input instead.
-- docs/design.md now says an annotation's `file=` holds the escaped name the text line shows.
-- `jsonvet -` no longer fails with `no such file`; it reads standard input.
-- `jsonvet --help` no longer says that `--schema` is missing from the PyPI wheels. It has been in
-  them since 3.0.0.
-- The Action no longer passes when the repository is not checked out: with the default `files`
-  input it fails and says to run `actions/checkout`. It warns when it finds no JSON files.
-- The Action runs Python isolated, so a `json.py`, `glob.py` or `venv/` folder in your
-  repository never runs in place of Python's own.
-- A `files` glob in the Action that also matched a folder failed that folder as not a regular
-  file. Globs now match files only.
 - `--schema` takes linear time on an object with many keys holding U+FFFD or lone surrogates. It
   was quadratic: 40,000 such keys took over a minute.
 - `--dialect jsonl` with `--schema` no longer reads the schema as JSON Lines, which rejected any
   schema written over several lines.
+- In JSON5, `{"a": None}` said ``expected `NaN`, found `o` ``. It now says
+  ``expected a value, found `None`; did you mean `null`?``.
+- `jsonvet --help` no longer says that `--schema` is missing from the PyPI wheels. It has been in
+  them since 3.0.0.
+- The Action no longer passes when the repository is not checked out: with the default `files`
+  input it fails and says to run `actions/checkout`. It warns when it finds no JSON files.
+- A `files` glob in the Action that also matched a folder failed that folder as not a regular
+  file. Globs now match files only.
+
+### Security
+
+- A `pyproject.toml`, `--schema` file, `.gitignore` or `.ignore` that is a FIFO or a link to a
+  device such as `/dev/zero` no longer hangs jsonvet or fills memory. jsonvet skips such a
+  `pyproject.toml`, as it already skipped such a `jsonvet.toml`; a schema or ignore file like
+  that is a usage error. Config and ignore files may hold up to 16 MB, a schema up to 64 MB.
+- An error in a config file that is a symlink names its line and column but no longer quotes the
+  key or value, which could be a secret from the file the link leads to.
+- The Action runs Python isolated, so a `json.py`, `glob.py` or `venv/` folder in your repository
+  never runs in place of Python's own.
 - A crafted `--schema` file could make jsonvet run for minutes or take gigabytes of memory, past
-  the limits docs/usage.md lists. Since a schema can sit in the repository a pull request edits,
+  the limits docs/usage.md lists. A schema can sit in the repository a pull request edits, so
   this matters in CI. Fixed:
   - After 100 errors, jsonvet went on asking jsonschema for every other error just to count it:
     a 1 KB schema on a 15 KB file took 57 s. It now stops at the 101st: 1.7 s.
   - Each kept error held what jsonschema stores in it, such as every branch's errors for an
     `anyOf` or a copy of an `enum`'s values: 40 such errors took 3.2 GB. jsonvet now keeps only
     the message and the place.
-  - The schema size limit left out the values in `enum` and `const`, and that
+  - The schema size limit left out the values in `enum` and `const`. It also left out that
     `unevaluatedProperties` and `unevaluatedItems` make jsonschema check the schemas beside them
-    a second time. 27 nested levels of these took 22 s on `{"c": 1}`. Both count now.
+    a second time: 27 nested levels of these took 22 s on `{"c": 1}`. Both count now.
   - A `$ref` to a relative `$id` was matched to the first `$id` with that text, not resolved
     against its base as jsonschema resolves it, so a small schema elsewhere could be measured in
     place of the real one. jsonvet now resolves `$ref`s with jsonschema's own code.
   - Looking up a `$ref` among the `$id`s was quadratic: 20,000 of them took 24 s, now 0.2 s.
-- A syntax error names a dialect that allows the syntax only when that dialect reads it in full.
-  `[NaNx]`, `[0x]` or `{'a: 1}` in json no longer say `the json5 dialect allows this`, and an
-  unclosed `/*` no longer says `the jsonc dialect allows this`, as those dialects reject them
-  too. The error and its position are unchanged.
-- A UTF-16 or UTF-32 file without a byte order mark says `file is UTF-16 (LE); jsonvet reads
-  UTF-8`, as one with a mark does, instead of a syntax error at its first zero byte. jsonvet
-  tells the encoding from the zero bytes in the first four, so no UTF-8 file that passed before
-  fails now.
-
 ## [3.0.0] - 2026-10-18
 
 3.0 checks files against a JSON Schema, with each error at its line and column, writes SARIF

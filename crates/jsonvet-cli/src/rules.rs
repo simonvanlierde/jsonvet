@@ -24,7 +24,9 @@ pub(crate) fn ids() -> impl Iterator<Item = &'static str> {
 pub(crate) fn description(id: &str) -> &'static str {
     match id {
         SCHEMA => "a value the JSON Schema given with --schema rejects",
-        UNREADABLE => "a file that is not a regular file, could not be read, or is not UTF-8",
+        UNREADABLE => {
+            "a file that does not exist, is not a regular file, could not be read, or is not UTF-8"
+        }
         _ => id.parse().map_or("", Rule::description),
     }
 }
@@ -71,9 +73,9 @@ pub(crate) fn explanation(id: &str) -> &'static str {
              --ignore and settings files do not take this rule."
         }
         UNREADABLE => {
-            "jsonvet could not check the file at all: it does not exist, is a directory, \
-             device, FIFO or socket, could not be read, or is not UTF-8. It always fails the \
-             run, and no option changes that."
+            "jsonvet could not check the file at all: it does not exist, is a device, FIFO or \
+             socket, could not be read, or is not UTF-8. It always fails the run, and no option \
+             changes that."
         }
         _ => "",
     }

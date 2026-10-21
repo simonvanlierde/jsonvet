@@ -6,23 +6,32 @@ Clone with `--recurse-submodules` and install the tools in `mise.toml` (`mise in
 Rust from rustup. Then run `just setup` once: it fetches the json5-tests submodule and installs
 the git hooks with [prek](https://github.com/j178/prek). `just --list` shows every task.
 
-Run `just check` before you open a pull request. It runs CI's Linux `lint` and `test` jobs:
-formatting, clippy, rustdoc, cargo deny, ruff, zizmor, the tests with doctests, the version check
-and the conformance page diff.
+## Checks
 
-The page diff fails while `README.md` or `docs/conformance.md` has unstaged edits, so stage them
-first.
+Run `just check` before you open a pull request. It runs CI's `lint` and `test` jobs on your OS:
+formatting, clippy, rustdoc, cargo deny, ruff, zizmor, the version check, the conformance page
+diff and pin check, and the tests with doctests. The page diff fails while `README.md` or
+`docs/conformance.md` has unstaged edits, so stage them first.
 
-CI also runs the msrv, scaling, bench, differential, hook, packaging, action-script, action and
-semver jobs. `just msrv`, `just scaling`, `just counts` and `just differential` run four of them
-locally.
-Outside pull requests, `advisories.yml` runs `cargo deny check advisories` every Monday, so a new
-RustSec advisory against `Cargo.lock` fails a run without waiting for a pull request, and
-`scorecard.yml` rates the repository for the OpenSSF Scorecard badge.
+`just check` leaves out these jobs in `ci.yml`:
+
+- `test` on the other two OSes, and on macOS `scripts/test-action.sh`, the Action script's tests
+  under bash 3.2. Run `bash scripts/test-action.sh` yourself when you change `scripts/action.sh`.
+- `msrv`, `scaling`, `bench` and `differential`. `just msrv`, `just scaling`, `just counts` and
+  `just differential` run them locally.
+- `hook`, `action` and `packaging`, which build the wheels and run the hook and the Action as
+  users do.
+
+Other workflows run besides `ci.yml`. On a pull request, `semver.yml` runs `cargo semver-checks`,
+`fuzz.yml` fuzzes each target for 30 seconds, and `coverage.yml` reports coverage to Codecov. Every
+week, `fuzz.yml` and `mutants.yml` run in full. Every Monday, `advisories.yml` runs
+`cargo deny check advisories`, so a new RustSec advisory against `Cargo.lock` fails a run without
+waiting for a pull request. `scorecard.yml` rates the repository for the OpenSSF Scorecard badge.
 
 User-facing docs live in three places: the README for getting started, `docs/usage.md` for the
-reference, and `docs/design.md` for the reasons. Put a new detail in one of them and link to it
-from the others.
+reference, and `docs/design.md` for the design as it is now. The choices behind it, with their
+numbers, are in [docs/decisions/](docs/decisions/README.md). Put a new detail in one place and
+link to it from the others.
 
 ## Pull requests
 
@@ -32,8 +41,8 @@ such as `fix(parser): reject a lone CR in a JWCC comment`. The pull request numb
 A change that reopens a choice in [docs/decisions/](docs/decisions/README.md) brings the evidence
 its record asks for under "Revisit if".
 
-Commit hooks run `cargo fmt --check`, ruff and the version check; `git push` runs clippy and
-cargo deny.
+Commit hooks run `cargo fmt --check`, ruff, zizmor and the version check. `git push` runs clippy
+and cargo deny.
 
 ## Tests
 
@@ -50,25 +59,31 @@ cargo deny.
   the library (`Dialect::EXTENSIONS`, `Dialect::FILE_NAMES`) goes into both hooks,
   `scripts/action.sh` and the README's list, or `crates/jsonvet-cli/tests/file_lists.rs` fails.
   Add it to the README's dialect table too.
-- **Conformance matrix.** `just matrix` runs one set of inputs through 17 other parsers in docker
+- **New rules and dialects.** A rule goes in `Rule::ALL` (`crates/jsonvet/src/rule.rs`). Give it
+  an explanation in `crates/jsonvet-cli/src/rules.rs` and a `### <id>` section in `docs/usage.md`
+  with the same words, or `every_rule_has_help_that_its_docs_section_holds` fails. The `--help`
+  text must name it, or `help_names_every_rule_and_dialect` fails. Add it to the README's rules
+  table. A dialect goes in `Dialect::ALL` (`crates/jsonvet/src/dialect.rs`), the `--help` text and
+  the README's dialect table, and its extensions as the file-lists bullet says.
+- **Conformance matrix.** `just matrix` runs one set of inputs through 18 other parsers in docker
   containers (never on the host), then renders `docs/conformance.md` and the block in the README.
   Commit `conformance/results/` and both rendered files. CI fails when the report is stale. It also
   fails when `conformance/results/versions.json` disagrees with the pinned parsers
   (`run.py --check`), as it does after a pin bump until someone re-runs the matrix. After a pin
   change, run `just matrix-lock` first. Details: [conformance/README.md](conformance/README.md).
 - **Fuzzing.** `just fuzz check` (or `diff_serde_json`, `diff_json5`, `parse`) runs a target for 20
-  minutes. CI runs each target for 30 seconds on a pull request that touches the library, and for
-  20 minutes after a parser change on `main` and once a week. It needs a nightly toolchain and
-  cargo-fuzz. Coverage stops growing within about two hours per target. A new json5 version in
-  `fuzz/` can need new skips in `diff_json5`. Read its skip list before you call a divergence a
+  minutes. It needs a nightly toolchain and cargo-fuzz. CI runs each target for 30 seconds on a
+  pull request that touches the library or `fuzz/`, and for 20 minutes once a week. Coverage
+  stops growing within about two hours per target. A new json5 version in `fuzz/` can need new
+  skips in `diff_json5`. Read its skip list before you call a divergence a
   jsonvet bug.
 - **Mutation testing.** `just mutants` runs cargo-mutants over both crates in about 25 minutes, and
   `mutants.yml` runs it weekly. It fails when a mutant survives that `.cargo/mutants.toml` does
   not list. List one there only when it changes no behaviour, and say why.
 - **Differential.** `just differential` compares jsonvet with check-json5 1.4.1 on generated
   files; CI runs 5,000 cases with a new seed each run.
-- **Public API.** `cargo semver-checks` reports library API changes on a pull request. It does not
-  block the merge.
+- **Public API.** `semver.yml` runs `cargo semver-checks` on a pull request that touches the
+  library, and reports API changes. It does not block the merge.
 - **Speed claims.** Measure with `just bench`: hyperfine without a shell, warm, 20 runs. Take the
   numbers on a quiet machine, not a loaded one, and report the median. `scripts/bench.py` also
   times the check-json5 reference in every case, so a `--runs 40` pass takes about 8 minutes. To

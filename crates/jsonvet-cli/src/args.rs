@@ -30,9 +30,9 @@ Options:
       --warn RULE               Report RULE as a warning.
       --ignore RULE             Do not check RULE.
       --max-warnings N          Fail when there are more than N warnings.
-      --format FORMAT           Print problems as text (the default), as one SARIF 2.1.0
-                                document, for GitHub code scanning, or as one JSON document
-                                (its fields: docs/usage.md in the repository).
+      --format FORMAT           Print problems as text (the default), sarif (one SARIF 2.1.0
+                                document, for GitHub code scanning) or json (one JSON document;
+                                docs/usage.md in the repository lists its fields).
       --schema FILE             Also check each file against the JSON Schema in FILE, reported
                                 under the rule schema. Limits: docs/usage.md in the repository.
       --stdin-filename PATH     Name standard input PATH in the output, and pick its dialect
@@ -50,7 +50,9 @@ schema; they are always errors, and --error, --warn, --ignore and settings files
 schema.
 
 Settings come from jsonvet.toml, or [tool.jsonvet] in pyproject.toml: for each file, the nearest
-one in its folder or a parent up to the repository root. Options on the command line win.
+one in its folder or a parent, up to the repository root (without .git, the working directory).
+With none, jsonvet/jsonvet.toml in $XDG_CONFIG_HOME or ~/.config (%APPDATA% on Windows) applies.
+Options on the command line win.
 
 Exit status: 0 when no file has an error, 1 when one does, 2 for a usage error, such as a
 schema that cannot be read or used.";

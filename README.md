@@ -13,16 +13,18 @@ duplicate keys, and tells you the exact line and column:
 
 ```text
 config.json:4:5: error[duplicate-key] duplicate key $.server.port (first at 2:5)
-package.json:3:3: error[syntax] expected `,` or `}`, found `"`
+package.json:2:14: error[syntax] missing `,`
 events.jsonl:12:1: error[syntax] blank line; JSON Lines needs a value on every line
 ```
 
 - **Six dialects, one parser.** Each file is checked in the dialect its extension implies.
 - **JSON Schema with positions.** `--schema` points each schema error at its value's line and
-  column.
+  column. It never fetches anything from the network.
 - **Fits CI.** Use it as a pre-commit or prek hook, a GitHub Action, a command or a Rust library.
-- **Fast.** It was check-json5, a Python hook, until 2.0 rewrote it in Rust. It is up to 1,398
-  times faster.
+  It writes text, SARIF for GitHub code scanning, or JSON for scripts and editors.
+- **Fast.** It was check-json5, a Python hook, until 2.0 rewrote it in Rust. It is up to 1,374
+  times faster than check-json5 1.4.1
+  ([figures](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#speed)).
 
 ## Quick start
 
@@ -57,8 +59,9 @@ The hook installs a prebuilt binary from PyPI, so you need no Rust.
 ```
 
 The step fails when a file has an error, and each problem shows up as an annotation on the pull
-request. It runs on Linux, macOS and Windows runners. Its optional inputs are in the
-[reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#github-action).
+request. It runs on Linux, macOS and Windows runners. Before it installs jsonvet from PyPI, it
+checks that the wheel came from this repository's release workflow. Its optional inputs are in
+the [reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#github-action).
 
 ### Command line
 
@@ -78,8 +81,10 @@ To check that a file came from this repository's release workflow, see
 
 A folder stands for the files under it with an extension or name from the dialect table below,
 skipping hidden files and what `.gitignore` names, as ripgrep does. A file you name is always
-checked. It exits 0 when no file has an error, 1 when one does, and 2 for a usage error.
-`jsonvet --help` lists every option.
+checked. `-` reads standard input. `jsonvet --list-rules` lists the rules, `--explain RULE`
+explains one, and `jsonvet --help` lists every option. The
+[reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md) has the details,
+the output formats and the exit status.
 
 ### Rust library
 
@@ -143,12 +148,11 @@ exclude = ["node_modules", "tests/fixtures/*"]
 ```
 
 For each file, jsonvet uses the nearest one in the file's folder or a parent, up to the repository
-root, so each package in a monorepo can have its own. With none, it uses your own
-`~/.config/jsonvet/jsonvet.toml`, if you have one
-([where](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#configuration-file)).
-Options on the command line win. How globs
-match is in the
-[reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#globs).
+root, so each package in a monorepo can have its own. The nearest file replaces any further up;
+nothing is merged. With none, jsonvet uses your own `jsonvet/jsonvet.toml` in your config folder,
+such as `~/.config`, if you have one. Options on the command line win. The reference says
+[where jsonvet looks](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#configuration-file)
+and [how globs match](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#globs).
 
 ## JSON Schema
 
@@ -207,11 +211,10 @@ keep working through 3.x.
 For the files check-json5 knew, jsonvet gives the same pass or fail as 1.4.1, apart from a few
 edge cases listed in
 [docs/design.md](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#known-differences-from-14).
-One change can fail a file that passed: `.jsonc`, `.code-workspace` and `.code-snippets` files are now
-checked as JSONC, and `.hujson` and `.jwcc` files as JWCC. To keep the old verdict, add
+One change can fail a file that passed: `.jsonc`, `.code-workspace` and `.code-snippets` files
+are now checked as JSONC, and `.hujson` and `.jwcc` files as JWCC. To keep the old verdict, add
 `--dialect json5:GLOB`. The other changes are in the
-[CHANGELOG](https://github.com/simonvanlierde/jsonvet/blob/main/CHANGELOG.md) under 2.0.0 and
-3.0.0.
+[reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#coming-from-check-json5).
 
 ## How it is tested
 

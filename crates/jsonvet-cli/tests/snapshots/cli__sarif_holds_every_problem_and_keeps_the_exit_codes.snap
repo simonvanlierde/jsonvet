@@ -160,15 +160,15 @@ expression: "serde_json::to_string_pretty(&sarif).expect(\"JSON\")"
             },
             {
               "fullDescription": {
-                "text": "a file that is not a regular file, could not be read, or is not UTF-8."
+                "text": "a file that does not exist, is not a regular file, could not be read, or is not UTF-8."
               },
               "help": {
-                "text": "jsonvet could not check the file at all: it does not exist, is a directory, device, FIFO or socket, could not be read, or is not UTF-8. It always fails the run, and no option changes that."
+                "text": "jsonvet could not check the file at all: it does not exist, is a device, FIFO or socket, could not be read, or is not UTF-8. It always fails the run, and no option changes that."
               },
               "helpUri": "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#unreadable",
               "id": "unreadable",
               "shortDescription": {
-                "text": "a file that is not a regular file, could not be read, or is not UTF-8"
+                "text": "a file that does not exist, is not a regular file, could not be read, or is not UTF-8"
               }
             },
             {
