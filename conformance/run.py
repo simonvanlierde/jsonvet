@@ -12,7 +12,7 @@ conformance/report.py turns them into docs/conformance.md. See conformance/READM
 """
 
 import argparse
-import datetime
+import datetime as dt
 import json
 import os
 import queue
@@ -335,7 +335,7 @@ def main() -> None:
     parsers = parser_versions(chosen, old.get("parsers", {}), runtimes)
     seconds = round(time.monotonic() - started)
     summary = {
-        "date": datetime.datetime.now(datetime.UTC).date().isoformat(),
+        "date": dt.datetime.now(dt.UTC).date().isoformat(),
         "seconds": seconds if not args.only else old.get("seconds"),
         "images": {lang: spec.image for lang, spec in LANGS.items()},
         "runtimes": runtimes,
