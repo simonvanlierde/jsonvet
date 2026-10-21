@@ -312,8 +312,8 @@ impl Resolver {
             Some(path) => {
                 let mut own = load(&path)?;
                 // Its globs are relative to the working directory, as in ruff: it sits in no
-                // project.
-                let cwd = self.cwd.to_string_lossy().into_owned();
+                // project. Normalized, as `load` does for a file's own folder.
+                let cwd = glob::normalize(&self.cwd.to_string_lossy());
                 for pattern in &mut own.dialects {
                     pattern.base = Some(cwd.clone());
                 }
