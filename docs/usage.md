@@ -390,8 +390,9 @@ These hold for `--schema`. Why each one exists is in [design.md](design.md#--sch
   every branch's errors, and an `enum` error a copy of its values.
 - **Regexes.** A pattern with a back-reference or lookaround may backtrack 5,000 times per string.
   A key or string that needs more is an error at that key or string: the pattern could not be
-  checked. jsonvet tries each `patternProperties` pattern on every key, and each `pattern` on
-  every string, so this error can name a string the pattern does not apply to.
+  checked. A document with such an error is not checked against the rest of the schema. jsonvet
+  tries each `patternProperties` pattern on every key, and each `pattern` on every string, so
+  this error can name a string the pattern does not apply to.
 - **The schema file.** It may be in any dialect. Its `$schema` picks the draft, from draft 4 to
   2020-12. A `$ref` must point inside the file: jsonvet fetches nothing, from the network or from
   disk. A schema jsonvet cannot read or use is a usage error (exit 2). That covers:

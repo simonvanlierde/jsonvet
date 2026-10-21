@@ -1720,26 +1720,29 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
     }
 
     #[test]
-    fn a_costly_pattern_error_takes_one_of_the_100_places() {
-        let numbers: Vec<String> = (0..150).map(|i| i.to_string()).collect();
+    fn a_document_with_a_costly_match_reports_only_those() {
+        // One string too costly to match, then 40,000 that fail the pattern, under `allOf`, so
+        // the array is checked in one pass and not one element at a time.
+        let fast = (0..40_000).map(|i| format!("\"x{i}\""));
+        let strings: Vec<String> = std::iter::once(format!("\"{}!\"", "a".repeat(30)))
+            .chain(fast)
+            .collect();
         let dir = workdir(&[
             (
                 "schema.json",
-                r#"{"items": {"type": "string", "pattern": "^(a|a)*\\1b"}}"#,
+                r#"{"allOf": [{"items": {"type": "string", "pattern": "^(a|a)*\\1b"}}]}"#,
             ),
-            (
-                "n.json",
-                &format!("[\"{}!\", {}]", "a".repeat(30), numbers.join(",")),
-            ),
+            ("n.json", &format!("[{}, 1]", strings.join(","))),
         ]);
+        let start = std::time::Instant::now();
         let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "schema.json", "n.json"]);
+        assert!(start.elapsed().as_secs() < 5, "took {:?}", start.elapsed());
         assert_eq!(code, 1);
-        assert_eq!(out.lines().count(), 101);
-        assert!(
-            out.ends_with(
-                "n.json:1:1: error[schema] ... and more schema errors in this document\n"
-            ),
-            "{out}"
+        // The strings that fail the pattern and the number are not reported.
+        assert_eq!(
+            out,
+            "n.json:1:2: error[schema] this string could not be checked against the pattern \
+             \"^(a|a)*\\1b\": matching it takes more than 5000 backtracking steps (at $[0])\n"
         );
     }
 

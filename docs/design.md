@@ -230,15 +230,17 @@ timeout, so a file gets the same verdict on every machine; see
   measured while a `$ref` back up to a schema above it was skipped is measured again wherever it
   is reached, as it can be deeper there.
 - **Regex backtracking.** Schema regexes with back-references or lookaround run on fancy-regex,
-  which backtracks. With the cap, `^(a|a)*\1b` over 5,000 strings takes under a second, not
-  minutes. `patternProperties` (and `additionalProperties` beside it) count an over-cap key as
-  not matching, because jsonschema 0.58 drops the regex error there
-  (`is_match(..).unwrap_or(false)`), and so does `pattern` under `not`, `if` or `oneOf`. So
-  jsonvet tries every `patternProperties` regex, and every `pattern` under `propertyNames`, on
-  every key, and every `pattern` on every string, with the same cap. An over-cap match is an
-  error at that key or string. Trying each regex everywhere, not only where the schema applies
-  it, keeps the check short but can fail a string the regex never checks. With three lookaround
-  patterns, a 5.9 MB file takes 241 ms instead of 105 ms.
+  which backtracks. With the cap, `^(a|a)*\1b` over 5,000 strings takes under a second, not minutes.
+  jsonschema 0.59 reports an over-cap match only when it decides the result, and finds that out by
+  checking the whole document again under each outcome, up to 64 times, then comparing each run's
+  errors with every other run's. With one over-cap string among 40,000 that fail the pattern, that
+  took 2.1 s, and with 10 among 100,000, 36 s, against 0.03 s and 0.07 s on 0.58. It also reports
+  only the first such match, at the object for a key. So jsonvet tries every `patternProperties`
+  regex, and every `pattern` under `propertyNames`, on every key, and every `pattern` on every
+  string, with the same cap. An over-cap match is an error at that key or string, and a document
+  with one is not checked against the rest of the schema. Trying each regex everywhere, not only
+  where the schema applies it, keeps the check short but can fail a string the regex never checks.
+  With three lookaround patterns, a 5.9 MB file takes 241 ms instead of 105 ms.
 
 ## Configuration
 

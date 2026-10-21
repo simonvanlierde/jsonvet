@@ -105,15 +105,6 @@ fn children(value: &Value) -> impl Iterator<Item = (Cow<'_, str>, &Value)> {
         .chain(items.map(|(i, item)| (Cow::Owned(i.to_string()), item)))
 }
 
-/// Whether `error` says a regex match ran past [`BACKTRACK_LIMIT`].
-fn backtracked(error: &ValidationError<'_>) -> bool {
-    match error.kind() {
-        ValidationErrorKind::BacktrackLimitExceeded { .. } => true,
-        ValidationErrorKind::PropertyNames { error } => backtracked(error),
-        _ => false,
-    }
-}
-
 /// The regexes in `schema`: those tried on keys, and every `pattern`, tried on strings.
 fn patterns<'v>(
     schema: &'v Value,
@@ -169,13 +160,9 @@ impl Errors {
     }
 }
 
-/// `error`, on the element at `index` if any, as the errors to report: none for a regex that ran
-/// past [`BACKTRACK_LIMIT`], which is reported on its own; one per key for unexpected
-/// properties, up to one more than [`MAX_ERRORS`]; otherwise one.
+/// `error`, on the element at `index` if any, as the errors to report: one per key for
+/// unexpected properties, up to one more than [`MAX_ERRORS`]; otherwise one.
 fn found(index: Option<usize>, value: &Value, error: &ValidationError<'_>) -> Vec<Found> {
-    if backtracked(error) {
-        return Vec::new();
-    }
     let path = pointer_path(index, error);
     if let Some(keys) = unexpected(value, error) {
         return keys
@@ -363,20 +350,23 @@ impl Schema {
         errors
     }
 
-    /// The first [`MAX_ERRORS`] errors in `value`: keys and strings no regex could be matched
-    /// on, then jsonschema's own, which stop being asked for once there is one too many.
+    /// The first [`MAX_ERRORS`] errors in `value`: the keys and strings no regex could be
+    /// matched on, or if there are none, jsonschema's own, which stop being asked for once
+    /// there is one too many.
     fn collect(&self, value: &Value) -> Errors {
         let mut errors = Errors::default();
-        // jsonschema counts a regex that runs past the backtrack limit as not matching, so
-        // `patternProperties` and any `pattern` under `not` or `if` would pass silently.
-        // Every key and string is tried here instead, and jsonschema's own errors for it,
-        // which this repeats, are dropped.
+        // jsonschema reports a match past the backtrack limit once, at the object for a key.
+        // To find whether it decides the result, it checks the whole document again under each
+        // outcome, up to 64 times, and compares each run's errors with every other run's: 10
+        // such strings among 100,000 that fail the pattern took 36 s, not 0.07 s. So each regex
+        // is tried on every key and string here, each match past the limit is an error at that
+        // key or string, and a document with one is not handed to jsonschema.
         // shortcut: each regex is tried on every key or string, not only where the schema
         // applies it; follow the schema's applicators if that fails a file wrongly.
         if !(self.key_patterns.is_empty() && self.string_patterns.is_empty()) {
             self.unmatched(value, &mut Vec::new(), &mut errors);
         }
-        if errors.more || self.validator.is_valid(value) {
+        if !errors.kept.is_empty() || self.validator.is_valid(value) {
             return errors;
         }
         // Each error is turned into what is reported as it comes, as jsonschema's own holds
@@ -435,9 +425,12 @@ impl Schema {
     /// not be matched on within [`BACKTRACK_LIMIT`], until there is one error too many.
     fn unmatched(&self, value: &Value, path: &mut Vec<String>, errors: &mut Errors) {
         let fails = |regex: &Validator, value: &Value| {
-            regex
-                .validate(value)
-                .is_err_and(|error| backtracked(&error))
+            regex.validate(value).is_err_and(|error| {
+                matches!(
+                    error.kind(),
+                    ValidationErrorKind::BacktrackLimitExceeded { .. }
+                )
+            })
         };
         let message = |what: &str, regex: &str| {
             format!(

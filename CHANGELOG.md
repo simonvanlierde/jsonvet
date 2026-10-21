@@ -8,6 +8,13 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
+### Changed
+
+- `--schema` uses jsonschema 0.59.0. A document with a key or string too costly to match against
+  a pattern (over 5,000 backtracking steps) now reports only those keys and strings, not its
+  other schema errors. jsonschema 0.59 checks such a document again up to 64 times, which made a
+  file with 10 such strings among 100,000 failing ones take 36 s instead of 0.07 s.
+
 ## [3.1.1] - 2026-10-21
 
 ### Fixed
