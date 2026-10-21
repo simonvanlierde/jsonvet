@@ -1,4 +1,4 @@
-# Exact pins, installed with pip --only-binary inside python:3.13-slim (see conformance/run.py).
+# Exact pins, installed with pip --only-binary inside python:3.14-slim (see conformance/run.py).
 json5==0.17.3
 pyjson5==2.0.1
 jsonlines==4.0.0

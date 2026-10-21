@@ -46,14 +46,14 @@ class Lang:
 
 LANGS = {
     "node": Lang(
-        image="node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392",
+        image="node:26-slim@sha256:e556a144463cc8dc53afe8de6d2fa0db5c132fd39ffa232c17641bd40df2bf11",
         setup="cp /src/driver.mjs /src/package.json /src/package-lock.json /work/ && cd /work"
         " && npm ci --no-audit --no-fund --ignore-scripts --loglevel=error && node --version",
         lock="cd /src && npm install --package-lock-only --no-audit --no-fund --ignore-scripts",
         run="node /work/driver.mjs",
     ),
     "python": Lang(
-        image="python:3.13-slim@sha256:70729b46c69b4f1e97c4822c1af3df53a1476cf5ddc6c087c0c10bc3a5678c2f",
+        image="python:3.14-slim@sha256:fbecd461fc72d21b2143c6eaba25143738079154a6d0ea3da3aec724f50eed4a",
         setup="pip install --quiet --no-cache-dir --disable-pip-version-check --only-binary=:all:"
         " --upgrade --target /work/site -r /src/requirements.txt"
         " && cp /src/driver.py /work/ && python -c 'import platform; print(platform.python_version())'",
@@ -62,15 +62,15 @@ LANGS = {
         env=("PYTHONPATH=/work/site",),
     ),
     "go": Lang(
-        # The reference hujson needs Go 1.26.
-        image="golang:1.26@sha256:d7722066f0b60ceccb6c0643cbed1f5f9e15506ac237146c95333504d7805d89",
+        # The reference hujson needs Go 1.26 or later.
+        image="golang:1.27@sha256:f24164268fc1e741bbdc0066dbadcf1c8426c5a8489f0729c02c3905a53032fd",
         setup="cd /src && go build -trimpath -o /work/driver . && go env GOVERSION",
         lock="cd /src && go mod tidy",
         run="/work/driver",
         env=("GOPATH=/work/go", "GOCACHE=/work/gocache", "GOTOOLCHAIN=local", "GOFLAGS=-mod=readonly"),
     ),
     "rust": Lang(
-        image="rust:1@sha256:81015672d6939b0265f09adf96d5de125482bb1330106076956b0518e74edc90",
+        image="rust:1@sha256:767c71592f7d1f3f242292000f8efd4e67b6732363da176772f4d220332e264f",
         setup="cargo build --quiet --release --locked --manifest-path /src/Cargo.toml"
         " && rustc --version | cut -d' ' -f2",
         lock="cargo generate-lockfile --manifest-path /src/Cargo.toml",

@@ -25,8 +25,8 @@ tests/corpus/json5/comment-then-duplicate-trailing-comma.json	reject
 tests/corpus/json5/comment-then-duplicate.json	reject
 tests/corpus/json5/comment-then-trailing-commas.json	reject
 tests/corpus/json5/crlf-counts-once.json	reject
-tests/corpus/json5/depth-10000.json	crash
-tests/corpus/json5/depth-10001.json	crash
+tests/corpus/json5/depth-10000.json	accept
+tests/corpus/json5/depth-10001.json	accept
 tests/corpus/json5/dollar-keys.json	reject
 tests/corpus/json5/double-comma-array.json	reject
 tests/corpus/json5/duplicate-in-array.json	reject
