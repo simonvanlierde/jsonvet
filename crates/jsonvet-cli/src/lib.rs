@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use jsonvet::{Dialect, Report, Severity};
 
 mod args;
+mod frame;
 mod glob;
 mod json;
 mod output;
@@ -19,8 +20,8 @@ mod sarif;
 mod schema;
 mod settings;
 
-use args::{Command, STDIN};
-use output::Printer;
+use args::{Color, Command, STDIN};
+use output::{Format, Look, Printer};
 use schema::Schema;
 use settings::{Resolver, Settings};
 
@@ -66,12 +67,23 @@ fn on_big_stack<T: Send + 'static>(f: fn() -> T) -> T {
 fn run_here() -> ExitCode {
     let annotate = std::env::var_os("GITHUB_ACTIONS").is_some_and(|v| v == "true");
     let stdout = io::stdout().lock();
-    // A summary is for people: hooks and CI read stdout from a pipe and see the same output.
-    let summary = stdout.is_terminal();
+    let set = |name| std::env::var_os(name).is_some_and(|v| !v.is_empty());
+    // NO_COLOR wins over FORCE_COLOR: asking for no color is the safer wish to honour.
+    let color = if set("NO_COLOR") {
+        Some(false)
+    } else if set("FORCE_COLOR") {
+        Some(true)
+    } else {
+        None
+    };
+    let terminal = Terminal {
+        tty: stdout.is_terminal(),
+        color,
+    };
     match run_with(
         std::env::args_os().skip(1),
         annotate,
-        summary,
+        terminal,
         BufWriter::new(stdout),
     ) {
         Ok(code) => ExitCode::from(code),
@@ -82,15 +94,28 @@ fn run_here() -> ExitCode {
     }
 }
 
+/// Where output goes, as far as text output's look depends on it. Public only for
+/// `benches/codspeed.rs`; not part of the crate's API.
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Terminal {
+    /// Standard output is a terminal. A summary and code frames are for people: hooks and CI
+    /// read standard output from a pipe and see one line per problem.
+    pub tty: bool,
+    /// What the environment asks for when `--color` is `auto`: `Some(false)` for `NO_COLOR`,
+    /// `Some(true)` for `FORCE_COLOR`.
+    pub color: Option<bool>,
+}
+
 /// The command, with its inputs passed in: 0 when no file has an error, 1 when one does.
-/// With `summary`, text output ends with a count of the problems. A usage error comes back as
+/// On a terminal, text output ends with a count of the problems. A usage error comes back as
 /// `Err`, which `run` turns into exit status 2. Public only for `benches/codspeed.rs`, which
 /// measures `--schema` in-process; not part of the crate's API.
 #[doc(hidden)]
 pub fn run_with(
     args: impl IntoIterator<Item = OsString>,
     annotate: bool,
-    summary: bool,
+    terminal: Terminal,
     out: impl Write,
 ) -> Result<u8, String> {
     // Usage errors quote arguments and the schema file, which can hold a newline or an escape.
@@ -131,7 +156,9 @@ pub fn run_with(
         .into_iter()
         .map(|file| Ok((settings_for(Path::new(&shown(&file)))?, file)))
         .collect::<Result<Vec<_>, String>>()?;
-    let mut printer = Printer::new(out, args.format, annotate);
+    let summary = terminal.tty;
+    let look = look(args.format, args.color, terminal);
+    let mut printer = Printer::new(out, args.format, annotate, look);
     let mut counts = Counts::default();
     // Files are read and checked on every core, a chunk at a time, then printed here in the
     // order given. A chunk ends once its files hold CHUNK_BYTES, so memory stays near that. With
@@ -449,6 +476,21 @@ fn check<'t>(
     }
 }
 
+/// How text output looks: code frames on a terminal or in color, in color as `--color` and the
+/// environment ask, and lines otherwise.
+fn look(format: Format, color: Color, terminal: Terminal) -> Look {
+    let color = match color {
+        Color::Always => true,
+        Color::Never => false,
+        Color::Auto => terminal.color.unwrap_or(terminal.tty),
+    };
+    if format == Format::Text && (terminal.tty || color) {
+        Look::Frames { color }
+    } else {
+        Look::Lines
+    }
+}
+
 /// Print one file's problems and schema errors, and add them to `counts`, each before it is
 /// printed, so a failed write still leaves the verdict. The file count is added last: only the
 /// summary reads it, and a failed write ends the run before the summary.
@@ -720,6 +762,45 @@ mod tests {
     }
 
     #[test]
+    fn frames_show_on_a_terminal_or_in_color_and_color_follows_the_option_then_the_environment() {
+        use super::{Color, Format, Look, Terminal, look};
+        let terminal = |tty, color| Terminal { tty, color };
+        let frames = |color| Look::Frames { color };
+        assert_eq!(
+            look(Format::Text, Color::Auto, terminal(true, None)),
+            frames(true)
+        );
+        assert_eq!(
+            look(Format::Text, Color::Auto, terminal(true, Some(false))),
+            frames(false)
+        );
+        assert_eq!(
+            look(Format::Text, Color::Never, terminal(true, Some(true))),
+            frames(false)
+        );
+        assert_eq!(
+            look(Format::Text, Color::Auto, terminal(false, None)),
+            Look::Lines
+        );
+        assert_eq!(
+            look(Format::Text, Color::Auto, terminal(false, Some(true))),
+            frames(true)
+        );
+        assert_eq!(
+            look(Format::Text, Color::Always, terminal(false, Some(false))),
+            frames(true)
+        );
+        assert_eq!(
+            look(Format::Sarif, Color::Always, terminal(true, None)),
+            Look::Lines
+        );
+        assert_eq!(
+            look(Format::Json, Color::Always, terminal(true, None)),
+            Look::Lines
+        );
+    }
+
+    #[test]
     fn the_summary_counts_problems_and_files() {
         let dir = std::env::temp_dir().join(format!("jsonvet-summary-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("a temp dir");
@@ -732,7 +813,11 @@ mod tests {
             let args = ["--no-config".into()]
                 .into_iter()
                 .chain(files.iter().map(|f| f.as_os_str().to_owned()));
-            let code = super::run_with(args, false, summary, &mut out).expect("a check");
+            let terminal = super::Terminal {
+                tty: summary,
+                color: Some(false),
+            };
+            let code = super::run_with(args, false, terminal, &mut out).expect("a check");
             (code, String::from_utf8(out).expect("UTF-8"))
         };
         let (code, out) = run(true, &[&dup, &ok]);
@@ -754,7 +839,11 @@ mod tests {
                 .into_iter()
                 .chain([dup.clone().into_os_string()]);
             let mut out = Vec::new();
-            super::run_with(args, false, true, &mut out).expect("a check");
+            let terminal = super::Terminal {
+                tty: true,
+                color: None,
+            };
+            super::run_with(args, false, terminal, &mut out).expect("a check");
             let out = String::from_utf8(out).expect("UTF-8");
             assert!(
                 serde_json::from_str::<serde_json::Value>(&out).is_ok(),

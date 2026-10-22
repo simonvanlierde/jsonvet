@@ -8,6 +8,18 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
+### Added
+
+- On a terminal, each problem now shows as a code frame: the message, the line of the file with
+  the problem marked under it, and the related place, such as a duplicate key's first copy.
+  Piped output, as in pre-commit and CI, keeps one line per problem.
+- `--color auto|always|never` colors the code frames. `auto`, the default, colors them on a
+  terminal unless `NO_COLOR` is set. `FORCE_COLOR` colors them in piped output too.
+- SARIF results and GitHub annotations now have an `endColumn`, so code scanning and pull
+  requests mark the whole duplicate key, number or word, not only its first character.
+- The library's `Problem::end()` gives the byte offset where the problem's text ends, and
+  `Report::text()` gives the text a report is about.
+
 ### Fixed
 
 - `--schema` no longer fails a file because a string in it is too costly to match against a

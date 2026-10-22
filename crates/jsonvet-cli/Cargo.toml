@@ -41,6 +41,7 @@ referencing = { version = "0.59.0", default-features = false }
 serde_json = "1.0.154"
 toml = { version = "1.1.8", default-features = false, features = ["parse", "serde"] }
 ignore = "0.4.33"
+annotate-snippets = "0.12.17"
 
 # Instruction counts under valgrind, not a libtest harness: benches/schema.rs.
 [[bench]]
