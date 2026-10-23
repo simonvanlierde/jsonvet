@@ -54,7 +54,8 @@ the hook and in CI, has no such line.
 On a terminal, each problem shows instead as a code frame: the message, then its line of the file
 with the problem marked under it, and the related place, such as a duplicate key's first copy,
 marked too. Frames are in color unless `NO_COLOR` is set or you pass `--color never`. Pass
-`--color always`, or set `FORCE_COLOR`, for frames in color when output goes to a pipe or a file.
+`--color always`, or set `FORCE_COLOR`, for color when output goes to a pipe or a file: each
+problem stays one line, with its severity and rule in color.
 `NO_COLOR` wins over `FORCE_COLOR`, and `--color always` or `--color never` wins over both.
 In a frame, characters that would act on the terminal or hide text show as `�`.
 

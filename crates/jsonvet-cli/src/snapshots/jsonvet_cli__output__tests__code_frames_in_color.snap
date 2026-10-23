@@ -1,6 +1,6 @@
 ---
-source: crates/jsonvet-cli/tests/cli.rs
-expression: "framed.replace('\\u{1b}', \"␛\")"
+source: crates/jsonvet-cli/src/output.rs
+expression: "out.replace('\\u{1b}', \"␛\")"
 ---
 ␛[1m␛[91merror[duplicate-key]␛[0m␛[1m: duplicate key $.a␛[0m
  ␛[1m␛[94m--> ␛[0mdup.json:3:3

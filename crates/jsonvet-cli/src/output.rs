@@ -6,9 +6,10 @@ use std::fmt::Write as _;
 use std::io::{self, Write};
 
 use annotate_snippets::Renderer;
+use annotate_snippets::renderer::Style;
 use jsonvet::{Location, Problem, RelatedKind, Report, Severity, is_hidden};
 
-use crate::frame::{self, Mark};
+use crate::frame::{self, Mark, STYLED};
 use crate::{json, sarif};
 
 /// The output format, from `--format`.
@@ -70,11 +71,11 @@ fn escape(value: &str, property: bool) -> String {
     }
 }
 
-/// How text output looks: one line per problem, or a code frame for each, from `--color`
-/// and whether standard output is a terminal.
+/// How text output looks: one line per problem, or a code frame for each on a terminal, and
+/// whether in color, from `--color`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Look {
-    Lines,
+    Lines { color: bool },
     Frames { color: bool },
 }
 
@@ -96,10 +97,12 @@ pub(crate) struct Printer<W: Write> {
 /// What each format keeps while the run goes on.
 enum Sink {
     /// With `annotate`, each problem is also a GitHub Actions annotation. With a renderer, each
-    /// problem is a code frame instead of a line.
+    /// problem is a code frame instead of a line. With `color`, a line shows its severity and
+    /// rule in color.
     Text {
         annotate: bool,
         frames: Option<Renderer>,
+        color: bool,
     },
     /// The results, held until `finish` writes the document, and how many past
     /// [`sarif::MAX_RESULTS`] were counted but not kept.
@@ -117,10 +120,11 @@ impl<W: Write> Printer<W> {
             Format::Text => Sink::Text {
                 annotate,
                 frames: match look {
-                    Look::Lines => None,
-                    Look::Frames { color: true } => Some(Renderer::styled()),
+                    Look::Lines { .. } => None,
+                    Look::Frames { color: true } => Some(STYLED),
                     Look::Frames { color: false } => Some(Renderer::plain()),
                 },
+                color: matches!(look, Look::Lines { color: true }),
             },
             Format::Sarif => Sink::Sarif {
                 results: Vec::new(),
@@ -228,7 +232,7 @@ impl<W: Write> Printer<W> {
     ) -> io::Result<()> {
         let at = place.map(|p| (p.at, p.offset));
         let message = &format!("{what}{suffix}")[..];
-        let (annotate, frames) = match &mut self.sink {
+        let (annotate, frames, color) = match &mut self.sink {
             Sink::Json { started } => {
                 if *started {
                     self.out.write_all(b",\n")?;
@@ -253,18 +257,26 @@ impl<W: Write> Printer<W> {
                 }
                 return Ok(());
             }
-            Sink::Text { annotate, frames } => (*annotate, frames.as_ref()),
+            Sink::Text {
+                annotate,
+                frames,
+                color,
+            } => (*annotate, frames.as_ref(), *color),
         };
         let file = &file.to_string_lossy();
+        // Escaped once, for the line and the annotation alike.
+        let message = &printable(message);
         if let Some(renderer) = frames {
             let frame = Self::frame(renderer, file, rule, severity, what, place, related);
             // A blank line after each frame keeps one problem apart from the next.
             writeln!(self.out, "{frame}\n")?;
         } else {
-            let (position, shown) = (Self::position(at, severity, rule), printable(message));
-            writeln!(self.out, "{}{position} {shown}", line_start(file))?;
+            let position = Self::position(at, severity, rule, color);
+            writeln!(self.out, "{}{position} {message}", line_start(file))?;
         }
-        let message = &printable(message);
+        if !annotate {
+            return Ok(());
+        }
         let title = match place {
             Some(place) => {
                 let mut title = format!(",line={},col={}", place.at.line, place.at.column);
@@ -280,23 +292,34 @@ impl<W: Write> Printer<W> {
             }
             None => ",title=jsonvet".to_owned(),
         };
-        if annotate {
-            writeln!(
-                self.out,
-                "::{} file={}{title}::{}",
-                sarif::level(severity),
-                escape(&printable(file), true),
-                escape(message, false)
-            )?;
-        }
-        Ok(())
+        writeln!(
+            self.out,
+            "::{} file={}{title}::{}",
+            sarif::level(severity),
+            escape(&printable(file), true),
+            escape(message, false)
+        )
     }
 
-    /// The part of a text line between the file name and the message.
-    fn position(at: Option<(Location, usize)>, severity: Severity, rule: &str) -> String {
+    /// The part of a text line between the file name and the message, with the severity and
+    /// rule in color when `color` is set.
+    fn position(
+        at: Option<(Location, usize)>,
+        severity: Severity,
+        rule: &str,
+        color: bool,
+    ) -> String {
+        let style = match (color, severity) {
+            (false, _) => Style::new(),
+            (true, Severity::Error) => frame::ERROR,
+            (true, _) => frame::WARNING,
+        };
         match at {
-            Some((at, _)) => format!(":{}:{}: {severity}[{rule}]", at.line, at.column),
-            None => format!(": {severity}:"),
+            Some((at, _)) => format!(
+                ":{}:{}: {style}{severity}[{rule}]{style:#}",
+                at.line, at.column
+            ),
+            None => format!(": {style}{severity}{style:#}:"),
         }
     }
 
@@ -358,7 +381,35 @@ impl<W: Write> Printer<W> {
 
 #[cfg(test)]
 mod tests {
-    use super::{escape, line_start, printable};
+    use std::ffi::OsStr;
+
+    use jsonvet::{Config, Dialect, check};
+
+    use super::{Format, Look, Printer, escape, line_start, printable};
+
+    /// On a terminal in color, each problem is a code frame, with the same color codes on every
+    /// platform.
+    #[test]
+    fn code_frames_in_color() {
+        let mut out = Vec::new();
+        let mut printer = Printer::new(&mut out, Format::Text, false, Look::Frames { color: true });
+        for (file, text) in [
+            ("dup.json", "{\n  \"a\": 1,\n  \"a\": 2\n}\n"),
+            ("open.json", "{\"a\": [1, True"),
+        ] {
+            let report = check(text, &Config::new(Dialect::Json));
+            for problem in report.problems() {
+                printer
+                    .problem(OsStr::new(file), &report, problem)
+                    .expect("a write to memory");
+            }
+        }
+        printer
+            .unreadable(OsStr::new("gone.json"), "no such file")
+            .expect("a write to memory");
+        let out = String::from_utf8(out).expect("UTF-8");
+        insta::assert_snapshot!(out.replace('\u{1b}', "␛"));
+    }
 
     #[test]
     fn messages_stay_on_one_line_and_annotation_fields_are_percent_encoded() {

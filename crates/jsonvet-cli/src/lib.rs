@@ -476,18 +476,19 @@ fn check<'t>(
     }
 }
 
-/// How text output looks: code frames on a terminal or in color, in color as `--color` and the
-/// environment ask, and lines otherwise.
+/// How text output looks: code frames on a terminal and lines otherwise, so tools reading a pipe
+/// always get `file:line:col`, and in color as `--color` and the environment ask.
 fn look(format: Format, color: Color, terminal: Terminal) -> Look {
-    let color = match color {
-        Color::Always => true,
-        Color::Never => false,
-        Color::Auto => terminal.color.unwrap_or(terminal.tty),
-    };
-    if format == Format::Text && (terminal.tty || color) {
+    let color = format == Format::Text
+        && match color {
+            Color::Always => true,
+            Color::Never => false,
+            Color::Auto => terminal.color.unwrap_or(terminal.tty),
+        };
+    if format == Format::Text && terminal.tty {
         Look::Frames { color }
     } else {
-        Look::Lines
+        Look::Lines { color }
     }
 }
 
@@ -762,42 +763,69 @@ mod tests {
     }
 
     #[test]
-    fn frames_show_on_a_terminal_or_in_color_and_color_follows_the_option_then_the_environment() {
+    fn frames_show_on_a_terminal_and_color_follows_the_option_then_the_environment() {
         use super::{Color, Format, Look, Terminal, look};
         let terminal = |tty, color| Terminal { tty, color };
         let frames = |color| Look::Frames { color };
-        assert_eq!(
-            look(Format::Text, Color::Auto, terminal(true, None)),
-            frames(true)
-        );
-        assert_eq!(
-            look(Format::Text, Color::Auto, terminal(true, Some(false))),
-            frames(false)
-        );
-        assert_eq!(
-            look(Format::Text, Color::Never, terminal(true, Some(true))),
-            frames(false)
-        );
-        assert_eq!(
-            look(Format::Text, Color::Auto, terminal(false, None)),
-            Look::Lines
-        );
-        assert_eq!(
-            look(Format::Text, Color::Auto, terminal(false, Some(true))),
-            frames(true)
-        );
-        assert_eq!(
-            look(Format::Text, Color::Always, terminal(false, Some(false))),
-            frames(true)
-        );
-        assert_eq!(
-            look(Format::Sarif, Color::Always, terminal(true, None)),
-            Look::Lines
-        );
-        assert_eq!(
-            look(Format::Json, Color::Always, terminal(true, None)),
-            Look::Lines
-        );
+        let lines = |color| Look::Lines { color };
+        let cases = [
+            (
+                Format::Text,
+                Color::Auto,
+                terminal(true, None),
+                frames(true),
+            ),
+            (
+                Format::Text,
+                Color::Auto,
+                terminal(true, Some(false)),
+                frames(false),
+            ),
+            (
+                Format::Text,
+                Color::Never,
+                terminal(true, Some(true)),
+                frames(false),
+            ),
+            (
+                Format::Text,
+                Color::Auto,
+                terminal(false, None),
+                lines(false),
+            ),
+            // Color forced into a pipe: still one line per problem.
+            (
+                Format::Text,
+                Color::Auto,
+                terminal(false, Some(true)),
+                lines(true),
+            ),
+            (
+                Format::Text,
+                Color::Always,
+                terminal(false, Some(false)),
+                lines(true),
+            ),
+            (
+                Format::Sarif,
+                Color::Always,
+                terminal(true, None),
+                lines(false),
+            ),
+            (
+                Format::Json,
+                Color::Always,
+                terminal(true, None),
+                lines(false),
+            ),
+        ];
+        for (format, color, terminal, want) in cases {
+            assert_eq!(
+                look(format, color, terminal),
+                want,
+                "{format:?} {color:?} {terminal:?}"
+            );
+        }
     }
 
     #[test]

@@ -14,7 +14,8 @@ version for a new option or output, the patch version for a fix.
   the problem marked under it, and the related place, such as a duplicate key's first copy.
   Piped output, as in pre-commit and CI, keeps one line per problem.
 - `--color auto|always|never` colors the code frames. `auto`, the default, colors them on a
-  terminal unless `NO_COLOR` is set. `FORCE_COLOR` colors them in piped output too.
+  terminal unless `NO_COLOR` is set. `FORCE_COLOR` or `--color always` color piped output too,
+  which stays one line per problem with the severity and rule in color.
 - SARIF results and GitHub annotations now have an `endColumn`, so code scanning and pull
   requests mark the whole duplicate key, number or word, not only its first character.
 - The library's `Problem::end()` gives the byte offset where the problem's text ends, and

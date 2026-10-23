@@ -35,8 +35,8 @@ Options:
                                 docs/usage.md in the repository lists its fields).
       --color WHEN              Color text output: auto (the default), always or never. Auto
                                 colors it on a terminal, unless NO_COLOR is set; FORCE_COLOR
-                                colors it anywhere. On a terminal or in color, each problem
-                                shows under its line of the file.
+                                colors it anywhere. On a terminal, each problem shows under
+                                its line of the file; elsewhere it stays one line.
       --schema FILE             Also check each file against the JSON Schema in FILE, reported
                                 under the rule schema. Limits: docs/usage.md in the repository.
       --stdin-filename PATH     Name standard input PATH in the output, and pick its dialect

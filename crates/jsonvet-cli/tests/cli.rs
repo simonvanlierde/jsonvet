@@ -716,11 +716,13 @@ fn sarif_holds_every_problem_and_keeps_the_exit_codes() {
     assert_eq!(opened["physicalLocation"]["region"]["startColumn"], 7);
 }
 
-/// Text output shows each problem as a code frame in color with `--color always` or
-/// `FORCE_COLOR`, and stays one line per problem off a terminal by default, with `--color
-/// never`, or with `NO_COLOR` set. `NO_COLOR` wins over `FORCE_COLOR`, and the option over both.
+/// Off a terminal, text output stays one line per problem whatever the color, so tools that read
+/// `file:line:col` still can. `--color always` or `FORCE_COLOR` color the severity and rule in
+/// each line; `--color never`, `NO_COLOR` or no option leave them plain. `NO_COLOR` wins over
+/// `FORCE_COLOR`, and the option over both. The code frames a terminal gets are tested in
+/// `output.rs`, since a test cannot hand jsonvet a terminal.
 #[test]
-fn code_frames_in_color_and_plain_lines() {
+fn color_forced_off_a_terminal_keeps_one_line_per_problem() {
     let dir = workdir(&[
         ("dup.json", "{\n  \"a\": 1,\n  \"a\": 2\n}\n"),
         ("open.json", "{\"a\": [1, True"),
@@ -740,22 +742,23 @@ fn code_frames_in_color_and_plain_lines() {
         assert_eq!(out.status.code(), Some(1), "{args:?} {vars:?}");
         String::from_utf8(out.stdout).expect("UTF-8 output")
     };
-    let framed = run(&["--color", "always"], &[]);
-    insta::assert_snapshot!(framed.replace('\u{1b}', "␛"));
-
     let plain = "dup.json:3:3: error[duplicate-key] duplicate key $.a (first at 2:3)\n\
                  open.json:1:11: error[syntax] expected a value, found `True`; did you mean `true`?\n\
                  gone.json: error: no such file\n";
+    let colored = "dup.json:3:3: \u{1b}[1m\u{1b}[91merror[duplicate-key]\u{1b}[0m duplicate key $.a (first at 2:3)\n\
+                   open.json:1:11: \u{1b}[1m\u{1b}[91merror[syntax]\u{1b}[0m expected a value, found `True`; did you mean `true`?\n\
+                   gone.json: \u{1b}[1m\u{1b}[91merror\u{1b}[0m: no such file\n";
+    assert_eq!(run(&["--color", "always"], &[]), colored);
     assert_eq!(run(&[], &[]), plain);
     assert_eq!(run(&["--color", "never"], &[]), plain);
     assert_eq!(run(&["--color=auto"], &[("NO_COLOR", "1")]), plain);
-    assert_eq!(run(&[], &[("FORCE_COLOR", "1")]), framed);
+    assert_eq!(run(&[], &[("FORCE_COLOR", "1")]), colored);
     // Set to the empty string, either counts as unset.
     assert_eq!(run(&[], &[("FORCE_COLOR", "")]), plain);
     assert_eq!(run(&[], &[("FORCE_COLOR", "1"), ("NO_COLOR", "1")]), plain);
-    assert_eq!(run(&[], &[("FORCE_COLOR", "1"), ("NO_COLOR", "")]), framed);
+    assert_eq!(run(&[], &[("FORCE_COLOR", "1"), ("NO_COLOR", "")]), colored);
     assert_eq!(run(&["--color", "never"], &[("FORCE_COLOR", "1")]), plain);
-    assert_eq!(run(&["--color", "always"], &[("NO_COLOR", "1")]), framed);
+    assert_eq!(run(&["--color", "always"], &[("NO_COLOR", "1")]), colored);
 
     // SARIF and JSON stay as they are.
     for format in ["sarif", "json"] {

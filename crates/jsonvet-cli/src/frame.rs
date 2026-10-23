@@ -3,6 +3,7 @@
 
 use std::ops::Range;
 
+use annotate_snippets::renderer::{AnsiColor, Effects, Style};
 use annotate_snippets::{Annotation, AnnotationKind, Group, Level, Origin, Renderer, Snippet};
 use jsonvet::{Location, Severity, is_hidden};
 
@@ -12,6 +13,22 @@ use crate::output::printable;
 /// long line to the terminal's width by itself; this only keeps a long minified line from being
 /// copied whole for each problem on it.
 const CONTEXT: usize = 160;
+
+/// The look of an error's severity and rule, in a frame and in a colored line.
+pub(crate) const ERROR: Style = AnsiColor::BrightRed.on_default().effects(Effects::BOLD);
+/// The look of a warning's severity and rule.
+pub(crate) const WARNING: Style = AnsiColor::Yellow.on_default().effects(Effects::BOLD);
+const BLUE: Style = AnsiColor::BrightBlue.on_default().effects(Effects::BOLD);
+
+/// annotate-snippets' default colors, set by hand: on Windows it swaps blue for cyan and makes
+/// the message bright white, and the output should not depend on the platform.
+pub(crate) const STYLED: Renderer = Renderer::styled()
+    .error(ERROR)
+    .warning(WARNING)
+    .info(BLUE)
+    .line_num(BLUE)
+    .context(BLUE)
+    .emphasis(Style::new().effects(Effects::BOLD));
 
 /// A place a frame marks: where it starts, its byte range in the text, and its label.
 #[derive(Clone, Copy)]
@@ -58,8 +75,8 @@ pub(crate) fn render(
     let close = related.filter(|related| {
         related.at.line == primary.at.line && primary.span.0.abs_diff(related.span.0) <= CONTEXT
     });
-    // Each snippet's excerpt and the mark its header names, in the order they show.
-    let mut shown = Vec::with_capacity(2);
+    // The column of the mark each snippet's header names, in the order they show.
+    let mut columns = Vec::with_capacity(2);
     // Close on the same line: one excerpt holds both.
     if let Some(related) = close {
         let first = if related.span.0 < primary.span.0 {
@@ -71,38 +88,42 @@ pub(crate) fn render(
         let excerpt = Excerpt::new(text, first.at, first.span.0, to);
         let marks = [primary, related];
         group = group.element(excerpt.snippet(text, &file, &marks, true, first.at.line));
-        shown.push((excerpt, primary));
+        columns.push(primary.at.column);
     } else {
         let excerpt = Excerpt::new(text, primary.at, primary.span.0, primary.span.1);
         group = group.element(excerpt.snippet(text, &file, &[primary], true, primary.at.line));
-        shown.push((excerpt, primary));
+        columns.push(primary.at.column);
         if let Some(related) = related {
             let other = Excerpt::new(text, related.at, related.span.0, related.span.1);
             let marks = [related];
             group = group.element(other.snippet(text, &file, &marks, false, related.at.line));
-            shown.push((other, related));
+            columns.push(related.at.column);
         }
     }
-    let mut frame = renderer.render(&[group]);
-    // annotate-snippets counts a header's column in the excerpt, which can start mid-line. The
-    // first header follows the title line, the second a `:::`.
-    let mut from = frame.find('\n').unwrap_or(0);
-    for (n, (excerpt, mark)) in shown.iter().enumerate() {
-        if n > 0 {
-            from += frame[from..].find(":::").unwrap_or(0);
-        }
-        if !excerpt.cut.0 {
-            continue;
-        }
-        let kept = text[excerpt.range.start..mark.span.0].chars().count();
-        let wrong = format!(":{}:{}", mark.at.line, kept + 2);
-        if let Some(at) = frame[from..].find(&wrong) {
-            let at = from + at;
-            let right = format!(":{}:{}", mark.at.line, mark.at.column);
-            frame.replace_range(at..at + wrong.len(), &right);
-        }
+    let frame = renderer.render(&[group]);
+    // annotate-snippets counts a header's column in the excerpt, which can start mid-line, so
+    // each header gets the column of the mark it names instead.
+    let mut columns = columns.into_iter();
+    let lines: Vec<String> = frame
+        .split('\n')
+        .map(|line| match (is_header(line), line.rsplit_once(':')) {
+            (true, Some((head, _))) => columns
+                .next()
+                .map_or_else(|| line.to_owned(), |column| format!("{head}:{column}")),
+            _ => line.to_owned(),
+        })
+        .collect();
+    lines.join("\n")
+}
+
+/// Whether a rendered line is a header, ` --> file:line:col` or ` ::: file:line:col`, after any
+/// color codes. Source lines start with a line number and marks with `|`, so neither matches.
+fn is_header(line: &str) -> bool {
+    let mut rest = line.trim_start();
+    while let Some(after) = rest.strip_prefix('\u{1b}') {
+        rest = after.split_once('m').map_or("", |(_, rest)| rest);
     }
-    frame
+    rest.starts_with("--> ") || rest.starts_with("::: ")
 }
 
 /// The part of one line a frame shows.
@@ -274,6 +295,43 @@ mod tests {
     #[test]
     fn a_problem_at_the_end_of_the_file_marks_the_empty_place_there() {
         insta::assert_snapshot!(frames("{\"a\": [1,\n"));
+    }
+
+    #[test]
+    fn headers_name_the_column_jsonvet_counts_past_a_tab_a_crlf_and_multibyte_characters() {
+        // Columns count code points: a tab, `é` (2 bytes) and `中` (3 bytes) are one each.
+        let frame = frames("{\r\n\t\"é中\": 1,\r\n\t\"é中\": 2}\r\n");
+        assert!(frame.contains(" --> f:3:2\n"), "{frame}");
+        assert!(frame.contains(" ::: f:2:2\n"), "{frame}");
+        assert!(!frame.contains('\r'), "{frame}");
+        insta::assert_snapshot!(frame);
+        let frame = frames("[\"é中\",\t1 2]");
+        // The missing `,` is at the space after `1`.
+        assert!(frame.contains(" --> f:1:9\n"), "{frame}");
+    }
+
+    #[test]
+    fn a_file_name_like_a_position_keeps_its_name() {
+        // A cut line, whose header column is fixed after rendering, in a file named like one.
+        let text = format!("[{}True]", "1, ".repeat(100));
+        let report = check(&text, &Config::new(Dialect::Json5));
+        let problem = &report.problems()[0];
+        let mark = Mark {
+            at: report.location(problem.offset()),
+            span: (problem.offset(), problem.end()),
+            label: None,
+        };
+        let frame = render(
+            &Renderer::plain(),
+            &text,
+            "a:1:162.json",
+            problem.severity(),
+            problem.rule().id(),
+            "m",
+            Some(mark),
+            None,
+        );
+        assert!(frame.contains(" --> a:1:162.json:1:302\n"), "{frame}");
     }
 
     #[test]
