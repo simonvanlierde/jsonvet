@@ -43,7 +43,7 @@ strip = true
 # info. The bench profile inherits `strip = true` from release, which leaves every count at 0.
 [profile.bench]
 debug = true
-strip = "debuginfo"
+strip = false
 
 # The playground's .wasm (crates/jsonvet-wasm): built for size, and leaves the release profile as
 # it is. Debug info only: wasm-bindgen reads its own custom sections, which a full strip removes.
