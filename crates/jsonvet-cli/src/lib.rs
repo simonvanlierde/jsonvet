@@ -262,14 +262,14 @@ fn jobs(
             // one is never passed over. `--schema` replaces them all.
             if given.is_none() && walked.insert(Arc::as_ptr(&settings)) {
                 for entry in &settings.schemas {
-                    Result::clone(&load(&entry.schema)).map_err(|e| output::printable(&e))?;
+                    load(&entry.schema).map_err(|e| output::printable(&e))?;
                 }
             }
             let schema = match given {
                 Some(schema) => Some(Arc::clone(schema)),
                 None => settings
                     .schema_for(&name.to_string_lossy())
-                    .map(|path| Result::clone(&load(path)))
+                    .map(load)
                     .transpose()
                     .map_err(|e| output::printable(&e))?,
             };
@@ -386,7 +386,7 @@ fn lock(resolver: &Mutex<Resolver>) -> std::sync::MutexGuard<'_, Resolver> {
 }
 
 /// A schema, or why it cannot be used.
-type Loaded = Arc<Result<Arc<Schema>, String>>;
+type Loaded = Result<Arc<Schema>, String>;
 
 /// The schemas config files and `$schema` keys name, each read once.
 #[derive(Default)]
@@ -402,11 +402,10 @@ impl Schemas {
             .0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        Arc::clone(
-            loaded
-                .entry(key)
-                .or_insert_with(|| Arc::new(load().map(Arc::new))),
-        )
+        loaded
+            .entry(key)
+            .or_insert_with(|| load().map(Arc::new))
+            .clone()
     }
 }
 
@@ -531,8 +530,8 @@ fn split(text: &str, dialect: Dialect, parts: usize) -> Vec<std::ops::Range<usiz
 }
 
 /// Check a file's text with no schema given for it, against the schema its own `$schema` names
-/// if any, relative to the file's folder, through `load`. A schema that cannot be used is an
-/// error at the `$schema` value. JSON Lines holds many documents, so no one `$schema` applies.
+/// if any, relative to the file's folder, through `load`. A schema file that does not exist is
+/// skipped; one that cannot be used is an error at the `$schema` value. JSON Lines holds many documents, so no one `$schema` applies.
 fn check_own_schema<'t>(
     name: &str,
     text: &'t str,
@@ -550,7 +549,13 @@ fn check_own_schema<'t>(
         return check(name, text, settings, None, parts);
     };
     let folder = Path::new(name).parent().unwrap_or(Path::new(""));
-    let errors = match &*load(&folder.join(path)) {
+    let schema_path = folder.join(path);
+    // A schema that is not there is skipped like a URL: tools name one under `node_modules` that
+    // a CI run may not have installed.
+    if matches!(std::fs::metadata(&schema_path), Err(e) if e.kind() == io::ErrorKind::NotFound) {
+        return check(name, text, settings, None, parts);
+    }
+    let errors = match &load(&schema_path) {
         Ok(schema) => events.map_or_else(Vec::new, |events| schema.errors(&events)),
         Err(e) => vec![(offset, output::printable(e), false)],
     };
@@ -743,6 +748,21 @@ mod tests {
         CHUNK_BYTES, MAX_CONFIG_BYTES, SCHEMA_BYTES, SPLIT_BYTES, Schema, Settings, check,
         chunk_len, parallel, read_small, schema_share, split, unsafe_ignore_file,
     };
+
+    #[test]
+    fn is_url_tells_a_scheme_from_a_windows_drive() {
+        for (text, url) in [
+            ("https://x", true),
+            ("ab:x", true),
+            ("C:\\a.json", false),
+            ("./a.json", false),
+            ("a.json", false),
+            // A scheme starts with a letter.
+            ("1a:x", false),
+        ] {
+            assert_eq!(super::is_url(text), url, "{text}");
+        }
+    }
 
     #[test]
     fn small_files_are_read_up_to_their_limit_and_no_further() {

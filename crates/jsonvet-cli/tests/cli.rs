@@ -1368,7 +1368,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
     }
 
     #[test]
-    fn a_schema_named_by_a_file_or_config_that_cannot_be_used_is_reported() {
+    fn a_schema_that_cannot_be_used_is_reported_unless_a_file_names_a_missing_one() {
         let dir = workdir(&[
             ("gone.json", "{\"$schema\": \"missing.json\", \"a\": 1}"),
             ("broken.json", "{\"type\": "),
@@ -1383,18 +1383,17 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
                 "schemas = [{ files = \"*.json\", schemas = \"broken.json\" }]\n",
             ),
         ]);
-        // A file's own `$schema` that cannot be used is an error in that file.
+        // A file's own `$schema` that does not exist is skipped, like a URL: tools put one in
+        // `./node_modules/...` and CI may not have installed it.
+        let (code, out, err) = jsonvet_stderr(&dir, &["gone.json", "ok.json"]);
+        assert_eq!((code, out.as_str()), (0, ""), "{err}");
+        // One that exists but cannot be used is an error in that file.
         let (code, out, err) = jsonvet_stderr(&dir, &["gone.json", "uses-broken.json", "ok.json"]);
         assert_eq!(code, 1, "{err}");
         let lines: Vec<&str> = out.lines().collect();
-        assert_eq!(lines.len(), 2, "{out}");
-        assert!(
-            lines[0]
-                .starts_with("gone.json:1:13: error[schema] cannot read the schema missing.json: "),
-            "{out}"
-        );
+        assert_eq!(lines.len(), 1, "{out}");
         assert_eq!(
-            lines[1],
+            lines[0],
             "uses-broken.json:2:14: error[schema] the schema broken.json:1:10: unclosed `{`: \
              expected a value, found the end of the file"
         );

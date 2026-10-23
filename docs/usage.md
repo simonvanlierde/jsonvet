@@ -372,9 +372,13 @@ one exists is in [design.md](design.md#--schema).
 - **Which schema.** `--schema` applies to every file. Without it, a file takes the schema of the
   last `schemas` entry in its config file that matches it. Without one, a file whose top-level
   object has a `$schema` string that is a path, not a URL, is checked against that file, relative
-  to the file's own folder. A `$schema` URL is skipped, since jsonvet fetches nothing, and so is
-  `$schema` in JSON Lines. A file with no schema is checked for syntax only. A `$schema` file that
-  jsonvet cannot read or use is a schema error at the `$schema` value, not a usage error.
+  to the file's own folder. For standard input without `--stdin-filename`, that folder is the
+  current folder. A `$schema` URL is skipped, since jsonvet fetches nothing, and so is
+  `$schema` in JSON Lines. So is a `$schema` path to a file that does not exist, such as one under
+  `node_modules` that was not installed. A file with no schema is checked for syntax only. A
+  `$schema` file that exists but jsonvet cannot read or use is a schema error at the `$schema`
+  value, not a usage error. A missing schema named by `--schema` or a config file is a usage
+  error.
 
 - **Severity.** Schema errors are always errors, in text, annotations, SARIF and JSON. `--error`,
   `--warn`, `--ignore` and the config file do not take `schema`, and exit 2 if you give it to

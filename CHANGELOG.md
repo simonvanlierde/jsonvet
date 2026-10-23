@@ -23,6 +23,9 @@ version for a new option or output, the patch version for a fix.
 
 ### Changed
 
+- A file's own `$schema` that names a local file is now checked against when the file exists. A
+  path to a file that does not exist, such as one under `node_modules` that was not installed, is
+  skipped like a URL.
 - `--schema` uses jsonschema 0.59.0, which decides where each pattern applies. A key or string too
   costly to match is an error only where the pattern applies and its outcome changes the result.
   A document that also has another schema error reports only that one.
