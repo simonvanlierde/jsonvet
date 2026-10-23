@@ -176,8 +176,9 @@ timeout, so a file gets the same verdict on every machine; see
 [0010](decisions/0010-schema-limits-are-deterministic-caps.md). Their values are in the
 [reference](usage.md#json-schema-limits). Why each exists:
 
-- **File depth.** jsonschema validates recursively. Its memory grows with the square of the depth
-  when an error sits deep under a recursive `$ref`: 1.3 GB for a 50 KB file nested 10,000 levels.
+- **File depth.** jsonschema validates recursively, so depth costs stack. Its memory for an error
+  deep under a recursive `$ref` grows linearly with depth: 19 MB for a 60 KB file nested 10,000
+  levels.
   Every run starts a thread with a 64 MB stack, because the 512-level read took up to 2.2 MB in a
   debug build, more than Windows' 1 MB main thread. Only the stack a run uses is committed, so a
   plain check still works under `ulimit -v 60000`. Where the thread cannot start, jsonvet runs on

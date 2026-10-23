@@ -13,18 +13,15 @@ That holds for every file jsonvet reads: the files it checks, a config file (`js
 
 ## Known limits
 
-Two cases are known and still open, both in a schema jsonvet cannot check a part at a time
-([design.md](docs/design.md#--schema)). Until they close, review schema changes in pull requests
+One case is known and still open, in a schema jsonvet cannot check a part at a time
+([design.md](docs/design.md#--schema)). Until it closes, review schema changes in pull requests
 from strangers before CI runs them.
 
 - jsonschema collects every error of one validation call before jsonvet sees any. So a schema
   that puts an `anyOf` or an `enum` around `additionalProperties` can still take gigabytes on a
-  document with many failing values. Closing it needs a way in jsonschema to stop early.
-- jsonschema checks a document again for each outcome of a regex match it cannot finish, up to 64
-  times, repeating every such match each time, and compares each check's errors with every other
-  check's. Under an `allOf`, 5,000 strings too costly for a pattern took 51 s, and one beside
-  100,000 strings that fail the pattern took 41 s. Closing it needs jsonschema to remember those
-  matches and compare errors in linear time.
+  document with many failing values: about 450 bytes for each, on top of the 20 bytes for each
+  byte of the file. 2,000,000 failing keys in a 42 MB file took 1.4 GB, against 0.52 GB when they
+  pass. Closing it needs a way in jsonschema to stop early.
 
 Output grows linearly with the input, but can be many times its size. The worst case I could
 build is a JSON5 file of 200,000 duplicate keys of 4 bytes each, under a path cut at 256 bytes.
