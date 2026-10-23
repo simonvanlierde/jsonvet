@@ -8,6 +8,12 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
+### Added
+
+- A playground at <https://simonvanlierde.github.io/jsonvet/>. Paste text, pick a dialect, and see
+  each problem with its line, column and rule as you type. It runs jsonvet in your browser as
+  WebAssembly, so the text never leaves your machine. It has no `--schema` checks.
+
 ### Fixed
 
 - `--schema` no longer fails a file because a string in it is too costly to match against a

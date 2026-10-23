@@ -28,7 +28,9 @@ week, `fuzz.yml` and `mutants.yml` run in full. Every Monday, `advisories.yml` r
 `cargo deny check advisories`, so a new RustSec advisory against `Cargo.lock` fails a run without
 waiting for a pull request. `scorecard.yml` rates the repository for the OpenSSF Scorecard badge.
 `codspeed.yml` runs the divan benchmarks on every pull request and push to main, and CodSpeed
-comments with the change against main.
+comments with the change against main. `pages.yml` builds the browser playground
+(`crates/jsonvet-wasm` and `playground/`) on a pull request that touches it, and deploys it to
+GitHub Pages from main.
 
 User-facing docs live in three places: the README for getting started, `docs/usage.md` for the
 reference, and `docs/design.md` for the design as it is now. The choices behind it, with their
@@ -86,7 +88,7 @@ and cargo deny.
   stops growing within about two hours per target. A new json5 version in `fuzz/` can need new
   skips in `diff_json5`. Read its skip list before you call a divergence a
   jsonvet bug.
-- **Mutation testing.** `just mutants` runs cargo-mutants over both crates in about 25 minutes, and
+- **Mutation testing.** `just mutants` runs cargo-mutants over the crates in about 25 minutes, and
   `mutants.yml` runs it weekly. It fails when a mutant survives that `.cargo/mutants.toml` does
   not list. List one there only when it changes no behaviour, and say why.
 - **Differential.** `just differential` compares jsonvet with check-json5 1.4.1 on generated

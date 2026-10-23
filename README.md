@@ -18,6 +18,9 @@ package.json:2:14: error[syntax] missing `,`
 events.jsonl:12:1: error[syntax] blank line; JSON Lines needs a value on every line
 ```
 
+**Try it in your browser:** the [playground](https://simonvanlierde.github.io/jsonvet/) checks the
+text you paste as you type. Nothing to install, and the text stays on your machine.
+
 - **Six dialects, one parser.** Each file is checked in the dialect its extension implies.
 - **JSON Schema with positions.** `--schema` points each schema error at its value's line and
   column. It never fetches anything from the network.

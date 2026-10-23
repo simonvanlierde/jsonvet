@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>jsonvet playground</title>
+<meta name="description" content="Check JSON, JSONC, JSON5, HuJSON and JSON Lines in your browser with jsonvet.">
+<style>
+  :root {
+    --bg: #fafaf9; --fg: #1c1917; --muted: #78716c; --line: #e7e5e4; --panel: #fff;
+    --error: #dc2626; --error-bg: #fee2e2; --warning: #b45309; --warning-bg: #fef3c7; --ok: #15803d;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --size: 14px; --lh: 20px;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0c0a09; --fg: #e7e5e4; --muted: #a8a29e; --line: #292524; --panel: #1c1917;
+      --error: #f87171; --error-bg: #450a0a; --warning: #fbbf24; --warning-bg: #422006; --ok: #4ade80;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+  h1 { margin: 0; font-size: 1.5rem; }
+  header p { margin: 0; color: var(--muted); }
+  header a { color: inherit; }
+  .bar { display: flex; align-items: center; gap: 12px; margin: 16px 0 8px; }
+  select { font: inherit; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--fg); }
+  #status { margin-left: auto; font-size: .9rem; color: var(--muted); }
+  #status.ok { color: var(--ok); }
+  #status.bad { color: var(--error); }
+  .editor { position: relative; display: flex; height: 50vh; min-height: 240px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); overflow: hidden; }
+  .editor:focus-within { outline: 2px solid var(--muted); outline-offset: -1px; }
+  .gutter, .layer, textarea { margin: 0; padding: 8px; font: var(--size)/var(--lh) var(--mono); white-space: pre; tab-size: 4; }
+  .gutter { flex: none; min-width: 3.5em; text-align: right; color: var(--muted); border-right: 1px solid var(--line); overflow: hidden; user-select: none; }
+  .text { position: relative; flex: 1; min-width: 0; }
+  .layer, textarea { position: absolute; inset: 0; width: 100%; height: 100%; overflow: auto; }
+  /* Room for the textarea's scrollbar, so the layers scroll as far as it does. */
+  .layer, .gutter { padding-bottom: 40px; }
+  .layer { color: transparent; pointer-events: none; overflow: hidden; }
+  .layer div, .gutter div { min-height: var(--lh); }
+  .layer .error, .gutter .error { background: var(--error-bg); }
+  .layer .warning, .gutter .warning { background: var(--warning-bg); }
+  .gutter .error { color: var(--error); }
+  .gutter .warning { color: var(--warning); }
+  textarea { border: 0; resize: none; background: transparent; color: var(--fg); outline: none; }
+  ol { list-style: none; margin: 12px 0 0; padding: 0; }
+  li button { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: auto auto 1fr; gap: 2px 12px; width: 100%; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: .95rem; }
+  li button:hover, li button:focus-visible { background: var(--panel); }
+  li button:focus-visible { outline: 2px solid var(--muted); }
+  .at { font-family: var(--mono); color: var(--muted); }
+  .rule { font-family: var(--mono); }
+  .rule.error { color: var(--error); }
+  .rule.warning { color: var(--warning); }
+  .path { grid-column: 3; font-family: var(--mono); color: var(--muted); font-size: .85rem; overflow-wrap: anywhere; }
+  @media (max-width: 560px) {
+    /* 16px, or iOS zooms in when the text area gets focus. */
+    :root { --size: 16px; --lh: 22px; }
+    li button { grid-template-columns: auto 1fr; }
+    .msg, .path { grid-column: 1 / -1; }
+  }
+  footer { margin-top: 24px; font-size: .85rem; color: var(--muted); }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>jsonvet playground</h1>
+    <p>Paste text, pick a dialect, see every problem as you type. <a href="https://github.com/simonvanlierde/jsonvet">Source and CLI</a></p>
+  </header>
+  <div class="bar">
+    <label for="dialect">Dialect</label>
+    <select id="dialect">
+      <option value="json">JSON</option>
+      <option value="i-json">I-JSON</option>
+      <option value="jsonc">JSONC</option>
+      <option value="jwcc">JWCC (HuJSON)</option>
+      <option value="json5" selected>JSON5</option>
+      <option value="jsonl">JSON Lines</option>
+    </select>
+    <span id="status" role="status">Loading…</span>
+  </div>
+  <div class="editor">
+    <div class="gutter" id="gutter" aria-hidden="true"></div>
+    <div class="text">
+      <div class="layer" id="layer" aria-hidden="true"></div>
+      <textarea id="input" wrap="off" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Text to check">{
+  // The port the server listens on.
+  "port": 80,
+  "host": "example.com",
+  "port": 8080,
+}
+</textarea>
+    </div>
+  </div>
+  <ol id="problems" aria-label="Problems"></ol>
+  <footer>Checks run in your browser: the text never leaves the page. JSON Schema checks are in the <a href="https://github.com/simonvanlierde/jsonvet#readme">command-line tool</a>.</footer>
+</main>
+<script type="module">
+  import init, { check } from "./pkg/jsonvet_wasm.js";
+
+  const input = document.getElementById("input");
+  const dialect = document.getElementById("dialect");
+  const status = document.getElementById("status");
+  const gutter = document.getElementById("gutter");
+  const layer = document.getElementById("layer");
+  const list = document.getElementById("problems");
+  // Line ends as jsonvet counts them: JSON5 also ends a line at U+2028 and U+2029.
+  const lineEnd = () => (dialect.value === "json5" ? /\r\n|[\r\n\u2028\u2029]/g : /\r\n|[\r\n]/g);
+
+  // The UTF-16 index of a 1-based line and a column in code points.
+  function indexOf(text, line, column) {
+    const ends = lineEnd();
+    let start = 0;
+    for (let l = 1; l < line && ends.exec(text); l++) start = ends.lastIndex;
+    let i = start;
+    for (let c = 1; c < column && i < text.length; c++) i += text.codePointAt(i) > 0xffff ? 2 : 1;
+    return i;
+  }
+
+  function lines(element, texts, marks) {
+    element.replaceChildren(...texts.map((t, i) => {
+      const div = document.createElement("div");
+      div.textContent = t;
+      if (marks.has(i + 1)) div.className = marks.get(i + 1);
+      return div;
+    }));
+  }
+
+  function run() {
+    const text = input.value;
+    let problems;
+    try {
+      problems = JSON.parse(check(text, dialect.value));
+    } catch (e) {
+      status.textContent = String(e);
+      status.className = "bad";
+      return;
+    }
+    const marks = new Map();
+    for (const p of problems) if (marks.get(p.line) !== "error") marks.set(p.line, p.severity);
+    const texts = text.split(lineEnd());
+    lines(layer, texts, marks);
+    lines(gutter, texts.map((_, i) => String(i + 1)), marks);
+    list.replaceChildren(...problems.map((p) => {
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      const parts = [
+        ["at", `${p.line}:${p.column}`],
+        [`rule ${p.severity}`, p.rule],
+        ["msg", p.message],
+      ];
+      // The message names the path of a duplicate key already.
+      if (p.path && !p.message.includes(p.path)) parts.push(["path", p.path]);
+      for (const [cls, value] of parts) {
+        const span = document.createElement("span");
+        span.className = cls;
+        span.textContent = value;
+        button.append(span);
+      }
+      button.title = `${p.severity}: go to line ${p.line}, column ${p.column}`;
+      button.addEventListener("click", () => {
+        const i = indexOf(input.value, p.line, p.column);
+        input.focus();
+        input.setSelectionRange(i, i);
+      });
+      item.append(button);
+      return item;
+    }));
+    const errors = problems.filter((p) => p.severity === "error").length;
+    status.textContent = problems.length === 0 ? "No problems"
+      : `${problems.length} problem${problems.length === 1 ? "" : "s"}`;
+    status.className = errors ? "bad" : problems.length ? "" : "ok";
+    sync();
+  }
+
+  function sync() {
+    layer.scrollTop = gutter.scrollTop = input.scrollTop;
+    layer.scrollLeft = input.scrollLeft;
+  }
+
+  input.addEventListener("input", run);
+  input.addEventListener("scroll", sync);
+  dialect.addEventListener("change", run);
+  try {
+    await init();
+    run();
+  } catch (e) {
+    status.textContent = `Could not load jsonvet: ${e}`;
+    status.className = "bad";
+  }
+</script>
+</body>
+</html>
