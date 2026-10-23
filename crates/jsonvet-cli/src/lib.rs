@@ -111,15 +111,14 @@ pub fn run_with(
     let settings_for = |path: &Path| lock(&resolver).for_file(path);
     let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     let files = expand(args.files, &resolver, threads)?;
+    let schemas = Schemas::default();
+    let load = |path: &Path| schemas.get(path, || Schema::load(path, &*settings_for(path)?));
     let schema = args
         .schema
         .as_deref()
-        .map(|path| Schema::load(path, &*settings_for(path)?))
+        .map(load)
         .transpose()
-        .map_err(|e| output::printable(&e))?
-        .map(Arc::new);
-    let schemas = Schemas::default();
-    let load = |path: &Path| schemas.get(path, || Schema::load(path, &*settings_for(path)?));
+        .map_err(|e| output::printable(&e))?;
 
     // Standard input goes by its `--stdin-filename`, for settings and in the output.
     let stdin_name = args.stdin_filename.unwrap_or_else(|| STDIN.into());
@@ -388,7 +387,7 @@ fn lock(resolver: &Mutex<Resolver>) -> std::sync::MutexGuard<'_, Resolver> {
 /// A schema, or why it cannot be used.
 type Loaded = Result<Arc<Schema>, String>;
 
-/// The schemas config files and `$schema` keys name, each read once.
+/// The schemas `--schema`, config files and `$schema` keys name, each read once.
 #[derive(Default)]
 struct Schemas(Mutex<HashMap<PathBuf, Loaded>>);
 

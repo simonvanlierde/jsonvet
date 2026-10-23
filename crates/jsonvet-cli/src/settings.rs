@@ -506,8 +506,9 @@ pub(crate) fn load(path: &Path) -> Result<Settings, String> {
             }
             ("schemas", DeValue::Array(entries)) => {
                 for entry in entries {
-                    let (files, schema) =
-                        schema_entry(entry).map_err(|(offset, e)| at(offset, &e))?;
+                    let [(_, files), (_, schema)] =
+                        entry_strings(entry, "schemas", ["files", "schema"])
+                            .map_err(|(offset, e)| at(offset, &e))?;
                     if let (Some(base), Some(folder)) = (&base, folder) {
                         settings.schemas.push(SchemaPattern {
                             files: Glob::new(files),
@@ -546,14 +547,6 @@ fn dialect_entry(entry: &Spanned<DeValue<'_>>) -> Result<DialectPattern, (usize,
         dialect: parse_dialect(dialect).map_err(|e| (dialect_at, e))?,
         base: None,
     })
-}
-
-/// One `schemas` entry: a table with exactly a `files` string and a `schema` string.
-fn schema_entry<'e>(
-    entry: &'e Spanned<DeValue<'_>>,
-) -> Result<(&'e str, &'e str), (usize, String)> {
-    let [(_, files), (_, schema)] = entry_strings(entry, "schemas", ["files", "schema"])?;
-    Ok((files, schema))
 }
 
 /// The two strings of an entry in the array `array`, a table with exactly the keys `keys`, each
