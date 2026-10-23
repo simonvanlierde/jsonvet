@@ -247,7 +247,11 @@ impl<W: Write> Printer<W> {
                 if results.len() < sarif::MAX_RESULTS {
                     // GitHub code scanning needs a line in every result.
                     let at = at.map_or(Location::START, |(at, _)| at);
-                    let end = place.and_then(|p| p.end).map(|(end, _)| end);
+                    // A point problem, such as a missing `,`, has no end: GitHub leaves `endColumn` out for
+                    // it, and so does SARIF.
+                    let end = place
+                        .and_then(|p| p.end.filter(|&(_, offset)| offset > p.offset))
+                        .map(|(end, _)| end);
                     let related = related.map(|(first, _, what)| (first, what));
                     results.push(sarif::result(
                         file, rule, severity, message, at, end, related,

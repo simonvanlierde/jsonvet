@@ -38,11 +38,17 @@ pub(crate) struct Mark<'a> {
     pub(crate) label: Option<&'a str>,
 }
 
+/// The characters jsonvet counts as a line break.
+fn is_line_break(c: char) -> bool {
+    matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}')
+}
+
 /// The byte range of the character at `offset`, or an empty range at a line break or the end
 /// of the text, for a problem that has only a start.
 pub(crate) fn one_char(text: &str, offset: usize) -> (usize, usize) {
     match text.get(offset..).and_then(|rest| rest.chars().next()) {
-        Some('\n' | '\r' | '\u{2028}' | '\u{2029}') | None => (offset, offset),
+        Some(c) if is_line_break(c) => (offset, offset),
+        None => (offset, offset),
         Some(c) => (offset, offset + c.len_utf8()),
     }
 }
@@ -149,7 +155,7 @@ impl Excerpt {
         let mut cut_end = false;
         for (i, c) in text[from..].char_indices() {
             let i = from + i;
-            if matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}') {
+            if is_line_break(c) {
                 end = i;
                 break;
             }

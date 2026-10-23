@@ -48,8 +48,8 @@ the hook's own `exclude:` and the Action's `files` input there.
 ## Output
 
 Each problem is one line: `file:line:col: severity[rule] message`. When stdout is a terminal,
-a last line counts them, such as `3 errors in 2 of 5 files`. Piped or redirected output, as in
-the hook and in CI, has no such line.
+a last line counts them, such as `3 errors in 2 of 5 files`. Piped or redirected output has no
+such line.
 
 On a terminal, each problem shows instead as a code frame: the message, then its line of the file
 with the problem marked under it, and the related place, such as a duplicate key's first copy,
@@ -57,6 +57,9 @@ marked too. Frames are in color unless `NO_COLOR` is set or you pass `--color ne
 `--color always`, or set `FORCE_COLOR`, for color when output goes to a pipe or a file: each
 problem stays one line, with its severity and rule in color.
 `NO_COLOR` wins over `FORCE_COLOR`, and `--color always` or `--color never` wins over both.
+pre-commit runs its hooks under a terminal when its color is on, which is the default from a
+terminal, so a commit made there shows frames. CI, pre-commit.ci and pipes keep one line per
+problem, and `| cat` forces lines.
 In a frame, characters that would act on the terminal or hide text show as `�`.
 
 - Lines and columns count from 1. Columns count Unicode code points, and a byte order mark is
@@ -319,8 +322,8 @@ jsonvet --format sarif $(git ls-files '*.json') > jsonvet.sarif
 
 - Each problem is a result with its rule, severity, message and position. The position has an
   `endColumn` (and an `endLine` when the end is on a later line): the column just past the text
-  the problem is about, or the start column for a problem between two characters, such as a
-  missing `,`. A schema error has no end. A duplicate key also
+  the problem is about. A problem between two characters, such as a missing `,`, has no end, as in
+  a GitHub annotation. A schema error has no end. A duplicate key also
   points at the first copy. A file jsonvet cannot read is a result under the rule `unreadable`.
 - Each rule carries its help text and a link to its section above, which GitHub code scanning
   shows on each alert.

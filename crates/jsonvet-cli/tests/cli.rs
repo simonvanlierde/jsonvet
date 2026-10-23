@@ -82,6 +82,33 @@ fn reports_and_exit_codes() {
 }
 
 #[test]
+fn a_point_problem_has_no_end_column_in_annotations_or_sarif() {
+    let dir = workdir(&[
+        ("comma.json", "[1 2]"),
+        // A JSON5 line continuation puts the second `ab` key on two lines.
+        ("wrap.json5", "{\"ab\":1,\"a\\\nb\":2}"),
+    ]);
+    let (_, out, _) = run_jsonvet(&dir, &["comma.json"], true);
+    assert!(
+        out.contains("::error file=comma.json,line=1,col=3,title=jsonvet (syntax)"),
+        "{out}"
+    );
+    let (_, out, _) = run_jsonvet(&dir, &["--format", "sarif", "comma.json"], false);
+    let sarif: serde_json::Value = serde_json::from_str(&out).expect("JSON output");
+    let region = &sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["region"];
+    assert_eq!(
+        *region,
+        serde_json::json!({"startLine": 1, "startColumn": 3})
+    );
+
+    let (_, out, _) = run_jsonvet(&dir, &["--format", "sarif", "wrap.json5"], false);
+    let sarif: serde_json::Value = serde_json::from_str(&out).expect("JSON output");
+    let region = &sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["region"];
+    assert_eq!(region["startColumn"], 9, "{region}");
+    assert_eq!(region["endLine"], 2, "{region}");
+}
+
+#[test]
 fn github_annotations_follow_each_problem() {
     let dir = workdir(&[
         ("bom.json", "\u{FEFF}{}"),
