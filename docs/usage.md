@@ -259,8 +259,8 @@ link may lead to a file that is not yours to show.
 A folder walk skips what the `exclude` setting of each folder's nearest file names.
 
 The file takes four keys, `rules`, `dialects`, `exclude` and `schemas`. Any other key, at the top
-or in a `dialects` or `schemas` entry, is a usage error, so a typo never goes unnoticed. The error names the line and
-column in the file, and the closest known name: `jsonvet.toml:2:1: unknown rule
+or in a `dialects` or `schemas` entry, is a usage error, so a typo never goes unnoticed. The error
+names the line and column in the file, and the closest known name: `jsonvet.toml:2:1: unknown rule
 `duplicate-keys` (did you mean `duplicate-key`?); …`.
 
 ```toml

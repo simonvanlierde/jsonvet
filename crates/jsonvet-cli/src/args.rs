@@ -37,8 +37,10 @@ Options:
                                 colors it on a terminal, unless NO_COLOR is set; FORCE_COLOR
                                 colors it anywhere. On a terminal, each problem shows under
                                 its line of the file; elsewhere it stays one line.
-      --schema FILE             Also check each file against the JSON Schema in FILE, reported
-                                under the rule schema. Limits: docs/usage.md in the repository.
+      --schema FILE             Check each file against the JSON Schema in FILE, reported
+                                under the rule schema, instead of the schemas from settings
+                                or a file's own local $schema. Nothing is fetched. Limits:
+                                docs/usage.md in the repository.
       --stdin-filename PATH     Name standard input PATH in the output, and pick its dialect
                                 and settings by PATH. With no FILE, check standard input.
       --config FILE             Read settings from FILE instead of searching for one.
@@ -49,9 +51,9 @@ Options:
   -V, --version                 Print the version.
 
 Rules: syntax, duplicate-key, invalid-number, invalid-code-point, byte-order-mark,
-missing-final-newline (--list-rules says more). With --schema, errors also come under the rule
-schema; they are always errors, and --error, --warn, --ignore and settings files do not take
-schema.
+missing-final-newline (--list-rules says more). With a schema (--schema, the schemas setting
+or a local $schema in the file), errors also come under the rule schema; they are always errors,
+and --error, --warn, --ignore and settings files do not take schema.
 
 Settings come from jsonvet.toml, or [tool.jsonvet] in pyproject.toml: for each file, the nearest
 one in its folder or a parent, up to the repository root (without .git, the working directory).

@@ -261,6 +261,11 @@ fn help_version_and_the_check_json5_name() {
         let (code, out) = run(&[flag]);
         assert_eq!(code, 0);
         assert!(out.starts_with("Check JSON, I-JSON,"), "{flag}");
+        // The help names every place a schema can come from.
+        assert!(
+            out.contains("schemas setting") && out.contains("local $schema"),
+            "{flag}"
+        );
     }
     let out = Command::new(env!("CARGO_BIN_EXE_check-json5"))
         .arg("dup.json")
