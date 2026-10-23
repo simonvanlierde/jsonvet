@@ -1,5 +1,10 @@
 # Contributing
 
+To report a bug or ask for a feature, open an
+[issue](https://github.com/simonvanlierde/jsonvet/issues). Say what you did, what you expected,
+what happened, and the jsonvet version (`jsonvet --version`). Report a vulnerability as
+[SECURITY.md](SECURITY.md) says, not in an issue.
+
 ## Set up
 
 Clone with `--recurse-submodules` and install the tools in `mise.toml` (`mise install`), plus
@@ -179,3 +184,20 @@ follows: `git push --force origin vX.Y.Z^{commit}:refs/tags/v3`. Do it only when
 the newest `vX.*.*`, not for a pre-release or a patch to an older minor. It is a manual step
 because the workflow's token cannot move a tag past changes to `.github/workflows/`, and a token
 that can would give CI write access to the workflows.
+
+## Sign off your commits
+
+Every commit in a pull request carries a `Signed-off-by:` line, which says you wrote the change
+or have the right to submit it under the MIT license: the
+[Developer Certificate of Origin 1.1](https://developercertificate.org/). `git commit -s` adds
+it; `git rebase --signoff origin/main` adds it to commits you already made. The `dco` workflow
+fails a pull request from an outside contributor with a commit that lacks it. The maintainer's
+and the dependency bots' pull requests skip it.
+
+## Who maintains this
+
+Simon van Lierde ([@simonvanlierde](https://github.com/simonvanlierde)) maintains jsonvet:
+reviews and merges pull requests, and tags releases. Only he can merge to `main`, and only
+through a pull request whose checks pass. A new maintainer would be named here first. If he
+stops maintaining it, the README says so and the repository is archived; anyone may fork it under
+the MIT license.
