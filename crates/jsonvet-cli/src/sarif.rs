@@ -26,14 +26,15 @@ pub(crate) fn dropped_message(dropped: usize) -> String {
     format!("{dropped} more results not listed: SARIF output keeps the first {MAX_RESULTS}")
 }
 
-/// One result, as a JSON object. `related` is a second position with its message, such as a
-/// duplicate key's first copy.
+/// One result, as a JSON object. `end` is where the problem's text ends, for problems that know
+/// it. `related` is a second position with its message, such as a duplicate key's first copy.
 pub(crate) fn result(
     file: &OsStr,
     rule: &str,
     severity: Severity,
     message: &str,
     at: Location,
+    end: Option<Location>,
     related: Option<(Location, &str)>,
 ) -> String {
     let mut json = format!(
@@ -41,13 +42,13 @@ pub(crate) fn result(
         string(rule),
         level(severity),
         string(message),
-        physical(file, at),
+        physical(file, at, end),
     );
     if let Some((first, text)) = related {
         let _ = write!(
             json,
             r#","relatedLocations":[{{{},"message":{{"text":{}}}}}]"#,
-            physical(file, first),
+            physical(file, first, None),
             string(text)
         );
     }
@@ -109,16 +110,22 @@ pub(crate) fn document(results: &[String], dropped: usize) -> String {
     )
 }
 
-/// The `physicalLocation` member of a location object.
-fn physical(file: &OsStr, at: Location) -> String {
+/// The `physicalLocation` member of a location object. SARIF's end column is the column just
+/// past the region, so an empty region has the start column as its end.
+fn physical(file: &OsStr, at: Location, end: Option<Location>) -> String {
     let (uri, base) = uri(file);
     let base = if base {
         r#","uriBaseId":"%SRCROOT%""#
     } else {
         ""
     };
+    let end = match end {
+        Some(end) if end.line == at.line => format!(r#","endColumn":{}"#, end.column),
+        Some(end) => format!(r#","endLine":{},"endColumn":{}"#, end.line, end.column),
+        None => String::new(),
+    };
     format!(
-        r#""physicalLocation":{{"artifactLocation":{{"uri":{}{base}}},"region":{{"startLine":{},"startColumn":{}}}}}"#,
+        r#""physicalLocation":{{"artifactLocation":{{"uri":{}{base}}},"region":{{"startLine":{},"startColumn":{}{end}}}}}"#,
         string(&uri),
         at.line,
         at.column

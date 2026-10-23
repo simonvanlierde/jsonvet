@@ -1,0 +1,9 @@
+---
+source: crates/jsonvet-cli/src/frame.rs
+expression: "frames(\"[\\\"##[x\\u{202e}\\\", \\u{1b}[2J\\u{9b}]\")"
+---
+error[syntax]: expected a value, found U+001B
+ --> f:1:11
+  |
+1 | ["##�x�", �[2J�]
+  |           ^

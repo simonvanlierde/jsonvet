@@ -1,0 +1,14 @@
+---
+source: crates/jsonvet-cli/src/frame.rs
+expression: frame
+---
+error[duplicate-key]: duplicate key $["é中"]
+ --> f:3:2
+  |
+3 |     "é中": 2}
+  |     ^^^^^
+  |
+ ::: f:2:2
+  |
+2 |     "é中": 1,
+  |     - here
