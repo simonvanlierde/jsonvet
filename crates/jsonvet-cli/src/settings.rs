@@ -92,6 +92,9 @@ pub(crate) struct SchemaPattern {
     pub(crate) schema: PathBuf,
     /// The absolute directory `files` is relative to, normalized, as for [`DialectPattern`].
     pub(crate) base: String,
+    /// From a project config: then the schema sits inside the project, and an error in it
+    /// quotes nothing from it ([`confined`]). The user's own config is not confined.
+    pub(crate) confined: bool,
 }
 
 impl Settings {
@@ -106,17 +109,13 @@ impl Settings {
 
     /// The schema the config file names for `path`, if any: the last matching entry wins, as
     /// for dialects.
-    pub(crate) fn schema_for(&self, path: &str) -> Option<&Path> {
+    pub(crate) fn schema_for(&self, path: &str) -> Option<&SchemaPattern> {
         let mut located = Located::new(path);
-        self.schemas
-            .iter()
-            .rev()
-            .find(|entry| {
-                located
-                    .in_base(&entry.base)
-                    .is_some_and(|path| entry.files.matches(path))
-            })
-            .map(|entry| entry.schema.as_path())
+        self.schemas.iter().rev().find(|entry| {
+            located
+                .in_base(&entry.base)
+                .is_some_and(|path| entry.files.matches(path))
+        })
     }
 
     /// Whether a directory walk skips `path`, a file or a folder.
@@ -226,6 +225,9 @@ pub(crate) struct Resolver {
     cwd: PathBuf,
     /// The nearest folder at or above the working directory with a `.git` entry, if any.
     repo: Option<PathBuf>,
+    /// The project a config file's or a file's own `$schema` must stay in: `repo`, or the
+    /// working directory without one, made canonical.
+    root: PathBuf,
     /// The settings of the user's own config file, read the first time a search finds no
     /// project config file: `None` until then.
     user: Option<Arc<Settings>>,
@@ -237,31 +239,39 @@ pub(crate) struct Resolver {
 impl Resolver {
     /// Read the file `--config` names, if any, so a bad one fails before any file is checked.
     pub(crate) fn new(config: &ConfigSource, cli: Settings) -> Result<Resolver, String> {
-        let (fixed, cwd) = match config {
-            ConfigSource::Search => (
-                None,
-                std::env::current_dir()
-                    .map_err(|e| format!("cannot read the working directory: {e}"))?,
-            ),
-            ConfigSource::None => (Some(Arc::new(cli.clone())), PathBuf::new()),
-            ConfigSource::File(path) => (
-                Some(Arc::new(load(path)?.overridden_by(cli.clone()))),
-                PathBuf::new(),
-            ),
-        };
-        let repo = cwd
+        let here = std::env::current_dir()
+            .map_err(|e| format!("cannot read the working directory: {e}"))?;
+        let repo = here
             .ancestors()
             .find(|dir| dir.join(".git").exists())
             .map(Path::to_owned);
+        let root = repo.as_deref().unwrap_or(&here);
+        let root = fs::canonicalize(root).unwrap_or_else(|_| root.to_owned());
+        let (fixed, cwd) = match config {
+            ConfigSource::Search => (None, here),
+            ConfigSource::None => (Some(Arc::new(cli.clone())), PathBuf::new()),
+            ConfigSource::File(path) => (
+                Some(Arc::new(
+                    load(path, Some(&root))?.overridden_by(cli.clone()),
+                )),
+                PathBuf::new(),
+            ),
+        };
         Ok(Resolver {
             cli: Arc::new(cli),
             fixed,
             found: HashMap::new(),
             cwd,
             repo,
+            root,
             user: None,
             last: None,
         })
+    }
+
+    /// The canonical project root that schema paths from a project must stay in.
+    pub(crate) fn root(&self) -> &Path {
+        &self.root
     }
 
     /// The settings for the file at `path`, which need not exist: those of the first
@@ -312,7 +322,8 @@ impl Resolver {
             }
             searched.push(dir);
             if let Some(config) = config_in(dir) {
-                let own = load(&config)?.overridden_by(Settings::clone(&self.cli));
+                let own =
+                    load(&config, Some(&self.root))?.overridden_by(Settings::clone(&self.cli));
                 settings = Some(Arc::new(own));
                 break;
             }
@@ -338,7 +349,7 @@ impl Resolver {
         }
         let user = match user_config() {
             Some(path) => {
-                let mut own = load(&path)?;
+                let mut own = load(&path, None)?;
                 // Its globs are relative to the working directory, as in ruff: it sits in no
                 // project. Normalized, as `load` does for a file's own folder.
                 let cwd = glob::normalize(&self.cwd.to_string_lossy());
@@ -394,6 +405,41 @@ fn lexical(path: &Path) -> PathBuf {
     folded
 }
 
+/// Whether the schema at `path`, relative to the folder `base`, as a file's `$schema` or a
+/// project config names it, exists: an error if it is outside `root`, the canonical project
+/// root (ADR 0012). A pull request picks these paths, and an error in a schema would show what
+/// the file holds.
+pub(crate) fn confined(path: &str, base: &Path, root: &Path) -> Result<bool, String> {
+    let outside = || format!("the schema {path} is outside the project, so it is not read");
+    let given = Path::new(path);
+    // Before the path is touched: on Windows, opening `\\host\share\s.json` connects to the host.
+    if given.has_root() || matches!(given.components().next(), Some(Component::Prefix(_))) {
+        return Err(outside());
+    }
+    let base = if base.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        base
+    };
+    let joined = base.join(given);
+    // `..` is folded by name first, so a path outside is refused the same whether or not
+    // anything is there, and nothing outside is probed.
+    let folded = fs::canonicalize(base).map(|base| lexical(&base.join(given)));
+    if folded
+        .as_ref()
+        .is_ok_and(|folded| !folded.starts_with(root))
+    {
+        return Err(outside());
+    }
+    // Then a symlink, which can lead anywhere, is followed.
+    match fs::canonicalize(&joined) {
+        Ok(real) if real.starts_with(root) => Ok(true),
+        Ok(_) => Err(outside()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(format!("cannot read the schema {path}: {e}")),
+    }
+}
+
 /// The config file in `dir`: its `jsonvet.toml`, or its `pyproject.toml` with a
 /// `[tool.jsonvet]` table.
 fn config_in(dir: &Path) -> Option<PathBuf> {
@@ -428,8 +474,9 @@ fn has_jsonvet_table(text: &str) -> bool {
 /// `files` glob, relative to the config file's directory, and a `dialect`; and `exclude`, an
 /// array of globs, relative to the same directory, for paths a directory walk skips; and
 /// `schemas`, an array of tables with a `files` glob and a `schema` path, both relative to that
-/// directory. Any other key is an error, so a typo is never ignored.
-pub(crate) fn load(path: &Path) -> Result<Settings, String> {
+/// directory. Any other key is an error, so a typo is never ignored. With a `root`, the file is
+/// a project's, and each schema must be inside `root` ([`confined`]).
+pub(crate) fn load(path: &Path, root: Option<&Path>) -> Result<Settings, String> {
     // A key or value from the file shows escaped, so it cannot start a line of its own on stderr.
     let in_file = |e: &dyn std::fmt::Display| printable(&format!("{}: {e}", path.display()));
     let text = crate::read_small(path, crate::MAX_CONFIG_BYTES).map_err(|e| in_file(&e))?;
@@ -506,15 +553,13 @@ pub(crate) fn load(path: &Path) -> Result<Settings, String> {
             }
             ("schemas", DeValue::Array(entries)) => {
                 for entry in entries {
-                    let [(_, files), (_, schema)] =
-                        entry_strings(entry, "schemas", ["files", "schema"])
-                            .map_err(|(offset, e)| at(offset, &e))?;
-                    if let (Some(base), Some(folder)) = (&base, folder) {
-                        settings.schemas.push(SchemaPattern {
-                            files: Glob::new(files),
-                            schema: folder.join(schema),
-                            base: base.clone(),
-                        });
+                    let pattern = schema_entry(entry, folder, root);
+                    let pattern = pattern.map_err(|(offset, e)| at(offset, &e))?;
+                    if let Some(mut pattern) = pattern
+                        && let Some(base) = &base
+                    {
+                        pattern.base.clone_from(base);
+                        settings.schemas.push(pattern);
                     }
                 }
             }
@@ -547,6 +592,29 @@ fn dialect_entry(entry: &Spanned<DeValue<'_>>) -> Result<DialectPattern, (usize,
         dialect: parse_dialect(dialect).map_err(|e| (dialect_at, e))?,
         base: None,
     })
+}
+
+/// One entry of `schemas`, with no base yet, for a config file in `folder`: `None` without a
+/// folder, which nothing is relative to. With a `root`, the schema must be inside it.
+fn schema_entry(
+    entry: &Spanned<DeValue<'_>>,
+    folder: Option<&Path>,
+    root: Option<&Path>,
+) -> Result<Option<SchemaPattern>, (usize, String)> {
+    let [(_, files), (schema_at, schema)] = entry_strings(entry, "schemas", ["files", "schema"])?;
+    let Some(folder) = folder else {
+        return Ok(None);
+    };
+    // A missing schema is reported when it is read, which `--schema` skips.
+    if let Some(root) = root {
+        confined(schema, folder, root).map_err(|e| (schema_at, e))?;
+    }
+    Ok(Some(SchemaPattern {
+        files: Glob::new(files),
+        schema: folder.join(schema),
+        base: String::new(),
+        confined: root.is_some(),
+    }))
 }
 
 /// The two strings of an entry in the array `array`, a table with exactly the keys `keys`, each
@@ -588,7 +656,30 @@ fn entry_strings<'e>(
 
 #[cfg(test)]
 mod tests {
-    use super::{Glob, Settings, absolute};
+    use super::{Glob, Settings, absolute, confined};
+
+    #[test]
+    fn a_schema_path_with_a_root_or_prefix_is_refused_before_it_is_opened() {
+        // The root and base do not exist, so only the path's own form can refuse it.
+        let (base, root) = (
+            std::path::Path::new("missing"),
+            std::path::Path::new("missing"),
+        );
+        let mut paths = vec!["/etc/passwd", "//host/share/s.json"];
+        if cfg!(windows) {
+            paths.extend([
+                "C:\\s.json",
+                "C:s.json",
+                "\\\\host\\share\\s.json",
+                "\\s.json",
+            ]);
+        }
+        for path in paths {
+            let refused = confined(path, base, root).expect_err(path);
+            assert!(refused.contains("outside the project"), "{path}: {refused}");
+        }
+        assert_eq!(confined("s.json", base, root), Ok(false));
+    }
 
     #[test]
     fn each_pattern_matches_relative_to_its_own_base() {
