@@ -282,10 +282,11 @@ exclude = ["node_modules", "tests/fixtures/*"]
 `schemas` checks the files a glob matches against a JSON Schema on disk, as `--schema` does. Both
 the glob and the schema path are relative to the config file's directory, and the last matching
 entry wins. `--schema` replaces them all. A schema in this list that jsonvet cannot read or use is
-a usage error (exit 2), as with `--schema`, even when no checked file matches its glob. The schema
-must be inside the project (see [JSON Schema limits](#json-schema-limits)). In the user's own
-config file, the glob is relative to the working directory, as its other globs are, and the
-schema path to the config file's folder; that schema may be anywhere:
+a usage error (exit 2), as with `--schema`, even when no checked file matches its glob. In a
+config file the search finds, the schema must be inside the project (see
+[JSON Schema limits](#json-schema-limits)); one named by `--config FILE` may name a schema
+anywhere. In the user's own config file, the glob is relative to the working directory, as its
+other globs are, and the schema path to the config file's folder; that schema may be anywhere:
 
 ```toml
 schemas = [{ files = "config/*.json5", schema = "schemas/server.schema.json" }]
@@ -400,13 +401,13 @@ one exists is in [design.md](design.md#--schema).
   value, not a usage error. A missing schema named by `--schema` or a config file is a usage
   error. A fragment, as in `s.json#`, is dropped from a `$schema` path.
 - **Inside the project.** A pull request can change a `$schema` or a config file, so the schema
-  they name must be inside the project: the repository root, or the working directory without a
+  they name must be inside the project, for a config file the search finds: the repository root, or the working directory without a
   `.git`, as for the [config search](#configuration-file). An absolute path, a Windows drive or network
-  path such as `\\host\share`, a `..` that climbs out, or a symlink that leads out is refused,
-  whether or not the file exists. For a `$schema` that is a schema error at its value; in a
+  path such as `\\host\share`, a `..` that climbs out, or a symlink or symlinked folder that
+  leads out is refused, whether or not the file exists. For a `$schema` that is a schema error at its value; in a
   config file, a usage error at the entry. An error in such a schema names its line and column
-  but quotes nothing from it, since the file may not be yours to show. `--schema` and the user's
-  own config file may name a schema anywhere, and their errors quote it.
+  but quotes nothing from it, since the file may not be yours to show. `--schema`, `--config FILE`
+  and the user's own config file may name a schema anywhere, and their errors quote it.
 
 - **Severity.** Schema errors are always errors, in text, annotations, SARIF and JSON. `--error`,
   `--warn`, `--ignore` and the config file do not take `schema`, and exit 2 if you give it to

@@ -10,8 +10,8 @@ crafted file that does any of these as a security bug:
 
 That holds for every file jsonvet reads: the files it checks, a config file (`jsonvet.toml`,
 `pyproject.toml`), an ignore file (`.gitignore`, `.ignore`) and a schema named by `--schema`, a
-config file or a file's `$schema`. A schema path from a project's config file or a `$schema` must
-stay inside the project, and an error in such a schema quotes nothing from it
+config file or a file's `$schema`. A schema path from a `$schema`, or from a config file the
+search finds rather than one named by `--config`, must stay inside the project, and an error in such a schema quotes nothing from it
 ([0012](docs/decisions/0012-schema-paths-stay-in-the-project.md)). A way to read or show a file
 outside the project through one is a security bug too.
 

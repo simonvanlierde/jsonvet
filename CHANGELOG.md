@@ -14,8 +14,9 @@ version for a new option or output, the patch version for a fix.
   "server.schema.json" }]` checks the matching files as `--schema` would. A file's own `$schema`
   that names a schema on disk, relative to the file, works too. jsonvet still fetches nothing, so
   a `$schema` URL, or a path to a file that does not exist, means no schema check. Both kinds of
-  path must stay inside the project, and an error in such a schema names its place but quotes
-  nothing from it, so a pull request cannot make jsonvet read or show a file outside the project.
+  path must stay inside the project, unless `--config` named the config file, and an error in such
+  a schema names its place but quotes nothing from it, so a pull request cannot make jsonvet read
+  or show a file outside the project.
 - `--color auto|always|never` colors the code frames. `auto`, the default, colors them on a
   terminal unless `NO_COLOR` is set. `FORCE_COLOR` or `--color always` color piped output too,
   which stays one line per problem with the severity and rule in color.

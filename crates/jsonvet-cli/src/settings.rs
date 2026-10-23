@@ -251,9 +251,8 @@ impl Resolver {
             ConfigSource::Search => (None, here),
             ConfigSource::None => (Some(Arc::new(cli.clone())), PathBuf::new()),
             ConfigSource::File(path) => (
-                Some(Arc::new(
-                    load(path, Some(&root))?.overridden_by(cli.clone()),
-                )),
+                // The person running jsonvet named it, so like `--schema` it is not confined.
+                Some(Arc::new(load(path, None)?.overridden_by(cli.clone()))),
                 PathBuf::new(),
             ),
         };
@@ -422,22 +421,35 @@ pub(crate) fn confined(path: &str, base: &Path, root: &Path) -> Result<bool, Str
         base
     };
     let joined = base.join(given);
-    // `..` is folded by name first, so a path outside is refused the same whether or not
-    // anything is there, and nothing outside is probed.
-    let folded = fs::canonicalize(base).map(|base| lexical(&base.join(given)));
-    if folded
-        .as_ref()
-        .is_ok_and(|folded| !folded.starts_with(root))
-    {
-        return Err(outside());
+    // A missing file is judged by where it would be, so a path outside is refused the same
+    // whether or not anything is there, and nothing outside can be probed.
+    let (exists, real) = match fs::canonicalize(&joined) {
+        Ok(real) => (true, Some(real)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => (false, leads_to(joined)),
+        Err(e) => return Err(format!("cannot read the schema {path}: {e}")),
+    };
+    match real {
+        Some(real) if real.starts_with(root) => Ok(exists),
+        _ => Err(outside()),
     }
-    // Then a symlink, which can lead anywhere, is followed.
-    match fs::canonicalize(&joined) {
-        Ok(real) if real.starts_with(root) => Ok(true),
-        Ok(_) => Err(outside()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(e) => Err(format!("cannot read the schema {path}: {e}")),
+}
+
+/// Where the missing file `path` would be: its deepest part that exists, made canonical, with
+/// the rest added by name. A dangling symlink on the way is followed by hand. `None` if that
+/// cannot be told, such as for a loop of symlinks.
+fn leads_to(mut path: PathBuf) -> Option<PathBuf> {
+    // As many symlinks as Linux follows in one path.
+    for _ in 0..40 {
+        let (dir, rest) = path.ancestors().find_map(|dir| {
+            fs::symlink_metadata(dir).ok()?;
+            Some((dir, path.strip_prefix(dir).ok()?))
+        })?;
+        match fs::canonicalize(dir) {
+            Ok(real) => return Some(lexical(&real.join(rest))),
+            Err(_) => path = dir.parent()?.join(fs::read_link(dir).ok()?).join(rest),
+        }
     }
+    None
 }
 
 /// The config file in `dir`: its `jsonvet.toml`, or its `pyproject.toml` with a
@@ -660,11 +672,9 @@ mod tests {
 
     #[test]
     fn a_schema_path_with_a_root_or_prefix_is_refused_before_it_is_opened() {
-        // The root and base do not exist, so only the path's own form can refuse it.
-        let (base, root) = (
-            std::path::Path::new("missing"),
-            std::path::Path::new("missing"),
-        );
+        let base = std::path::Path::new(".");
+        let root = std::fs::canonicalize(base).expect("the working directory");
+        let root = root.as_path();
         let mut paths = vec!["/etc/passwd", "//host/share/s.json"];
         if cfg!(windows) {
             paths.extend([
@@ -678,7 +688,7 @@ mod tests {
             let refused = confined(path, base, root).expect_err(path);
             assert!(refused.contains("outside the project"), "{path}: {refused}");
         }
-        assert_eq!(confined("s.json", base, root), Ok(false));
+        assert_eq!(confined("missing-schema.json", base, root), Ok(false));
     }
 
     #[test]

@@ -23,28 +23,31 @@ took 36.7 s and 15.5 GB.
 
 ## Decision
 
-A schema path from a project's config file or a file's `$schema` must stay inside the project:
-the repository root, or the working directory without a `.git`, as in 0009. A path with a root
-or a Windows prefix (`/x`, `//x`, `C:\x`, `\\host\share`) is refused before anything touches
-the disk. Then `..` is folded by name and the path made canonical, so a `..` or a symlink that
-leads out is refused too, whether or not the file exists. A refused `$schema` is a schema error
-at its value; a refused config entry is a usage error at the entry. An error in such a schema
-names its line and column, never its text. `--schema` and the user's own config file are the
-user's choice, so they may name any file and their errors quote it. Schemas are cached by
-canonical path, so every spelling of one is read once.
+A schema path from a config file the search finds or a file's `$schema` must stay inside the
+project: the repository root, or the working directory without a `.git`, as in 0009. A path with a
+root or a Windows prefix (`/x`, `//x`, `C:\x`, `\\host\share`) is refused before anything touches
+the disk. Then the path is made canonical, so a `..` or a symlink that leads out is refused too. For
+a file that does not exist, its deepest existing part is made canonical, following any dangling
+symlink on the way, and the rest added by name: a path that would lead out is refused whether or not
+anything is there, so nothing outside can be probed. A refused `$schema` is a schema error at its
+value; a refused config entry is a usage error at the entry. An error in such a schema names its
+line and column, never its text. `--schema`, `--config FILE` and the user's own config file are the
+choice of the person running jsonvet, so they may name any file, with schema paths relative to the
+config file, and their errors quote it. Schemas are cached by canonical path, so every spelling of
+one is read once.
 
 ## Consequences
 
 A project that keeps its schemas outside the repository, or names them by absolute path, must
 move them in or pass `--schema`. A schema error from `$schema` or a project config says only
-where it is, so the author opens the schema to see why. A symlink inside the project that leads
-to a missing file outside is skipped like any missing `$schema`, so it tells whether that file
-exists.
+where it is, so the author opens the schema to see why. A CI job that passes `--config` with a
+path a pull request controls gives up the confinement for that config.
 
 ## Confirmation
 
 `a_schema_outside_the_project_is_refused_and_never_quoted`,
-`a_broken_schema_named_by_the_file_or_a_config_shows_no_text_from_it` in
+`a_broken_schema_named_by_the_file_or_a_config_shows_no_text_from_it`,
+`a_config_file_outside_the_project_named_by_config_may_name_a_schema_beside_it` in
 `crates/jsonvet-cli/tests/cli.rs`'s `mod schema`, and
 `every_spelling_of_a_schema_path_reads_it_once` in `crates/jsonvet-cli/src/lib.rs`.
 

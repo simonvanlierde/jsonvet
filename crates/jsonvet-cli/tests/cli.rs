@@ -1504,7 +1504,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         // A config file's is a usage error, as `--schema` is.
         let (code, out, err) = jsonvet_stderr(&dir, &["--config", "bad.toml", "ok.json"]);
         assert_eq!((code, out.as_str()), (2, ""));
-        assert!(err.contains("broken.json:1:10 cannot be used"), "{err}");
+        assert!(err.contains("broken.json:1:10: unclosed `{`"), "{err}");
         let (code, _, err) = jsonvet_stderr(&dir, &["--config", "typo.toml", "ok.json"]);
         assert_eq!(code, 2);
         assert!(
@@ -1676,6 +1676,31 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         assert!(out.contains("nested deeper than 512 levels"), "{out}");
     }
 
+    #[test]
+    fn a_config_file_outside_the_project_named_by_config_may_name_a_schema_beside_it() {
+        let dir = workdir(&[]);
+        let shared = outside(&dir, "s.json", "{\"required\": [\"kx\"]}");
+        let shared = shared.parent().expect("the outside folder");
+        fs::write(
+            shared.join("shared.toml"),
+            "schemas = [{ files = \"*.json\", schema = \"s.json\" }]\n",
+        )
+        .expect("write config");
+        fs::write(shared.join("f.json"), "{}").expect("write file");
+        let config = shared.join("shared.toml");
+        let file = shared.join("f.json");
+        let (code, out, err) = jsonvet_stderr(
+            &dir,
+            &[
+                "--config",
+                &config.to_string_lossy(),
+                &file.to_string_lossy(),
+            ],
+        );
+        assert_eq!(code, 1, "{out}{err}");
+        assert!(out.contains("kx"), "{out}");
+    }
+
     /// A path through a file is not a missing schema, so it is reported, not skipped.
     #[cfg(unix)]
     #[test]
@@ -1700,7 +1725,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
 
     #[test]
     fn a_schema_outside_the_project_is_refused_and_never_quoted() {
-        let dir = workdir(&[("ok.json", "{}")]);
+        let dir = workdir(&[("ok.json", "{}"), ("sub/ok.json", "{}")]);
         let folder = dir
             .file_name()
             .expect("a name")
@@ -1727,6 +1752,19 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
             std::os::unix::fs::symlink(&values, dir.join("link-values.json")).expect("symlink");
             cases.push(("linked.json", "link.json".to_owned()));
             cases.push(("linked-values.json", "link-values.json".to_owned()));
+            // A symlink, or a symlinked folder, that leads out to nothing is refused too, so
+            // it cannot tell whether a file outside exists.
+            let folder = text.parent().expect("the outside folder");
+            for (link, target) in [
+                ("dangling.json", folder.join("missing.json")),
+                ("out-dir", folder.to_owned()),
+                ("dead-dir", folder.join("missing")),
+            ] {
+                std::os::unix::fs::symlink(target, dir.join(link)).expect("symlink");
+            }
+            cases.push(("to-dangling.json", "dangling.json".to_owned()));
+            cases.push(("through-dir.json", "out-dir/missing.json".to_owned()));
+            cases.push(("through-dead-dir.json", "dead-dir/s.json".to_owned()));
         }
         for (file, schema) in &cases {
             fs::write(dir.join(file), format!("{{\"$schema\": \"{schema}\"}}"))
@@ -1740,16 +1778,30 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
                     "{file} {format}: {out}"
                 );
             }
+            // A config file the search finds is confined; it sits one folder down.
+            let schema = if Path::new(schema).is_absolute() {
+                schema.clone()
+            } else {
+                format!("../{schema}")
+            };
             fs::write(
-                dir.join("config.toml"),
+                dir.join("sub/jsonvet.toml"),
                 format!("schemas = [{{ files = \"*.json\", schema = \"{schema}\" }}]\n"),
             )
             .expect("write config");
-            let (code, out, err) = jsonvet_stderr(&dir, &["--config", "config.toml", "ok.json"]);
+            let (code, out, err) = jsonvet_stderr(&dir, &["sub/ok.json"]);
             assert_eq!((code, out.as_str()), (2, ""), "{file}: {err}");
             assert!(!err.contains("TOPSECRET"), "{file}: {err}");
-            assert!(err.contains("config.toml:1:"), "{file}: {err}");
+            assert!(err.contains("jsonvet.toml:1:"), "{file}: {err}");
             assert!(err.contains("outside the project"), "{file}: {err}");
+        }
+        // A symlink inside that leads to nothing inside is skipped like any missing schema.
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(dir.join("nothing.json"), dir.join("dead.json"))
+                .expect("symlink");
+            fs::write(dir.join("inside.json"), "{\"$schema\": \"dead.json\"}").expect("write");
+            assert_eq!(jsonvet(&dir, &["inside.json"]), (0, String::new()));
         }
         // `--schema` is the user's own choice, so it may name any file.
         let (code, out) = jsonvet(&dir, &["--schema", &values.to_string_lossy(), "ok.json"]);
@@ -1768,6 +1820,11 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
                 "c.toml",
                 "schemas = [{ files = \"*.json\", schema = \"values.json\" }]\n",
             ),
+            (
+                "sub/jsonvet.toml",
+                "schemas = [{ files = \"*.json\", schema = \"../values.json\" }]\n",
+            ),
+            ("sub/ok.json", "{}"),
         ]);
         for format in ["text", "json", "sarif"] {
             let (code, out, err) = jsonvet_stderr(&dir, &["--format", format, "a.json", "b.json"]);
@@ -1780,10 +1837,14 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
             "a.json:1:13: error[schema] the schema text.json:1:1 cannot be used\n\
              b.json:1:13: error[schema] the schema values.json:2:11 cannot be used\n"
         );
-        let (code, _, err) = jsonvet_stderr(&dir, &["--config", "c.toml", "ok.json"]);
+        let (code, _, err) = jsonvet_stderr(&dir, &["sub/ok.json"]);
         assert_eq!(code, 2);
         assert!(!err.contains("TOPSECRET"), "{err}");
         assert!(err.contains("values.json:2:11 cannot be used"), "{err}");
+        // `--config` is the user's own choice, as `--schema` is, so its errors quote the schema.
+        let (code, _, err) = jsonvet_stderr(&dir, &["--config", "c.toml", "ok.json"]);
+        assert_eq!(code, 2);
+        assert!(err.contains("TOPSECRET"), "{err}");
     }
 
     #[test]
@@ -1805,7 +1866,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         assert!(err.contains("missing.json"), "{err}");
         let (code, _, err) = jsonvet_stderr(&dir, &["--config", "broken.toml", "ok.json"]);
         assert_eq!(code, 2, "{err}");
-        assert!(err.contains("broken.json:1:10 cannot be used"), "{err}");
+        assert!(err.contains("broken.json:1:10: unclosed `{`"), "{err}");
         // `--schema` replaces the configured schemas, so it does not read them.
         let (code, _, err) = jsonvet_stderr(
             &dir,
