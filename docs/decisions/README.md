@@ -25,3 +25,4 @@ a link or a renamed test is fine.
 | [0009](0009-where-the-config-search-stops.md) | Where the config search stops, and what a bad config may show | 2026-10-20 |
 | [0010](0010-schema-limits-are-deterministic-caps.md) | `--schema` limits are deterministic caps, not a timeout | 2026-10-20 |
 | [0011](0011-release-tooling.md) | cargo-release bumps the version, the tag starts the rest | 2026-10-21 |
+| [0012](0012-schema-paths-stay-in-the-project.md) | Schema paths from a project stay in it, and their errors quote nothing | 2026-10-23 |

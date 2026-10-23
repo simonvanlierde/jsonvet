@@ -282,7 +282,10 @@ exclude = ["node_modules", "tests/fixtures/*"]
 `schemas` checks the files a glob matches against a JSON Schema on disk, as `--schema` does. Both
 the glob and the schema path are relative to the config file's directory, and the last matching
 entry wins. `--schema` replaces them all. A schema in this list that jsonvet cannot read or use is
-a usage error (exit 2), as with `--schema`, even when no checked file matches its glob:
+a usage error (exit 2), as with `--schema`, even when no checked file matches its glob. The schema
+must be inside the project (see [JSON Schema limits](#json-schema-limits)). In the user's own
+config file, the glob is relative to the working directory, as its other globs are, and the
+schema path to the config file's folder; that schema may be anywhere:
 
 ```toml
 schemas = [{ files = "config/*.json5", schema = "schemas/server.schema.json" }]
@@ -395,7 +398,15 @@ one exists is in [design.md](design.md#--schema).
   `node_modules` that was not installed. A file with no schema is checked for syntax only. A
   `$schema` file that exists but jsonvet cannot read or use is a schema error at the `$schema`
   value, not a usage error. A missing schema named by `--schema` or a config file is a usage
-  error.
+  error. A fragment, as in `s.json#`, is dropped from a `$schema` path.
+- **Inside the project.** A pull request can change a `$schema` or a config file, so the schema
+  they name must be inside the project: the repository root, or the working directory without a
+  `.git`, as for the [config search](#configuration-file). An absolute path, a Windows drive or network
+  path such as `\\host\share`, a `..` that climbs out, or a symlink that leads out is refused,
+  whether or not the file exists. For a `$schema` that is a schema error at its value; in a
+  config file, a usage error at the entry. An error in such a schema names its line and column
+  but quotes nothing from it, since the file may not be yours to show. `--schema` and the user's
+  own config file may name a schema anywhere, and their errors quote it.
 
 - **Severity.** Schema errors are always errors, in text, annotations, SARIF and JSON. `--error`,
   `--warn`, `--ignore` and the config file do not take `schema`, and exit 2 if you give it to
@@ -411,7 +422,7 @@ one exists is in [design.md](design.md#--schema).
   quotes the value unless that makes it long; then it says `value`. A message, with its path, is
   cut at 200 bytes and ends in `...`. The wording comes from the jsonschema crate and may change
   between releases. The rule id `schema` and the position are stable.
-- **Depth.** With `--schema`, a file nested deeper than 512 levels is a syntax error. A file with a
+- **Depth.** With a schema, a file nested deeper than 512 levels is a syntax error. A file with a
   syntax error gets no schema errors.
 - **Values.** Each line of a JSON Lines file is checked on its own. `NaN`, `Infinity` and numbers
   past a double's range have no JSON Schema value. So a document that holds one is reported once
@@ -419,7 +430,7 @@ one exists is in [design.md](design.md#--schema).
   lone surrogates such as `"\ud800"`, since both become U+FFFD. In the schema file, either one is
   a usage error.
 - **Memory.** jsonvet holds each file's values in memory: 14 to 27 times the file's size, the most
-  for many small records such as JSON Lines. Without `--schema`, memory stays near the file's
+  for many small records such as JSON Lines. Without a schema, memory stays near the file's
   size. A top-level array that fails everywhere takes no more than a valid one when only `items`
   checks its elements, as in `{"type": "array", "items": {"$ref": "#/$defs/record"}}`, and so
   does a top-level object when only `properties`, `patternProperties` and `additionalProperties`

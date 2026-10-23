@@ -185,6 +185,10 @@ schemas = [{ files = "config/server.json5", schema = "schemas/server.schema.json
 { $schema: "../schemas/server.schema.json", port: 8080 }
 ```
 
+A schema path in the config file is relative to the config file's folder, and a `$schema` path to
+the file's own folder. Either must stay inside the project. A `$schema` URL, or a path to a file
+that does not exist, means no schema check for that file. `--schema` overrides both.
+
 Schema errors are always errors. jsonvet never fetches a schema from the network or another file,
 so every `$ref` must point inside the schema file. The other limits are in the
 [reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#json-schema-limits).

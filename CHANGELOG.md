@@ -13,7 +13,9 @@ version for a new option or output, the patch version for a fix.
 - A config file can give files a schema: `schemas = [{ files = "config/*.json", schema =
   "server.schema.json" }]` checks the matching files as `--schema` would. A file's own `$schema`
   that names a schema on disk, relative to the file, works too. jsonvet still fetches nothing, so
-  a `$schema` URL is skipped and such a file is checked for syntax only.
+  a `$schema` URL, or a path to a file that does not exist, means no schema check. Both kinds of
+  path must stay inside the project, and an error in such a schema names its place but quotes
+  nothing from it, so a pull request cannot make jsonvet read or show a file outside the project.
 - `--color auto|always|never` colors the code frames. `auto`, the default, colors them on a
   terminal unless `NO_COLOR` is set. `FORCE_COLOR` or `--color always` color piped output too,
   which stays one line per problem with the severity and rule in color.
@@ -30,9 +32,6 @@ version for a new option or output, the patch version for a fix.
 
 ### Changed
 
-- A file's own `$schema` that names a local file is now checked against when the file exists. A
-  path to a file that does not exist, such as one under `node_modules` that was not installed, is
-  skipped like a URL.
 - On a terminal, each problem now shows as a code frame: the message, the line of the file with
   the problem marked under it, and the related place, such as a duplicate key's first copy.
   pre-commit in a terminal shows frames too. CI, pre-commit.ci and pipes keep one line per
