@@ -30,7 +30,8 @@ waiting for a pull request. `scorecard.yml` rates the repository for the OpenSSF
 `codspeed.yml` runs the divan benchmarks on every pull request and push to main, and CodSpeed
 comments with the change against main. `pages.yml` builds the browser playground
 (`crates/jsonvet-wasm` and `playground/`) on a pull request that touches it, and deploys it to
-GitHub Pages from main.
+GitHub Pages from main. `just playground` builds it and serves it at
+<http://127.0.0.1:8000>.
 
 User-facing docs live in three places: the README for getting started, `docs/usage.md` for the
 reference, and `docs/design.md` for the design as it is now. The choices behind it, with their

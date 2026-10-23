@@ -79,3 +79,18 @@ mutants:
 bench:
     cargo build --release -p jsonvet-cli
     uv run scripts/bench.py --jsonvet {{ target }}/release/jsonvet
+
+# Build the playground as pages.yml does, then serve it at http://127.0.0.1:8000 (needs the wasm32 target and
+# wasm-bindgen-cli at the version in Cargo.lock; the deploy also shrinks the .wasm with wasm-opt).
+playground PORT="8000":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    want=$(cargo pkgid --locked wasm-bindgen | sed 's/.*@//')
+    if [ "$(wasm-bindgen --version 2>/dev/null | cut -d' ' -f2)" != "$want" ]; then
+        echo "needs wasm-bindgen-cli $want: cargo install wasm-bindgen-cli --version $want --locked" >&2
+        exit 1
+    fi
+    cargo build --locked -p jsonvet-wasm --target wasm32-unknown-unknown --profile wasm
+    wasm-bindgen --target web --no-typescript --out-dir playground/pkg \
+        {{ target }}/wasm32-unknown-unknown/wasm/jsonvet_wasm.wasm
+    python3 -m http.server {{ PORT }} --bind 127.0.0.1 --directory playground
