@@ -33,11 +33,11 @@ jobs:
           set -euo pipefail
           missing=$(gh api --paginate "repos/$REPO/pulls/$PR/commits" --jq '.[]
             | select((.parents | length) < 2)
-            | select([.commit.message | split("\n")[] | select(test("^Signed-off-by: .+ <[^>]+>$"))] | length == 0)
+            | select([.commit.message | split("\n")[] | select(test("^Signed-off-by: .+ <[^>]+>\r?$"))] | length == 0)
             | .sha[0:7] + " " + (.commit.message | split("\n")[0])')
           if [ -n "$missing" ]; then
             echo "These commits have no Signed-off-by line:"
             echo "$missing"
-            echo "Add it with 'git rebase --signoff origin/main', then force-push the branch."
+            echo "Add it with 'git rebase --signoff upstream/main' (the branch you started from), then force-push."
             exit 1
           fi
