@@ -183,8 +183,9 @@ timeout, so a file gets the same verdict on every machine; see
 [0010](decisions/0010-schema-limits-are-deterministic-caps.md). Their values are in the
 [reference](usage.md#json-schema-limits). Why each exists:
 
-- **File depth.** jsonschema validates recursively. Its memory grows with the square of the depth
-  when an error sits deep under a recursive `$ref`: 1.3 GB for a 50 KB file nested 10,000 levels.
+- **File depth.** jsonschema validates recursively, so depth costs stack. Its memory for an error
+  deep under a recursive `$ref` grows linearly with depth: 19 MB for a 60 KB file nested 10,000
+  levels.
   Every run starts a thread with a 64 MB stack, because the 512-level read took up to 2.2 MB in a
   debug build, more than Windows' 1 MB main thread. Only the stack a run uses is committed, so a
   plain check still works under `ulimit -v 60000`. Where the thread cannot start, jsonvet runs on
@@ -210,13 +211,13 @@ timeout, so a file gets the same verdict on every machine; see
   Without `--schema` the text is counted as it is read, since sizing 10,000 files first cost
   7 ms.
 - **Errors.** A jsonschema error holds more than its message. An `anyOf` error holds every
-  branch's errors, and an `enum` error a copy of its values, so 40 errors from a 1 KB schema took
-  3.2 GB when jsonvet kept them until it placed them. jsonvet keeps each error's message and path
+  branch's errors, so 40 errors from a 1 KB schema took 3.2 GB when jsonvet kept them until it
+  placed them. An `enum` error shares its values, as jsonschema 0.60 does, instead of copying them. jsonvet keeps each error's message and path
   as it comes and drops the rest. Past the 100th it stops asking, so the last line says there are
   more but not how many. What one jsonschema call collects is still all in memory at once. That
   is one element or member for a split schema, and the whole document otherwise, so an `anyOf`
-  around `additionalProperties`, or an `enum` under a member's `additionalProperties`, can still
-  take gigabytes on a document of many failing values.
+  around `additionalProperties` can still take gigabytes on a document of many failing values
+  ([the cost of each error](usage.md#json-schema-limits)).
 - **Schema depth and `$ref` chains.** Without the check, 1,000 `allOf` and `$ref` hops overflow
   the 64 MB stack at once against a 512-level array. A `$ref` back to a schema on the way to it
   is recursion and adds nothing. The error lands at the `$ref` that crosses the line. jsonvet
@@ -228,8 +229,8 @@ timeout, so a file gets the same verdict on every machine; see
   took 12.9 s and 11.4 GB for one `{}`. jsonvet counts the objects and arrays with each `$ref`
   replaced by what it points at, and stops at 5,000,000. That lets 18 such levels through (about
   3.9 million, 1 s and 340 MB per failing value) and SchemaStore's 1.6 MB `azure-pipelines.json`
-  (about 3.2 million). The values in each `enum` and `const` count too: an `enum` error copies
-  them all. `unevaluatedProperties` and `unevaluatedItems` make jsonschema check the schemas
+  (about 3.2 million). The values in each `enum` and `const` count too, as jsonschema may compare a value with
+  each one. `unevaluatedProperties` and `unevaluatedItems` make jsonschema check the schemas
   beside them that apply to the same value a second time, to find what they evaluated, so those
   count twice there. Nested in each other's `anyOf`, each level doubled the time, and the cap
   stops 20 such levels. A `$ref` from `properties` is not checked again, so OpenAPI 3.1's
