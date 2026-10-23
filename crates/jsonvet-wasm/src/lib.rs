@@ -97,6 +97,27 @@ mod tests {
     }
 
     #[test]
+    fn columns_count_code_points() {
+        // `é` and `★` are one code point each: the second key starts at column 11, and at byte
+        // column 15.
+        let text = "{\"é★\": 1, \"é★\": 2}";
+        for dialect in ["jsonc", "json5"] {
+            let out = check(text, dialect).unwrap_or_default();
+            assert!(
+                out.starts_with(r#"[{"line":1,"column":11,"#),
+                "{dialect}: {out}"
+            );
+        }
+    }
+
+    #[test]
+    fn jsonl_reports_the_line_of_the_record() {
+        let out = check("{}\n{\"a\":1,\"a\":2}\n", "jsonl").unwrap_or_default();
+        assert!(out.starts_with(r#"[{"line":2,"column":8,"#), "{out}");
+        assert_eq!(out.matches("\"rule\":").count(), 1, "{out}");
+    }
+
+    #[test]
     fn clean_text_and_unknown_dialect() {
         assert_eq!(check("{}", "jsonc").as_deref(), Ok("[]"));
         let err = check("{}", "yaml").unwrap_err();
