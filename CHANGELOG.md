@@ -10,6 +10,13 @@ version for a new option or output, the patch version for a fix.
 
 ### Added
 
+- `--color auto|always|never` colors the code frames. `auto`, the default, colors them on a
+  terminal unless `NO_COLOR` is set. `FORCE_COLOR` or `--color always` color piped output too,
+  which stays one line per problem with the severity and rule in color.
+- SARIF results and GitHub annotations now have an `endColumn`, so code scanning and pull
+  requests mark the whole duplicate key, number or word, not only its first character.
+- The library's `Problem::end()` gives the byte offset where the problem's text ends, and
+  `Report::text()` gives the text a report is about.
 - A playground at <https://simonvanlierde.github.io/jsonvet/>. Paste text, pick a dialect, and see
   each problem with its line, column and rule as you type. It runs jsonvet in your browser as
   WebAssembly, so the text never leaves your machine. It has no `--schema` checks.
@@ -22,6 +29,10 @@ version for a new option or output, the patch version for a fix.
 
 ### Changed
 
+- On a terminal, each problem now shows as a code frame: the message, the line of the file with
+  the problem marked under it, and the related place, such as a duplicate key's first copy.
+  pre-commit in a terminal shows frames too. CI, pre-commit.ci and pipes keep one line per
+  problem, and `| cat` forces lines.
 - `--schema` uses jsonschema 0.59.0, which decides where each pattern applies. A key or string too
   costly to match is an error only where the pattern applies and its outcome changes the result.
   A document that also has another schema error reports only that one.

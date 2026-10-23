@@ -7,6 +7,7 @@ use crate::{Dialect, Rule, Severity};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Problem {
     pub(crate) offset: usize,
+    pub(crate) end: usize,
     pub(crate) severity: Severity,
     pub(crate) detail: Detail,
 }
@@ -15,6 +16,23 @@ impl Problem {
     /// The byte offset in the text where the problem is. Always on a character boundary.
     pub fn offset(&self) -> usize {
         self.offset
+    }
+
+    /// The byte offset just past the text the problem is about, such as the end of a duplicate
+    /// key or of a number. It equals [`offset`](Self::offset) when the problem is about a place
+    /// between characters, such as a missing `,` or the end of the file. Always on a character
+    /// boundary. It is on the line of `offset`, except after a JSON5 key that a line
+    /// continuation carries onto the next line.
+    ///
+    /// ```
+    /// use jsonvet::{check, Config, Dialect};
+    ///
+    /// let report = check(r#"{"port": 1, "port": 2}"#, &Config::new(Dialect::Json));
+    /// let problem = &report.problems()[0];
+    /// assert_eq!((problem.offset(), problem.end()), (12, 18));
+    /// ```
+    pub fn end(&self) -> usize {
+        self.end
     }
 
     /// The problem's severity under the config it was checked with. Never `Off`.
