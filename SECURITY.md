@@ -13,15 +13,20 @@ That holds for every file jsonvet reads: the files it checks, a config file (`js
 
 ## Known limits
 
-One case is known and still open, in a schema jsonvet cannot check a part at a time
-([design.md](docs/design.md#--schema)). Until it closes, review schema changes in pull requests
+Two cases are known and still open, both in a schema jsonvet cannot check a part at a time
+([design.md](docs/design.md#--schema)). Until they close, review schema changes in pull requests
 from strangers before CI runs them.
 
 - jsonschema collects every error of one validation call before jsonvet sees any. So a schema
-  that puts an `anyOf` or an `enum` around `additionalProperties` can still take gigabytes on a
-  document with many failing values: about 450 bytes for each, on top of the 20 bytes for each
-  byte of the file. 2,000,000 failing keys in a 42 MB file took 1.4 GB, against 0.52 GB when they
-  pass. Closing it needs a way in jsonschema to stop early.
+  that puts an `anyOf` around `additionalProperties` can still take gigabytes on a document with
+  many failing values. Each takes about 420 bytes
+  ([usage.md](docs/usage.md#json-schema-limits)), on top of about 13 bytes for each byte of the
+  file. Closing it needs a way in jsonschema to stop early.
+- A pattern too costly to match, under an `allOf`, is much cheaper than before but not free.
+  5,000 such strings took 26.3 s on 0.59 and take 0.05 s now, and one beside 100,000 strings that
+  fail the pattern went from over 120 s to 2.55 s. But one beside 1,600,000 failing strings (a
+  9.6 MB file) took 62 s and 7.5 GB, against 6.3 s and 1.35 GB for the same strings without it:
+  about 10 times the time and 5.6 times the memory, growing faster than the input.
 
 Output grows linearly with the input, but can be many times its size. The worst case I could
 build is a JSON5 file of 200,000 duplicate keys of 4 bytes each, under a path cut at 256 bytes.
