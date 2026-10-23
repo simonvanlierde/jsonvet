@@ -1676,6 +1676,19 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         assert!(out.contains("nested deeper than 512 levels"), "{out}");
     }
 
+    /// A path through a file is not a missing schema, so it is reported, not skipped.
+    #[cfg(unix)]
+    #[test]
+    fn a_dollar_schema_that_cannot_be_looked_up_is_an_error() {
+        let dir = workdir(&[("f.json", "{\"$schema\": \"f.json/s.json\"}")]);
+        let (code, out) = jsonvet(&dir, &["f.json"]);
+        assert_eq!(code, 1, "{out}");
+        assert!(
+            out.starts_with("f.json:1:13: error[schema] cannot read the schema f.json/s.json: "),
+            "{out}"
+        );
+    }
+
     /// A file outside the test's project, holding `TOPSECRET` where an error would quote it.
     fn outside(dir: &Path, name: &str, text: &str) -> PathBuf {
         let folder = dir.with_extension("outside");

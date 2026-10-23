@@ -459,7 +459,6 @@ fn own_schema<'e>(events: &'e [Event<'_>]) -> Option<(usize, &'e str)> {
     while let Some(event) = events.next() {
         match &event.kind {
             EventKind::ObjectStart | EventKind::ArrayStart => depth += 1,
-            EventKind::End if depth == 0 => return None,
             EventKind::End => depth -= 1,
             EventKind::Key(key) if depth == 0 && **key == *b"$schema" => {
                 let value = events.next()?;
