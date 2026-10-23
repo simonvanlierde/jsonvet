@@ -25,6 +25,7 @@ expression: "serde_json::to_string_pretty(&sarif).expect(\"JSON\")"
                   "uriBaseId": "%SRCROOT%"
                 },
                 "region": {
+                  "endColumn": 6,
                   "startColumn": 3,
                   "startLine": 3
                 }

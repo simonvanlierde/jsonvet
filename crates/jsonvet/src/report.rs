@@ -63,6 +63,11 @@ impl<'a> Report<'a> {
         }
     }
 
+    /// The text the report is about.
+    pub fn text(&self) -> &'a str {
+        self.text
+    }
+
     /// Every problem, ordered by offset.
     pub fn problems(&self) -> &[Problem] {
         &self.problems

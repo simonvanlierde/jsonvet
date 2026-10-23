@@ -14,6 +14,13 @@ version for a new option or output, the patch version for a fix.
   "server.schema.json" }]` checks the matching files as `--schema` would. A file's own `$schema`
   that names a schema on disk, relative to the file, works too. jsonvet still fetches nothing, so
   a `$schema` URL is skipped and such a file is checked for syntax only.
+- `--color auto|always|never` colors the code frames. `auto`, the default, colors them on a
+  terminal unless `NO_COLOR` is set. `FORCE_COLOR` or `--color always` color piped output too,
+  which stays one line per problem with the severity and rule in color.
+- SARIF results and GitHub annotations now have an `endColumn`, so code scanning and pull
+  requests mark the whole duplicate key, number or word, not only its first character.
+- The library's `Problem::end()` gives the byte offset where the problem's text ends, and
+  `Report::text()` gives the text a report is about.
 
 ### Fixed
 
@@ -26,6 +33,10 @@ version for a new option or output, the patch version for a fix.
 - A file's own `$schema` that names a local file is now checked against when the file exists. A
   path to a file that does not exist, such as one under `node_modules` that was not installed, is
   skipped like a URL.
+- On a terminal, each problem now shows as a code frame: the message, the line of the file with
+  the problem marked under it, and the related place, such as a duplicate key's first copy.
+  pre-commit in a terminal shows frames too. CI, pre-commit.ci and pipes keep one line per
+  problem, and `| cat` forces lines.
 - `--schema` uses jsonschema 0.59.0, which decides where each pattern applies. A key or string too
   costly to match is an error only where the pattern applies and its outcome changes the result.
   A document that also has another schema error reports only that one.

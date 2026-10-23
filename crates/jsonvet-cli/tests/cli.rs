@@ -82,6 +82,33 @@ fn reports_and_exit_codes() {
 }
 
 #[test]
+fn a_point_problem_has_no_end_column_in_annotations_or_sarif() {
+    let dir = workdir(&[
+        ("comma.json", "[1 2]"),
+        // A JSON5 line continuation puts the second `ab` key on two lines.
+        ("wrap.json5", "{\"ab\":1,\"a\\\nb\":2}"),
+    ]);
+    let (_, out, _) = run_jsonvet(&dir, &["comma.json"], true);
+    assert!(
+        out.contains("::error file=comma.json,line=1,col=3,title=jsonvet (syntax)"),
+        "{out}"
+    );
+    let (_, out, _) = run_jsonvet(&dir, &["--format", "sarif", "comma.json"], false);
+    let sarif: serde_json::Value = serde_json::from_str(&out).expect("JSON output");
+    let region = &sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["region"];
+    assert_eq!(
+        *region,
+        serde_json::json!({"startLine": 1, "startColumn": 3})
+    );
+
+    let (_, out, _) = run_jsonvet(&dir, &["--format", "sarif", "wrap.json5"], false);
+    let sarif: serde_json::Value = serde_json::from_str(&out).expect("JSON output");
+    let region = &sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["region"];
+    assert_eq!(region["startColumn"], 9, "{region}");
+    assert_eq!(region["endLine"], 2, "{region}");
+}
+
+#[test]
 fn github_annotations_follow_each_problem() {
     let dir = workdir(&[
         ("bom.json", "\u{FEFF}{}"),
@@ -92,6 +119,8 @@ fn github_annotations_follow_each_problem() {
             .args(["--dialect=json:*.json", "bom.json", "dup.json"])
             .current_dir(&dir)
             .env("GITHUB_ACTIONS", actions)
+            .env_remove("NO_COLOR")
+            .env_remove("FORCE_COLOR")
             .output()
             .expect("run jsonvet");
         String::from_utf8(out.stdout).expect("UTF-8 output")
@@ -99,9 +128,9 @@ fn github_annotations_follow_each_problem() {
     assert_eq!(
         run("true"),
         "bom.json:1:1: warning[byte-order-mark] byte order mark at the start of the file\n\
-         ::warning file=bom.json,line=1,col=1,title=jsonvet (byte-order-mark)::byte order mark at the start of the file\n\
+         ::warning file=bom.json,line=1,col=1,endColumn=1,title=jsonvet (byte-order-mark)::byte order mark at the start of the file\n\
          dup.json:1:8: error[duplicate-key] duplicate key $.a (first at 1:2)\n\
-         ::error file=dup.json,line=1,col=8,title=jsonvet (duplicate-key)::duplicate key $.a (first at 1:2)\n"
+         ::error file=dup.json,line=1,col=8,endColumn=10,title=jsonvet (duplicate-key)::duplicate key $.a (first at 1:2)\n"
     );
     assert_eq!(
         run("false"),
@@ -153,7 +182,7 @@ fn each_output_path_escapes_names_and_messages() {
             "m.json",
             true,
             format!(
-                "{text}::error file=m.json,line=1,col=17,title=jsonvet (duplicate-key)::{}\n",
+                "{text}::error file=m.json,line=1,col=17,endColumn=26,title=jsonvet (duplicate-key)::{}\n",
                 message.replace('%', "%25")
             ),
         ),
@@ -714,6 +743,67 @@ fn sarif_holds_every_problem_and_keeps_the_exit_codes() {
     assert_eq!(opened["physicalLocation"]["region"]["startColumn"], 7);
 }
 
+/// Off a terminal, text output stays one line per problem whatever the color, so tools that read
+/// `file:line:col` still can. `--color always` or `FORCE_COLOR` color the severity and rule in
+/// each line; `--color never`, `NO_COLOR` or no option leave them plain. `NO_COLOR` wins over
+/// `FORCE_COLOR`, and the option over both. The code frames a terminal gets are tested in
+/// `output.rs`, since a test cannot hand jsonvet a terminal.
+#[test]
+fn color_forced_off_a_terminal_keeps_one_line_per_problem() {
+    let dir = workdir(&[
+        ("dup.json", "{\n  \"a\": 1,\n  \"a\": 2\n}\n"),
+        ("open.json", "{\"a\": [1, True"),
+        ("ok.json", "{}"),
+    ]);
+    let run = |args: &[&str], vars: &[(&str, &str)]| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_jsonvet"));
+        command
+            .args(args)
+            .args(["dup.json", "open.json", "ok.json", "gone.json"])
+            .current_dir(&dir)
+            .env_remove("GITHUB_ACTIONS")
+            .env_remove("NO_COLOR")
+            .env_remove("FORCE_COLOR")
+            .envs(vars.iter().copied());
+        let out = command.output().expect("run jsonvet");
+        assert_eq!(out.status.code(), Some(1), "{args:?} {vars:?}");
+        String::from_utf8(out.stdout).expect("UTF-8 output")
+    };
+    let plain = "dup.json:3:3: error[duplicate-key] duplicate key $.a (first at 2:3)\n\
+                 open.json:1:11: error[syntax] expected a value, found `True`; did you mean `true`?\n\
+                 gone.json: error: no such file\n";
+    let colored = "dup.json:3:3: \u{1b}[1m\u{1b}[91merror[duplicate-key]\u{1b}[0m duplicate key $.a (first at 2:3)\n\
+                   open.json:1:11: \u{1b}[1m\u{1b}[91merror[syntax]\u{1b}[0m expected a value, found `True`; did you mean `true`?\n\
+                   gone.json: \u{1b}[1m\u{1b}[91merror\u{1b}[0m: no such file\n";
+    assert_eq!(run(&["--color", "always"], &[]), colored);
+    assert_eq!(run(&[], &[]), plain);
+    assert_eq!(run(&["--color", "never"], &[]), plain);
+    assert_eq!(run(&["--color=auto"], &[("NO_COLOR", "1")]), plain);
+    assert_eq!(run(&[], &[("FORCE_COLOR", "1")]), colored);
+    // Set to the empty string, either counts as unset.
+    assert_eq!(run(&[], &[("FORCE_COLOR", "")]), plain);
+    assert_eq!(run(&[], &[("FORCE_COLOR", "1"), ("NO_COLOR", "1")]), plain);
+    assert_eq!(run(&[], &[("FORCE_COLOR", "1"), ("NO_COLOR", "")]), colored);
+    assert_eq!(run(&["--color", "never"], &[("FORCE_COLOR", "1")]), plain);
+    assert_eq!(run(&["--color", "always"], &[("NO_COLOR", "1")]), colored);
+
+    // SARIF and JSON stay as they are.
+    for format in ["sarif", "json"] {
+        let out = run(&["--color", "always", "--format", format], &[]);
+        assert!(!out.contains('\u{1b}'), "{out}");
+        assert!(
+            serde_json::from_str::<serde_json::Value>(&out).is_ok(),
+            "{out}"
+        );
+    }
+    let (code, _, err) = jsonvet_stderr(&dir, &["--color", "yes", "ok.json"]);
+    assert_eq!(code, 2);
+    assert!(
+        err.starts_with("jsonvet: --color takes auto, always or never, not `yes`\n"),
+        "{err}"
+    );
+}
+
 #[test]
 fn a_utf16_or_utf32_file_names_its_encoding() {
     let dir = workdir(&[]);
@@ -1030,6 +1120,8 @@ fn jsonvet_stdin(dir: &Path, args: &[&str], input: &str) -> (i32, String, String
         .args(args)
         .current_dir(dir)
         .env_remove("GITHUB_ACTIONS")
+        .env_remove("NO_COLOR")
+        .env_remove("FORCE_COLOR")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -1179,7 +1271,12 @@ fn jsonvet_stderr(dir: &Path, args: &[&str]) -> (i32, String, String) {
 /// stdout and stderr.
 fn run_jsonvet(dir: &Path, args: &[impl AsRef<OsStr>], annotate: bool) -> (i32, String, String) {
     let mut command = Command::new(env!("CARGO_BIN_EXE_jsonvet"));
-    command.args(args).current_dir(dir);
+    // Either would change how text output looks.
+    command
+        .args(args)
+        .current_dir(dir)
+        .env_remove("NO_COLOR")
+        .env_remove("FORCE_COLOR");
     if annotate {
         command.env("GITHUB_ACTIONS", "true");
     } else {

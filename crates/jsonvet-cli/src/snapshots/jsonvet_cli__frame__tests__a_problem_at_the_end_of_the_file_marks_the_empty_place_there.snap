@@ -1,0 +1,14 @@
+---
+source: crates/jsonvet-cli/src/frame.rs
+expression: "frames(\"{\\\"a\\\": [1,\\n\")"
+---
+error[syntax]: unclosed `[`: expected a value, found the end of the file
+ --> f:2:1
+  |
+2 |
+  | ^
+  |
+ ::: f:1:7
+  |
+1 | {"a": [1,
+  |       - here
