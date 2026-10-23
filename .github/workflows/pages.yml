@@ -1,0 +1,105 @@
+name: pages
+
+# The browser playground: crates/jsonvet-wasm built to WebAssembly, and playground/ around it.
+# A pull request builds it; a push to main also deploys it to GitHub Pages.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/jsonvet/**"
+      - "crates/jsonvet-wasm/**"
+      - "playground/**"
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/pages.yml
+  pull_request:
+    paths:
+      - "crates/jsonvet/**"
+      - "crates/jsonvet-wasm/**"
+      - "playground/**"
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Never cancel a deploy halfway.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # wasm-bindgen-cli must be the exact version of the wasm-bindgen crate in Cargo.lock.
+      - name: Read the wasm-bindgen version
+        id: bindgen
+        run: echo "version=$(cargo pkgid --locked wasm-bindgen | sed 's/.*@//')" >> "$GITHUB_OUTPUT"
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: wasm-bindgen@${{ steps.bindgen.outputs.version }}
+          fallback: none
+      # The page's line and column mapping, which has to match jsonvet's.
+      - run: node --test playground/lines.test.mjs
+      - run: cargo build --locked -p jsonvet-wasm --target wasm32-unknown-unknown --profile wasm
+      - run: >-
+          wasm-bindgen --target web --no-typescript --out-dir playground/pkg
+          target/wasm32-unknown-unknown/wasm/jsonvet_wasm.wasm
+      # install-action has no binaryen, so this is the release archive, checked against its hash.
+      - name: Shrink the wasm with wasm-opt
+        env:
+          BINARYEN: version_133
+          BINARYEN_SHA256: 2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489
+        run: |
+          curl --fail --silent --show-error --location --output binaryen.tar.gz \
+            "https://github.com/WebAssembly/binaryen/releases/download/${BINARYEN}/binaryen-${BINARYEN}-x86_64-linux.tar.gz"
+          echo "${BINARYEN_SHA256}  binaryen.tar.gz" | sha256sum --check
+          tar --extract --gzip --file binaryen.tar.gz --strip-components=1 "binaryen-${BINARYEN}/bin/wasm-opt"
+          bin/wasm-opt -Oz --output playground/pkg/jsonvet_wasm_bg.wasm playground/pkg/jsonvet_wasm_bg.wasm
+          rm -r binaryen.tar.gz bin
+      # Load the built module and check one text, which the build alone does not do.
+      - name: Smoke test the wasm
+        run: |
+          node --input-type=module <<'EOF'
+          import { readFileSync } from "node:fs";
+          import init, { check } from "./playground/pkg/jsonvet_wasm.js";
+          await init({ module_or_path: readFileSync("playground/pkg/jsonvet_wasm_bg.wasm") });
+          const problems = JSON.parse(check('{"a":1,"a":2}', "json5"));
+          if (problems.length !== 1 || problems[0].line !== 1) {
+            console.error(problems);
+            process.exit(1);
+          }
+          EOF
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: playground
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write # to deploy to GitHub Pages
+      id-token: write # to verify the deployment's origin
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+        id: deploy

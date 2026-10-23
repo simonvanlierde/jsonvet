@@ -277,6 +277,8 @@ looks at those two in each folder before it enters it and stops with an error at
 crates/jsonvet/        library: the parser, rules and positions. Depends on memchr and unicode-properties.
 crates/jsonvet-cli/    binaries jsonvet and check-json5: arguments, config, output, and --schema
                        (jsonschema, serde_json). Built into the PyPI wheels by maturin.
+crates/jsonvet-wasm/   the library as WebAssembly for the playground: one export, `check`
+playground/            the browser playground: a static page around the wasm. Deployed by pages.yml.
 compat/check-json5/    the check-json5 package on PyPI: depends on jsonvet, nothing else
 setup.py               placeholder that pre-commit installs: pins the jsonvet wheel
 action.yml             the GitHub Action: installs the jsonvet wheel from PyPI and runs it

@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/jsonvet", "crates/jsonvet-cli"]
+members = ["crates/jsonvet", "crates/jsonvet-cli", "crates/jsonvet-wasm"]
 # cargo-fuzz needs nightly; the fuzz crate builds on its own.
 exclude = ["fuzz"]
 resolver = "3"
@@ -44,3 +44,10 @@ strip = true
 [profile.bench]
 debug = true
 strip = false
+
+# The playground's .wasm (crates/jsonvet-wasm): built for size, and leaves the release profile as
+# it is. Debug info only: wasm-bindgen reads its own custom sections, which a full strip removes.
+[profile.wasm]
+inherits = "release"
+opt-level = "s"
+strip = "debuginfo"

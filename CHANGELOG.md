@@ -17,6 +17,9 @@ version for a new option or output, the patch version for a fix.
   requests mark the whole duplicate key, number or word, not only its first character.
 - The library's `Problem::end()` gives the byte offset where the problem's text ends, and
   `Report::text()` gives the text a report is about.
+- A playground at <https://simonvanlierde.github.io/jsonvet/>. Paste text, pick a dialect, and see
+  each problem with its line, column and rule as you type. It runs jsonvet in your browser as
+  WebAssembly, so the text never leaves your machine. It has no `--schema` checks.
 
 ### Fixed
 

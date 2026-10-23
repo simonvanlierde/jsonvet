@@ -148,3 +148,6 @@ mutants.out*/
 
 # Build cache of the conformance drivers
 /conformance/.work/
+
+# The playground's wasm-bindgen output, built by .github/workflows/pages.yml
+/playground/pkg/
