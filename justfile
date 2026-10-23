@@ -80,8 +80,8 @@ bench:
     cargo build --release -p jsonvet-cli
     uv run scripts/bench.py --jsonvet {{ target }}/release/jsonvet
 
-# Build the playground as pages.yml does, then serve it at http://127.0.0.1:8000 (needs the wasm32 target and
-# wasm-bindgen-cli at the version in Cargo.lock; the deploy also shrinks the .wasm with wasm-opt).
+# Build the playground as pages.yml does, then serve it at http://127.0.0.1:8000. Needs the
+# wasm32 target and wasm-bindgen-cli at the version in Cargo.lock; the deploy also runs wasm-opt.
 playground PORT="8000":
     #!/usr/bin/env bash
     set -euo pipefail
