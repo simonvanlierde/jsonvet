@@ -63,8 +63,8 @@ In scope:
 
 Out of scope:
 
-- The two open cases under "Known limits", which are in jsonschema. Report a new way to reach
-  them, or a better fix, here.
+- The open cases under "Known limits", which are already known. A new way to reach them, or a
+  fix, is in scope: report it here.
 - A vulnerability in a tool jsonvet builds on or runs, such as jsonschema, a runner or GitHub
   Actions. Report it upstream; a pin or setting jsonvet should change is in scope.
 - A check that jsonvet reports wrongly, or a file it accepts or rejects against its dialect.
