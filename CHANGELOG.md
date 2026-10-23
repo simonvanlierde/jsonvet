@@ -8,14 +8,26 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
+### Added
+
+- `--color auto|always|never` colors the code frames. `auto`, the default, colors them on a
+  terminal unless `NO_COLOR` is set. `FORCE_COLOR` or `--color always` color piped output too,
+  which stays one line per problem with the severity and rule in color.
+- SARIF results and GitHub annotations now have an `endColumn`, so code scanning and pull
+  requests mark the whole duplicate key, number or word, not only its first character.
+- The library's `Problem::end()` gives the byte offset where the problem's text ends, and
+  `Report::text()` gives the text a report is about.
+
 ### Changed
 
-- `--schema` uses jsonschema 0.60.1, which decides where each pattern applies. A key or string too
-  costly to match is an error only where the pattern applies and its outcome changes the result.
-  A document that also has another schema error reports only that one. It also shares the values of
-  an `enum` or `const` between errors instead of copying them. A schema with an `anyOf` around
-  `additionalProperties` and a 200,000-value `enum` took 6.3 GB and 2.7 s on 1,000 failing keys,
-  and now takes 40 MB and 0.03 s. The binary is 135 KB larger.
+- `--schema` uses jsonschema 0.60.1. It shares the values of an `enum` or `const` between errors
+  instead of copying them. A schema with an `anyOf` around `additionalProperties` and a
+  200,000-value `enum` took 6.3 GB and 2.7 s on 1,000 failing keys, and now takes 40 MB and 0.03 s.
+  The binary is 135 KB larger.
+- On a terminal, each problem now shows as a code frame: the message, the line of the file with
+  the problem marked under it, and the related place, such as a duplicate key's first copy.
+  pre-commit in a terminal shows frames too. CI, pre-commit.ci and pipes keep one line per
+  problem, and `| cat` forces lines.
 
 ### Fixed
 
@@ -27,8 +39,9 @@ version for a new option or output, the patch version for a fix.
 ### Security
 
 - `--schema` no longer takes tens of seconds on strings too costly for a pattern under an `allOf`:
-  5,000 such strings took 47 s and now take 0.46 s, and one beside 100,000 that fail the pattern
-  took 38 s and now takes 0.21 s. SECURITY.md lists one open case instead of two.
+  5,000 such strings took 26.3 s and now take 0.05 s, and one beside 100,000 that fail the pattern
+  took over 120 s and now takes 2.55 s. A much larger file can still be slow: SECURITY.md has the
+  numbers.
 
 ## [3.1.1] - 2026-10-21
 

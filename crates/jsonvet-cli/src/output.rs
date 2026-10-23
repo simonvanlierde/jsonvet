@@ -5,8 +5,11 @@ use std::ffi::OsStr;
 use std::fmt::Write as _;
 use std::io::{self, Write};
 
+use annotate_snippets::Renderer;
+use annotate_snippets::renderer::Style;
 use jsonvet::{Location, Problem, RelatedKind, Report, Severity, is_hidden};
 
+use crate::frame::{self, Mark, STYLED};
 use crate::{json, sarif};
 
 /// The output format, from `--format`.
@@ -68,6 +71,22 @@ fn escape(value: &str, property: bool) -> String {
     }
 }
 
+/// How text output looks: a code frame for each problem or one line, and whether in color.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Look {
+    pub(crate) frames: bool,
+    pub(crate) color: bool,
+}
+
+/// Where a problem is in its file: the text, what a code frame marks, and where the problem
+/// ends, for SARIF and annotations, when it ends past its start.
+#[derive(Clone, Copy)]
+struct Place<'t> {
+    text: &'t str,
+    mark: Mark<'t>,
+    end: Option<Location>,
+}
+
 pub(crate) struct Printer<W: Write> {
     out: W,
     sink: Sink,
@@ -75,8 +94,14 @@ pub(crate) struct Printer<W: Write> {
 
 /// What each format keeps while the run goes on.
 enum Sink {
-    /// With `annotate`, each problem is also a GitHub Actions annotation.
-    Text { annotate: bool },
+    /// With `annotate`, each problem is also a GitHub Actions annotation. With a renderer, each
+    /// problem is a code frame instead of a line. With `color`, a line shows its severity and
+    /// rule in color.
+    Text {
+        annotate: bool,
+        frames: Option<Renderer>,
+        color: bool,
+    },
     /// The results, held until `finish` writes the document, and how many past
     /// [`sarif::MAX_RESULTS`] were counted but not kept.
     Sarif {
@@ -88,9 +113,19 @@ enum Sink {
 }
 
 impl<W: Write> Printer<W> {
-    pub(crate) fn new(out: W, format: Format, annotate: bool) -> Self {
+    pub(crate) fn new(out: W, format: Format, annotate: bool, look: Look) -> Self {
         let sink = match format {
-            Format::Text => Sink::Text { annotate },
+            Format::Text => Sink::Text {
+                annotate,
+                frames: look.frames.then(|| {
+                    if look.color {
+                        STYLED
+                    } else {
+                        Renderer::plain()
+                    }
+                }),
+                color: look.color,
+            },
             Format::Sarif => Sink::Sarif {
                 results: Vec::new(),
                 dropped: 0,
@@ -107,28 +142,41 @@ impl<W: Write> Printer<W> {
         report: &Report<'_>,
         problem: &Problem,
     ) -> io::Result<()> {
-        let at = report.location(problem.offset());
-        // Where the related offset is, and its labels in the text message and in SARIF or JSON.
+        let text = report.text();
+        let (offset, end) = (problem.offset(), problem.end());
+        let mut message = problem.to_string();
+        let title = message.len();
+        // The related place, named in the message and marked in a frame, SARIF and JSON.
         let related = problem.related().map(|related| {
-            let labels = match related.kind {
+            let (what, label) = match related.kind {
                 RelatedKind::FirstOccurrence => ("first at", "first copy"),
                 RelatedKind::Opened => ("opened at", "opened here"),
                 // NOTE: `RelatedKind` is non-exhaustive; `Start` is the only other kind so far.
                 _ => ("started at", "starts here"),
             };
-            (report.location(related.offset), related.offset, labels)
+            let at = report.location(related.offset);
+            let _ = write!(message, " ({what} {}:{})", at.line, at.column);
+            Mark {
+                at,
+                span: frame::one_char(text, related.offset),
+                label: Some(label),
+            }
         });
-        let mut message = problem.to_string();
-        if let Some((first, _, (what, _))) = related {
-            let _ = write!(message, " ({what} {}:{})", first.line, first.column);
-        }
-        let related = related.map(|(first, offset, (_, what))| (first, offset, what));
+        let place = Place {
+            text,
+            mark: Mark {
+                at: report.location(offset),
+                span: (offset, end),
+                label: None,
+            },
+            end: (end > offset).then(|| report.location(end)),
+        };
         self.line(
             file,
             problem.rule().id(),
             problem.severity(),
-            &message,
-            Some((at, problem.offset())),
+            (&message, &message[..title]),
+            Some(place),
             related,
         )
     }
@@ -146,13 +194,22 @@ impl<W: Write> Printer<W> {
         if summary && !matches!(self.sink, Sink::Text { .. }) {
             return Ok(());
         }
-        let at = report.location(offset);
+        let text = report.text();
+        let place = Place {
+            text,
+            mark: Mark {
+                at: report.location(offset),
+                span: frame::one_char(text, offset),
+                label: None,
+            },
+            end: None,
+        };
         self.line(
             file,
             sarif::SCHEMA,
             Severity::Error,
-            message,
-            Some((at, offset)),
+            (message, message),
+            Some(place),
             None,
         )
     }
@@ -163,26 +220,28 @@ impl<W: Write> Printer<W> {
             file,
             sarif::UNREADABLE,
             Severity::Error,
-            message,
+            (message, message),
             None,
             None,
         )
     }
 
-    /// One problem, in whichever format: a text line and maybe an annotation, a SARIF result
-    /// or a JSON diagnostic. `at` and `related` carry a position and its byte offset. `related`
-    /// is only for SARIF and JSON; the text message already names it. With no `at`, for a file
-    /// that could not be read, the text shows neither a position nor the rule.
+    /// One problem, in whichever format: a text line or code frame and maybe an annotation, a
+    /// SARIF result or a JSON diagnostic. A code frame's title is the message without the part
+    /// naming the related place, which the frame marks instead. `related` always has a label.
+    /// With no `place`, for a file that could not be read, the text shows neither a position
+    /// nor the rule.
     fn line(
         &mut self,
         file: &OsStr,
         rule: &str,
         severity: Severity,
-        message: &str,
-        at: Option<(Location, usize)>,
-        related: Option<(Location, usize, &str)>,
+        (message, frame_title): (&str, &str),
+        place: Option<Place<'_>>,
+        related: Option<Mark<'_>>,
     ) -> io::Result<()> {
-        let annotate = match &mut self.sink {
+        let at = place.map(|p| p.mark.at);
+        let (annotate, frames, color) = match &mut self.sink {
             Sink::Json { started } => {
                 if *started {
                     self.out.write_all(b",\n")?;
@@ -190,42 +249,102 @@ impl<W: Write> Printer<W> {
                     self.out.write_all(json::start().as_bytes())?;
                 }
                 *started = true;
-                let diagnostic = json::diagnostic(file, rule, severity, message, at, related);
+                let diagnostic = json::diagnostic(
+                    file,
+                    rule,
+                    severity,
+                    message,
+                    place.map(|p| (p.mark.at, p.mark.span.0)),
+                    related.and_then(|r| Some((r.at, r.span.0, r.label?))),
+                );
                 return self.out.write_all(diagnostic.as_bytes());
             }
             Sink::Sarif { results, dropped } => {
                 if results.len() < sarif::MAX_RESULTS {
                     // GitHub code scanning needs a line in every result.
-                    let at = at.map_or(Location::START, |(at, _)| at);
-                    let related = related.map(|(first, _, what)| (first, what));
-                    results.push(sarif::result(file, rule, severity, message, at, related));
+                    let at = at.unwrap_or(Location::START);
+                    // A point problem, such as a missing `,`, has no end: GitHub leaves `endColumn` out for
+                    // it, and so does SARIF.
+                    let end = place.and_then(|p| p.end);
+                    let related = related.and_then(|r| Some((r.at, r.label?)));
+                    results.push(sarif::result(
+                        file, rule, severity, message, at, end, related,
+                    ));
                 } else {
                     *dropped += 1;
                 }
                 return Ok(());
             }
-            Sink::Text { annotate } => *annotate,
+            Sink::Text {
+                annotate,
+                frames,
+                color,
+            } => (*annotate, frames.as_ref(), *color),
         };
         let file = &file.to_string_lossy();
+        // Escaped once, for the line and the annotation alike.
         let message = &printable(message);
-        let (position, title) = match at.map(|(at, _)| at) {
-            Some(at) => (
-                format!(":{}:{}: {severity}[{rule}]", at.line, at.column),
-                format!(",line={},col={},title=jsonvet ({rule})", at.line, at.column),
-            ),
-            None => (format!(": {severity}:"), ",title=jsonvet".to_owned()),
-        };
-        writeln!(self.out, "{}{position} {message}", line_start(file))?;
-        if annotate {
-            writeln!(
-                self.out,
-                "::{} file={}{title}::{}",
-                sarif::level(severity),
-                escape(&printable(file), true),
-                escape(message, false)
-            )?;
+        if let Some(renderer) = frames {
+            let text = place.map_or("", |p| p.text);
+            let primary = place.map(|p| p.mark);
+            let frame = frame::render(
+                renderer,
+                text,
+                file,
+                severity,
+                rule,
+                frame_title,
+                primary,
+                related,
+            );
+            // A blank line after each frame keeps one problem apart from the next.
+            writeln!(self.out, "{frame}\n")?;
+        } else {
+            let position = Self::position(at, severity, rule, color);
+            writeln!(self.out, "{}{position} {message}", line_start(file))?;
         }
-        Ok(())
+        if !annotate {
+            return Ok(());
+        }
+        let title = match place {
+            Some(place) => {
+                let at = place.mark.at;
+                let mut title = format!(",line={},col={}", at.line, at.column);
+                // GitHub's end column is the last column marked, and only on the start's line.
+                if let Some(end) = place.end
+                    && end.line == at.line
+                {
+                    let _ = write!(title, ",endColumn={}", end.column - 1);
+                }
+                let _ = write!(title, ",title=jsonvet ({rule})");
+                title
+            }
+            None => ",title=jsonvet".to_owned(),
+        };
+        writeln!(
+            self.out,
+            "::{} file={}{title}::{}",
+            sarif::level(severity),
+            escape(&printable(file), true),
+            escape(message, false)
+        )
+    }
+
+    /// The part of a text line between the file name and the message, with the severity and
+    /// rule in color when `color` is set.
+    fn position(at: Option<Location>, severity: Severity, rule: &str, color: bool) -> String {
+        let style = match (color, severity) {
+            (false, _) => Style::new(),
+            (true, Severity::Error) => frame::ERROR,
+            (true, _) => frame::WARNING,
+        };
+        match at {
+            Some(at) => format!(
+                ":{}:{}: {style}{severity}[{rule}]{style:#}",
+                at.line, at.column
+            ),
+            None => format!(": {style}{severity}{style:#}:"),
+        }
     }
 
     /// A line of text output, such as the summary; nothing in SARIF or JSON.
@@ -256,7 +375,43 @@ impl<W: Write> Printer<W> {
 
 #[cfg(test)]
 mod tests {
-    use super::{escape, line_start, printable};
+    use std::ffi::OsStr;
+
+    use jsonvet::{Config, Dialect, check};
+
+    use super::{Format, Look, Printer, escape, line_start, printable};
+
+    /// On a terminal in color, each problem is a code frame, with the same color codes on every
+    /// platform.
+    #[test]
+    fn code_frames_in_color() {
+        let mut out = Vec::new();
+        let mut printer = Printer::new(
+            &mut out,
+            Format::Text,
+            false,
+            Look {
+                frames: true,
+                color: true,
+            },
+        );
+        for (file, text) in [
+            ("dup.json", "{\n  \"a\": 1,\n  \"a\": 2\n}\n"),
+            ("open.json", "{\"a\": [1, True"),
+        ] {
+            let report = check(text, &Config::new(Dialect::Json));
+            for problem in report.problems() {
+                printer
+                    .problem(OsStr::new(file), &report, problem)
+                    .expect("a write to memory");
+            }
+        }
+        printer
+            .unreadable(OsStr::new("gone.json"), "no such file")
+            .expect("a write to memory");
+        let out = String::from_utf8(out).expect("UTF-8");
+        insta::assert_snapshot!(out.replace('\u{1b}', "␛"));
+    }
 
     #[test]
     fn messages_stay_on_one_line_and_annotation_fields_are_percent_encoded() {

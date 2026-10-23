@@ -568,3 +568,38 @@ fn a_dialect_hint_needs_the_whole_token() {
         );
     }
 }
+
+/// Each problem spans the text it is about, from `offset` to `end`, or no text at a place
+/// between characters.
+#[test]
+fn each_problem_spans_its_text() {
+    use Dialect::{IJson, Json, Json5, JsonLines};
+    fn spans(dialect: Dialect, text: &str) -> Vec<(usize, &str)> {
+        let report = check(text, &Config::new(dialect));
+        report
+            .problems()
+            .iter()
+            .map(|p| (p.offset(), &text[p.offset()..p.end()]))
+            .collect()
+    }
+    assert_eq!(
+        spans(Json, r#"{"port": 1, "port": 2}"#),
+        [(12, r#""port""#)]
+    );
+    assert_eq!(spans(Json, "[1, True]"), [(4, "True")]);
+    assert_eq!(spans(Json, "[1 2]"), [(2, "")]);
+    assert_eq!(spans(Json, "[1, @]"), [(4, "@")]);
+    assert_eq!(spans(Json, "[1,"), [(3, "")]);
+    assert_eq!(spans(Json, "[\"a\nb\"]"), [(3, "")]);
+    assert_eq!(spans(Json, "\u{FEFF}[]"), [(0, "\u{FEFF}")]);
+    assert_eq!(
+        spans(IJson, "[1e999, 9007199254740993]"),
+        [(1, "1e999"), (8, "9007199254740993")]
+    );
+    assert_eq!(
+        spans(IJson, "[\"\\uD800\", \"\u{FFFF}\"]"),
+        [(2, "\\uD800"), (12, "\u{FFFF}")]
+    );
+    assert_eq!(spans(Json5, "{a: 1, a: 2}"), [(7, "a")]);
+    assert_eq!(spans(JsonLines, "1\n2"), [(3, "")]);
+}

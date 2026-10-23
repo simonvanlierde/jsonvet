@@ -81,8 +81,10 @@ pub(crate) fn check_lines<'a>(
     };
     if let Err(mut fail) = outcome {
         parser.unclosed(&mut fail);
+        let end = parser.syntax_end(&fail);
         parser.problems.push(Problem {
             offset: fail.offset,
+            end,
             severity: Severity::Error,
             detail: Detail::Syntax(SyntaxError {
                 kind: fail.kind,
@@ -445,10 +447,33 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn report(&mut self, offset: usize, severity: Severity, detail: Detail) {
+    /// Where the text a syntax error is about ends: after the word for an unexpected word, after
+    /// the character at the error for most others, and nowhere past the offset when the error
+    /// is about a place between characters, such as a missing `,` or the end of a line.
+    #[cold]
+    fn syntax_end(&self, fail: &Fail) -> usize {
+        let at = fail.offset;
+        match &fail.kind {
+            SyntaxKind::UnexpectedWord { word, .. } => at + word.len(),
+            SyntaxKind::UnexpectedEnd { .. }
+            | SyntaxKind::UnexpectedLineEnd { .. }
+            | SyntaxKind::Unclosed { .. }
+            | SyntaxKind::MissingComma
+            | SyntaxKind::UnterminatedString
+            | SyntaxKind::UnterminatedComment => at,
+            _ => match self.text.get(at..).and_then(|rest| rest.chars().next()) {
+                // A line break would put the end on the next line.
+                Some('\n' | '\r' | '\u{2028}' | '\u{2029}') | None => at,
+                Some(c) => at + c.len_utf8(),
+            },
+        }
+    }
+
+    fn report(&mut self, offset: usize, end: usize, severity: Severity, detail: Detail) {
         if severity.is_on() {
             self.problems.push(Problem {
                 offset,
+                end,
                 severity,
                 detail,
             });
@@ -457,7 +482,7 @@ impl<'a> Parser<'a> {
 
     fn byte_order_mark(&mut self, severity: Severity) {
         if self.text.starts_with('\u{FEFF}') {
-            self.report(0, severity, Detail::ByteOrderMark);
+            self.report(0, '\u{FEFF}'.len_utf8(), severity, Detail::ByteOrderMark);
             self.pos = '\u{FEFF}'.len_utf8();
         }
     }
@@ -655,7 +680,7 @@ impl<'a> Parser<'a> {
             if let Some(len) = self.line_end() {
                 self.pos += len;
             } else {
-                self.report(len, final_newline, Detail::MissingFinalNewline);
+                self.report(len, len, final_newline, Detail::MissingFinalNewline);
             }
         }
         Ok(())
@@ -723,6 +748,7 @@ impl<'a> Parser<'a> {
                 });
                 self.report(
                     start,
+                    self.pos,
                     self.duplicate_key,
                     Detail::DuplicateKey { first, path },
                 );
@@ -841,6 +867,7 @@ impl<'a> Parser<'a> {
                     if is_noncharacter(u32::from(c)) {
                         self.report(
                             self.pos,
+                            self.pos + c.len_utf8(),
                             self.invalid_code_point,
                             Detail::InvalidCodePoint {
                                 code_point: u32::from(c),
@@ -953,6 +980,7 @@ impl<'a> Parser<'a> {
         if is_surrogate(code_point) || is_noncharacter(code_point) {
             self.report(
                 at,
+                self.pos,
                 self.invalid_code_point,
                 Detail::InvalidCodePoint { code_point },
             );
@@ -1116,6 +1144,7 @@ impl<'a> Parser<'a> {
         if overflows || unsafe_integer {
             self.report(
                 start,
+                self.pos,
                 self.invalid_number,
                 Detail::InvalidNumber { overflows },
             );
@@ -1139,6 +1168,7 @@ impl<'a> Parser<'a> {
         if overflows || unsafe_integer {
             self.report(
                 start,
+                self.pos,
                 self.invalid_number,
                 Detail::InvalidNumber { overflows },
             );

@@ -156,6 +156,13 @@ front, and a `[` straight after `##` prints as `\u005b`. So no line looks like a
 command, old (`##[command]`) or new (`::command`). An annotation's `file=` value holds the name
 as the text line prints it, with those escapes, then percent-encoded as GitHub requires.
 
+A code frame also prints a line of the file, so it needs the same care. Its message and file
+name take the escapes above. In the line itself, each control, bidirectional or invisible
+character, and a `[` straight after `##`, prints as U+FFFD instead. That keeps the line one
+character per character of the file, so the marks under it still line up. A frame shows at most
+160 characters each side of what it marks, with `…` where it cuts the line, so a minified file
+with many problems on one line is not copied whole for each of them.
+
 ### `--schema`
 
 `--schema FILE` adds a seventh rule, `schema`, which belongs to the CLI: the library knows no
