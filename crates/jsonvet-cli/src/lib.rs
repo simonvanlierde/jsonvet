@@ -251,11 +251,20 @@ fn jobs(
     given: Option<&Arc<Schema>>,
     load: &impl Fn(&Path) -> Loaded,
 ) -> Result<Vec<Job>, String> {
+    // Settings are shared between files of a folder, so each set is walked once.
+    let mut walked = std::collections::HashSet::new();
     files
         .into_iter()
         .map(|file| {
             let name = shown(&file);
             let settings = settings_for(Path::new(&name))?;
+            // A schema the config names is read even if no file matches its glob, so a missing
+            // one is never passed over. `--schema` replaces them all.
+            if given.is_none() && walked.insert(Arc::as_ptr(&settings)) {
+                for entry in &settings.schemas {
+                    Result::clone(&load(&entry.schema)).map_err(|e| output::printable(&e))?;
+                }
+            }
             let schema = match given {
                 Some(schema) => Some(Arc::clone(schema)),
                 None => settings

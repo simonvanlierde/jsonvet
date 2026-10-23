@@ -268,7 +268,7 @@ exclude = ["node_modules", "tests/fixtures/*"]
 `schemas` checks the files a glob matches against a JSON Schema on disk, as `--schema` does. Both
 the glob and the schema path are relative to the config file's directory, and the last matching
 entry wins. `--schema` replaces them all. A schema in this list that jsonvet cannot read or use is
-a usage error (exit 2), as with `--schema`:
+a usage error (exit 2), as with `--schema`, even when no checked file matches its glob:
 
 ```toml
 schemas = [{ files = "config/*.json5", schema = "schemas/server.schema.json" }]

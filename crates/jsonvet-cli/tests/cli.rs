@@ -1461,7 +1461,10 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         files.push(("d/f.json", "{}"));
         let dir = workdir(&files);
         assert_eq!(picked_by(&dir, &["d/f.json"]), "kb");
-        assert_eq!(picked_by(&dir, &["--config", "other.toml", "d/f.json"]), "ka");
+        assert_eq!(
+            picked_by(&dir, &["--config", "other.toml", "d/f.json"]),
+            "ka"
+        );
     }
 
     #[test]
@@ -1493,6 +1496,34 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         files.push(("f.json5", "{$schema: 'sc.json'}"));
         let dir = workdir(&files);
         assert_eq!(picked_by(&dir, &["f.json5"]), "kc");
+    }
+
+    #[test]
+    fn a_configured_schema_that_no_file_matches_is_still_read() {
+        let dir = workdir(&[
+            ("ok.json", "{}"),
+            ("broken.json", "{\"type\": "),
+            (
+                "gone.toml",
+                "schemas = [{ files = \"nothing/*.json\", schema = \"missing.json\" }]\n",
+            ),
+            (
+                "broken.toml",
+                "schemas = [{ files = \"nothing/*.json\", schema = \"broken.json\" }]\n",
+            ),
+        ]);
+        let (code, out, err) = jsonvet_stderr(&dir, &["--config", "gone.toml", "ok.json"]);
+        assert_eq!((code, out.as_str()), (2, ""), "{err}");
+        assert!(err.contains("missing.json"), "{err}");
+        let (code, _, err) = jsonvet_stderr(&dir, &["--config", "broken.toml", "ok.json"]);
+        assert_eq!(code, 2, "{err}");
+        assert!(err.contains("broken.json:1:10: unclosed `{`"), "{err}");
+        // `--schema` replaces the configured schemas, so it does not read them.
+        let (code, _, err) = jsonvet_stderr(
+            &dir,
+            &["--config", "gone.toml", "--schema", "ok.json", "ok.json"],
+        );
+        assert_eq!(code, 0, "{err}");
     }
 
     #[test]
