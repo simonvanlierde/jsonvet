@@ -102,6 +102,7 @@
 </main>
 <script type="module">
   import init, { check } from "./pkg/jsonvet_wasm.js";
+  import { indexOf, lineEnd } from "./lines.mjs";
 
   const input = document.getElementById("input");
   const dialect = document.getElementById("dialect");
@@ -109,19 +110,6 @@
   const gutter = document.getElementById("gutter");
   const layer = document.getElementById("layer");
   const list = document.getElementById("problems");
-  // Line ends as jsonvet counts them: JSON5 also ends a line at U+2028 and U+2029.
-  const lineEnd = () => (dialect.value === "json5" ? /\r\n|[\r\n\u2028\u2029]/g : /\r\n|[\r\n]/g);
-
-  // The UTF-16 index of a 1-based line and a column in code points.
-  function indexOf(text, line, column) {
-    const ends = lineEnd();
-    let start = 0;
-    for (let l = 1; l < line && ends.exec(text); l++) start = ends.lastIndex;
-    let i = start;
-    for (let c = 1; c < column && i < text.length; c++) i += text.codePointAt(i) > 0xffff ? 2 : 1;
-    return i;
-  }
-
   // Marks a problem line by a glyph as well as a color, so it shows in forced-colors mode too.
   const glyph = { error: "\u2716", warning: "\u25b2" };
   const MAX_ITEMS = 200;
@@ -162,7 +150,7 @@
     }
     const marks = new Map();
     for (const p of problems) if (marks.get(p.line) !== "error") marks.set(p.line, p.severity);
-    const texts = text.split(lineEnd());
+    const texts = text.split(lineEnd(dialect.value));
     lines(layer, texts, marks);
     lines(gutter, texts.map((_, i) => (marks.has(i + 1) ? `${glyph[marks.get(i + 1)]} ` : "") + (i + 1)), marks);
     const items = problems.slice(0, MAX_ITEMS).map((p) => {
@@ -183,7 +171,7 @@
       }
       button.title = `${p.severity}: go to line ${p.line}, column ${p.column}`;
       button.addEventListener("click", () => {
-        const i = indexOf(input.value, p.line, p.column);
+        const i = indexOf(input.value, p.line, p.column, dialect.value);
         input.focus();
         input.setSelectionRange(i, i);
         // Bring the line into view, as the textarea may not scroll to the caret itself.
