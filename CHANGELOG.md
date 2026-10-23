@@ -22,6 +22,7 @@ version for a new option or output, the patch version for a fix.
 - `--schema` no longer fails a file because a string in it is too costly to match against a
   pattern the schema never applies there. jsonvet tried every pattern on every string, so any Expo
   `app.json` with a string of 5,000 characters or more failed against SchemaStore's schema.
+- The crates on crates.io and the wheels on PyPI now carry the MIT license text, not just its name.
 
 ### Security
 
@@ -210,6 +211,7 @@ many large files takes longer and much less memory; see Changed.
     against its base as jsonschema resolves it, so a small schema elsewhere could be measured in
     place of the real one. jsonvet now resolves `$ref`s with jsonschema's own code.
   - Looking up a `$ref` among the `$id`s was quadratic: 20,000 of them took 24 s, now 0.2 s.
+
 ## [3.0.0] - 2026-10-18
 
 3.0 checks files against a JSON Schema, with each error at its line and column, writes SARIF
