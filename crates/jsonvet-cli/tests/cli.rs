@@ -613,7 +613,7 @@ fn pyproject_tool_table_and_bad_configs() {
         // A key holding a newline stays on the line, so it cannot forge a workflow command.
         (
             "forged.toml:1:1",
-            "unknown key `\\n::error::x`; expected rules, dialects or exclude",
+            "unknown key `\\n::error::x`; expected rules, dialects, exclude or schemas",
         ),
         // A typo gets its line and column, and the name it is closest to.
         (
@@ -624,7 +624,7 @@ fn pyproject_tool_table_and_bad_configs() {
         ),
         (
             "key.toml:2:3",
-            "unknown key `rule` (did you mean `rules`?); expected rules, dialects or exclude",
+            "unknown key `rule` (did you mean `rules`?); expected rules, dialects, exclude or schemas",
         ),
         (
             "severity.toml:2:10",
@@ -1316,6 +1316,100 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
             out,
             "bad.json:1:24: error[syntax] unclosed `[`: expected a value, found the end of the file (opened at 1:21)\n\
              dup.json:1:15: error[duplicate-key] duplicate key $.name (first at 1:2)\n"
+        );
+    }
+
+    #[test]
+    fn a_config_schemas_entry_and_a_local_dollar_schema_check_like_the_schema_option() {
+        let dir = workdir(&[
+            ("schema.json", SCHEMA),
+            (
+                "jsonvet.toml",
+                "schemas = [{ files = \"conf/*.json\", schema = \"schema.json\" }]\n",
+            ),
+            ("conf/a.json", "{\"port\": \"80\", \"x\": 0}"),
+            (
+                "own/b.json",
+                "{\"$schema\": \"../schema.json\", \"port\": \"80\"}",
+            ),
+            ("plain.json", "{\"port\": \"80\", \"x\": 0}"),
+            (
+                "remote.json",
+                "{\"$schema\": \"https://example.com/s.json\", \"port\": \"80\"}",
+            ),
+            ("nested.json", "{\"a\": {\"$schema\": \"schema.json\"}}"),
+        ]);
+        for file in ["conf/a.json", "own/b.json"] {
+            let given = jsonvet(&dir, &["--schema", "schema.json", file]);
+            assert_eq!(given.0, 1, "{file}");
+            assert!(given.1.contains("error[schema]"), "{file}: {}", given.1);
+            assert_eq!(jsonvet(&dir, &[file]), given, "{file}");
+        }
+        // Neither a `schemas` entry nor a local `$schema`: syntax only, and nothing is fetched.
+        assert_eq!(
+            jsonvet(&dir, &["plain.json", "remote.json", "nested.json"]),
+            (0, String::new())
+        );
+        // A folder walk finds each file's schema too.
+        let (code, out) = jsonvet(&dir, &["."]);
+        assert_eq!(code, 1);
+        assert_eq!(
+            out.lines().map(|l| l.split(':').next()).collect::<Vec<_>>(),
+            [
+                Some("./conf/a.json"),
+                Some("./conf/a.json"),
+                Some("./conf/a.json"),
+                Some("./own/b.json"),
+                Some("./own/b.json"),
+                Some("./own/b.json"),
+            ],
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn a_schema_named_by_a_file_or_config_that_cannot_be_used_is_reported() {
+        let dir = workdir(&[
+            ("gone.json", "{\"$schema\": \"missing.json\", \"a\": 1}"),
+            ("broken.json", "{\"type\": "),
+            ("uses-broken.json", "{\n  \"$schema\": \"broken.json\"\n}"),
+            ("ok.json", "{}"),
+            (
+                "bad.toml",
+                "schemas = [{ files = \"*.json\", schema = \"broken.json\" }]\n",
+            ),
+            (
+                "typo.toml",
+                "schemas = [{ files = \"*.json\", schemas = \"broken.json\" }]\n",
+            ),
+        ]);
+        // A file's own `$schema` that cannot be used is an error in that file.
+        let (code, out, err) = jsonvet_stderr(&dir, &["gone.json", "uses-broken.json", "ok.json"]);
+        assert_eq!(code, 1, "{err}");
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines.len(), 2, "{out}");
+        assert!(
+            lines[0]
+                .starts_with("gone.json:1:13: error[schema] cannot read the schema missing.json: "),
+            "{out}"
+        );
+        assert_eq!(
+            lines[1],
+            "uses-broken.json:2:14: error[schema] the schema broken.json:1:10: unclosed `{`: \
+             expected a value, found the end of the file"
+        );
+        // A config file's is a usage error, as `--schema` is.
+        let (code, out, err) = jsonvet_stderr(&dir, &["--config", "bad.toml", "ok.json"]);
+        assert_eq!((code, out.as_str()), (2, ""));
+        assert!(err.contains("broken.json:1:10: unclosed `{`"), "{err}");
+        let (code, _, err) = jsonvet_stderr(&dir, &["--config", "typo.toml", "ok.json"]);
+        assert_eq!(code, 2);
+        assert!(
+            err.ends_with(
+                "typo.toml:1:32: unknown key `schemas` (did you mean `schema`?) in a `schemas` \
+                 entry; expected files and schema\n"
+            ),
+            "{err}"
         );
     }
 

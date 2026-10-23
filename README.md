@@ -174,6 +174,17 @@ In the hook, give each schema its own entry:
       args: [--schema, schemas/server.schema.json]
 ```
 
+To give each file its schema without the command line, list them in the config file, or point
+a file's own `$schema` at a schema on disk:
+
+```toml
+schemas = [{ files = "config/server.json5", schema = "schemas/server.schema.json" }]
+```
+
+```json5
+{ $schema: "../schemas/server.schema.json", port: 8080 }
+```
+
 Schema errors are always errors. jsonvet never fetches a schema from the network or another file,
 so every `$ref` must point inside the schema file. The other limits are in the
 [reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#json-schema-limits).

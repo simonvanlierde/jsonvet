@@ -173,15 +173,15 @@ expression: "serde_json::to_string_pretty(&sarif).expect(\"JSON\")"
             },
             {
               "fullDescription": {
-                "text": "a value the JSON Schema given with --schema rejects."
+                "text": "a value the file's JSON Schema rejects."
               },
               "help": {
-                "text": "A value the JSON Schema given with --schema rejects, such as a missing required key or a string where the schema wants a number. Always an error: --error, --warn, --ignore and settings files do not take this rule."
+                "text": "A value the file's JSON Schema rejects, such as a missing required key or a string where the schema wants a number. The schema comes from --schema, the config file's schemas or a local $schema in the file. Always an error: --error, --warn, --ignore and settings files do not take this rule."
               },
               "helpUri": "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#schema",
               "id": "schema",
               "shortDescription": {
-                "text": "a value the JSON Schema given with --schema rejects"
+                "text": "a value the file's JSON Schema rejects"
               }
             }
           ],

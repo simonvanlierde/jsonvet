@@ -80,6 +80,18 @@ pub(crate) struct Settings {
     /// Patterns for paths a directory walk skips, each with the absolute directory of the
     /// config file it comes from, normalized, which it is relative to.
     pub(crate) exclude: Vec<(Glob, String)>,
+    /// Schemas for the files matching a pattern, from a config file's `schemas`.
+    pub(crate) schemas: Vec<SchemaPattern>,
+}
+
+/// A schema for the files matching a glob, from a config file.
+#[derive(Clone, Debug)]
+pub(crate) struct SchemaPattern {
+    pub(crate) files: Glob,
+    /// The schema file, as the config file's own folder joined with the path it gives.
+    pub(crate) schema: PathBuf,
+    /// The absolute directory `files` is relative to, normalized, as for [`DialectPattern`].
+    pub(crate) base: String,
 }
 
 impl Settings {
@@ -88,7 +100,23 @@ impl Settings {
         self.dialects.extend(later.dialects);
         self.rules.extend(later.rules);
         self.exclude.extend(later.exclude);
+        self.schemas.extend(later.schemas);
         self
+    }
+
+    /// The schema the config file names for `path`, if any: the last matching entry wins, as
+    /// for dialects.
+    pub(crate) fn schema_for(&self, path: &str) -> Option<&Path> {
+        let mut located = Located::new(path);
+        self.schemas
+            .iter()
+            .rev()
+            .find(|entry| {
+                located
+                    .in_base(&entry.base)
+                    .is_some_and(|path| entry.files.matches(path))
+            })
+            .map(|entry| entry.schema.as_path())
     }
 
     /// Whether a directory walk skips `path`, a file or a folder.
@@ -320,6 +348,10 @@ impl Resolver {
                 for (_, base) in &mut own.exclude {
                     base.clone_from(&cwd);
                 }
+                // Its schema paths stay relative to its own folder, where they sit.
+                for entry in &mut own.schemas {
+                    entry.base.clone_from(&cwd);
+                }
                 Arc::new(own.overridden_by(Settings::clone(&self.cli)))
             }
             None => Arc::clone(&self.cli),
@@ -394,8 +426,9 @@ fn has_jsonvet_table(text: &str) -> bool {
 /// Read a config file: a `jsonvet.toml`, or the `[tool.jsonvet]` table of a `pyproject.toml`.
 /// It holds `rules`, a table of rule id to severity, and `dialects`, an array of tables with a
 /// `files` glob, relative to the config file's directory, and a `dialect`; and `exclude`, an
-/// array of globs, relative to the same directory, for paths a directory walk skips. Any other
-/// key is an error, so a typo is never ignored.
+/// array of globs, relative to the same directory, for paths a directory walk skips; and
+/// `schemas`, an array of tables with a `files` glob and a `schema` path, both relative to that
+/// directory. Any other key is an error, so a typo is never ignored.
 pub(crate) fn load(path: &Path) -> Result<Settings, String> {
     // A key or value from the file shows escaped, so it cannot start a line of its own on stderr.
     let in_file = |e: &dyn std::fmt::Display| printable(&format!("{}: {e}", path.display()));
@@ -429,10 +462,9 @@ pub(crate) fn load(path: &Path) -> Result<Settings, String> {
     } else {
         table
     };
-    let base = std::path::absolute(path).map_err(|e| in_file(&e))?;
-    let base = base
-        .parent()
-        .map(|dir| glob::normalize(&dir.to_string_lossy()));
+    let absolute = std::path::absolute(path).map_err(|e| in_file(&e))?;
+    let folder = absolute.parent();
+    let base = folder.map(|dir| glob::normalize(&dir.to_string_lossy()));
     let mut settings = Settings::default();
     for (key, value) in file {
         let here = value.span().start;
@@ -472,14 +504,31 @@ pub(crate) fn load(path: &Path) -> Result<Settings, String> {
                     }
                 }
             }
+            ("schemas", DeValue::Array(entries)) => {
+                for entry in entries {
+                    let (files, schema) =
+                        schema_entry(entry).map_err(|(offset, e)| at(offset, &e))?;
+                    if let (Some(base), Some(folder)) = (&base, folder) {
+                        settings.schemas.push(SchemaPattern {
+                            files: Glob::new(files),
+                            schema: folder.join(schema),
+                            base: base.clone(),
+                        });
+                    }
+                }
+            }
             ("exclude", _) => return Err(at(here, &"`exclude` must be an array of strings")),
+            ("schemas", _) => return Err(at(here, &"`schemas` must be an array of tables")),
             ("rules", _) => return Err(at(here, &"`rules` must be a table")),
             ("dialects", _) => return Err(at(here, &"`dialects` must be an array of tables")),
             (key_text, _) => {
-                let hint = jsonvet::did_you_mean(key_text, ["rules", "dialects", "exclude"]);
+                let hint =
+                    jsonvet::did_you_mean(key_text, ["rules", "dialects", "exclude", "schemas"]);
                 return Err(at(
                     key.span().start,
-                    &format!("unknown key `{key_text}`{hint}; expected rules, dialects or exclude"),
+                    &format!(
+                        "unknown key `{key_text}`{hint}; expected rules, dialects, exclude or schemas"
+                    ),
                 ));
             }
         }
@@ -490,19 +539,43 @@ pub(crate) fn load(path: &Path) -> Result<Settings, String> {
 /// One `dialects` entry: a table with exactly a `files` string and a `dialect` string. An error
 /// comes with the offset it is about.
 fn dialect_entry(entry: &Spanned<DeValue<'_>>) -> Result<DialectPattern, (usize, String)> {
+    let [(_, files), (dialect_at, dialect)] =
+        entry_strings(entry, "dialects", ["files", "dialect"])?;
+    Ok(DialectPattern {
+        files: Some(Glob::new(files)),
+        dialect: parse_dialect(dialect).map_err(|e| (dialect_at, e))?,
+        base: None,
+    })
+}
+
+/// One `schemas` entry: a table with exactly a `files` string and a `schema` string.
+fn schema_entry<'e>(
+    entry: &'e Spanned<DeValue<'_>>,
+) -> Result<(&'e str, &'e str), (usize, String)> {
+    let [(_, files), (_, schema)] = entry_strings(entry, "schemas", ["files", "schema"])?;
+    Ok((files, schema))
+}
+
+/// The two strings of an entry in the array `array`, a table with exactly the keys `keys`, each
+/// with its offset. An error comes with the offset it is about.
+fn entry_strings<'e>(
+    entry: &'e Spanned<DeValue<'_>>,
+    array: &str,
+    keys: [&str; 2],
+) -> Result<[(usize, &'e str); 2], (usize, String)> {
     let start = entry.span().start;
     let DeValue::Table(table) = entry.get_ref() else {
-        return Err((start, "each `dialects` entry must be a table".to_owned()));
+        return Err((start, format!("each `{array}` entry must be a table")));
     };
-    if let Some(key) = table
-        .keys()
-        .find(|k| !matches!(k.get_ref().as_ref(), "files" | "dialect"))
-    {
+    if let Some(key) = table.keys().find(|k| !keys.contains(&k.get_ref().as_ref())) {
         let name = key.get_ref();
-        let hint = jsonvet::did_you_mean(name, ["files", "dialect"]);
+        let hint = jsonvet::did_you_mean(name, keys);
         return Err((
             key.span().start,
-            format!("unknown key `{name}`{hint} in a `dialects` entry; expected files and dialect"),
+            format!(
+                "unknown key `{name}`{hint} in a `{array}` entry; expected {} and {}",
+                keys[0], keys[1]
+            ),
         ));
     }
     let string = |key: &str| {
@@ -513,17 +586,11 @@ fn dialect_entry(entry: &Spanned<DeValue<'_>>) -> Result<DialectPattern, (usize,
                 let offset = value.map_or(start, |v| v.span().start);
                 (
                     offset,
-                    format!("each `dialects` entry needs a `{key}` string"),
+                    format!("each `{array}` entry needs a `{key}` string"),
                 )
             })
     };
-    let (_, files) = string("files")?;
-    let (dialect_at, dialect) = string("dialect")?;
-    Ok(DialectPattern {
-        files: Some(Glob::new(files)),
-        dialect: parse_dialect(dialect).map_err(|e| (dialect_at, e))?,
-        base: None,
-    })
+    Ok([string(keys[0])?, string(keys[1])?])
 }
 
 #[cfg(test)]

@@ -203,9 +203,10 @@ Text output shows no rule for it; SARIF and JSON output file it under `unreadabl
 
 ### schema
 
-A value the JSON Schema given with `--schema` rejects, such as a missing required key or a string
-where the schema wants a number. Always an error: `--error`, `--warn`, `--ignore` and settings
-files do not take this rule.
+A value the file's JSON Schema rejects, such as a missing required key or a string where the
+schema wants a number. The schema comes from `--schema`, the config file's `schemas` or a local
+`$schema` in the file. Always an error: `--error`, `--warn`, `--ignore` and settings files do not
+take this rule.
 
 ## Globs
 
@@ -243,8 +244,8 @@ link may lead to a file that is not yours to show.
 
 A folder walk skips what the `exclude` setting of each folder's nearest file names.
 
-The file takes three keys, `rules`, `dialects` and `exclude`. Any other key, at the top or in a
-`dialects` entry, is a usage error, so a typo never goes unnoticed. The error names the line and
+The file takes four keys, `rules`, `dialects`, `exclude` and `schemas`. Any other key, at the top
+or in a `dialects` or `schemas` entry, is a usage error, so a typo never goes unnoticed. The error names the line and
 column in the file, and the closest known name: `jsonvet.toml:2:1: unknown rule
 `duplicate-keys` (did you mean `duplicate-key`?); …`.
 
@@ -262,6 +263,15 @@ paths a folder walk skips (see [Folders](#folders)):
 
 ```toml
 exclude = ["node_modules", "tests/fixtures/*"]
+```
+
+`schemas` checks the files a glob matches against a JSON Schema on disk, as `--schema` does. Both
+the glob and the schema path are relative to the config file's directory, and the last matching
+entry wins. `--schema` replaces them all. A schema in this list that jsonvet cannot read or use is
+a usage error (exit 2), as with `--schema`:
+
+```toml
+schemas = [{ files = "config/*.json5", schema = "schemas/server.schema.json" }]
 ```
 
 ## GitHub Action
@@ -356,7 +366,15 @@ jsonvet --format json config.json5 | jq -r '.diagnostics[] | "\(.file):\(.line) 
 
 ## JSON Schema limits
 
-These hold for `--schema`. Why each one exists is in [design.md](design.md#--schema).
+These hold for `--schema`, and for a schema from the config file or a file's `$schema`. Why each
+one exists is in [design.md](design.md#--schema).
+
+- **Which schema.** `--schema` applies to every file. Without it, a file takes the schema of the
+  last `schemas` entry in its config file that matches it. Without one, a file whose top-level
+  object has a `$schema` string that is a path, not a URL, is checked against that file, relative
+  to the file's own folder. A `$schema` URL is skipped, since jsonvet fetches nothing, and so is
+  `$schema` in JSON Lines. A file with no schema is checked for syntax only. A `$schema` file that
+  jsonvet cannot read or use is a schema error at the `$schema` value, not a usage error.
 
 - **Severity.** Schema errors are always errors, in text, annotations, SARIF and JSON. `--error`,
   `--warn`, `--ignore` and the config file do not take `schema`, and exit 2 if you give it to

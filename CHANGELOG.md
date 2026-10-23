@@ -8,6 +8,13 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
+### Added
+
+- A config file can give files a schema: `schemas = [{ files = "config/*.json", schema =
+  "server.schema.json" }]` checks the matching files as `--schema` would. A file's own `$schema`
+  that names a schema on disk, relative to the file, works too. jsonvet still fetches nothing, so
+  a `$schema` URL is skipped and such a file is checked for syntax only.
+
 ### Fixed
 
 - `--schema` no longer fails a file because a string in it is too costly to match against a
