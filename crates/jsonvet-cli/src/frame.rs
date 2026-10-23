@@ -82,7 +82,7 @@ pub(crate) fn render(
         related.at.line == primary.at.line && primary.span.0.abs_diff(related.span.0) <= CONTEXT
     });
     // The column of the mark each snippet's header names, in the order they show.
-    let mut columns = Vec::with_capacity(2);
+    let mut columns = vec![primary.at.column];
     // Close on the same line: one excerpt holds both.
     if let Some(related) = close {
         let first = if related.span.0 < primary.span.0 {
@@ -92,17 +92,13 @@ pub(crate) fn render(
         };
         let to = primary.span.1.max(related.span.1);
         let excerpt = Excerpt::new(text, first.at, first.span.0, to);
-        let marks = [primary, related];
-        group = group.element(excerpt.snippet(text, &file, &marks, true, first.at.line));
-        columns.push(primary.at.column);
+        group = group.element(excerpt.snippet(text, &file, &[primary, related], true));
     } else {
         let excerpt = Excerpt::new(text, primary.at, primary.span.0, primary.span.1);
-        group = group.element(excerpt.snippet(text, &file, &[primary], true, primary.at.line));
-        columns.push(primary.at.column);
+        group = group.element(excerpt.snippet(text, &file, &[primary], true));
         if let Some(related) = related {
             let other = Excerpt::new(text, related.at, related.span.0, related.span.1);
-            let marks = [related];
-            group = group.element(other.snippet(text, &file, &marks, false, related.at.line));
+            group = group.element(other.snippet(text, &file, &[related], false));
             columns.push(related.at.column);
         }
     }
@@ -137,6 +133,8 @@ struct Excerpt {
     range: Range<usize>,
     /// Whether the line goes on before or after the range.
     cut: (bool, bool),
+    /// The line's number.
+    line: usize,
 }
 
 impl Excerpt {
@@ -171,10 +169,11 @@ impl Excerpt {
         Excerpt {
             range: start..end,
             cut: (before > CONTEXT, cut_end),
+            line: at.line,
         }
     }
 
-    /// The excerpt as a snippet starting at `line`, with each mark annotated: the first as the
+    /// The excerpt as a snippet, with each mark annotated: the first as the
     /// problem when `problem` is set, any other as context. Characters that would act on the terminal or hide text,
     /// and the `[` of `##[`, which a GitHub runner reads as a command, show as U+FFFD.
     fn snippet<'a>(
@@ -183,7 +182,6 @@ impl Excerpt {
         file: &str,
         marks: &[Mark<'a>],
         problem: bool,
-        line: usize,
     ) -> Snippet<'a, Annotation<'a>> {
         let mut shown = String::with_capacity(self.range.len() + 6);
         if self.cut.0 {
@@ -228,7 +226,7 @@ impl Excerpt {
             });
         Snippet::source(shown)
             .path(file.to_owned())
-            .line_start(line)
+            .line_start(self.line)
             .annotations(annotations)
     }
 }

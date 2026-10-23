@@ -76,18 +76,11 @@ pub(crate) struct Args {
     pub(crate) max_warnings: Option<usize>,
     pub(crate) config: ConfigSource,
     pub(crate) format: Format,
-    pub(crate) color: Color,
+    /// Whether to color text output, from `--color`: `None` for `auto`.
+    pub(crate) color: Option<bool>,
     pub(crate) schema: Option<PathBuf>,
     /// The name standard input goes by, from `--stdin-filename`.
     pub(crate) stdin_filename: Option<OsString>,
-}
-
-/// When to color text output, from `--color`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Color {
-    Auto,
-    Always,
-    Never,
 }
 
 #[derive(Debug)]
@@ -114,11 +107,11 @@ fn parse_format(name: &str) -> Result<Format, String> {
     }
 }
 
-fn parse_color(when: &str) -> Result<Color, String> {
+fn parse_color(when: &str) -> Result<Option<bool>, String> {
     match when {
-        "auto" => Ok(Color::Auto),
-        "always" => Ok(Color::Always),
-        "never" => Ok(Color::Never),
+        "auto" => Ok(None),
+        "always" => Ok(Some(true)),
+        "never" => Ok(Some(false)),
         _ => {
             let hint = jsonvet::did_you_mean(when, ["auto", "always", "never"]);
             Err(format!(
@@ -137,7 +130,7 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
     let mut max_warnings = None;
     let mut config = ConfigSource::Search;
     let mut format = Format::Text;
-    let mut color = Color::Auto;
+    let mut color = None;
     let mut schema = None;
     let mut stdin_filename = None;
     loop {

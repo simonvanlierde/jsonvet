@@ -20,7 +20,7 @@ mod sarif;
 mod schema;
 mod settings;
 
-use args::{Color, Command, STDIN};
+use args::{Command, STDIN};
 use output::{Format, Look, Printer};
 use schema::Schema;
 use settings::{Resolver, Settings};
@@ -478,17 +478,11 @@ fn check<'t>(
 
 /// How text output looks: code frames on a terminal and lines otherwise, so tools reading a pipe
 /// always get `file:line:col`, and in color as `--color` and the environment ask.
-fn look(format: Format, color: Color, terminal: Terminal) -> Look {
-    let color = format == Format::Text
-        && match color {
-            Color::Always => true,
-            Color::Never => false,
-            Color::Auto => terminal.color.unwrap_or(terminal.tty),
-        };
-    if format == Format::Text && terminal.tty {
-        Look::Frames { color }
-    } else {
-        Look::Lines { color }
+fn look(format: Format, color: Option<bool>, terminal: Terminal) -> Look {
+    let text = format == Format::Text;
+    Look {
+        frames: text && terminal.tty,
+        color: text && color.or(terminal.color).unwrap_or(terminal.tty),
     }
 }
 
@@ -764,60 +758,34 @@ mod tests {
 
     #[test]
     fn frames_show_on_a_terminal_and_color_follows_the_option_then_the_environment() {
-        use super::{Color, Format, Look, Terminal, look};
+        use super::{Format, Look, Terminal, look};
         let terminal = |tty, color| Terminal { tty, color };
-        let frames = |color| Look::Frames { color };
-        let lines = |color| Look::Lines { color };
+        // Off a terminal, `color_forced_off_a_terminal_keeps_one_line_per_problem` in
+        // tests/cli.rs covers each case end to end.
+        let frames = |color| Look {
+            frames: true,
+            color,
+        };
+        let lines = Look {
+            frames: false,
+            color: false,
+        };
         let cases = [
+            (Format::Text, None, terminal(true, None), frames(true)),
             (
                 Format::Text,
-                Color::Auto,
-                terminal(true, None),
-                frames(true),
-            ),
-            (
-                Format::Text,
-                Color::Auto,
+                None,
                 terminal(true, Some(false)),
                 frames(false),
             ),
             (
                 Format::Text,
-                Color::Never,
+                Some(false),
                 terminal(true, Some(true)),
                 frames(false),
             ),
-            (
-                Format::Text,
-                Color::Auto,
-                terminal(false, None),
-                lines(false),
-            ),
-            // Color forced into a pipe: still one line per problem.
-            (
-                Format::Text,
-                Color::Auto,
-                terminal(false, Some(true)),
-                lines(true),
-            ),
-            (
-                Format::Text,
-                Color::Always,
-                terminal(false, Some(false)),
-                lines(true),
-            ),
-            (
-                Format::Sarif,
-                Color::Always,
-                terminal(true, None),
-                lines(false),
-            ),
-            (
-                Format::Json,
-                Color::Always,
-                terminal(true, None),
-                lines(false),
-            ),
+            (Format::Sarif, Some(true), terminal(true, None), lines),
+            (Format::Json, Some(true), terminal(true, None), lines),
         ];
         for (format, color, terminal, want) in cases {
             assert_eq!(
