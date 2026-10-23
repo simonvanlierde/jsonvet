@@ -1413,6 +1413,88 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         );
     }
 
+    /// Three schemas that each demand a different key, so an error names the schema used.
+    fn picked_by(dir: &Path, args: &[&str]) -> String {
+        let (code, out, err) = jsonvet_stderr(dir, args);
+        assert_eq!(code, 1, "{out}{err}");
+        ["ka", "kb", "kc"]
+            .into_iter()
+            .filter(|key| out.contains(key))
+            .collect()
+    }
+
+    fn keyed_schemas() -> Vec<(&'static str, &'static str)> {
+        vec![
+            ("sa.json", "{\"required\": [\"ka\"]}"),
+            ("sb.json", "{\"required\": [\"kb\"]}"),
+            ("sc.json", "{\"required\": [\"kc\"]}"),
+        ]
+    }
+
+    #[test]
+    fn schema_option_beats_config_beats_a_files_own_dollar_schema() {
+        let mut files = keyed_schemas();
+        files.push((
+            "jsonvet.toml",
+            "schemas = [{ files = \"d/*.json\", schema = \"sb.json\" }]\n",
+        ));
+        files.push(("d/f.json", "{\"$schema\": \"../sc.json\"}"));
+        let dir = workdir(&files);
+        assert_eq!(picked_by(&dir, &["--schema", "sa.json", "d/f.json"]), "ka");
+        assert_eq!(picked_by(&dir, &["d/f.json"]), "kb");
+        assert_eq!(picked_by(&dir, &["--no-config", "d/f.json"]), "kc");
+    }
+
+    #[test]
+    fn the_last_matching_schemas_entry_wins() {
+        let mut files = keyed_schemas();
+        files.push((
+            "jsonvet.toml",
+            "schemas = [{ files = \"d/*.json\", schema = \"sa.json\" }, \
+             { files = \"d/f.json\", schema = \"sb.json\" }]\n",
+        ));
+        files.push((
+            "other.toml",
+            "schemas = [{ files = \"d/f.json\", schema = \"sb.json\" }, \
+             { files = \"d/*.json\", schema = \"sa.json\" }]\n",
+        ));
+        files.push(("d/f.json", "{}"));
+        let dir = workdir(&files);
+        assert_eq!(picked_by(&dir, &["d/f.json"]), "kb");
+        assert_eq!(picked_by(&dir, &["--config", "other.toml", "d/f.json"]), "ka");
+    }
+
+    #[test]
+    fn a_nested_config_file_takes_its_own_schemas_and_replaces_the_roots() {
+        let mut files = keyed_schemas();
+        files.push((
+            "jsonvet.toml",
+            "schemas = [{ files = \"*.json\", schema = \"sa.json\" }]\n",
+        ));
+        files.push(("top.json", "{}"));
+        files.push(("sub/sb.json", "{\"required\": [\"kb\"]}"));
+        files.push((
+            "sub/jsonvet.toml",
+            "schemas = [{ files = \"*.json\", schema = \"sb.json\" }]\n",
+        ));
+        files.push(("sub/f.json", "{}"));
+        files.push(("bare/jsonvet.toml", "exclude = [\"nothing\"]\n"));
+        files.push(("bare/f.json", "{}"));
+        let dir = workdir(&files);
+        assert_eq!(picked_by(&dir, &["top.json"]), "ka");
+        assert_eq!(picked_by(&dir, &["sub/f.json"]), "kb");
+        // The nearer config file has no `schemas`, and the root's does not carry down.
+        assert_eq!(jsonvet(&dir, &["bare/f.json"]), (0, String::new()));
+    }
+
+    #[test]
+    fn an_unquoted_json5_dollar_schema_key_is_found() {
+        let mut files = keyed_schemas();
+        files.push(("f.json5", "{$schema: 'sc.json'}"));
+        let dir = workdir(&files);
+        assert_eq!(picked_by(&dir, &["f.json5"]), "kc");
+    }
+
     #[test]
     fn a_schema_that_cannot_be_used_is_a_usage_error() {
         let dir = workdir(&[
