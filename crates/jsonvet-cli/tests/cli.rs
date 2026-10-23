@@ -1353,6 +1353,8 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         // A folder walk finds each file's schema too.
         let (code, out) = jsonvet(&dir, &["."]);
         assert_eq!(code, 1);
+        // A walk joins paths with the platform's separator.
+        let out = out.replace(std::path::MAIN_SEPARATOR, "/");
         assert_eq!(
             out.lines().map(|l| l.split(':').next()).collect::<Vec<_>>(),
             [
