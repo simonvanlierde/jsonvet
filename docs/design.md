@@ -165,8 +165,9 @@ with many problems on one line is not copied whole for each of them.
 
 ### `--schema`
 
-`--schema FILE` adds a seventh rule, `schema`, which belongs to the CLI: the library knows no
-schemas. The library's `parse` returns the file's values as events, each with its byte offset.
+A schema adds a seventh rule, `schema`, which belongs to the CLI: the library knows no schemas.
+It comes from `--schema FILE`, a config file's `schemas` or a file's own `$schema`, and works the
+same from each. The library's `parse` returns the file's values as events, each with its byte offset.
 The CLI folds them into `serde_json` values and validates those with the `jsonschema` crate, with
 default features off so nothing is fetched. It then maps each error's instance path, a JSON
 Pointer, back to the offset of its value. One walk over a document's events finds every error's
@@ -204,11 +205,12 @@ timeout, so a file gets the same verdict on every machine; see
     keyword, the split member by member.
 
   Any other schema is checked in one pass. Files are read a chunk at a time, until they hold
-  64 MB. With `--schema` each byte counts 20 times, and the chunk is cut from the files' sizes
-  before any is read, so a file of 3.2 MB or more is checked on its own. Counted only after
-  reading, every core took a file at once: twelve 10 MB files took 3.4 GB instead of 0.30 GB.
-  Without `--schema` the text is counted as it is read, since sizing 10,000 files first cost
-  7 ms.
+  64 MB. For a file with a schema each byte counts 20 times, and the chunk is cut from the
+  files' sizes before any is read, so a file of 3.2 MB or more is checked on its own. Counted
+  only after reading, every core took a file at once: twelve 10 MB files took 3.4 GB instead of
+  0.30 GB. Without a schema the text is counted as it is read, since sizing 10,000 files first
+  cost 7 ms. A file's own `$schema` is known only once the file is read, so such a file counts
+  its size once, not 20 times.
 - **Errors.** A jsonschema error holds more than its message. An `anyOf` error holds every
   branch's errors, and an `enum` error a copy of its values, so 40 errors from a 1 KB schema took
   3.2 GB when jsonvet kept them until it placed them. jsonvet keeps each error's message and path

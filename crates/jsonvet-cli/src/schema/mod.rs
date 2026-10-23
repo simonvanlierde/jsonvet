@@ -269,8 +269,10 @@ fn unexpected(value: &Value, error: &ValidationError<'_>) -> Option<Vec<String>>
 
 impl Schema {
     /// Read and compile the schema at `path`, in its dialect under `settings`. Any problem
-    /// with it is a usage error.
-    pub(crate) fn load(path: &Path, settings: &Settings) -> Result<Schema, String> {
+    /// with it is a usage error. A `quiet` one names only the place, never text from the
+    /// schema, as for a symlinked config file: a pull request picks a `$schema` or config
+    /// schema, which could be a file that holds a secret (ADR 0012).
+    pub(crate) fn load(path: &Path, settings: &Settings, quiet: bool) -> Result<Schema, String> {
         let name = path.to_string_lossy();
         let text = crate::read_small(path, crate::MAX_SCHEMA_BYTES)
             .map_err(|e| format!("cannot read the schema {name}: {e}"))?;
@@ -286,6 +288,9 @@ impl Schema {
         let (report, events) = jsonvet::parse(&text, &config);
         let at = |offset, problem: &dyn std::fmt::Display| {
             let at = report.location(offset);
+            if quiet {
+                return format!("the schema {name}:{}:{} cannot be used", at.line, at.column);
+            }
             format!("the schema {name}:{}:{}: {problem}", at.line, at.column)
         };
         if let Some(problem) = report
@@ -307,6 +312,9 @@ impl Schema {
         }
         let schema = &document.value;
         let outside = |error: &ReferencingError| match error {
+            ReferencingError::Unretrievable { .. } if quiet => Some(format!(
+                "the schema {name} has a `$ref` outside the file; jsonvet fetches no schemas"
+            )),
             ReferencingError::Unretrievable { uri, .. } => Some(format!(
                 "the schema {name} has a `$ref` to {uri}, outside the file; jsonvet fetches no \
                  schemas"

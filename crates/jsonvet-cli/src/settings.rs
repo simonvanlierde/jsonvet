@@ -80,6 +80,21 @@ pub(crate) struct Settings {
     /// Patterns for paths a directory walk skips, each with the absolute directory of the
     /// config file it comes from, normalized, which it is relative to.
     pub(crate) exclude: Vec<(Glob, String)>,
+    /// Schemas for the files matching a pattern, from a config file's `schemas`.
+    pub(crate) schemas: Vec<SchemaPattern>,
+}
+
+/// A schema for the files matching a glob, from a config file.
+#[derive(Clone, Debug)]
+pub(crate) struct SchemaPattern {
+    pub(crate) files: Glob,
+    /// The schema file, as the config file's own folder joined with the path it gives.
+    pub(crate) schema: PathBuf,
+    /// The absolute directory `files` is relative to, normalized, as for [`DialectPattern`].
+    pub(crate) base: String,
+    /// From a project config: then the schema sits inside the project, and an error in it
+    /// quotes nothing from it ([`confined`]). The user's own config is not confined.
+    pub(crate) confined: bool,
 }
 
 impl Settings {
@@ -88,7 +103,19 @@ impl Settings {
         self.dialects.extend(later.dialects);
         self.rules.extend(later.rules);
         self.exclude.extend(later.exclude);
+        self.schemas.extend(later.schemas);
         self
+    }
+
+    /// The schema the config file names for `path`, if any: the last matching entry wins, as
+    /// for dialects.
+    pub(crate) fn schema_for(&self, path: &str) -> Option<&SchemaPattern> {
+        let mut located = Located::new(path);
+        self.schemas.iter().rev().find(|entry| {
+            located
+                .in_base(&entry.base)
+                .is_some_and(|path| entry.files.matches(path))
+        })
     }
 
     /// Whether a directory walk skips `path`, a file or a folder.
@@ -198,6 +225,9 @@ pub(crate) struct Resolver {
     cwd: PathBuf,
     /// The nearest folder at or above the working directory with a `.git` entry, if any.
     repo: Option<PathBuf>,
+    /// The project a config file's or a file's own `$schema` must stay in: `repo`, or the
+    /// working directory without one, made canonical.
+    root: PathBuf,
     /// The settings of the user's own config file, read the first time a search finds no
     /// project config file: `None` until then.
     user: Option<Arc<Settings>>,
@@ -209,31 +239,38 @@ pub(crate) struct Resolver {
 impl Resolver {
     /// Read the file `--config` names, if any, so a bad one fails before any file is checked.
     pub(crate) fn new(config: &ConfigSource, cli: Settings) -> Result<Resolver, String> {
-        let (fixed, cwd) = match config {
-            ConfigSource::Search => (
-                None,
-                std::env::current_dir()
-                    .map_err(|e| format!("cannot read the working directory: {e}"))?,
-            ),
-            ConfigSource::None => (Some(Arc::new(cli.clone())), PathBuf::new()),
-            ConfigSource::File(path) => (
-                Some(Arc::new(load(path)?.overridden_by(cli.clone()))),
-                PathBuf::new(),
-            ),
-        };
-        let repo = cwd
+        let here = std::env::current_dir()
+            .map_err(|e| format!("cannot read the working directory: {e}"))?;
+        let repo = here
             .ancestors()
             .find(|dir| dir.join(".git").exists())
             .map(Path::to_owned);
+        let root = repo.as_deref().unwrap_or(&here);
+        let root = fs::canonicalize(root).unwrap_or_else(|_| root.to_owned());
+        let (fixed, cwd) = match config {
+            ConfigSource::Search => (None, here),
+            ConfigSource::None => (Some(Arc::new(cli.clone())), PathBuf::new()),
+            ConfigSource::File(path) => (
+                // The person running jsonvet named it, so like `--schema` it is not confined.
+                Some(Arc::new(load(path, None)?.overridden_by(cli.clone()))),
+                PathBuf::new(),
+            ),
+        };
         Ok(Resolver {
             cli: Arc::new(cli),
             fixed,
             found: HashMap::new(),
             cwd,
             repo,
+            root,
             user: None,
             last: None,
         })
+    }
+
+    /// The canonical project root that schema paths from a project must stay in.
+    pub(crate) fn root(&self) -> &Path {
+        &self.root
     }
 
     /// The settings for the file at `path`, which need not exist: those of the first
@@ -284,7 +321,8 @@ impl Resolver {
             }
             searched.push(dir);
             if let Some(config) = config_in(dir) {
-                let own = load(&config)?.overridden_by(Settings::clone(&self.cli));
+                let own =
+                    load(&config, Some(&self.root))?.overridden_by(Settings::clone(&self.cli));
                 settings = Some(Arc::new(own));
                 break;
             }
@@ -310,7 +348,7 @@ impl Resolver {
         }
         let user = match user_config() {
             Some(path) => {
-                let mut own = load(&path)?;
+                let mut own = load(&path, None)?;
                 // Its globs are relative to the working directory, as in ruff: it sits in no
                 // project. Normalized, as `load` does for a file's own folder.
                 let cwd = glob::normalize(&self.cwd.to_string_lossy());
@@ -319,6 +357,10 @@ impl Resolver {
                 }
                 for (_, base) in &mut own.exclude {
                     base.clone_from(&cwd);
+                }
+                // Its schema paths stay relative to its own folder, where they sit.
+                for entry in &mut own.schemas {
+                    entry.base.clone_from(&cwd);
                 }
                 Arc::new(own.overridden_by(Settings::clone(&self.cli)))
             }
@@ -362,6 +404,54 @@ fn lexical(path: &Path) -> PathBuf {
     folded
 }
 
+/// Whether the schema at `path`, relative to the folder `base`, as a file's `$schema` or a
+/// project config names it, exists: an error if it is outside `root`, the canonical project
+/// root (ADR 0012). A pull request picks these paths, and an error in a schema would show what
+/// the file holds.
+pub(crate) fn confined(path: &str, base: &Path, root: &Path) -> Result<bool, String> {
+    let outside = || format!("the schema {path} is outside the project, so it is not read");
+    let given = Path::new(path);
+    // Before the path is touched: on Windows, opening `\\host\share\s.json` connects to the host.
+    if given.has_root() || matches!(given.components().next(), Some(Component::Prefix(_))) {
+        return Err(outside());
+    }
+    let base = if base.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        base
+    };
+    let joined = base.join(given);
+    // A missing file is judged by where it would be, so a path outside is refused the same
+    // whether or not anything is there, and nothing outside can be probed.
+    let (exists, real) = match fs::canonicalize(&joined) {
+        Ok(real) => (true, Some(real)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => (false, leads_to(joined)),
+        Err(e) => return Err(format!("cannot read the schema {path}: {e}")),
+    };
+    match real {
+        Some(real) if real.starts_with(root) => Ok(exists),
+        _ => Err(outside()),
+    }
+}
+
+/// Where the missing file `path` would be: its deepest part that exists, made canonical, with
+/// the rest added by name. A dangling symlink on the way is followed by hand. `None` if that
+/// cannot be told, such as for a loop of symlinks.
+fn leads_to(mut path: PathBuf) -> Option<PathBuf> {
+    // As many symlinks as Linux follows in one path.
+    for _ in 0..40 {
+        let (dir, rest) = path.ancestors().find_map(|dir| {
+            fs::symlink_metadata(dir).ok()?;
+            Some((dir, path.strip_prefix(dir).ok()?))
+        })?;
+        match fs::canonicalize(dir) {
+            Ok(real) => return Some(lexical(&real.join(rest))),
+            Err(_) => path = dir.parent()?.join(fs::read_link(dir).ok()?).join(rest),
+        }
+    }
+    None
+}
+
 /// The config file in `dir`: its `jsonvet.toml`, or its `pyproject.toml` with a
 /// `[tool.jsonvet]` table.
 fn config_in(dir: &Path) -> Option<PathBuf> {
@@ -394,9 +484,11 @@ fn has_jsonvet_table(text: &str) -> bool {
 /// Read a config file: a `jsonvet.toml`, or the `[tool.jsonvet]` table of a `pyproject.toml`.
 /// It holds `rules`, a table of rule id to severity, and `dialects`, an array of tables with a
 /// `files` glob, relative to the config file's directory, and a `dialect`; and `exclude`, an
-/// array of globs, relative to the same directory, for paths a directory walk skips. Any other
-/// key is an error, so a typo is never ignored.
-pub(crate) fn load(path: &Path) -> Result<Settings, String> {
+/// array of globs, relative to the same directory, for paths a directory walk skips; and
+/// `schemas`, an array of tables with a `files` glob and a `schema` path, both relative to that
+/// directory. Any other key is an error, so a typo is never ignored. With a `root`, the file is
+/// a project's, and each schema must be inside `root` ([`confined`]).
+pub(crate) fn load(path: &Path, root: Option<&Path>) -> Result<Settings, String> {
     // A key or value from the file shows escaped, so it cannot start a line of its own on stderr.
     let in_file = |e: &dyn std::fmt::Display| printable(&format!("{}: {e}", path.display()));
     let text = crate::read_small(path, crate::MAX_CONFIG_BYTES).map_err(|e| in_file(&e))?;
@@ -429,10 +521,9 @@ pub(crate) fn load(path: &Path) -> Result<Settings, String> {
     } else {
         table
     };
-    let base = std::path::absolute(path).map_err(|e| in_file(&e))?;
-    let base = base
-        .parent()
-        .map(|dir| glob::normalize(&dir.to_string_lossy()));
+    let absolute = std::path::absolute(path).map_err(|e| in_file(&e))?;
+    let folder = absolute.parent();
+    let base = folder.map(|dir| glob::normalize(&dir.to_string_lossy()));
     let mut settings = Settings::default();
     for (key, value) in file {
         let here = value.span().start;
@@ -472,14 +563,30 @@ pub(crate) fn load(path: &Path) -> Result<Settings, String> {
                     }
                 }
             }
+            ("schemas", DeValue::Array(entries)) => {
+                for entry in entries {
+                    let pattern = schema_entry(entry, folder, root);
+                    let pattern = pattern.map_err(|(offset, e)| at(offset, &e))?;
+                    if let Some(mut pattern) = pattern
+                        && let Some(base) = &base
+                    {
+                        pattern.base.clone_from(base);
+                        settings.schemas.push(pattern);
+                    }
+                }
+            }
             ("exclude", _) => return Err(at(here, &"`exclude` must be an array of strings")),
+            ("schemas", _) => return Err(at(here, &"`schemas` must be an array of tables")),
             ("rules", _) => return Err(at(here, &"`rules` must be a table")),
             ("dialects", _) => return Err(at(here, &"`dialects` must be an array of tables")),
             (key_text, _) => {
-                let hint = jsonvet::did_you_mean(key_text, ["rules", "dialects", "exclude"]);
+                let hint =
+                    jsonvet::did_you_mean(key_text, ["rules", "dialects", "exclude", "schemas"]);
                 return Err(at(
                     key.span().start,
-                    &format!("unknown key `{key_text}`{hint}; expected rules, dialects or exclude"),
+                    &format!(
+                        "unknown key `{key_text}`{hint}; expected rules, dialects, exclude or schemas"
+                    ),
                 ));
             }
         }
@@ -490,19 +597,58 @@ pub(crate) fn load(path: &Path) -> Result<Settings, String> {
 /// One `dialects` entry: a table with exactly a `files` string and a `dialect` string. An error
 /// comes with the offset it is about.
 fn dialect_entry(entry: &Spanned<DeValue<'_>>) -> Result<DialectPattern, (usize, String)> {
+    let [(_, files), (dialect_at, dialect)] =
+        entry_strings(entry, "dialects", ["files", "dialect"])?;
+    Ok(DialectPattern {
+        files: Some(Glob::new(files)),
+        dialect: parse_dialect(dialect).map_err(|e| (dialect_at, e))?,
+        base: None,
+    })
+}
+
+/// One entry of `schemas`, with no base yet, for a config file in `folder`: `None` without a
+/// folder, which nothing is relative to. With a `root`, the schema must be inside it.
+fn schema_entry(
+    entry: &Spanned<DeValue<'_>>,
+    folder: Option<&Path>,
+    root: Option<&Path>,
+) -> Result<Option<SchemaPattern>, (usize, String)> {
+    let [(_, files), (schema_at, schema)] = entry_strings(entry, "schemas", ["files", "schema"])?;
+    let Some(folder) = folder else {
+        return Ok(None);
+    };
+    // A missing schema is reported when it is read, which `--schema` skips.
+    if let Some(root) = root {
+        confined(schema, folder, root).map_err(|e| (schema_at, e))?;
+    }
+    Ok(Some(SchemaPattern {
+        files: Glob::new(files),
+        schema: folder.join(schema),
+        base: String::new(),
+        confined: root.is_some(),
+    }))
+}
+
+/// The two strings of an entry in the array `array`, a table with exactly the keys `keys`, each
+/// with its offset. An error comes with the offset it is about.
+fn entry_strings<'e>(
+    entry: &'e Spanned<DeValue<'_>>,
+    array: &str,
+    keys: [&str; 2],
+) -> Result<[(usize, &'e str); 2], (usize, String)> {
     let start = entry.span().start;
     let DeValue::Table(table) = entry.get_ref() else {
-        return Err((start, "each `dialects` entry must be a table".to_owned()));
+        return Err((start, format!("each `{array}` entry must be a table")));
     };
-    if let Some(key) = table
-        .keys()
-        .find(|k| !matches!(k.get_ref().as_ref(), "files" | "dialect"))
-    {
+    if let Some(key) = table.keys().find(|k| !keys.contains(&k.get_ref().as_ref())) {
         let name = key.get_ref();
-        let hint = jsonvet::did_you_mean(name, ["files", "dialect"]);
+        let hint = jsonvet::did_you_mean(name, keys);
         return Err((
             key.span().start,
-            format!("unknown key `{name}`{hint} in a `dialects` entry; expected files and dialect"),
+            format!(
+                "unknown key `{name}`{hint} in a `{array}` entry; expected {} and {}",
+                keys[0], keys[1]
+            ),
         ));
     }
     let string = |key: &str| {
@@ -513,22 +659,37 @@ fn dialect_entry(entry: &Spanned<DeValue<'_>>) -> Result<DialectPattern, (usize,
                 let offset = value.map_or(start, |v| v.span().start);
                 (
                     offset,
-                    format!("each `dialects` entry needs a `{key}` string"),
+                    format!("each `{array}` entry needs a `{key}` string"),
                 )
             })
     };
-    let (_, files) = string("files")?;
-    let (dialect_at, dialect) = string("dialect")?;
-    Ok(DialectPattern {
-        files: Some(Glob::new(files)),
-        dialect: parse_dialect(dialect).map_err(|e| (dialect_at, e))?,
-        base: None,
-    })
+    Ok([string(keys[0])?, string(keys[1])?])
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Glob, Settings, absolute};
+    use super::{Glob, Settings, absolute, confined};
+
+    #[test]
+    fn a_schema_path_with_a_root_or_prefix_is_refused_before_it_is_opened() {
+        let base = std::path::Path::new(".");
+        let root = std::fs::canonicalize(base).expect("the working directory");
+        let root = root.as_path();
+        let mut paths = vec!["/etc/passwd", "//host/share/s.json"];
+        if cfg!(windows) {
+            paths.extend([
+                "C:\\s.json",
+                "C:s.json",
+                "\\\\host\\share\\s.json",
+                "\\s.json",
+            ]);
+        }
+        for path in paths {
+            let refused = confined(path, base, root).expect_err(path);
+            assert!(refused.contains("outside the project"), "{path}: {refused}");
+        }
+        assert_eq!(confined("missing-schema.json", base, root), Ok(false));
+    }
 
     #[test]
     fn each_pattern_matches_relative_to_its_own_base() {
