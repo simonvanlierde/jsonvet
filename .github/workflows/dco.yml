@@ -1,8 +1,9 @@
 name: dco
 
-# Every commit in a pull request from an outside contributor must carry a Signed-off-by
-# line: the Developer Certificate of Origin, as CONTRIBUTING.md asks. Pull requests from
-# maintainers, collaborators and bots skip the job, which counts as passing.
+# Every commit in a pull request from a fork must carry a Signed-off-by line: the
+# Developer Certificate of Origin, as CONTRIBUTING.md asks. A pull request from a
+# branch in this repository skips the job, which counts as passing: pushing that
+# branch already needed write access.
 on:
   pull_request:
 
@@ -16,9 +17,7 @@ concurrency:
 jobs:
   sign-off:
     name: DCO sign-off
-    if: >-
-      !contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)
-      && github.event.pull_request.user.type != 'Bot'
+    if: github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
