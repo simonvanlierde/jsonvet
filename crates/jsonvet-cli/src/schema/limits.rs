@@ -243,8 +243,7 @@ impl<'r> Reach<'r> {
             } else {
                 self.visit(member, level + 1, At::Under(resolver, draft, &subs))?
             };
-            // jsonschema may compare a value with each one in an `enum`, and copies them all
-            // into each error.
+            // jsonschema may compare a value with each one in an `enum`, so they cost time.
             if schema && matches!(key.as_ref(), "enum" | "const") {
                 child.measure.size = child.measure.size.saturating_add(scalars(member));
             }

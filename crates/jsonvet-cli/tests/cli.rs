@@ -2788,8 +2788,9 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
     #[cfg(target_os = "linux")]
     #[test]
     fn errors_that_hold_much_of_the_schema_are_dropped_as_they_come() {
-        // Each `anyOf` error holds every branch's errors, 16,384 here, and each `enum` error a
-        // copy of 20,000 numbers: 40 such errors took 760 MB, and 2,000 took 1.3 GB.
+        // Each `anyOf` error holds every branch's errors, 16,384 here, and each `enum` error
+        // held 20,000 numbers: before jsonschema 0.60 shared them, 40 such errors took 760 MB, and
+        // 2,000 took 1.3 GB.
         let enum_ = (1..=20_000).map(|n| n.to_string()).collect::<Vec<_>>();
         let members: Vec<String> = (0..2_000).map(|i| format!("\"k{i}\": 0")).collect();
         let cases = [

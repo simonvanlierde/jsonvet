@@ -360,6 +360,14 @@ jobs:
         run: |
           uv build --out-dir compat-dist compat/check-json5
           uv run scripts/smoke.py dist/*.tar.gz compat-dist/*.whl
+      # Each crate and the sdist must carry the MIT text, the same as the root LICENSE.
+      - name: Check the LICENSE files
+        run: |
+          for crate in jsonvet jsonvet-cli; do
+            cmp LICENSE "crates/$crate/LICENSE"
+            cargo package --list --locked --allow-dirty -p "$crate" | grep -qx LICENSE
+          done
+          tar -tzf dist/*.tar.gz | grep -Eq '^[^/]+/LICENSE$'
       # Both crates, with jsonvet-cli built against the packaged jsonvet even when its `=x.y.z`
       # version is not on crates.io yet. The release job skips this with --no-verify.
       - run: cargo publish --dry-run --locked --workspace
