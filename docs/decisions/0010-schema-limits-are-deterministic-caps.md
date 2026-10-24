@@ -40,6 +40,11 @@ No real schema has hit a cap so far. On 2026-10-21, jsonvet checked SchemaStore'
 their schemas: 456 schemas were checked, and every one refused was refused for a `$ref` to another
 file, or once for a `$ref` that is not a valid URI.
 
+Update, 2026-10-23: jsonschema 0.60.1 shares the values of an `enum` between errors. On a
+12-core Linux machine, release build, an `anyOf` around `additionalProperties` with a 200,000-value
+`enum` and 1,000 failing keys took 6.27 GB and 2.7 s on 0.59.0, and 40 MB and 0.03 s on 0.60.1. The
+caps above stay: they count the cost before jsonschema runs, whatever its version.
+
 ## Confirmation
 
 `errors_past_the_first_100_are_not_looked_for`,

@@ -25,9 +25,9 @@ use output::{Format, Look, Printer};
 use schema::Schema;
 use settings::{Resolver, Settings};
 
-/// How deep `--schema` reads a file. Past it, the file has a syntax error. jsonschema up to 0.59
-/// takes memory quadratic in depth for an error deep under a recursive `$ref`: 1.3 GB on 0.58 for
-/// a 50 KB file nested 10,000 levels.
+/// How deep `--schema` reads a file. Past it, the file has a syntax error. jsonschema validates
+/// recursively, so depth costs stack (see [`STACK`]). Its memory for an error deep under a
+/// recursive `$ref` grows linearly with depth: 19 MB for a 60 KB file nested 10,000 levels.
 const SCHEMA_MAX_DEPTH: usize = 512;
 
 /// The stack every run uses, for `--schema`: jsonschema validates recursively, and building,
