@@ -15,6 +15,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use divan::{Bencher, black_box};
+use jsonvet_cli::Terminal;
 
 fn main() {
     divan::main();
@@ -106,9 +107,16 @@ fn schema(bencher: Bencher, name: &str) {
     ];
     // The exit code checks the case, once, outside the measured runs.
     assert_eq!(
-        jsonvet_cli::run_with(args.clone(), false, false, std::io::sink()),
+        jsonvet_cli::run_with(args.clone(), false, Terminal::default(), std::io::sink()),
         Ok(code),
         "{name}"
     );
-    bencher.bench(|| jsonvet_cli::run_with(black_box(args.clone()), false, false, std::io::sink()));
+    bencher.bench(|| {
+        jsonvet_cli::run_with(
+            black_box(args.clone()),
+            false,
+            Terminal::default(),
+            std::io::sink(),
+        )
+    });
 }

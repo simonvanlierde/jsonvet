@@ -14,6 +14,8 @@ The details behind the [README](../README.md). Why things work this way is in
 --max-warnings N
 --format text|sarif|json   text lines (the default), one SARIF 2.1.0 document, or one JSON
                            document on stdout
+--color auto|always|never  color text output; auto colors it on a terminal unless NO_COLOR
+                           is set, and anywhere when FORCE_COLOR is
 --schema FILE              also check every file against the JSON Schema in FILE
 --stdin-filename PATH      the name standard input (`-`) goes by
 --config FILE, --no-config
@@ -46,8 +48,19 @@ the hook's own `exclude:` and the Action's `files` input there.
 ## Output
 
 Each problem is one line: `file:line:col: severity[rule] message`. When stdout is a terminal,
-a last line counts them, such as `3 errors in 2 of 5 files`. Piped or redirected output, as in
-the hook and in CI, has no such line.
+a last line counts them, such as `3 errors in 2 of 5 files`. Piped or redirected output has no
+such line.
+
+On a terminal, each problem shows instead as a code frame: the message, then its line of the file
+with the problem marked under it, and the related place, such as a duplicate key's first copy,
+marked too. Frames are in color unless `NO_COLOR` is set or you pass `--color never`. Pass
+`--color always`, or set `FORCE_COLOR`, for color when output goes to a pipe or a file: each
+problem stays one line, with its severity and rule in color.
+`NO_COLOR` wins over `FORCE_COLOR`, and `--color always` or `--color never` wins over both.
+pre-commit runs its hooks under a terminal when its color is on, which is the default from a
+terminal, so a commit made there shows frames. CI, pre-commit.ci and pipes keep one line per
+problem, and `| cat` forces lines.
+In a frame, characters that would act on the terminal or hide text show as `�`.
 
 - Lines and columns count from 1. Columns count Unicode code points, and a byte order mark is
   column 1.
@@ -67,7 +80,8 @@ the hook and in CI, has no such line.
   little-endian file without a mark that starts with a quote is the exception: it fails as a
   syntax error, because JSON5 allows a raw U+0000 in a string, so UTF-8 can start the same way.
   Any other file that is not UTF-8 fails with `not valid UTF-8 (byte N)`.
-- In GitHub Actions, each problem is also printed as an annotation.
+- In GitHub Actions, each problem is also printed as an annotation. When the problem covers some
+  text, such as a duplicate key or a number, the annotation marks it to its last column.
 
 jsonvet escapes control, bidirectional and invisible characters in file names and messages. So no
 output line can drive a terminal or pass for a GitHub workflow command. The exact forms are in
@@ -306,7 +320,10 @@ jsonvet's `release.yml`. Hosted runners have `gh`; on a runner without it, and f
 jsonvet --format sarif $(git ls-files '*.json') > jsonvet.sarif
 ```
 
-- Each problem is a result with its rule, severity, message and position. A duplicate key also
+- Each problem is a result with its rule, severity, message and position. The position has an
+  `endColumn` (and an `endLine` when the end is on a later line): the column just past the text
+  the problem is about. A problem between two characters, such as a missing `,`, has no end, as in
+  a GitHub annotation. A schema error has no end. A duplicate key also
   points at the first copy. A file jsonvet cannot read is a result under the rule `unreadable`.
 - Each rule carries its help text and a link to its section above, which GitHub code scanning
   shows on each alert.
@@ -385,9 +402,9 @@ These hold for `--schema`. Why each one exists is in [design.md](design.md#--sch
   checks its elements, as in `{"type": "array", "items": {"$ref": "#/$defs/record"}}`, and so
   does a top-level object when only `properties`, `patternProperties` and `additionalProperties`
   check its members. jsonvet then checks one element or member at a time. Otherwise jsonschema
-  finds every error in the document before jsonvet sees the first. Each takes about 340 bytes,
-  1.7 GB for 5,000,000 errors, and more when it holds part of the schema: an `anyOf` error holds
-  every branch's errors, and an `enum` error a copy of its values.
+  finds every error in the document before jsonvet sees the first. Each takes about 420 bytes
+  (2,000,000 failing keys in a 42 MB file took 1.4 GB, against 0.52 GB when they pass), and more
+  when it holds part of the schema: an `anyOf` error holds every branch's errors.
 - **Regexes.** A pattern with a back-reference or lookaround may backtrack 5,000 times per string.
   A key or string that needs more, where the pattern applies and whether it matches would change
   the result, is an error at that key or string: the pattern could not be checked. When the

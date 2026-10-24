@@ -33,6 +33,10 @@ Options:
       --format FORMAT           Print problems as text (the default), sarif (one SARIF 2.1.0
                                 document, for GitHub code scanning) or json (one JSON document;
                                 docs/usage.md in the repository lists its fields).
+      --color WHEN              Color text output: auto (the default), always or never. Auto
+                                colors it on a terminal, unless NO_COLOR is set; FORCE_COLOR
+                                colors it anywhere. On a terminal, each problem shows under
+                                its line of the file; elsewhere it stays one line.
       --schema FILE             Also check each file against the JSON Schema in FILE, reported
                                 under the rule schema. Limits: docs/usage.md in the repository.
       --stdin-filename PATH     Name standard input PATH in the output, and pick its dialect
@@ -72,6 +76,8 @@ pub(crate) struct Args {
     pub(crate) max_warnings: Option<usize>,
     pub(crate) config: ConfigSource,
     pub(crate) format: Format,
+    /// Whether to color text output, from `--color`: `None` for `auto`.
+    pub(crate) color: Option<bool>,
     pub(crate) schema: Option<PathBuf>,
     /// The name standard input goes by, from `--stdin-filename`.
     pub(crate) stdin_filename: Option<OsString>,
@@ -101,6 +107,20 @@ fn parse_format(name: &str) -> Result<Format, String> {
     }
 }
 
+fn parse_color(when: &str) -> Result<Option<bool>, String> {
+    match when {
+        "auto" => Ok(None),
+        "always" => Ok(Some(true)),
+        "never" => Ok(Some(false)),
+        _ => {
+            let hint = jsonvet::did_you_mean(when, ["auto", "always", "never"]);
+            Err(format!(
+                "--color takes auto, always or never, not `{when}`{hint}"
+            ))
+        }
+    }
+}
+
 pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command, String> {
     let mut parser = lexopt::Parser::from_args(args);
     // Otherwise `-x=a.json` would come back as `-x` and `a.json`, losing the `=`.
@@ -110,6 +130,7 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
     let mut max_warnings = None;
     let mut config = ConfigSource::Search;
     let mut format = Format::Text;
+    let mut color = None;
     let mut schema = None;
     let mut stdin_filename = None;
     loop {
@@ -152,6 +173,7 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
                 );
             }
             Long("format") => format = parse_format(&value(&mut parser)?)?,
+            Long("color") => color = parse_color(&value(&mut parser)?)?,
             Long("config") => config = ConfigSource::File(PathBuf::from(value(&mut parser)?)),
             Long("no-config") => config = ConfigSource::None,
             Long("list-rules") => return Ok(Command::ListRules),
@@ -200,6 +222,7 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
         max_warnings,
         config,
         format,
+        color,
         schema,
         stdin_filename,
     }))
