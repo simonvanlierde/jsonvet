@@ -401,15 +401,16 @@ one exists is in [design.md](design.md#--schema).
   value, not a usage error. A missing schema named by `--schema` or a config file is a usage
   error. A fragment, as in `s.json#`, is dropped from a `$schema` path.
 - **Inside the project.** A pull request can change a `$schema` or a config file, so a schema
-  named by a `$schema`, or by a config file the search finds, must be inside the project: the
-  repository root, or the working directory without a `.git`, as for the
-  [config search](#configuration-file). An absolute path, a Windows drive or network path such as
-  `\\host\share`, a `..` that climbs out, or a symlink or symlinked folder that leads out is
-  refused, whether or not the file exists. For a `$schema` that is a schema error at its value;
-  in a config file, a usage error at the entry. An error in such a schema names its line and
-  column but quotes nothing from it, since the file may not be yours to show. `--schema`,
-  `--config FILE` and the user's own config file may name a schema anywhere, and their errors
-  quote it.
+  named by a `$schema`, or by a config file the search finds, must be inside the checked file's
+  own project: the folder where the [config search](#configuration-file) for that file stops. That
+  is the nearest folder above the file with a `.git`, or without one the working directory, or the
+  file's own folder for a file outside the working directory. An absolute path, a Windows drive or
+  network path such as `\\host\share`, a `..` that climbs out, or a symlink or symlinked folder
+  that leads out is refused, whether or not the file exists. For a `$schema` that is a schema
+  error at its value; in a config file, a usage error at the entry. An error in such a schema
+  names its line and column but quotes nothing from it, since the file may not be yours to show.
+  `--schema`, `--config FILE` and the user's own config file may name a schema anywhere, and their
+  errors quote it.
 
 - **Severity.** Schema errors are always errors, in text, annotations, SARIF and JSON. `--error`,
   `--warn`, `--ignore` and the config file do not take `schema`, and exit 2 if you give it to
