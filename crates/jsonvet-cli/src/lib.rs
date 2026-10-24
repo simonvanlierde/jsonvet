@@ -475,6 +475,18 @@ fn own_schema<'e>(events: &'e [Event<'_>]) -> Option<(usize, &'e str)> {
     None
 }
 
+/// Whether some `$schema` in `text` may hold a path rather than a URL, so the text is worth
+/// parsing into events: they take 10 times its memory and 2.5 times as long as a plain check,
+/// and most `$schema` values are URLs. Anything but `$schema`, a quote, `:` and a URL is a maybe.
+fn may_name_a_path(text: &str) -> bool {
+    text.match_indices("$schema").any(|(at, key)| {
+        let rest = text[at + key.len()..].trim_start_matches(['"', '\'']);
+        rest.trim_start()
+            .strip_prefix(':')
+            .is_none_or(|value| !is_url(value.trim_start().trim_start_matches(['"', '\''])))
+    })
+}
+
 /// Whether `text` starts with a URI scheme: a letter, then letters, digits, `+`, `-` or `.`,
 /// then `:`. One letter is a Windows drive, as in `C:\schemas\a.json`, so a scheme takes two.
 fn is_url(text: &str) -> bool {
@@ -581,8 +593,7 @@ fn check_own_schema<'t>(
     parts: usize,
 ) -> (Report<'t>, Vec<(usize, String, bool)>) {
     let config = settings.config_for(name);
-    // Only a text that holds the key is parsed into events, which costs more than a check.
-    if config.dialect() == Dialect::JsonLines || !text.contains("$schema") {
+    if config.dialect() == Dialect::JsonLines || !may_name_a_path(text) {
         return check(name, text, settings, None, parts);
     }
     // With the file's own depth limit, so a file with no usable `$schema` gets the report a
@@ -850,6 +861,28 @@ mod tests {
             schema_shares(&[job(None), job(Some(&schema)), job(None)], 2),
             [0, CHUNK_BYTES, 0]
         );
+    }
+
+    #[test]
+    fn only_a_dollar_schema_that_may_hold_a_path_is_worth_parsing() {
+        for (text, path) in [
+            ("{}", false),
+            (r#"{"$schema": "https://x/s.json", "a": 1}"#, false),
+            ("{$schema: 'https://x/s.json'}", false),
+            (
+                r#"{"a": {"$schema":"http://x"}, "$schema" : "urn:x"}"#,
+                false,
+            ),
+            (r#"{"$schema": "s.json"}"#, true),
+            (r#"{"$schema": "C:\\s.json"}"#, true),
+            (r#"{"$schema": /* https://x */ "s.json"}"#, true),
+            (r#"{"$schema" /* c */: "https://x"}"#, true),
+            (r#"{"$schema": 1}"#, true),
+            (r#"{"a": "https://x", "$schema": "s.json"}"#, true),
+            ("{\"$schema", true),
+        ] {
+            assert_eq!(super::may_name_a_path(text), path, "{text}");
+        }
     }
 
     #[test]
