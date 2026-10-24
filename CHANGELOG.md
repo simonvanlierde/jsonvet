@@ -10,6 +10,14 @@ version for a new option or output, the patch version for a fix.
 
 ### Added
 
+- A config file can give files a schema: `schemas = [{ files = "config/*.json", schema =
+  "server.schema.json" }]` checks the matching files as `--schema` would. A file's own `$schema`
+  that names a schema on disk, relative to the file, works too. jsonvet still fetches nothing, so a
+  `$schema` URL, or a path to a file that does not exist, means no schema check. Both kinds of path
+  must stay inside the checked file's own project (its repository, or where the config search for it
+  stops), unless `--config` named the config file, and an error in such a schema names its place but
+  quotes nothing from it, so a pull request cannot make jsonvet read or show a file outside the
+  project.
 - `--color auto|always|never` colors the code frames. `auto`, the default, colors them on a
   terminal unless `NO_COLOR` is set. `FORCE_COLOR` or `--color always` color piped output too,
   which stays one line per problem with the severity and rule in color.
@@ -21,21 +29,30 @@ version for a new option or output, the patch version for a fix.
   each problem with its line, column and rule as you type. It runs jsonvet in your browser as
   WebAssembly, so the text never leaves your machine. It has no `--schema` checks.
 
+### Changed
+
+- `--schema` uses jsonschema 0.60.1. It shares the values of an `enum` or `const` between errors
+  instead of copying them. A schema with an `anyOf` around `additionalProperties` and a
+  200,000-value `enum` took 6.3 GB and 2.7 s on 1,000 failing keys, and now takes 40 MB and 0.03 s.
+  The binary is 135 KB larger.
+- On a terminal, each problem now shows as a code frame: the message, the line of the file with
+  the problem marked under it, and the related place, such as a duplicate key's first copy.
+  pre-commit in a terminal shows frames too. CI, pre-commit.ci and pipes keep one line per
+  problem, and `| cat` forces lines.
+
 ### Fixed
 
 - `--schema` no longer fails a file because a string in it is too costly to match against a
   pattern the schema never applies there. jsonvet tried every pattern on every string, so any Expo
   `app.json` with a string of 5,000 characters or more failed against SchemaStore's schema.
+- The crates on crates.io and the wheels on PyPI now carry the MIT license text, not just its name.
 
-### Changed
+### Security
 
-- On a terminal, each problem now shows as a code frame: the message, the line of the file with
-  the problem marked under it, and the related place, such as a duplicate key's first copy.
-  pre-commit in a terminal shows frames too. CI, pre-commit.ci and pipes keep one line per
-  problem, and `| cat` forces lines.
-- `--schema` uses jsonschema 0.59.0, which decides where each pattern applies. A key or string too
-  costly to match is an error only where the pattern applies and its outcome changes the result.
-  A document that also has another schema error reports only that one.
+- `--schema` no longer takes tens of seconds on strings too costly for a pattern under an `allOf`:
+  5,000 such strings took 26.3 s and now take 0.05 s, and one beside 100,000 that fail the pattern
+  took over 120 s and now takes 2.55 s. A much larger file can still be slow: SECURITY.md has the
+  numbers.
 
 ## [3.1.1] - 2026-10-21
 
@@ -218,6 +235,7 @@ many large files takes longer and much less memory; see Changed.
     against its base as jsonschema resolves it, so a small schema elsewhere could be measured in
     place of the real one. jsonvet now resolves `$ref`s with jsonschema's own code.
   - Looking up a `$ref` among the `$id`s was quadratic: 20,000 of them took 24 s, now 0.2 s.
+
 ## [3.0.0] - 2026-10-18
 
 3.0 checks files against a JSON Schema, with each error at its line and column, writes SARIF

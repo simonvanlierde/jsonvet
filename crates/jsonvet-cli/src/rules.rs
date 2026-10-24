@@ -23,7 +23,7 @@ pub(crate) fn ids() -> impl Iterator<Item = &'static str> {
 /// A rule's one-line description.
 pub(crate) fn description(id: &str) -> &'static str {
     match id {
-        SCHEMA => "a value the JSON Schema given with --schema rejects",
+        SCHEMA => "a value the file's JSON Schema rejects",
         UNREADABLE => {
             "a file that does not exist, is not a regular file, could not be read, or is not UTF-8"
         }
@@ -68,9 +68,10 @@ pub(crate) fn explanation(id: &str) -> &'static str {
              Good (jsonl): {\"a\": 1}<newline>"
         }
         SCHEMA => {
-            "A value the JSON Schema given with --schema rejects, such as a missing required \
-             key or a string where the schema wants a number. Always an error: --error, --warn, \
-             --ignore and settings files do not take this rule."
+            "A value the file's JSON Schema rejects, such as a missing required key or a string \
+             where the schema wants a number. The schema comes from --schema, the config file's \
+             schemas or a local $schema in the file. Always an error: --error, --warn, --ignore \
+             and settings files do not take this rule."
         }
         UNREADABLE => {
             "jsonvet could not check the file at all: it does not exist, is a device, FIFO or \

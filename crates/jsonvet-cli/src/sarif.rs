@@ -14,7 +14,7 @@ use crate::rules;
 /// lists tool notifications only on its tool status page, where a failing file is easy to miss.
 pub(crate) const UNREADABLE: &str = "unreadable";
 
-/// A value the schema given with `--schema` rejects. A CLI rule: the library knows no schemas.
+/// A value the file's schema rejects. A CLI rule: the library knows no schemas.
 pub(crate) const SCHEMA: &str = "schema";
 
 /// GitHub code scanning keeps only the top 5,000 results of a run with more than 25,000, and

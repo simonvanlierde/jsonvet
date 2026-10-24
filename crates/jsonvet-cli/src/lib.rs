@@ -1,14 +1,15 @@
 //! The jsonvet command line, shared by the `jsonvet` and `check-json5` binaries.
 
+use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::io::{self, BufWriter, IsTerminal, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use jsonvet::{Dialect, Report, Severity};
+use jsonvet::{Dialect, Event, EventKind, Report, Severity};
 
 mod args;
 mod frame;
@@ -25,9 +26,9 @@ use output::{Format, Look, Printer};
 use schema::Schema;
 use settings::{Resolver, Settings};
 
-/// How deep `--schema` reads a file. Past it, the file has a syntax error. jsonschema up to 0.59
-/// takes memory quadratic in depth for an error deep under a recursive `$ref`: 1.3 GB on 0.58 for
-/// a 50 KB file nested 10,000 levels.
+/// How deep `--schema` reads a file. Past it, the file has a syntax error. jsonschema validates
+/// recursively, so depth costs stack (see [`STACK`]). Its memory for an error deep under a
+/// recursive `$ref` grows linearly with depth: 19 MB for a 60 KB file nested 10,000 levels.
 const SCHEMA_MAX_DEPTH: usize = 512;
 
 /// The stack every run uses, for `--schema`: jsonschema validates recursively, and building,
@@ -135,12 +136,13 @@ pub fn run_with(
     let settings_for = |path: &Path| lock(&resolver).for_file(path);
     let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     let files = expand(args.files, &resolver, threads)?;
-    let schema = args
-        .schema
-        .as_deref()
-        .map(|path| Schema::load(path, &*settings_for(path)?))
-        .transpose()
-        .map_err(|e| output::printable(&e))?;
+    let schemas = Schemas::default();
+    let load = |path: &Path, quiet| {
+        schemas.get(path, quiet, || {
+            Schema::load(path, &*settings_for(path)?, quiet)
+        })
+    };
+    let root = |path: &Path| lock(&resolver).root(path);
 
     // Standard input goes by its `--stdin-filename`, for settings and in the output.
     let stdin_name = args.stdin_filename.unwrap_or_else(|| STDIN.into());
@@ -151,27 +153,24 @@ pub fn run_with(
             file.to_owned()
         }
     };
-    // Every config file is read before any file is checked, so a bad one stops the run at once.
-    let files = files
-        .into_iter()
-        .map(|file| Ok((settings_for(Path::new(&shown(&file)))?, file)))
-        .collect::<Result<Vec<_>, String>>()?;
+    // Every config file, and every schema one names, is read before any file is checked, so a
+    // bad one stops the run at once.
+    let files = jobs(files, &shown, &settings_for, args.schema.as_deref(), &load)?;
     let summary = terminal.tty;
     let look = look(args.format, args.color, terminal);
     let mut printer = Printer::new(out, args.format, annotate, look);
     let mut counts = Counts::default();
     // Files are read and checked on every core, a chunk at a time, then printed here in the
     // order given. A chunk ends once its files hold CHUNK_BYTES, so memory stays near that. With
-    // `--schema` a file takes 20 times its size, so the chunk is cut from the sizes before any
+    // a schema a file takes 20 times its size, so the chunk is cut from the sizes before any
     // file is read: else every core takes a file at once. Without, sizing every file first made
     // a walk of 10,000 files 7 ms slower.
     // shortcut: each chunk waits for its slowest file before the next starts; hand files out
     // one at a time across chunks if one big file among many small ones holds a run up.
+    // shortcut: a file's own `$schema` is found only once it is read, so such a file counts its
+    // size once; size every file if a run of large files with one runs out of memory.
     let mut rest = &files[..];
-    let shares = match schema {
-        Some(_) => parallel(&files, threads, || false, |(_, file)| schema_share(file)),
-        None => Vec::new(),
-    };
+    let shares = schema_shares(&files, threads);
     let written = loop {
         if rest.is_empty() {
             let line = (summary && !files.is_empty()).then(|| counts.summary(files.len()));
@@ -192,11 +191,13 @@ pub fn run_with(
             &jobs,
             threads,
             || false,
-            |((settings, file), text)| {
+            |(((settings, schema), file), text)| {
                 let name = shown(file);
                 let name = name.to_string_lossy();
-                text.as_deref()
-                    .map(|text| check(&name, text, settings, schema.as_ref(), parts))
+                text.as_deref().map(|text| match schema {
+                    Some(schema) => check(&name, text, settings, Some(schema), parts),
+                    None => check_own_schema(&name, text, settings, &root, &load, parts),
+                })
             },
         );
         let outcome =
@@ -248,7 +249,7 @@ fn read_chunk<S: Sync>(files: &[(S, OsString)], threads: usize) -> Vec<Result<St
     })
 }
 
-/// The memory a file takes while `--schema` checks it, as far as a chunk counts it:
+/// The memory a file takes while a schema checks it, as far as a chunk counts it:
 /// [`SCHEMA_BYTES`] times its size, capped at [`CHUNK_BYTES`]. Standard input's size is known
 /// only once it is read, so it takes a chunk's worth. A file that cannot be read takes nothing:
 /// `read` reports why.
@@ -261,6 +262,63 @@ fn schema_share(file: &OsStr) -> usize {
         .unwrap_or(usize::MAX)
         .saturating_mul(SCHEMA_BYTES)
         .min(CHUNK_BYTES)
+}
+
+/// A file to check, with its settings and the schema it is checked against, if any.
+type Job = ((Arc<Settings>, Option<Arc<Schema>>), OsString);
+
+/// Each file, shown by the name `shown` gives it, with its settings and schema: the one at
+/// `given`, from `--schema`, or else the one its config file names, through `load`.
+fn jobs(
+    files: Vec<OsString>,
+    shown: &impl Fn(&OsStr) -> OsString,
+    settings_for: &impl Fn(&Path) -> Result<Arc<Settings>, String>,
+    given: Option<&Path>,
+    load: &impl Fn(&Path, bool) -> Loaded,
+) -> Result<Vec<Job>, String> {
+    // `--schema` is the user's own choice, so it may be anywhere and its errors quote it.
+    let given = given
+        .map(|path| load(path, false))
+        .transpose()
+        .map_err(|e| output::printable(&e))?;
+    // Settings are shared between files of a folder, so each set is walked once.
+    let mut walked = std::collections::HashSet::new();
+    files
+        .into_iter()
+        .map(|file| {
+            let name = shown(&file);
+            let settings = settings_for(Path::new(&name))?;
+            // A schema the config names is read even if no file matches its glob, so a missing
+            // one is never passed over. `--schema` replaces them all.
+            if given.is_none() && walked.insert(Arc::as_ptr(&settings)) {
+                for entry in &settings.schemas {
+                    load(&entry.schema, entry.confined).map_err(|e| output::printable(&e))?;
+                }
+            }
+            let schema = match &given {
+                Some(schema) => Some(Arc::clone(schema)),
+                None => settings
+                    .schema_for(&name.to_string_lossy())
+                    .map(|entry| load(&entry.schema, entry.confined))
+                    .transpose()
+                    .map_err(|e| output::printable(&e))?,
+            };
+            Ok(((settings, schema), file))
+        })
+        .collect()
+}
+
+/// Each file's [`schema_share`], or 0 for a file with no schema; nothing if no file has one.
+fn schema_shares(files: &[Job], threads: usize) -> Vec<usize> {
+    if files.iter().all(|((_, schema), _)| schema.is_none()) {
+        return Vec::new();
+    }
+    parallel(
+        files,
+        threads,
+        || false,
+        |((_, schema), file)| schema.as_ref().map_or(0, |_| schema_share(file)),
+    )
 }
 
 /// How many of the files with these shares the next chunk takes: up to and including the one
@@ -357,6 +415,90 @@ fn lock(resolver: &Mutex<Resolver>) -> std::sync::MutexGuard<'_, Resolver> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+/// A schema, or why it cannot be used.
+type Loaded = Result<Arc<Schema>, String>;
+
+/// The schemas `--schema`, config files and `$schema` keys name, each read once, by canonical
+/// path and whether its errors are quiet.
+#[derive(Default)]
+struct Schemas(Mutex<HashMap<(PathBuf, bool), Loaded>>);
+
+impl Schemas {
+    /// The schema at `path`, from `load` the first time it is asked for with `quiet`. Every
+    /// spelling of a path, such as `x/../s.json` for `s.json`, reads it once: else a file
+    /// could name one large schema many ways and have it read for each.
+    fn get(
+        &self,
+        path: &Path,
+        quiet: bool,
+        load: impl FnOnce() -> Result<Schema, String>,
+    ) -> Loaded {
+        let key = std::fs::canonicalize(path)
+            .or_else(|_| std::path::absolute(path))
+            .unwrap_or_else(|_| path.to_owned());
+        // A poisoned lock still holds every schema read.
+        let mut loaded = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        loaded
+            .entry((key, quiet))
+            .or_insert_with(|| load().map(Arc::new))
+            .clone()
+    }
+}
+
+/// The local schema path a file's `$schema` names, and the offset of its value: a string member
+/// of the top-level object that is no URL. jsonvet fetches no schemas, so a URL names none.
+fn own_schema<'e>(events: &'e [Event<'_>]) -> Option<(usize, &'e str)> {
+    if events.first()?.kind != EventKind::ObjectStart {
+        return None;
+    }
+    let mut depth = 0;
+    let mut events = events[1..].iter();
+    while let Some(event) = events.next() {
+        match &event.kind {
+            EventKind::ObjectStart | EventKind::ArrayStart => depth += 1,
+            EventKind::End => depth -= 1,
+            EventKind::Key(key) if depth == 0 && **key == *b"$schema" => {
+                let value = events.next()?;
+                let EventKind::String(path) = &value.kind else {
+                    return None;
+                };
+                // A fragment points into the schema, as in `s.json#`; the file is the same.
+                let path = path.split_once('#').map_or(&**path, |(path, _)| path);
+                return (!path.is_empty() && !is_url(path)).then_some((value.offset, path));
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Whether some `$schema` in `text` may hold a path rather than a URL, so the text is worth
+/// parsing into events: they take 10 times its memory and 2.5 times as long as a plain check,
+/// and most `$schema` values are URLs. Anything but `$schema`, a quote, `:` and a URL is a maybe.
+fn may_name_a_path(text: &str) -> bool {
+    text.match_indices("$schema").any(|(at, key)| {
+        let rest = text[at + key.len()..].trim_start_matches(['"', '\'']);
+        rest.trim_start()
+            .strip_prefix(':')
+            .is_none_or(|value| !is_url(value.trim_start().trim_start_matches(['"', '\''])))
+    })
+}
+
+/// Whether `text` starts with a URI scheme: a letter, then letters, digits, `+`, `-` or `.`,
+/// then `:`. One letter is a Windows drive, as in `C:\schemas\a.json`, so a scheme takes two.
+fn is_url(text: &str) -> bool {
+    text.split_once(':').is_some_and(|(scheme, _)| {
+        scheme.len() > 1
+            && scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+            && scheme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+    })
+}
+
 #[derive(Default)]
 struct Counts {
     errors: usize,
@@ -435,6 +577,44 @@ fn parallel<T: Sync, U: Send>(
 fn split(text: &str, dialect: Dialect, parts: usize) -> Vec<std::ops::Range<usize>> {
     let split = dialect == Dialect::JsonLines && parts > 1 && text.len() >= SPLIT_BYTES;
     jsonvet::line_parts(text, if split { parts } else { 1 })
+}
+
+/// Check a file's text with no schema given for it, against the schema its own `$schema` names if
+/// any, relative to the file's folder, through `load`. The schema must be inside the file's own
+/// project, as `root` gives it, and its errors quote nothing from it (ADR 0012). One that does not
+/// exist is skipped; one outside the project or that cannot be used is an error at the `$schema`
+/// value. JSON Lines holds many documents, so no one `$schema` applies.
+fn check_own_schema<'t>(
+    name: &str,
+    text: &'t str,
+    settings: &Settings,
+    root: &impl Fn(&Path) -> PathBuf,
+    load: &impl Fn(&Path, bool) -> Loaded,
+    parts: usize,
+) -> (Report<'t>, Vec<(usize, String, bool)>) {
+    let config = settings.config_for(name);
+    if config.dialect() == Dialect::JsonLines || !may_name_a_path(text) {
+        return check(name, text, settings, None, parts);
+    }
+    // With the file's own depth limit, so a file with no usable `$schema` gets the report a
+    // plain check gives, without a second parse.
+    let (report, events) = jsonvet::parse(text, &config);
+    let Some((offset, path)) = events.as_deref().and_then(own_schema) else {
+        return (report, Vec::new());
+    };
+    let folder = Path::new(name).parent().unwrap_or(Path::new(""));
+    let error = match settings::confined(path, folder, &root(Path::new(name))) {
+        // A schema that is not there is skipped like a URL: tools name one under
+        // `node_modules` that a CI run may not have installed.
+        Ok(false) => return (report, Vec::new()),
+        Ok(true) => match load(&folder.join(path), true) {
+            // As with `--schema`, so the depth cap applies.
+            Ok(schema) => return check(name, text, settings, Some(&schema), parts),
+            Err(e) => e,
+        },
+        Err(e) => e,
+    };
+    (report, vec![(offset, output::printable(&error), false)])
 }
 
 /// Check a file's text, named by its lossy UTF-8 form for glob matching, and against `schema`
@@ -630,9 +810,95 @@ mod tests {
     use jsonvet::Dialect;
 
     use super::{
-        CHUNK_BYTES, MAX_CONFIG_BYTES, SCHEMA_BYTES, SPLIT_BYTES, Schema, Settings, check,
-        chunk_len, parallel, read_small, schema_share, split, unsafe_ignore_file,
+        CHUNK_BYTES, MAX_CONFIG_BYTES, SCHEMA_BYTES, SPLIT_BYTES, STDIN, Schema, Schemas, Settings,
+        check, chunk_len, parallel, read_small, schema_share, schema_shares, split,
+        unsafe_ignore_file,
     };
+    use std::sync::Arc;
+
+    /// A schema that takes any value, in a fresh folder named for `test`, which also holds an
+    /// empty folder `x`.
+    fn any_schema(test: &str) -> (std::path::PathBuf, Schema) {
+        let dir = std::env::temp_dir().join(format!("jsonvet-{test}-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("x")).expect("a temporary directory");
+        std::fs::write(dir.join("s.json"), "{}").expect("written");
+        let schema = Schema::load(&dir.join("s.json"), &Settings::default(), false);
+        (dir, schema.expect("a schema"))
+    }
+
+    #[test]
+    fn every_spelling_of_a_schema_path_reads_it_once() {
+        let (dir, _) = any_schema("spellings");
+        let schemas = Schemas::default();
+        let reads = AtomicUsize::new(0);
+        let read = || {
+            reads.fetch_add(1, Ordering::Relaxed);
+            Schema::load(&dir.join("s.json"), &Settings::default(), false)
+        };
+        for path in ["s.json", "x/../s.json", "x/../x/../s.json", "./s.json"] {
+            assert!(schemas.get(&dir.join(path), true, read).is_ok(), "{path}");
+        }
+        assert_eq!(reads.load(Ordering::Relaxed), 1);
+        // Quiet and not are two reads, since their errors differ.
+        assert!(schemas.get(&dir.join("s.json"), false, read).is_ok());
+        assert_eq!(reads.load(Ordering::Relaxed), 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn only_files_with_a_schema_take_a_share() {
+        let (dir, schema) = any_schema("shares");
+        let _ = std::fs::remove_dir_all(&dir);
+        let schema = Arc::new(schema);
+        let settings = Arc::new(Settings::default());
+        let job =
+            |schema: Option<&Arc<Schema>>| ((Arc::clone(&settings), schema.cloned()), STDIN.into());
+        assert_eq!(
+            schema_shares(&[job(None), job(None)], 2),
+            Vec::<usize>::new()
+        );
+        assert_eq!(
+            schema_shares(&[job(None), job(Some(&schema)), job(None)], 2),
+            [0, CHUNK_BYTES, 0]
+        );
+    }
+
+    #[test]
+    fn only_a_dollar_schema_that_may_hold_a_path_is_worth_parsing() {
+        for (text, path) in [
+            ("{}", false),
+            (r#"{"$schema": "https://x/s.json", "a": 1}"#, false),
+            ("{$schema: 'https://x/s.json'}", false),
+            (
+                r#"{"a": {"$schema":"http://x"}, "$schema" : "urn:x"}"#,
+                false,
+            ),
+            (r#"{"$schema": "s.json"}"#, true),
+            (r#"{"$schema": "C:\\s.json"}"#, true),
+            (r#"{"$schema": /* https://x */ "s.json"}"#, true),
+            (r#"{"$schema" /* c */: "https://x"}"#, true),
+            (r#"{"$schema": 1}"#, true),
+            (r#"{"a": "https://x", "$schema": "s.json"}"#, true),
+            ("{\"$schema", true),
+        ] {
+            assert_eq!(super::may_name_a_path(text), path, "{text}");
+        }
+    }
+
+    #[test]
+    fn is_url_tells_a_scheme_from_a_windows_drive() {
+        for (text, url) in [
+            ("https://x", true),
+            ("ab:x", true),
+            ("C:\\a.json", false),
+            ("./a.json", false),
+            ("a.json", false),
+            // A scheme starts with a letter.
+            ("1a:x", false),
+        ] {
+            assert_eq!(super::is_url(text), url, "{text}");
+        }
+    }
 
     #[test]
     fn small_files_are_read_up_to_their_limit_and_no_further() {
@@ -688,7 +954,7 @@ mod tests {
         let path = dir.join("schema.json");
         std::fs::write(&path, r#"{"properties": {"a": {"type": "integer"}}}"#).expect("written");
         let settings = Settings::default();
-        let schema = Schema::load(&path, &settings).expect("a schema");
+        let schema = Schema::load(&path, &settings, false).expect("a schema");
         let _ = std::fs::remove_dir_all(&dir);
         for text in &texts {
             for schema in [None, Some(&schema)] {

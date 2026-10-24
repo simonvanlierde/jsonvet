@@ -8,6 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/simonvanlierde/jsonvet/blob/main/LICENSE)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23461825.svg)](https://doi.org/10.5281/zenodo.23461825)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/simonvanlierde/jsonvet/badge)](https://scorecard.dev/viewer/?uri=github.com/simonvanlierde/jsonvet)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15798/badge)](https://www.bestpractices.dev/projects/15798)
 
 A linter for JSON, I-JSON, JSONC, HuJSON (JWCC), JSON5 and JSON Lines. It finds syntax errors and
 duplicate keys, and tells you the exact line and column:
@@ -176,6 +177,21 @@ In the hook, give each schema its own entry:
       files: ^config/server\.json5$
       args: [--schema, schemas/server.schema.json]
 ```
+
+To give each file its schema without the command line, list them in the config file, or point
+a file's own `$schema` at a schema on disk:
+
+```toml
+schemas = [{ files = "config/server.json5", schema = "schemas/server.schema.json" }]
+```
+
+```json5
+{ $schema: "../schemas/server.schema.json", port: 8080 }
+```
+
+A schema path in the config file is relative to the config file's folder, and a `$schema` path to
+the file's own folder. Either must stay inside the project. A `$schema` URL, or a path to a file
+that does not exist, means no schema check for that file. `--schema` overrides both.
 
 Schema errors are always errors. jsonvet never fetches a schema from the network or another file,
 so every `$ref` must point inside the schema file. The other limits are in the
