@@ -39,15 +39,43 @@ It printed 82 times its size as text, 119 times with `--format json`, and 172 ti
 Actions, where each problem also prints as an annotation. Each problem also repeats the file's
 name. Duplicate-key reports stay complete, as 1.4's are, so a CI log can be large.
 
-## Reporting
+## Report a vulnerability
 
 Please report it privately through
-[GitHub's vulnerability reporting](https://github.com/simonvanlierde/jsonvet/security/advisories/new),
-not in a public issue. Include the file, or the smallest part of it that still shows the problem,
-the command you ran, and the jsonvet version (`jsonvet --version`).
+[GitHub's vulnerability reporting](https://github.com/simonvanlierde/jsonvet/security/advisories/new).
+Don't open a public issue or pull request for it: anyone can read those before there is a fix.
 
-I'll reply within a week. Once a fix is out, I'll publish an advisory and credit you, unless you'd
-rather not be named.
+Please include:
+
+- The file, or the smallest part of it that still shows the problem.
+- The command you ran, and the jsonvet version (`jsonvet --version`).
+- The impact you expect.
+
+I'll reply within a week, to say whether I can reproduce it and when I expect a fix.
+
+## Fixes and disclosure
+
+A fix ships in a new release, on the GitHub release, PyPI (`jsonvet` and `check-json5`) and
+crates.io. When the release is out, I publish the GitHub security advisory for it, with a CVE
+where one applies, and credit you unless you'd rather not be named. The CHANGELOG entry for that
+release links the advisory.
+
+## Scope
+
+In scope:
+
+- Anything in the list at the top of this page, for every file jsonvet reads.
+- The GitHub Action (`action.yml` and `scripts/action.sh`), including its release check.
+- The release workflow and the files it publishes.
+
+Out of scope:
+
+- The open cases under "Known limits", which are already known. A new way to reach them, or a
+  fix, is in scope: report it here.
+- A vulnerability in a tool jsonvet builds on or runs, such as jsonschema, a runner or GitHub
+  Actions. Report it upstream; a pin or setting jsonvet should change is in scope.
+- A check that jsonvet reports wrongly, or a file it accepts or rejects against its dialect.
+  Open an issue for those.
 
 ## Supported versions
 
