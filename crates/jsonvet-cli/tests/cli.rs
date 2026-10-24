@@ -1808,6 +1808,36 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         assert_eq!(code, 2, "{out}");
     }
 
+    /// The schema paths of a file's project are confined to that project, not to the one
+    /// jsonvet runs in: from a config file in one repository, and a `$schema` in another.
+    #[test]
+    fn a_file_in_another_repository_takes_schemas_from_its_own_project() {
+        let a = workdir(&[]);
+        let config = "schemas = [{ files = \"x.json\", schema = \"s.json\" }]\n";
+        for (repo, file, text) in [
+            ("configured", "x.json", "{}"),
+            ("own", "y.json", "{\"$schema\": \"s.json\"}"),
+        ] {
+            let b = a.with_extension(repo);
+            fs::create_dir_all(b.join(".git")).expect("the other repository");
+            fs::write(b.join("s.json"), "{\"type\": \"array\"}").expect("write schema");
+            fs::write(b.join(file), text).expect("write file");
+            if repo == "configured" {
+                fs::write(b.join("jsonvet.toml"), config).expect("write config");
+            }
+            let name = b
+                .file_name()
+                .expect("a name")
+                .to_string_lossy()
+                .into_owned();
+            let path = format!("../{name}/{file}");
+            let (code, out, err) = jsonvet_stderr(&a, &[&path]);
+            assert_eq!(code, 1, "{file}: {out}{err}");
+            assert!(out.contains("error[schema]"), "{file}: {out}");
+            assert!(!out.contains("outside"), "{file}: {out}");
+        }
+    }
+
     #[test]
     fn a_broken_schema_named_by_the_file_or_a_config_shows_no_text_from_it() {
         let dir = workdir(&[
@@ -3454,6 +3484,33 @@ mod file_reads {
         // The same file, not linked, says what is wrong.
         let (_, _, err) = run(&dir, &user, &["--config", "secret.toml", "r/x.json"]);
         assert!(err.contains("ghp_SECRETTOKEN123"), "{err}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Without a `.git`, schema paths are confined to where the config search stops: here the
+    /// file's own folder, as it lies outside the working directory.
+    #[test]
+    fn without_git_schemas_are_confined_to_where_the_search_stops() {
+        let dir = bare(
+            "no-git-schema",
+            &[
+                ("s.json", "{\"type\": \"array\"}"),
+                (
+                    "jsonvet.toml",
+                    "schemas = [{ files = \"x.json\", schema = \"s.json\" }]\n",
+                ),
+                ("x.json", "{}"),
+                ("y.json", "{\"$schema\": \"s.json\"}"),
+                ("sub/ok.json", "{}"),
+            ],
+        );
+        let user = dir.join("no-user");
+        for file in ["../y.json", "../x.json"] {
+            let (code, out, err) = run(&dir.join("sub"), &user, &[file]);
+            assert_eq!(code, 1, "{file}: {out}{err}");
+            assert!(out.contains("error[schema]"), "{file}: {out}");
+            assert!(!out.contains("outside"), "{file}: {out}");
+        }
         let _ = fs::remove_dir_all(&dir);
     }
 

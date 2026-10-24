@@ -142,7 +142,7 @@ pub fn run_with(
             Schema::load(path, &*settings_for(path)?, quiet)
         })
     };
-    let root = lock(&resolver).root().to_owned();
+    let root = |path: &Path| lock(&resolver).root(path);
 
     // Standard input goes by its `--stdin-filename`, for settings and in the output.
     let stdin_name = args.stdin_filename.unwrap_or_else(|| STDIN.into());
@@ -579,16 +579,16 @@ fn split(text: &str, dialect: Dialect, parts: usize) -> Vec<std::ops::Range<usiz
     jsonvet::line_parts(text, if split { parts } else { 1 })
 }
 
-/// Check a file's text with no schema given for it, against the schema its own `$schema` names
-/// if any, relative to the file's folder, through `load`. The schema must be inside `root`, the
-/// project, and its errors quote nothing from it (ADR 0012). One that does not exist is skipped;
-/// one outside the project or that cannot be used is an error at the `$schema` value. JSON Lines
-/// holds many documents, so no one `$schema` applies.
+/// Check a file's text with no schema given for it, against the schema its own `$schema` names if
+/// any, relative to the file's folder, through `load`. The schema must be inside the file's own
+/// project, as `root` gives it, and its errors quote nothing from it (ADR 0012). One that does not
+/// exist is skipped; one outside the project or that cannot be used is an error at the `$schema`
+/// value. JSON Lines holds many documents, so no one `$schema` applies.
 fn check_own_schema<'t>(
     name: &str,
     text: &'t str,
     settings: &Settings,
-    root: &Path,
+    root: &impl Fn(&Path) -> PathBuf,
     load: &impl Fn(&Path, bool) -> Loaded,
     parts: usize,
 ) -> (Report<'t>, Vec<(usize, String, bool)>) {
@@ -603,7 +603,7 @@ fn check_own_schema<'t>(
         return (report, Vec::new());
     };
     let folder = Path::new(name).parent().unwrap_or(Path::new(""));
-    let error = match settings::confined(path, folder, root) {
+    let error = match settings::confined(path, folder, &root(Path::new(name))) {
         // A schema that is not there is skipped like a URL: tools name one under
         // `node_modules` that a CI run may not have installed.
         Ok(false) => return (report, Vec::new()),

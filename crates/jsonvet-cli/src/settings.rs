@@ -221,13 +221,10 @@ pub(crate) struct Resolver {
     fixed: Option<Arc<Settings>>,
     /// The settings found for each folder searched so far, by its absolute path.
     found: HashMap<PathBuf, Arc<Settings>>,
-    /// The working directory, asked for once rather than for each file. Empty unless searching.
+    /// The working directory, asked for once rather than for each file.
     cwd: PathBuf,
     /// The nearest folder at or above the working directory with a `.git` entry, if any.
     repo: Option<PathBuf>,
-    /// The project a config file's or a file's own `$schema` must stay in: `repo`, or the
-    /// working directory without one, made canonical.
-    root: PathBuf,
     /// The settings of the user's own config file, read the first time a search finds no
     /// project config file: `None` until then.
     user: Option<Arc<Settings>>,
@@ -245,32 +242,53 @@ impl Resolver {
             .ancestors()
             .find(|dir| dir.join(".git").exists())
             .map(Path::to_owned);
-        let root = repo.as_deref().unwrap_or(&here);
-        let root = fs::canonicalize(root).unwrap_or_else(|_| root.to_owned());
-        let (fixed, cwd) = match config {
-            ConfigSource::Search => (None, here),
-            ConfigSource::None => (Some(Arc::new(cli.clone())), PathBuf::new()),
-            ConfigSource::File(path) => (
-                // The person running jsonvet named it, so like `--schema` it is not confined.
-                Some(Arc::new(load(path, None)?.overridden_by(cli.clone()))),
-                PathBuf::new(),
-            ),
+        let fixed = match config {
+            ConfigSource::Search => None,
+            ConfigSource::None => Some(Arc::new(cli.clone())),
+            // The person running jsonvet named it, so like `--schema` it is not confined.
+            ConfigSource::File(path) => {
+                Some(Arc::new(load(path, None)?.overridden_by(cli.clone())))
+            }
         };
         Ok(Resolver {
             cli: Arc::new(cli),
             fixed,
             found: HashMap::new(),
-            cwd,
+            cwd: here,
             repo,
-            root,
             user: None,
             last: None,
         })
     }
 
-    /// The canonical project root that schema paths from a project must stay in.
-    pub(crate) fn root(&self) -> &Path {
-        &self.root
+    /// The project the file at `path` sits in, made canonical: where [`Resolver::for_file`]'s
+    /// search for it stops. Its config file's schema paths and its own `$schema` stay in it.
+    pub(crate) fn root(&self, path: &Path) -> PathBuf {
+        let path = lexical(&self.cwd.join(path));
+        let start = path.parent().unwrap_or(&path);
+        let last = self.last(start);
+        let root = start
+            .ancestors()
+            .find(|dir| Some(*dir) == last || dir.join(".git").exists())
+            .unwrap_or(start);
+        fs::canonicalize(root).unwrap_or_else(|_| root.to_owned())
+    }
+
+    /// Where the search from the folder `start` stops if it meets no `.git` first.
+    fn last<'s>(&'s self, start: &'s Path) -> Option<&'s Path> {
+        if self
+            .repo
+            .as_ref()
+            .is_some_and(|repo| start.starts_with(repo))
+        {
+            None
+        } else if start.starts_with(&self.cwd) {
+            Some(self.cwd.as_path())
+        } else if start.ancestors().any(|dir| dir.join(".git").exists()) {
+            None
+        } else {
+            Some(start)
+        }
     }
 
     /// The settings for the file at `path`, which need not exist: those of the first
@@ -298,20 +316,7 @@ impl Resolver {
     fn search(&mut self, path: &Path) -> Result<Arc<Settings>, String> {
         let path = lexical(&self.cwd.join(path));
         let start = path.parent().unwrap_or(&path);
-        // Where the search stops if it meets no `.git` first.
-        let last = if self
-            .repo
-            .as_ref()
-            .is_some_and(|repo| start.starts_with(repo))
-        {
-            None
-        } else if start.starts_with(&self.cwd) {
-            Some(self.cwd.as_path())
-        } else if start.ancestors().any(|dir| dir.join(".git").exists()) {
-            None
-        } else {
-            Some(start)
-        };
+        let last = self.last(start);
         let mut searched = Vec::new();
         let mut settings = None;
         for dir in start.ancestors() {
@@ -321,8 +326,8 @@ impl Resolver {
             }
             searched.push(dir);
             if let Some(config) = config_in(dir) {
-                let own =
-                    load(&config, Some(&self.root))?.overridden_by(Settings::clone(&self.cli));
+                let own = load(&config, Some(&self.root(&path)))?
+                    .overridden_by(Settings::clone(&self.cli));
                 settings = Some(Arc::new(own));
                 break;
             }
