@@ -39,6 +39,9 @@ version for a new option or output, the patch version for a fix.
   the problem marked under it, and the related place, such as a duplicate key's first copy.
   pre-commit in a terminal shows frames too. CI, pre-commit.ci and pipes keep one line per
   problem, and `| cat` forces lines.
+- Short strings, such as most keys, are scanned with a lookup table instead of a check per
+  dialect rule on each byte. Checking 8.9 MB of pretty-printed JSON takes 13.5% fewer
+  instructions. The problems reported are unchanged.
 
 ### Fixed
 
