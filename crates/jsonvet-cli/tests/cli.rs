@@ -1714,6 +1714,21 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         );
     }
 
+    /// A rooted `$schema` is an error even when nothing is there; a missing path inside the
+    /// project is no schema check.
+    #[test]
+    fn a_rooted_dollar_schema_is_an_error_and_a_missing_one_is_not() {
+        for (schema, expected) in [
+            ("/schemas/v1.json", 1),
+            ("//host/x.json", 1),
+            ("missing.json", 0),
+        ] {
+            let dir = workdir(&[("f.json", &format!("{{\"$schema\": \"{schema}\"}}"))]);
+            let (code, out) = jsonvet(&dir, &["f.json"]);
+            assert_eq!(code, expected, "{schema}: {out}");
+        }
+    }
+
     /// A file outside the test's project, holding `TOPSECRET` where an error would quote it.
     fn outside(dir: &Path, name: &str, text: &str) -> PathBuf {
         let folder = dir.with_extension("outside");

@@ -8,13 +8,22 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
+Most users need no change. Check these if they apply to you:
+
+1. If a file has a top-level `$schema` that is a path, jsonvet now checks the file against that
+   schema. A `$schema` that starts with `/` or `//`, or climbs out of the repository with `..`, is
+   now an error even if nothing is there. Make it a URL or a path inside the repository, or pass
+   `--schema`.
+2. If a script reads piped text output while `FORCE_COLOR` is set, the lines now carry color codes.
+   Pass `--color never` to get plain lines.
+
 ### Added
 
 - A config file can give files a schema: `schemas = [{ files = "config/*.json", schema =
   "server.schema.json" }]` checks the matching files as `--schema` would. A file's own `$schema`
   that names a schema on disk, relative to the file, works too. jsonvet still fetches nothing, so a
-  `$schema` URL, or a path to a file that does not exist, means no schema check. Both kinds of path
-  must stay inside the checked file's own project (its repository, or where the config search for it
+  `$schema` URL, or a relative path inside the project to a file that does not exist, means no schema
+  check. Both kinds of path must stay inside the checked file's own project (its repository, or where the config search for it
   stops), unless `--config` named the config file, and an error in such a schema names its place but
   quotes nothing from it, so a pull request cannot make jsonvet read or show a file outside the
   project.
@@ -31,6 +40,8 @@ version for a new option or output, the patch version for a fix.
 
 ### Changed
 
+- With `FORCE_COLOR` set, as many Node CI setups do, piped line output now carries color codes
+  around the severity and the rule. `--color never` gives plain lines.
 - `--schema` uses jsonschema 0.60.1. It shares the values of an `enum` or `const` between errors
   instead of copying them. A schema with an `anyOf` around `additionalProperties` and a
   200,000-value `enum` took 6.3 GB and 2.7 s on 1,000 failing keys, and now takes 40 MB and 0.03 s.
