@@ -200,24 +200,23 @@ pub fn run_with(
                 })
             },
         );
-        let outcome =
-            chunk
-                .iter()
-                .zip(checked)
-                .try_for_each(|((_, file), checked)| match checked {
-                    Ok((report, schema_errors)) => print_file(
-                        &shown(file),
-                        &report,
-                        &schema_errors,
-                        &mut printer,
-                        &mut counts,
-                    ),
-                    Err(message) => {
-                        counts.errors += 1;
-                        counts.files += 1;
-                        printer.unreadable(&shown(file), message)
-                    }
-                });
+        let outcome = chunk
+            .iter()
+            .zip(checked)
+            .try_for_each(|(((settings, _), file), checked)| match checked {
+                Ok((report, schema_errors)) => print_file(
+                    &shown(file),
+                    (&report, json5(settings, &shown(file))),
+                    &schema_errors,
+                    &mut printer,
+                    &mut counts,
+                ),
+                Err(message) => {
+                    counts.errors += 1;
+                    counts.files += 1;
+                    printer.unreadable(&shown(file), message)
+                }
+            });
         if outcome.is_err() {
             break outcome;
         }
@@ -666,12 +665,18 @@ fn look(format: Format, color: Option<bool>, terminal: Terminal) -> Look {
     }
 }
 
+/// Whether `file`'s report counts U+2028 and U+2029 as line ends: only when it was checked as
+/// JSON5, as [`check`] does.
+fn json5(settings: &Settings, file: &OsStr) -> bool {
+    settings.config_for(&file.to_string_lossy()).dialect() == Dialect::Json5
+}
+
 /// Print one file's problems and schema errors, and add them to `counts`, each before it is
 /// printed, so a failed write still leaves the verdict. The file count is added last: only the
 /// summary reads it, and a failed write ends the run before the summary.
 fn print_file(
     file: &OsStr,
-    report: &Report<'_>,
+    (report, json5): (&Report<'_>, bool),
     schema_errors: &[(usize, String, bool)],
     printer: &mut Printer<impl Write>,
     counts: &mut Counts,
@@ -683,11 +688,11 @@ fn print_file(
             Severity::Warning => counts.warnings += 1,
             _ => {}
         }
-        printer.problem(file, report, problem)?;
+        printer.problem(file, report, json5, problem)?;
     }
     for (offset, message, summary) in schema_errors {
         counts.errors += usize::from(!summary);
-        printer.schema_error(file, report, *offset, message, *summary)?;
+        printer.schema_error(file, report, json5, *offset, message, *summary)?;
     }
     counts.files += usize::from(counts.errors + counts.warnings > before);
     Ok(())

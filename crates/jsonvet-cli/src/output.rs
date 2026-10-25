@@ -78,11 +78,13 @@ pub(crate) struct Look {
     pub(crate) color: bool,
 }
 
-/// Where a problem is in its file: the text, what a code frame marks, and where the problem
-/// ends, for SARIF and annotations, when it ends past its start.
+/// Where a problem is in its file: the text, whether U+2028 and U+2029 end its lines (JSON5),
+/// what a code frame marks, and where the problem ends, for SARIF and annotations, when it ends
+/// past its start.
 #[derive(Clone, Copy)]
 struct Place<'t> {
     text: &'t str,
+    json5: bool,
     mark: Mark<'t>,
     end: Option<Location>,
 }
@@ -135,11 +137,12 @@ impl<W: Write> Printer<W> {
         Printer { out, sink }
     }
 
-    /// A problem in a file's contents.
+    /// A problem in a file's contents, checked as JSON5 if `json5`.
     pub(crate) fn problem(
         &mut self,
         file: &OsStr,
         report: &Report<'_>,
+        json5: bool,
         problem: &Problem,
     ) -> io::Result<()> {
         let text = report.text();
@@ -158,12 +161,13 @@ impl<W: Write> Printer<W> {
             let _ = write!(message, " ({what} {}:{})", at.line, at.column);
             Mark {
                 at,
-                span: frame::one_char(text, related.offset),
+                span: frame::one_char(text, json5, related.offset),
                 label: Some(label),
             }
         });
         let place = Place {
             text,
+            json5,
             mark: Mark {
                 at: report.location(offset),
                 span: (offset, end),
@@ -182,11 +186,13 @@ impl<W: Write> Printer<W> {
     }
 
     /// A value the `--schema` schema rejects, at `offset`. A `summary` of the errors not listed
-    /// is left out of SARIF and JSON, where each result is one finding.
+    /// is left out of SARIF and JSON, where each result is one finding. `json5` as for
+    /// [`Printer::problem`].
     pub(crate) fn schema_error(
         &mut self,
         file: &OsStr,
         report: &Report<'_>,
+        json5: bool,
         offset: usize,
         message: &str,
         summary: bool,
@@ -197,9 +203,10 @@ impl<W: Write> Printer<W> {
         let text = report.text();
         let place = Place {
             text,
+            json5,
             mark: Mark {
                 at: report.location(offset),
-                span: frame::one_char(text, offset),
+                span: frame::one_char(text, json5, offset),
                 label: None,
             },
             end: None,
@@ -290,6 +297,7 @@ impl<W: Write> Printer<W> {
             let frame = frame::render(
                 renderer,
                 text,
+                place.is_some_and(|p| p.json5),
                 file,
                 severity,
                 rule,
@@ -402,7 +410,7 @@ mod tests {
             let report = check(text, &Config::new(Dialect::Json));
             for problem in report.problems() {
                 printer
-                    .problem(OsStr::new(file), &report, problem)
+                    .problem(OsStr::new(file), &report, false, problem)
                     .expect("a write to memory");
             }
         }
