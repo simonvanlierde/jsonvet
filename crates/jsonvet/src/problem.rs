@@ -21,8 +21,8 @@ impl Problem {
     /// The byte offset just past the text the problem is about, such as the end of a duplicate
     /// key or of a number. It equals [`offset`](Self::offset) when the problem is about a place
     /// between characters, such as a missing `,` or the end of the file. Always on a character
-    /// boundary. It is on the line of `offset`, except after a JSON5 key that a line
-    /// continuation carries onto the next line.
+    /// boundary. It is on the line of `offset`, except after a JSON5 key that holds a line end:
+    /// a line continuation, or a raw U+2028 or U+2029, which JSON5 counts as line ends.
     ///
     /// ```
     /// use jsonvet::{check, Config, Dialect};
