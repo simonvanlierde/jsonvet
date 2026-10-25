@@ -113,6 +113,8 @@ pub struct Lines<'a> {
 impl<'a> Lines<'a> {
     /// The events of these lines, taken out so [`join_lines`] does not copy them, or `None`
     /// after a syntax error in them.
+    ///
+    /// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
     pub fn take_events(&mut self) -> Option<Vec<Event<'a>>> {
         (!self.syntax_error).then(|| std::mem::take(&mut self.events))
     }

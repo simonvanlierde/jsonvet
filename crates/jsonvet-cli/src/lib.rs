@@ -41,7 +41,8 @@ const STACK: usize = 64 << 20;
 const CHUNK_BYTES: usize = 64 << 20;
 
 /// How many bytes of memory a byte of file text takes with `--schema`, which holds the file's
-/// events and value: 14 to 27 (docs/design.md, "Memory").
+/// events and one document's value at a time: 14 to 27 per byte of that document
+/// (docs/design.md, "Memory").
 const SCHEMA_BYTES: usize = 20;
 
 /// From this size, a JSON Lines file is split at newlines and its parts checked on the cores
@@ -944,7 +945,8 @@ mod tests {
     #[test]
     fn a_large_json_lines_file_checked_in_parts_reports_what_one_pass_does() {
         // Problems in every part: duplicate keys, and strings the schema wants as integers. Every
-        // thousandth line has more schema errors than a document reports.
+        // thousandth line has more schema errors than a document reports, and two in each
+        // thousand have values the schema cannot check.
         let pad = "x".repeat(500);
         let wide: Vec<String> = (0..150).map(|k| format!("\"k{k}\": \"s\"")).collect();
         let wide = format!("{{{}}}", wide.join(", "));
@@ -952,6 +954,8 @@ mod tests {
         for i in 0..4_000 {
             let _ = match i % 7 {
                 _ if i % 1_000 == 999 => writeln!(text, "{wide}"),
+                _ if i % 1_000 == 500 => writeln!(text, "{{\"a\": 1e400}}"),
+                _ if i % 1_000 == 501 => writeln!(text, r#"{{"\ud800": 1, "\ud801": 2}}"#),
                 0 => writeln!(text, "{{\"a\": {i}, \"a\": 1}}"),
                 1 => write!(text, "{{\"a\": \"{i}\", \"p\": \"{pad}\"}}\r\n"),
                 _ => writeln!(text, "{{\"a\": {i}, \"p\": \"{pad}\"}}"),
@@ -985,8 +989,10 @@ mod tests {
             }
         }
         let (_, errors) = check("x.jsonl", &texts[0], &settings, Some(&schema), 8);
-        // 572, and 100 and a summary for each wide line.
-        assert_eq!(errors.len(), 572 + 4 * 101);
+        // 570 strings, 100 and a summary for each wide line, and one for each line not checked.
+        assert_eq!(errors.len(), 570 + 4 * 101 + 8);
+        let unchecked = errors.iter().filter(|(_, m, _)| m.contains("not checked"));
+        assert_eq!(unchecked.count(), 8);
     }
 
     #[test]
