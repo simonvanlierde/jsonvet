@@ -165,15 +165,15 @@ with many problems on one line is not copied whole for each of them.
 
 ### `--schema`
 
-A schema adds a seventh rule, `schema`, which belongs to the CLI: the library knows no schemas.
-It comes from `--schema FILE`, a config file's `schemas` or a file's own `$schema`. A `$schema`
-and the schemas of a config file the search finds stay inside the project and quote nothing in
-their errors ([ADR 0012](decisions/0012-schema-paths-stay-in-the-project.md)). The library's `parse` returns the file's values as events, each with its byte offset.
-The CLI folds them into `serde_json` values and validates those with the `jsonschema` crate, with
-default features off so nothing is fetched. It then maps each error's instance path, a JSON
-Pointer, back to the offset of its value. One walk over a document's events finds every error's
-value, with no pointer kept per value. Every build has `--schema`, the PyPI wheels too; see
-[0006](decisions/0006-offline-json-schema-in-every-build.md).
+A schema adds a seventh rule, `schema`, which belongs to the CLI: the library knows no schemas. It
+comes from `--schema FILE`, a config file's `schemas` or a file's own `$schema`. A `$schema` and the
+schemas of a config file the search finds stay inside the project and quote nothing in their errors
+([ADR 0012](decisions/0012-schema-paths-stay-in-the-project.md)). The library's `parse` returns the
+file's values as events, each with its byte offset. The CLI folds them into `serde_json` values and
+validates those with the `jsonschema` crate, with default features off so nothing is fetched. It
+then maps each error's instance path, a JSON Pointer, back to the offset of its value. One walk over
+a document's events finds every error's value, with no pointer kept per value. Every build has
+`--schema`, the PyPI wheels too; see [0006](decisions/0006-offline-json-schema-in-every-build.md).
 
 The message names the value by JSONPath, through the same code as `duplicate-key`, so one file's
 problems use one path style. A pointer reads the same for `[0]` and `["0"]`, so a segment counts
