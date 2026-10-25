@@ -407,8 +407,13 @@ one exists is in [design.md](design.md#--schema).
   file's own folder for a file outside the working directory. An absolute path, a Windows drive or
   network path such as `\\host\share`, a `..` that climbs out, or a symlink or symlinked folder
   that leads out is refused, whether or not the file exists. For a `$schema` that is a schema
-  error at its value; in a config file, a usage error at the entry. An error in such a schema
-  names its line and column but quotes nothing from it, since the file may not be yours to show.
+  error at its value; in a config file, a usage error at the entry. Such a schema's errors quote
+  nothing from it, since the file may not be yours to show. One that cannot be used names its line
+  and column. A value that fails it names the keyword and, where jsonvet can tell, the keyword's
+  line and column, as in `value fails "enum" (the schema s.json:3:11)`. That hides `const` and
+  `enum` values, patterns, the property names `required` and `dependentRequired` ask for, the
+  limits of `minimum`, `maxLength` and the like, and the schema under `not`. The checked file's
+  own keys and values, type names such as `"integer"` and format names may still show.
   `--schema`, `--config FILE` and the user's own config file may name a schema anywhere, and their
   errors quote it.
 

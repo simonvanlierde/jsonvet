@@ -46,10 +46,21 @@ move them in or pass `--schema`. A schema error from `$schema` or a project conf
 where it is, so the author opens the schema to see why. A CI job that passes `--config` with a
 path a pull request controls gives up the confinement for that config.
 
+## Update 2026-10-25
+
+"Quotes nothing" covers the errors a schema finds in a checked file, not only the errors that
+stop it being used. A value that fails such a schema gets `value fails "<keyword>"` and the
+keyword's line and column in the schema where jsonvet can find it, instead of jsonschema's
+message. That hides `const` and `enum` values, patterns and regexes, required and dependent
+property names, the limits of keywords such as `minimum` and `maxLength`, a `not` schema, and a
+`$ref` target. Type names and format names are fixed words, so they stay, and so do the checked
+file's own keys and values.
+
 ## Confirmation
 
 `a_schema_outside_the_project_is_refused_and_never_quoted`,
 `a_broken_schema_named_by_the_file_or_a_config_shows_no_text_from_it`,
+`a_schema_named_by_the_file_or_a_config_quotes_nothing_from_it_in_its_errors`,
 `a_config_file_outside_the_project_named_by_config_may_name_a_schema_beside_it`,
 `a_file_in_another_repository_takes_schemas_from_its_own_project` in
 `crates/jsonvet-cli/tests/cli.rs`'s `mod schema`,

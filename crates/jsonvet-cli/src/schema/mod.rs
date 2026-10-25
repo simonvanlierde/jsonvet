@@ -7,7 +7,7 @@ mod limits;
 mod place;
 
 use std::borrow::Cow;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
 use jsonschema::error::ValidationErrorKind;
@@ -90,6 +90,162 @@ pub(crate) struct Schema {
     /// Whether every regex in the schema compiles for the `regex` crate. fancy-regex hands such
     /// a regex to it, which runs in linear time, so no match stops at [`BACKTRACK_LIMIT`].
     linear: bool,
+    /// For a schema the project picked, whose errors quote nothing from it (ADR 0012).
+    quiet: Option<Quiet>,
+}
+
+/// What a quiet schema's errors say instead of its text: its name, and where in it each keyword
+/// that holds such text is, as line and column by schema path.
+struct Quiet {
+    name: String,
+    places: HashMap<String, (usize, usize)>,
+}
+
+/// The keywords whose values a jsonschema error message can quote, and those whose members' can.
+/// Every other keyword's errors quote only the value checked, a type or a known format name.
+const QUOTED: [&str; 21] = [
+    "const",
+    "enum",
+    "pattern",
+    "required",
+    "not",
+    "maximum",
+    "minimum",
+    "exclusiveMaximum",
+    "exclusiveMinimum",
+    "maxItems",
+    "minItems",
+    "maxLength",
+    "minLength",
+    "maxProperties",
+    "minProperties",
+    "multipleOf",
+    "$ref",
+    "$dynamicRef",
+    "$recursiveRef",
+    "dependentRequired",
+    "dependencies",
+];
+const QUOTED_MEMBERS: [&str; 2] = ["dependentRequired", "dependencies"];
+
+impl Quiet {
+    /// The places of the keywords in [`QUOTED`] in `schema`, found in its `events`, with the
+    /// line and column of each from `report`.
+    fn new(
+        name: &str,
+        schema: &Value,
+        events: &[Event<'_>],
+        report: &jsonvet::Report<'_>,
+    ) -> Quiet {
+        let mut targets = Vec::new();
+        quoted(schema, &mut Vec::new(), false, &mut targets);
+        let places = place(events, &targets)
+            .into_iter()
+            .zip(targets)
+            .map(|((offset, _), (path, _))| {
+                let at = report.location(offset);
+                let mut pointer = String::new();
+                for segment in path {
+                    pointer.push('/');
+                    pointer.push_str(&segment.replace('~', "~0").replace('/', "~1"));
+                }
+                (pointer, (at.line, at.column))
+            })
+            .collect();
+        Quiet {
+            name: name.to_owned(),
+            places,
+        }
+    }
+
+    /// `error`'s message without text from the schema, unless its kind quotes none: the keyword
+    /// it fails, and where that is in the schema if known. For
+    /// the part of a split schema checked on each element or member, `moved` is where that part
+    /// came from.
+    fn message(&self, error: &ValidationError<'_>, moved: Option<&str>) -> String {
+        use ValidationErrorKind as K;
+        match error.kind() {
+            K::PropertyNames { error } => return self.message(error, moved),
+            K::AdditionalItems { .. }
+            | K::AdditionalProperties { .. }
+            | K::AnyOf { .. }
+            | K::OneOfMultipleValid { .. }
+            | K::OneOfNotValid { .. }
+            | K::Contains
+            | K::ContentEncoding { .. }
+            | K::ContentMediaType { .. }
+            | K::FalseSchema
+            | K::Format { .. }
+            | K::FromUtf8 { .. }
+            | K::Type { .. }
+            | K::UnevaluatedItems { .. }
+            | K::UnevaluatedProperties { .. }
+            | K::UniqueItems => return message(error),
+            K::BacktrackLimitExceeded { .. }
+            | K::RegexEngineFailure { .. }
+            | K::Constant { .. }
+            | K::Custom { .. }
+            | K::Enum { .. }
+            | K::ExclusiveMaximum { .. }
+            | K::ExclusiveMinimum { .. }
+            | K::Maximum { .. }
+            | K::Minimum { .. }
+            | K::MaxItems { .. }
+            | K::MaxLength { .. }
+            | K::MaxProperties { .. }
+            | K::MinItems { .. }
+            | K::MinLength { .. }
+            | K::MinProperties { .. }
+            | K::MultipleOf { .. }
+            | K::Not { .. }
+            | K::Pattern { .. }
+            | K::Required { .. }
+            | K::Referencing(_) => {}
+        }
+        // A custom keyword's name is the schema's own; jsonvet adds none.
+        let keyword = match error.kind() {
+            K::Custom { .. } => "a custom keyword",
+            kind => kind.keyword(),
+        };
+        let path = error.schema_path().as_str();
+        let path = match (moved, path.strip_prefix(&format!("/{EACH}"))) {
+            (Some(moved), Some(rest)) => Cow::Owned(format!("{moved}{rest}")),
+            _ => Cow::Borrowed(path),
+        };
+        let name = &self.name;
+        match self.places.get(path.as_ref()) {
+            Some((line, column)) => {
+                format!("value fails \"{keyword}\" (the schema {name}:{line}:{column})")
+            }
+            None => format!("value fails \"{keyword}\" (the schema {name})"),
+        }
+    }
+}
+
+/// The paths in `schema`, under `path`, of the keywords in [`QUOTED`], and of the members of
+/// those in [`QUOTED_MEMBERS`] (`members`), as targets for [`place`].
+fn quoted(
+    schema: &Value,
+    path: &mut Vec<String>,
+    members: bool,
+    targets: &mut Vec<(Vec<String>, Vec<String>)>,
+) {
+    for (key, member) in children(schema) {
+        path.push(key.clone().into_owned());
+        if members || QUOTED.contains(&key.as_ref()) {
+            targets.push((path.clone(), Vec::new()));
+        }
+        // An `enum` or `const` holds values, not schemas, and can be large.
+        if !["enum", "const"].contains(&key.as_ref()) {
+            quoted(
+                member,
+                path,
+                QUOTED_MEMBERS.contains(&key.as_ref()),
+                targets,
+            );
+        }
+        path.pop();
+    }
 }
 
 /// A schema split in two: the part checked on the whole value, and the part checked on each
@@ -103,6 +259,9 @@ struct Split {
 struct Compiled {
     validator: Validator,
     schema: Value,
+    /// For the part of a split schema checked on each element or member: the path in the
+    /// whole schema that its [`EACH`] stands for.
+    moved: Option<&'static str>,
 }
 
 impl Compiled {
@@ -215,7 +374,12 @@ impl Errors {
 
 /// `error`, on the element at `index` if any, as the errors to report: one per key for
 /// unexpected properties, up to one more than [`MAX_ERRORS`]; otherwise one.
-fn found(index: Option<usize>, value: &Value, error: &ValidationError<'_>) -> Vec<Found> {
+fn found(
+    index: Option<usize>,
+    value: &Value,
+    error: &ValidationError<'_>,
+    message: impl FnOnce() -> String,
+) -> Vec<Found> {
     let path = pointer_path(index, error);
     if let Some(keys) = unexpected(value, error) {
         return keys
@@ -242,7 +406,7 @@ fn found(index: Option<usize>, value: &Value, error: &ValidationError<'_>) -> Ve
         path,
         keys,
         key: false,
-        message: message(error),
+        message: message(),
     }]
 }
 
@@ -362,12 +526,14 @@ impl Schema {
                     compiled: Compiled {
                         validator,
                         schema: schema.clone(),
+                        moved: None,
                     },
                     items: split(schema, kept, false, &options),
                     members: split(schema, kept, true, &options),
                     key_patterns: compile(keys),
                     string_patterns: compile(strings),
                     linear,
+                    quiet: quiet.then(|| Quiet::new(&name, schema, events, &report)),
                 });
             }
             Err(error) => error,
@@ -378,7 +544,7 @@ impl Schema {
         {
             return Err(message);
         }
-        let (offset, _) = place_found(events, &found(None, schema, &error))[0];
+        let (offset, _) = place_found(events, &found(None, schema, &error, String::new))[0];
         Err(at(offset, &error))
     }
 
@@ -498,7 +664,10 @@ impl Schema {
         error: &ValidationError<'_>,
     ) -> Vec<Found> {
         if !backtracked(error) {
-            return found(index, value, error);
+            return found(index, value, error, || match &self.quiet {
+                Some(quiet) => quiet.message(error, compiled.moved),
+                None => message(error),
+            });
         }
         let path = pointer_path(index, error);
         let at = pattern_at(&compiled.schema, error.schema_path().as_str());
@@ -513,13 +682,16 @@ impl Schema {
                 .find(|(_, regex)| regex.validate(&subject).is_err_and(|e| backtracked(&e)))
                 .map(|(regex, _)| regex.clone())
         };
+        // A quiet schema's regex is never named.
+        let shown = |regex: Option<String>| regex.filter(|_| self.quiet.is_none());
         let keys: Vec<Found> = match error.instance().as_ref() {
             Value::Object(members) => members
                 .keys()
                 .filter_map(|key| {
+                    let regex = named(&self.key_patterns, key)?;
                     Some(Found {
                         path: path.clone(),
-                        message: costly("key", Some(&named(&self.key_patterns, key)?)),
+                        message: costly("key", shown(Some(regex)).as_deref()),
                         keys: vec![key.clone()],
                         key: true,
                     })
@@ -532,10 +704,11 @@ impl Schema {
             return keys;
         }
         let message = match error.instance().as_ref() {
-            Value::String(string) => {
-                costly("string", named(&self.string_patterns, string).as_deref())
-            }
-            _ => costly("value", at.as_deref()),
+            Value::String(string) => costly(
+                "string",
+                shown(named(&self.string_patterns, string)).as_deref(),
+            ),
+            _ => costly("value", shown(at.clone()).as_deref()),
         };
         vec![Found {
             path,
@@ -586,14 +759,18 @@ fn split(schema: &Value, kept: bool, members: bool, options: &ValidationOptions)
         "allOf".to_owned(),
         serde_json::json!([{ "$ref": format!("#/{EACH}") }]),
     );
-    let compile = |schema: Map<String, Value>| {
+    let compile = |schema: Map<String, Value>, moved| {
         let schema = Value::Object(schema);
         let validator = options.build(&schema).ok()?;
-        Some(Compiled { validator, schema })
+        Some(Compiled {
+            validator,
+            schema,
+            moved,
+        })
     };
     Some(Split {
-        whole: compile(whole)?,
-        each: compile(each)?,
+        whole: compile(whole, None)?,
+        each: compile(each, Some(if members { "" } else { "/items" }))?,
     })
 }
 
@@ -750,12 +927,14 @@ mod tests {
                 compiled: Compiled {
                     validator: options.build(schema).expect("a schema"),
                     schema: schema.clone(),
+                    moved: None,
                 },
                 items,
                 members,
                 key_patterns: Vec::new(),
                 string_patterns: Vec::new(),
                 linear: true,
+                quiet: None,
             };
             let (_, events) = jsonvet::parse(text, &Config::new(Dialect::Json));
             schema.errors(&events.unwrap_or_default())
