@@ -433,8 +433,8 @@ one exists is in [design.md](design.md#--schema).
   and not checked. The same goes for a document with two keys in one object that differ only in
   lone surrogates such as `"\ud800"`, since both become U+FFFD. In the schema file, either one is
   a usage error.
-- **Memory.** jsonvet holds each file's values in memory: 14 to 27 times the file's size, the most
-  for many small records such as JSON Lines. Without a schema, memory stays near the file's
+- **Memory.** jsonvet holds each document's values in memory: 14 to 27 times its size. A JSON
+  Lines file holds one line's values at a time. Without a schema, memory stays near the file's
   size. A top-level array that fails everywhere takes no more than a valid one when only `items`
   checks its elements, as in `{"type": "array", "items": {"$ref": "#/$defs/record"}}`, and so
   does a top-level object when only `properties`, `patternProperties` and `additionalProperties`

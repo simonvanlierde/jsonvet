@@ -633,16 +633,27 @@ fn check<'t>(
             Some(_) => config.max_depth(SCHEMA_MAX_DEPTH),
             None => config,
         };
-        let lines = parallel(
+        // Each line is a document of its own, and the error cap counts per document, so each
+        // part's schema errors are the ones a single pass finds in its lines.
+        let (lines, errors): (Vec<_>, Vec<_>) = parallel(
             &ranges,
             parts,
             || false,
-            |lines| jsonvet::parse_lines(text, lines.clone(), &config, schema.is_some()),
-        );
+            |lines| {
+                let mut lines =
+                    jsonvet::parse_lines(text, lines.clone(), &config, schema.is_some());
+                let errors = schema.zip(lines.take_events()).map(|(s, e)| s.errors(&e));
+                (lines, errors)
+            },
+        )
+        .into_iter()
+        .unzip();
         let (report, events) = jsonvet::join_lines(text, lines);
-        let errors = schema
-            .zip(events)
-            .map_or_else(Vec::new, |(schema, events)| schema.errors(&events));
+        // `events` is `None` after a syntax error in any part, so the file gets no schema errors.
+        let errors = match events {
+            Some(_) => errors.into_iter().flatten().flatten().collect(),
+            None => Vec::new(),
+        };
         return (report, errors);
     }
     match schema {
@@ -932,11 +943,15 @@ mod tests {
 
     #[test]
     fn a_large_json_lines_file_checked_in_parts_reports_what_one_pass_does() {
-        // Problems in every part: duplicate keys, and strings the schema wants as integers.
+        // Problems in every part: duplicate keys, and strings the schema wants as integers. Every
+        // thousandth line has more schema errors than a document reports.
         let pad = "x".repeat(500);
+        let wide: Vec<String> = (0..150).map(|k| format!("\"k{k}\": \"s\"")).collect();
+        let wide = format!("{{{}}}", wide.join(", "));
         let mut text = String::from("\u{FEFF}");
         for i in 0..4_000 {
             let _ = match i % 7 {
+                _ if i % 1_000 == 999 => writeln!(text, "{wide}"),
                 0 => writeln!(text, "{{\"a\": {i}, \"a\": 1}}"),
                 1 => write!(text, "{{\"a\": \"{i}\", \"p\": \"{pad}\"}}\r\n"),
                 _ => writeln!(text, "{{\"a\": {i}, \"p\": \"{pad}\"}}"),
@@ -952,7 +967,11 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("jsonvet-split-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("a temporary directory");
         let path = dir.join("schema.json");
-        std::fs::write(&path, r#"{"properties": {"a": {"type": "integer"}}}"#).expect("written");
+        let schema = concat!(
+            r#"{"properties": {"a": {"type": "integer"}}, "#,
+            r#""patternProperties": {"^k": {"type": "integer"}}}"#,
+        );
+        std::fs::write(&path, schema).expect("written");
         let settings = Settings::default();
         let schema = Schema::load(&path, &settings, false).expect("a schema");
         let _ = std::fs::remove_dir_all(&dir);
@@ -966,7 +985,8 @@ mod tests {
             }
         }
         let (_, errors) = check("x.jsonl", &texts[0], &settings, Some(&schema), 8);
-        assert_eq!(errors.len(), 572);
+        // 572, and 100 and a summary for each wide line.
+        assert_eq!(errors.len(), 572 + 4 * 101);
     }
 
     #[test]
