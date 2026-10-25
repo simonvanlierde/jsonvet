@@ -16,7 +16,8 @@ The details behind the [README](../README.md). Why things work this way is in
                            document on stdout
 --color auto|always|never  color text output; auto colors it on a terminal unless NO_COLOR
                            is set, and anywhere when FORCE_COLOR is
---schema FILE              also check every file against the JSON Schema in FILE
+--schema FILE              check each file against the JSON Schema in FILE, instead of the
+                           schemas from settings or a file's own local $schema
 --stdin-filename PATH      the name standard input (`-`) goes by
 --config FILE, --no-config
 --list-rules               list the rules with their default severities
