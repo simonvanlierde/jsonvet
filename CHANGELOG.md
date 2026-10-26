@@ -54,9 +54,9 @@ Most users need no change. Check these if they apply to you:
   the problem marked under it, and the related place, such as a duplicate key's first copy.
   pre-commit in a terminal shows frames too. CI, pre-commit.ci and pipes keep one line per
   problem, and `| cat` forces lines.
-- Short strings, such as most keys, are scanned with a lookup table instead of a check per
-  dialect rule on each byte. Checking 8.9 MB of pretty-printed JSON takes 13.5% fewer
-  instructions. The problems reported are unchanged.
+- Strings check faster. A 9 MB file of short keys and values checks 8% faster, and files full of
+  escapes or of JSON5 strings with tabs 10 to 25% faster. Pretty-printed JSON gains about 3%.
+  The problems reported are unchanged.
 
 ### Fixed
 
