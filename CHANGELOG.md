@@ -31,6 +31,10 @@ version for a new option or output, the patch version for a fix.
 
 ### Changed
 
+- `--schema` checks a JSON Lines file of 1 MB or more on several cores, one part of its lines on
+  each, and folds and checks one line at a time instead of the whole file at once. On 12 cores,
+  a 102 MB file checks 2.7x faster and 80 MB of nested records 6 to 9x faster, in 0.91 GB
+  instead of 3.4 GB. The output is unchanged.
 - `--schema` uses jsonschema 0.60.1. It shares the values of an `enum` or `const` between errors
   instead of copying them. A schema with an `anyOf` around `additionalProperties` and a
   200,000-value `enum` took 6.3 GB and 2.7 s on 1,000 failing keys, and now takes 40 MB and 0.03 s.

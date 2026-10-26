@@ -191,7 +191,7 @@ mod tests {
         let text = r#"{"a": [1, {"b": 2}], "b\u00e9/~": "x", "a": "last"}"#;
         let (_, events) = jsonvet::parse(text, &Config::new(Dialect::Json));
         let events = events.unwrap_or_default();
-        let documents = documents(&events);
+        let documents: Vec<_> = documents(&events).collect();
         assert_eq!(documents[0].value, json!({"a": "last", "b\u{e9}/~": "x"}));
         let schema =
             json!({"properties": {"a": {"type": "integer"}, "b\u{e9}/~": {"type": "integer"}}});

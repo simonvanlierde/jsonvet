@@ -30,73 +30,78 @@ enum Open<'e> {
     ),
 }
 
-/// Fold events into documents: one, or one per line in JSON Lines.
-pub(super) fn documents(events: &[Event<'_>]) -> Vec<Document> {
-    let mut documents = Vec::new();
+/// Fold events into documents, one at a time: one, or one per line in JSON Lines. One at a
+/// time, a document's values can be dropped before the next is folded.
+pub(super) fn documents<'e>(events: &'e [Event<'_>]) -> impl Iterator<Item = Document> {
+    let mut events = events.iter().enumerate();
     let mut first_event = 0;
-    let mut stack: Vec<Open<'_>> = Vec::new();
+    let mut stack: Vec<Open<'e>> = Vec::new();
     let mut unchecked = None;
-    for (i, event) in events.iter().enumerate() {
-        let value = match &event.kind {
-            EventKind::Key(key) => {
-                if let Some(Open::Object(_, current, _)) = stack.last_mut() {
-                    *current = (key_text(key).into_owned(), event.offset, &**key);
+    std::iter::from_fn(move || {
+        for (i, event) in events.by_ref() {
+            let value = match &event.kind {
+                EventKind::Key(key) => {
+                    if let Some(Open::Object(_, current, _)) = stack.last_mut() {
+                        *current = (key_text(key).into_owned(), event.offset, &**key);
+                    }
+                    continue;
                 }
-                continue;
-            }
-            EventKind::ObjectStart => {
-                stack.push(Open::Object(
-                    Map::new(),
-                    (String::new(), 0, &[]),
-                    HashMap::new(),
-                ));
-                continue;
-            }
-            EventKind::ArrayStart => {
-                stack.push(Open::Array(Vec::new()));
-                continue;
-            }
-            EventKind::End => match stack.pop() {
-                Some(Open::Array(items)) => Value::Array(items),
-                Some(Open::Object(members, ..)) => Value::Object(members),
-                None => continue,
-            },
-            EventKind::Null => Value::Null,
-            EventKind::Bool(b) => Value::Bool(*b),
-            EventKind::String(s) => Value::String(s.to_string()),
-            EventKind::Number(text) => number(text).unwrap_or_else(|| {
-                unchecked.get_or_insert((event.offset, NOT_A_NUMBER));
-                Value::Null
-            }),
-            _ => continue,
-        };
-        match stack.last_mut() {
-            None => documents.push(Document {
-                value,
-                events: std::mem::replace(&mut first_event, i + 1)..i + 1,
-                unchecked: unchecked.take(),
-            }),
-            Some(Open::Array(items)) => items.push(value),
-            Some(Open::Object(members, (key, offset, raw), seen)) => {
-                let key = std::mem::take(key);
-                // Real duplicates are the duplicate-key rule's; keys that only become the same
-                // once lone surrogates are U+FFFD are not.
-                if key.contains('\u{FFFD}') {
-                    match seen.get(&key) {
-                        Some(earlier) if earlier != raw => {
-                            unchecked.get_or_insert((*offset, SAME_KEYS));
-                        }
-                        Some(_) => {}
-                        None => {
-                            seen.insert(key.clone(), raw);
+                EventKind::ObjectStart => {
+                    stack.push(Open::Object(
+                        Map::new(),
+                        (String::new(), 0, &[]),
+                        HashMap::new(),
+                    ));
+                    continue;
+                }
+                EventKind::ArrayStart => {
+                    stack.push(Open::Array(Vec::new()));
+                    continue;
+                }
+                EventKind::End => match stack.pop() {
+                    Some(Open::Array(items)) => Value::Array(items),
+                    Some(Open::Object(members, ..)) => Value::Object(members),
+                    None => continue,
+                },
+                EventKind::Null => Value::Null,
+                EventKind::Bool(b) => Value::Bool(*b),
+                EventKind::String(s) => Value::String(s.to_string()),
+                EventKind::Number(text) => number(text).unwrap_or_else(|| {
+                    unchecked.get_or_insert((event.offset, NOT_A_NUMBER));
+                    Value::Null
+                }),
+                _ => continue,
+            };
+            match stack.last_mut() {
+                None => {
+                    return Some(Document {
+                        value,
+                        events: std::mem::replace(&mut first_event, i + 1)..i + 1,
+                        unchecked: unchecked.take(),
+                    });
+                }
+                Some(Open::Array(items)) => items.push(value),
+                Some(Open::Object(members, (key, offset, raw), seen)) => {
+                    let key = std::mem::take(key);
+                    // Real duplicates are the duplicate-key rule's; keys that only become the same
+                    // once lone surrogates are U+FFFD are not.
+                    if key.contains('\u{FFFD}') {
+                        match seen.get(&key) {
+                            Some(earlier) if earlier != raw => {
+                                unchecked.get_or_insert((*offset, SAME_KEYS));
+                            }
+                            Some(_) => {}
+                            None => {
+                                seen.insert(key.clone(), raw);
+                            }
                         }
                     }
+                    members.insert(key, value);
                 }
-                members.insert(key, value);
             }
         }
-    }
-    documents
+        None
+    })
 }
 
 /// A number as written in any dialect, or `None` for `NaN`, `Infinity` and numbers past a
@@ -147,7 +152,7 @@ pub(super) mod tests {
     fn events_fold_into_the_values_serde_json_reads() {
         let text = r#"{"a": [1, -2.5e3, true, null, {"b": [false, "c"]}], "b\u00e9/~": "x\n\ud83d\ude00"}"#;
         let (_, events) = jsonvet::parse(text, &Config::new(Dialect::Json));
-        let documents = documents(&events.unwrap_or_default());
+        let documents: Vec<_> = documents(&events.unwrap_or_default()).collect();
         let expected: serde_json::Value = serde_json::from_str(text).unwrap_or_default();
         assert_eq!(documents.len(), 1);
         assert_eq!(documents[0].value, expected);
@@ -212,7 +217,7 @@ pub(super) mod tests {
             .unwrap_or_default();
             let (_, events) = jsonvet::parse(&text, &Config::new(Dialect::Json));
             prop_assert!(events.is_some(), "{}", text);
-            let documents = documents(&events.unwrap_or_default());
+            let documents: Vec<_> = documents(&events.unwrap_or_default()).collect();
             let expected: Value = serde_json::from_str(&text).unwrap_or_default();
             prop_assert_eq!(documents.len(), 1);
             prop_assert_eq!(&documents[0].value, &expected);
