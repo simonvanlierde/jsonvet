@@ -637,3 +637,22 @@ fn a_raw_line_break_in_a_json5_string_is_an_error() {
         }
     }
 }
+
+/// Every byte the string scan stops at needs a match arm in the string loop: one without lands on
+/// the loop's `debug_assert`. Each character goes in short and long strings, in every dialect.
+#[test]
+fn every_character_in_a_string_has_a_rule() {
+    let extra = ['é', '\u{FFFE}', '\u{10FFFF}'];
+    for c in (0..0x80u8).map(char::from).chain(extra) {
+        for &dialect in Dialect::ALL {
+            for quote in ['"', '\''] {
+                for pad in [String::new(), "a".repeat(20)] {
+                    check(
+                        &format!("[{quote}{pad}{c}{pad}{quote}]"),
+                        &Config::new(dialect),
+                    );
+                }
+            }
+        }
+    }
+}
