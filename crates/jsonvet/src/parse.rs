@@ -874,7 +874,10 @@ impl<'a> Parser<'a> {
                     }
                     self.pos += c.len_utf8();
                 }
-                _ => self.pos += 1,
+                _ => {
+                    debug_assert!(false, "plain_bytes stopped at a byte no arm handles");
+                    self.pos += 1;
+                }
             }
         }
     }
@@ -1395,26 +1398,50 @@ mod tests {
 
     #[test]
     fn plain_bytes_stop_at_the_first_byte_that_needs_a_decision_in_the_dialect() {
-        let json = string_stops(b'"', false, true);
-        // Before, inside and after the 16-byte blocks.
-        for at in [0, 5, 15, 16, 20, 40] {
-            for stop in ["\"", "\\", "\n", "\r", "\u{1}", "é"] {
-                let text = format!("{}{stop}{}", "a".repeat(at), "a".repeat(40));
-                assert_eq!(
-                    plain_bytes(text.as_bytes(), json, b'"', true),
-                    at,
-                    "{stop:?}"
-                );
+        for &quote in b"\"'" {
+            for json5 in [false, true] {
+                for ascii_only in [false, true] {
+                    let stops = string_stops(quote, json5, ascii_only);
+                    let other = if quote == b'"' { "'" } else { "\"" };
+                    let cases = [
+                        (char::from(quote).to_string(), true),
+                        (other.to_owned(), false),
+                        ("\\".to_owned(), true),
+                        ("\n".to_owned(), true),
+                        ("\r".to_owned(), true),
+                        ("\x01".to_owned(), !json5),
+                        ("\t".to_owned(), !json5),
+                        ("é".to_owned(), ascii_only),
+                    ];
+                    // Before, inside and after the 16-byte blocks.
+                    for at in [0, 5, 15, 16, 20, 40] {
+                        for (probe, stop) in &cases {
+                            let text = format!("{}{probe}{}", "a".repeat(at), "a".repeat(40));
+                            let want = if *stop { at } else { text.len() };
+                            assert_eq!(
+                                plain_bytes(text.as_bytes(), stops, quote, ascii_only),
+                                want,
+                                "{probe:?} at {at}, quote {quote}, json5 {json5}, ascii_only {ascii_only}"
+                            );
+                        }
+                    }
+                    let plain = "a".repeat(40);
+                    assert_eq!(plain_bytes(plain.as_bytes(), stops, quote, ascii_only), 40);
+                }
             }
         }
-        assert_eq!(plain_bytes("a".repeat(40).as_bytes(), json, b'"', true), 40);
-        // JSON5 lets control characters through, `'` ends only its own quote, and past ASCII
-        // is plain unless checked.
+        // In JSON5 a raw tab stops a block but not the byte scan, so the scan goes on to the
+        // stop whether the tab is in the head or in the block the tail then reads.
         let json5 = string_stops(b'\'', true, false);
-        let text = "a\u{1}\"é\u{7f}'";
-        assert_eq!(
-            plain_bytes(text.as_bytes(), json5, b'\'', false),
-            text.len() - 1
-        );
+        for text in [
+            format!("a\t{}'", "a".repeat(40)),
+            format!("{}\t{}\r", "a".repeat(20), "a".repeat(20)),
+        ] {
+            assert_eq!(
+                plain_bytes(text.as_bytes(), json5, b'\'', false),
+                text.len() - 1,
+                "{text:?}"
+            );
+        }
     }
 }

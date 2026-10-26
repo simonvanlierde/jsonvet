@@ -619,3 +619,21 @@ fn a_json5_key_with_a_line_end_inside_ends_on_a_later_line() {
         assert!(end.line > start.line, "{text:?}: {start:?} to {end:?}");
     }
 }
+
+/// JSON5 allows other control characters in a string, but a raw line break still ends it as an
+/// error, short or long, in either quote.
+#[test]
+fn a_raw_line_break_in_a_json5_string_is_an_error() {
+    for quote in ['"', '\''] {
+        for line_break in ['\r', '\n'] {
+            for before in [String::new(), "a\t".repeat(20)] {
+                let text = format!("[{quote}{before}{line_break}{quote}]");
+                let report = check(&text, &Config::new(Dialect::Json5));
+                let messages: Vec<String> =
+                    report.problems().iter().map(ToString::to_string).collect();
+                assert_eq!(messages, ["line break inside a string"], "{text:?}");
+                assert_eq!(report.problems()[0].offset(), 2 + before.len(), "{text:?}");
+            }
+        }
+    }
+}
