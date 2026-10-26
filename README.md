@@ -23,8 +23,9 @@ events.jsonl:12:1: error[syntax] blank line; JSON Lines needs a value on every l
 text you paste as you type. Nothing to install, and the text stays on your machine.
 
 - **Six dialects, one parser.** Each file is checked in the dialect its extension implies.
-- **JSON Schema with positions.** `--schema` points each schema error at its value's line and
-  column. It never fetches anything from the network.
+- **JSON Schema with positions.** `--schema`, a config file or a file's `$schema` gives the schema.
+  Each schema error points at its value's line and column, and a terminal shows it as a code
+  frame. It never fetches anything from the network.
 - **Fits CI.** Use it as a pre-commit or prek hook, a GitHub Action, a command or a Rust library.
   It writes text, SARIF for GitHub code scanning, or JSON for scripts and editors.
 - **Fast.** It was check-json5, a Python hook, until 2.0 rewrote it in Rust. It is up to 1,407
@@ -190,8 +191,10 @@ schemas = [{ files = "config/server.json5", schema = "schemas/server.schema.json
 ```
 
 A schema path in the config file is relative to the config file's folder, and a `$schema` path to
-the file's own folder. Either must stay inside the project. A `$schema` URL, or a path to a file
-that does not exist, means no schema check for that file. `--schema` overrides both.
+the file's own folder. Either must stay inside the project: a path that starts with `/` or climbs
+out with `..` is a schema error, even if nothing is there. A `$schema` URL, or a path inside the
+project to a file that does not exist, means no schema check for that file. `--schema` overrides
+both.
 
 Schema errors are always errors. jsonvet never fetches a schema from the network or another file,
 so every `$ref` must point inside the schema file. The other limits are in the

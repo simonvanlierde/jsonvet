@@ -38,16 +38,17 @@ pub(crate) struct Mark<'a> {
     pub(crate) label: Option<&'a str>,
 }
 
-/// The characters jsonvet counts as a line break.
-fn is_line_break(c: char) -> bool {
-    matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}')
+/// Whether `c` ends a line, as [`jsonvet::Location`] counts lines: U+2028 and U+2029 only in
+/// JSON5 (`json5`).
+fn is_line_break(c: char, json5: bool) -> bool {
+    matches!(c, '\n' | '\r') || (json5 && matches!(c, '\u{2028}' | '\u{2029}'))
 }
 
 /// The byte range of the character at `offset`, or an empty range at a line break or the end
-/// of the text, for a problem that has only a start.
-pub(crate) fn one_char(text: &str, offset: usize) -> (usize, usize) {
+/// of the text, for a problem that has only a start. `json5` as for [`is_line_break`].
+pub(crate) fn one_char(text: &str, json5: bool, offset: usize) -> (usize, usize) {
     match text.get(offset..).and_then(|rest| rest.chars().next()) {
-        Some(c) if is_line_break(c) => (offset, offset),
+        Some(c) if is_line_break(c, json5) => (offset, offset),
         None => (offset, offset),
         Some(c) => (offset, offset + c.len_utf8()),
     }
@@ -55,10 +56,12 @@ pub(crate) fn one_char(text: &str, offset: usize) -> (usize, usize) {
 
 /// A problem drawn under the lines of `text` it is about, with the `related` place marked too.
 /// With no `primary`, for a file that could not be read, the frame names only the file.
+/// `json5` as for [`is_line_break`].
 #[expect(clippy::too_many_arguments, reason = "one frame needs each of them")]
 pub(crate) fn render(
     renderer: &Renderer,
     text: &str,
+    json5: bool,
     file: &str,
     severity: Severity,
     rule: &str,
@@ -91,13 +94,13 @@ pub(crate) fn render(
             primary
         };
         let to = primary.span.1.max(related.span.1);
-        let excerpt = Excerpt::new(text, first.at, first.span.0, to);
+        let excerpt = Excerpt::new(text, json5, first.at, first.span.0, to);
         group = group.element(excerpt.snippet(text, &file, &[primary, related], true));
     } else {
-        let excerpt = Excerpt::new(text, primary.at, primary.span.0, primary.span.1);
+        let excerpt = Excerpt::new(text, json5, primary.at, primary.span.0, primary.span.1);
         group = group.element(excerpt.snippet(text, &file, &[primary], true));
         if let Some(related) = related {
-            let other = Excerpt::new(text, related.at, related.span.0, related.span.1);
+            let other = Excerpt::new(text, json5, related.at, related.span.0, related.span.1);
             group = group.element(other.snippet(text, &file, &[related], false));
             columns.push(related.at.column);
         }
@@ -139,8 +142,8 @@ struct Excerpt {
 
 impl Excerpt {
     /// The line of `from`, which is at `at`, cut to [`CONTEXT`] characters each side of
-    /// `from..to`, and ending before any line break.
-    fn new(text: &str, at: Location, from: usize, to: usize) -> Excerpt {
+    /// `from..to`, and ending before any line break. `json5` as for [`is_line_break`].
+    fn new(text: &str, json5: bool, at: Location, from: usize, to: usize) -> Excerpt {
         let before = at.column - 1;
         let start = text[..from]
             .char_indices()
@@ -153,7 +156,7 @@ impl Excerpt {
         let mut cut_end = false;
         for (i, c) in text[from..].char_indices() {
             let i = from + i;
-            if is_line_break(c) {
+            if is_line_break(c, json5) {
                 end = i;
                 break;
             }
@@ -240,7 +243,13 @@ mod tests {
 
     /// The plain frame of each problem in `text`, checked as JSON5.
     fn frames(text: &str) -> String {
-        let report = check(text, &Config::new(Dialect::Json5));
+        frames_in(text, Dialect::Json5)
+    }
+
+    /// The plain frame of each problem in `text`, checked in `dialect`.
+    fn frames_in(text: &str, dialect: Dialect) -> String {
+        let json5 = dialect == Dialect::Json5;
+        let report = check(text, &Config::new(dialect));
         let mut out = String::new();
         for problem in report.problems() {
             let primary = Mark {
@@ -250,7 +259,7 @@ mod tests {
             };
             let related = problem.related().map(|related| Mark {
                 at: report.location(related.offset),
-                span: one_char(text, related.offset),
+                span: one_char(text, json5, related.offset),
                 label: Some("here"),
             });
             let message = problem.to_string();
@@ -259,6 +268,7 @@ mod tests {
             out += &render(
                 &Renderer::plain(),
                 text,
+                json5,
                 "f",
                 severity,
                 rule,
@@ -315,6 +325,34 @@ mod tests {
     }
 
     #[test]
+    fn a_line_separator_ends_a_frame_line_only_in_json5() {
+        let text = "{\"a\": \"x\u{2028}y\", \"a\": 2}\n";
+        let frame = frames_in(text, Dialect::Jsonc);
+        assert!(frame.contains(" --> f:1:14\n"), "{frame}");
+        let line = frame
+            .lines()
+            .find(|line| line.starts_with("1 |"))
+            .expect("the source line");
+        let caret = frame
+            .lines()
+            .skip_while(|l| !l.starts_with("1 |"))
+            .nth(1)
+            .expect("the mark");
+        let start = line.find("\"a\": 2").expect("the second key");
+        // The source shows U+2028 as one character, so count characters, not bytes.
+        let column = line[..start].chars().count();
+        assert_eq!(
+            caret.chars().position(|c| c == '^'),
+            Some(column),
+            "{frame}"
+        );
+        // In JSON5 it ends the line, so the second key is on line 2.
+        let frame = frames(text);
+        assert!(frame.contains(" --> f:2:5\n"), "{frame}");
+        assert!(frame.contains("2 | y\", \"a\": 2}"), "{frame}");
+    }
+
+    #[test]
     fn a_file_name_like_a_position_keeps_its_name() {
         // A cut line, whose header column is fixed after rendering, in a file named like one.
         let text = format!("[{}True]", "1, ".repeat(100));
@@ -328,6 +366,7 @@ mod tests {
         let frame = render(
             &Renderer::plain(),
             &text,
+            true,
             "a:1:162.json",
             problem.severity(),
             problem.rule().id(),
@@ -343,6 +382,7 @@ mod tests {
         let frame = render(
             &Renderer::plain(),
             "",
+            false,
             "gone.json",
             Severity::Error,
             "unreadable",

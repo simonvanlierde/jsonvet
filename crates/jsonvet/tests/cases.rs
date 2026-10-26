@@ -603,3 +603,19 @@ fn each_problem_spans_its_text() {
     assert_eq!(spans(Json5, "{a: 1, a: 2}"), [(7, "a")]);
     assert_eq!(spans(JsonLines, "1\n2"), [(3, "")]);
 }
+
+/// A JSON5 key ends on a later line than it starts when a line continuation or a raw U+2028 or
+/// U+2029 is inside it, as `Problem::end` says.
+#[test]
+fn a_json5_key_with_a_line_end_inside_ends_on_a_later_line() {
+    for key in ["a\\\nb", "a\u{2028}b", "a\u{2029}b"] {
+        let text = format!("{{\"{key}\":1,\"{key}\":2}}");
+        let report = check(&text, &Config::new(Dialect::Json5));
+        let problem = &report.problems()[0];
+        let (start, end) = (
+            report.location(problem.offset()),
+            report.location(problem.end()),
+        );
+        assert!(end.line > start.line, "{text:?}: {start:?} to {end:?}");
+    }
+}

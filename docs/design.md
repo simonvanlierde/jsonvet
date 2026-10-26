@@ -100,7 +100,9 @@ files leaves free, and the parts are checked at once. A newline inside a JSON st
 escaped, and JSON Lines has no comments, so every raw newline ends a record. Each part counts
 offsets from the start of the file, problems stop at the first syntax error as in one pass, and
 the output is the same. Reading the file stays on one thread, so records that are mostly one
-long string gain little.
+long string gain little. With `--schema`, each part's lines are also checked against the schema
+in that part. Each line is a document of its own, and the error cap counts per document, so the
+parts' schema errors joined in order are the ones one pass finds.
 
 We adopt a speed-up only when it measures at least 5% faster end to end; see
 [0004](decisions/0004-measure-before-adopting-a-speed-up.md), which also lists what we turned
@@ -165,14 +167,15 @@ with many problems on one line is not copied whole for each of them.
 
 ### `--schema`
 
-A schema adds a seventh rule, `schema`, which belongs to the CLI: the library knows no schemas.
-It comes from `--schema FILE`, a config file's `schemas` or a file's own `$schema`, and works the
-same from each. The library's `parse` returns the file's values as events, each with its byte offset.
-The CLI folds them into `serde_json` values and validates those with the `jsonschema` crate, with
-default features off so nothing is fetched. It then maps each error's instance path, a JSON
-Pointer, back to the offset of its value. One walk over a document's events finds every error's
-value, with no pointer kept per value. Every build has `--schema`, the PyPI wheels too; see
-[0006](decisions/0006-offline-json-schema-in-every-build.md).
+A schema adds a seventh rule, `schema`, which belongs to the CLI: the library knows no schemas. It
+comes from `--schema FILE`, a config file's `schemas` or a file's own `$schema`. A `$schema` and the
+schemas of a config file the search finds stay inside the project and quote nothing in their errors
+([ADR 0012](decisions/0012-schema-paths-stay-in-the-project.md)). The library's `parse` returns the
+file's values as events, each with its byte offset. The CLI folds them into `serde_json` values and
+validates those with the `jsonschema` crate, with default features off so nothing is fetched. It
+then maps each error's instance path, a JSON Pointer, back to the offset of its value. One walk over
+a document's events finds every error's value, with no pointer kept per value. Every build has
+`--schema`, the PyPI wheels too; see [0006](decisions/0006-offline-json-schema-in-every-build.md).
 
 The message names the value by JSONPath, through the same code as `duplicate-key`, so one file's
 problems use one path style. A pointer reads the same for `[0]` and `["0"]`, so a segment counts
@@ -192,10 +195,11 @@ timeout, so a file gets the same verdict on every machine; see
   plain check still works under `ulimit -v 60000`. Where the thread cannot start, jsonvet runs on
   the main thread. The threads that check files in parallel get the same stack, and any that
   cannot start leave their files to the others.
-- **Memory.** Folded values take 14 to 27 times the file's size, the most for many small records
-  such as JSON Lines. jsonschema collects every error before handing out the first, so a 10 MB
-  array of 5,000,000 failing numbers took 2.0 GB, against 0.37 GB when it passes. So jsonvet
-  splits two shapes of schema:
+- **Memory.** Folded values take 14 to 27 times the document's size. Documents are folded and
+  checked one at a time, so a JSON Lines file holds one line's values at once: 80 MB of nested
+  records took 0.91 GB, against 3.4 GB when the whole file was folded first. jsonschema collects
+  every error before handing out the first, so a 10 MB array of 5,000,000 failing numbers took
+  2.0 GB, against 0.37 GB when it passes. So jsonvet splits two shapes of schema:
   - When nothing but `items` checks a top-level array's elements, and every `$ref` points into
     `$defs` or `definitions`, jsonvet checks the schema without `items` on the whole array, then
     `items` on one element at a time: 0.37 GB both ways, with the same output. jsonschema runs

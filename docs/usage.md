@@ -16,7 +16,8 @@ The details behind the [README](../README.md). Why things work this way is in
                            document on stdout
 --color auto|always|never  color text output; auto colors it on a terminal unless NO_COLOR
                            is set, and anywhere when FORCE_COLOR is
---schema FILE              also check every file against the JSON Schema in FILE
+--schema FILE              check each file against the JSON Schema in FILE, instead of the
+                           schemas from settings or a file's own local $schema
 --stdin-filename PATH      the name standard input (`-`) goes by
 --config FILE, --no-config
 --list-rules               list the rules with their default severities
@@ -407,8 +408,13 @@ one exists is in [design.md](design.md#--schema).
   file's own folder for a file outside the working directory. An absolute path, a Windows drive or
   network path such as `\\host\share`, a `..` that climbs out, or a symlink or symlinked folder
   that leads out is refused, whether or not the file exists. For a `$schema` that is a schema
-  error at its value; in a config file, a usage error at the entry. An error in such a schema
-  names its line and column but quotes nothing from it, since the file may not be yours to show.
+  error at its value; in a config file, a usage error at the entry. Such a schema's errors quote
+  nothing from it, since the file may not be yours to show. One that cannot be used names its line
+  and column. A value that fails it names the keyword and, where jsonvet can tell, the keyword's
+  line and column, as in `value fails "enum" (the schema s.json:3:11)`. That hides `const` and
+  `enum` values, patterns, the property names `required` and `dependentRequired` ask for, the
+  limits of `minimum`, `maxLength` and the like, and the schema under `not`. The checked file's
+  own keys and values, type names such as `"integer"` and format names may still show.
   `--schema`, `--config FILE` and the user's own config file may name a schema anywhere, and their
   errors quote it.
 
@@ -433,8 +439,8 @@ one exists is in [design.md](design.md#--schema).
   and not checked. The same goes for a document with two keys in one object that differ only in
   lone surrogates such as `"\ud800"`, since both become U+FFFD. In the schema file, either one is
   a usage error.
-- **Memory.** jsonvet holds each file's values in memory: 14 to 27 times the file's size, the most
-  for many small records such as JSON Lines. Without a schema, memory stays near the file's
+- **Memory.** jsonvet holds each document's values in memory: 14 to 27 times its size. A JSON
+  Lines file holds one line's values at a time. Without a schema, memory stays near the file's
   size. A top-level array that fails everywhere takes no more than a valid one when only `items`
   checks its elements, as in `{"type": "array", "items": {"$ref": "#/$defs/record"}}`, and so
   does a top-level object when only `properties`, `patternProperties` and `additionalProperties`

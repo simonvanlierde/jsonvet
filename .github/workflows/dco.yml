@@ -36,7 +36,8 @@ jobs:
             | .sha[0:7] + " " + (.commit.message | split("\n")[0])')
           if [ -n "$missing" ]; then
             echo "These commits have no Signed-off-by line:"
-            echo "$missing"
+            # The runner reads "##[" as a workflow command anywhere in a line.
+            echo "$missing" | sed 's/##\[/##\\[/g'
             echo "Add it with 'git rebase --signoff upstream/main' (the branch you started from), then force-push."
             exit 1
           fi

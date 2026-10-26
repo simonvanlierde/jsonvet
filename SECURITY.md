@@ -11,8 +11,8 @@ crafted file that does any of these as a security bug:
 That holds for every file jsonvet reads: the files it checks, a config file (`jsonvet.toml`,
 `pyproject.toml`), an ignore file (`.gitignore`, `.ignore`) and a schema named by `--schema`, a
 config file or a file's `$schema`. A schema path from a `$schema`, or from a config file the
-search finds rather than one named by `--config`, must stay inside the project, and an error in
-such a schema quotes nothing from it
+search finds rather than one named by `--config`, must stay inside the project, and no error
+from such a schema, whether it cannot be used or a value fails it, quotes anything from it
 ([0012](docs/decisions/0012-schema-paths-stay-in-the-project.md)). A way to read or show a file
 outside the project through one is a security bug too.
 
@@ -25,8 +25,8 @@ from strangers before CI runs them.
 - jsonschema collects every error of one validation call before jsonvet sees any. So a schema
   that puts an `anyOf` around `additionalProperties` can still take gigabytes on a document with
   many failing values. Each takes about 420 bytes
-  ([usage.md](docs/usage.md#json-schema-limits)), on top of about 13 bytes for each byte of the
-  file. Closing it needs a way in jsonschema to stop early.
+  ([usage.md](docs/usage.md#json-schema-limits)), on top of the file's own values, which the Memory
+  bullet there sizes. Closing it needs a way in jsonschema to stop early.
 - A pattern too costly to match, under an `allOf`, is much cheaper than before but not free.
   5,000 such strings took 26.3 s on 0.59 and take 0.05 s now, and one beside 100,000 strings that
   fail the pattern went from over 120 s to 2.55 s. But one beside 1,600,000 failing strings (a
@@ -67,6 +67,8 @@ In scope:
 - Anything in the list at the top of this page, for every file jsonvet reads.
 - The GitHub Action (`action.yml` and `scripts/action.sh`), including its release check.
 - The release workflow and the files it publishes.
+- The playground: `crates/jsonvet-wasm`, `playground/` and `.github/workflows/pages.yml`, which
+  deploys it to GitHub Pages.
 
 Out of scope:
 

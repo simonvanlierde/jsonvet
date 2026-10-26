@@ -1445,7 +1445,21 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
             let given = jsonvet(&dir, &["--schema", "schema.json", file]);
             assert_eq!(given.0, 1, "{file}");
             assert!(given.1.contains("error[schema]"), "{file}: {}", given.1);
-            assert_eq!(jsonvet(&dir, &[file]), given, "{file}");
+            // The same errors at the same places, but a found config's or a `$schema`'s
+            // quote nothing from the schema.
+            let at = |(code, out): &(i32, String)| {
+                let lines = out
+                    .lines()
+                    .map(|l| l.split(" error").next().map(str::to_owned));
+                (*code, lines.collect::<Vec<_>>())
+            };
+            let own = jsonvet(&dir, &[file]);
+            assert_eq!(at(&own), at(&given), "{file}");
+            assert!(
+                own.1.contains("value fails \"required\""),
+                "{file}: {}",
+                own.1
+            );
         }
         // Neither a `schemas` entry nor a local `$schema`: syntax only, and nothing is fetched.
         assert_eq!(
@@ -1516,21 +1530,29 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         );
     }
 
-    /// Three schemas that each demand a different key, so an error names the schema used.
+    /// Three schemas that each demand a different key, so an error names the schema used. A
+    /// schema the project picked is not quoted, so each puts its `required` at another column.
     fn picked_by(dir: &Path, args: &[&str]) -> String {
         let (code, out, err) = jsonvet_stderr(dir, args);
         assert_eq!(code, 1, "{out}{err}");
-        ["ka", "kb", "kc"]
-            .into_iter()
-            .filter(|key| out.contains(key))
-            .collect()
+        [
+            ("ka", ".json:1:14)"),
+            ("kb", ".json:1:15)"),
+            ("kc", ".json:1:16)"),
+        ]
+        .into_iter()
+        .filter(|(key, at)| out.contains(key) || out.contains(at))
+        .map(|(key, _)| key)
+        .collect()
     }
+
+    const SB: &str = "{ \"required\": [\"kb\"]}";
 
     fn keyed_schemas() -> Vec<(&'static str, &'static str)> {
         vec![
             ("sa.json", "{\"required\": [\"ka\"]}"),
-            ("sb.json", "{\"required\": [\"kb\"]}"),
-            ("sc.json", "{\"required\": [\"kc\"]}"),
+            ("sb.json", SB),
+            ("sc.json", "{  \"required\": [\"kc\"]}"),
         ]
     }
 
@@ -1578,7 +1600,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
             "schemas = [{ files = \"*.json\", schema = \"sa.json\" }]\n",
         ));
         files.push(("top.json", "{}"));
-        files.push(("sub/sb.json", "{\"required\": [\"kb\"]}"));
+        files.push(("sub/sb.json", SB));
         files.push((
             "sub/jsonvet.toml",
             "schemas = [{ files = \"*.json\", schema = \"sb.json\" }]\n",
@@ -1613,7 +1635,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
     fn a_config_schema_path_is_relative_to_the_config_file_not_the_working_directory() {
         let mut files = keyed_schemas();
         // A decoy of the same name at the root, where the run starts.
-        files.push(("sub/sa.json", "{\"required\": [\"kb\"]}"));
+        files.push(("sub/sa.json", SB));
         files.push((
             "sub/jsonvet.toml",
             "schemas = [{ files = \"deep/*.json\", schema = \"sa.json\" }]\n",
@@ -1712,6 +1734,21 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
             out.starts_with("f.json:1:13: error[schema] cannot read the schema f.json/s.json: "),
             "{out}"
         );
+    }
+
+    /// A rooted `$schema` is an error even when nothing is there; a missing path inside the
+    /// project is no schema check.
+    #[test]
+    fn a_rooted_dollar_schema_is_an_error_and_a_missing_one_is_not() {
+        for (schema, expected) in [
+            ("/schemas/v1.json", 1),
+            ("//host/x.json", 1),
+            ("missing.json", 0),
+        ] {
+            let dir = workdir(&[("f.json", &format!("{{\"$schema\": \"{schema}\"}}"))]);
+            let (code, out) = jsonvet(&dir, &["f.json"]);
+            assert_eq!(code, expected, "{schema}: {out}");
+        }
     }
 
     /// A file outside the test's project, holding `TOPSECRET` where an error would quote it.
@@ -1875,6 +1912,112 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         let (code, _, err) = jsonvet_stderr(&dir, &["--config", "c.toml", "ok.json"]);
         assert_eq!(code, 2);
         assert!(err.contains("TOPSECRET"), "{err}");
+    }
+
+    #[test]
+    fn a_schema_named_by_the_file_or_a_config_quotes_nothing_from_it_in_its_errors() {
+        let secret = r#"{
+  "enum": ["SECRET-ENUM-VALUE"],
+  "const": "SECRET-CONST",
+  "pattern": "^SECRET-PATTERN$",
+  "required": ["SECRET_KEY_NAME"],
+  "properties": {
+    "p": {"pattern": "^SECRET-P$"},
+    "d": {"not": {"type": "string", "description": "SECRET-NOT"}},
+    "k": {"maxLength": 1, "minimum": 2},
+    "c": {"pattern": "^(a|a)*\\1SECRET"}
+  },
+  "patternProperties": {"^(a|a)*\\1SECRET": {"type": "string"}},
+  "dependentRequired": {"p": ["SECRET_DEP"]},
+  "propertyNames": {"pattern": "^([$a-z]+|SECRET-NAMES)$"}
+}"#;
+        // Each member fails a keyword, and the last key and `c` take too long to match.
+        let costly = "a".repeat(30) + "!";
+        let members = format!(
+            "\"p\": \"x\", \"d\": \"y\", \"k\": \"zz\", \"c\": \"{costly}\", \"Q\": 1, \"{costly}\": 1}}"
+        );
+        let a = format!("{{\"$schema\": \"./secret.json\", {members}");
+        let b = format!("{{{members}");
+        let dir = workdir(&[
+            ("secret.json", secret),
+            ("a.json", &a),
+            (
+                "sub/jsonvet.toml",
+                "[[schemas]]\nfiles = \"*.json\"\nschema = \"../secret.json\"\n",
+            ),
+            ("sub/b.json", &b),
+        ]);
+        for file in ["a.json", "sub/b.json"] {
+            for format in ["text", "json", "sarif"] {
+                let (code, out, err) = jsonvet_stderr(&dir, &["--format", format, file]);
+                assert_eq!(code, 1, "{file} {format}: {err}");
+                assert!(!out.contains("SECRET"), "{file} {format}: {out}");
+                assert!(
+                    out.contains("fails \\\"enum\\\"") || out.contains("fails \"enum\""),
+                    "{out}"
+                );
+            }
+        }
+        let (_, out) = jsonvet(&dir, &["a.json"]);
+        for line in [
+            "a.json:1:1: error[schema] value fails \"required\" (the schema ./secret.json:5:15) (at $)\n",
+            "error[schema] this string could not be checked against a pattern: matching it takes more than 5000 backtracking steps (at $.c)\n",
+            "error[schema] this key could not be checked against a pattern: matching it",
+        ] {
+            assert!(out.contains(line), "{out}");
+        }
+        // `--schema` is the user's own choice, so its errors quote the schema.
+        let (_, out) = jsonvet(&dir, &["--schema", "secret.json", "sub/b.json"]);
+        assert!(out.contains("\"SECRET-CONST\" was expected"), "{out}");
+        assert!(out.contains("the pattern \"^(a|a)*\\1SECRET\""), "{out}");
+    }
+
+    #[test]
+    fn a_quiet_schema_error_under_an_embedded_id_does_not_point_at_the_root() {
+        let schema = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "maxProperties": 9,
+  "properties": { "a": { "$ref": "https://ex.com/sub" } },
+  "$defs": { "s": { "$id": "https://ex.com/sub", "maxProperties": 1 } }
+}"#;
+        let dir = workdir(&[
+            ("s.json", schema),
+            ("a.json", r#"{"$schema":"./s.json","a":{"x":1,"y":2}}"#),
+            (
+                "b.json",
+                r#"{"$schema":"./s.json","b":1,"c":1,"d":1,"e":1,"f":1,"g":1,"h":1,"i":1,"j":1}"#,
+            ),
+        ]);
+        // The root's `maxProperties` is at 4:20, and `$.a` meets its limit.
+        let (code, out) = jsonvet(&dir, &["a.json"]);
+        assert_eq!(code, 1, "{out}");
+        assert!(!out.contains("s.json:4:20"), "{out}");
+        assert!(
+            out.contains("value fails \"maxProperties\" (the schema ./s.json) (at $.a)"),
+            "{out}"
+        );
+        let (code, out) = jsonvet(&dir, &["b.json"]);
+        assert_eq!(code, 1, "{out}");
+        assert!(
+            out.contains("value fails \"maxProperties\" (the schema ./s.json:4:20) (at $)"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn a_quiet_schema_property_named_like_a_keyword_still_has_places() {
+        let schema = "{\"properties\":{\"e\":{\"properties\":{\"enum\":{\"minimum\":7}}}}}";
+        let dir = workdir(&[
+            ("s.json", schema),
+            ("a.json", r#"{"$schema":"./s.json","e":{"enum":1}}"#),
+        ]);
+        let (code, out) = jsonvet(&dir, &["a.json"]);
+        assert_eq!(code, 1, "{out}");
+        assert!(
+            out.contains("value fails \"minimum\" (the schema ./s.json:1:53)"),
+            "{out}"
+        );
     }
 
     #[test]

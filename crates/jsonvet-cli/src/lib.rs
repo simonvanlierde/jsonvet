@@ -41,7 +41,8 @@ const STACK: usize = 64 << 20;
 const CHUNK_BYTES: usize = 64 << 20;
 
 /// How many bytes of memory a byte of file text takes with `--schema`, which holds the file's
-/// events and value: 14 to 27 (docs/design.md, "Memory").
+/// events and one document's value at a time: 14 to 27 per byte of that document
+/// (docs/design.md, "Memory").
 const SCHEMA_BYTES: usize = 20;
 
 /// From this size, a JSON Lines file is split at newlines and its parts checked on the cores
@@ -200,24 +201,23 @@ pub fn run_with(
                 })
             },
         );
-        let outcome =
-            chunk
-                .iter()
-                .zip(checked)
-                .try_for_each(|((_, file), checked)| match checked {
-                    Ok((report, schema_errors)) => print_file(
-                        &shown(file),
-                        &report,
-                        &schema_errors,
-                        &mut printer,
-                        &mut counts,
-                    ),
-                    Err(message) => {
-                        counts.errors += 1;
-                        counts.files += 1;
-                        printer.unreadable(&shown(file), message)
-                    }
-                });
+        let outcome = chunk
+            .iter()
+            .zip(checked)
+            .try_for_each(|(((settings, _), file), checked)| match checked {
+                Ok((report, schema_errors)) => print_file(
+                    &shown(file),
+                    (&report, json5(settings, &shown(file))),
+                    &schema_errors,
+                    &mut printer,
+                    &mut counts,
+                ),
+                Err(message) => {
+                    counts.errors += 1;
+                    counts.files += 1;
+                    printer.unreadable(&shown(file), message)
+                }
+            });
         if outcome.is_err() {
             break outcome;
         }
@@ -633,16 +633,27 @@ fn check<'t>(
             Some(_) => config.max_depth(SCHEMA_MAX_DEPTH),
             None => config,
         };
-        let lines = parallel(
+        // Each line is a document of its own, and the error cap counts per document, so each
+        // part's schema errors are the ones a single pass finds in its lines.
+        let (lines, errors): (Vec<_>, Vec<_>) = parallel(
             &ranges,
             parts,
             || false,
-            |lines| jsonvet::parse_lines(text, lines.clone(), &config, schema.is_some()),
-        );
+            |lines| {
+                let mut lines =
+                    jsonvet::parse_lines(text, lines.clone(), &config, schema.is_some());
+                let errors = schema.zip(lines.take_events()).map(|(s, e)| s.errors(&e));
+                (lines, errors)
+            },
+        )
+        .into_iter()
+        .unzip();
         let (report, events) = jsonvet::join_lines(text, lines);
-        let errors = schema
-            .zip(events)
-            .map_or_else(Vec::new, |(schema, events)| schema.errors(&events));
+        // `events` is `None` after a syntax error in any part, so the file gets no schema errors.
+        let errors = match events {
+            Some(_) => errors.into_iter().flatten().flatten().collect(),
+            None => Vec::new(),
+        };
         return (report, errors);
     }
     match schema {
@@ -666,12 +677,18 @@ fn look(format: Format, color: Option<bool>, terminal: Terminal) -> Look {
     }
 }
 
+/// Whether `file`'s report counts U+2028 and U+2029 as line ends: only when it was checked as
+/// JSON5, as [`check`] does.
+fn json5(settings: &Settings, file: &OsStr) -> bool {
+    settings.config_for(&file.to_string_lossy()).dialect() == Dialect::Json5
+}
+
 /// Print one file's problems and schema errors, and add them to `counts`, each before it is
 /// printed, so a failed write still leaves the verdict. The file count is added last: only the
 /// summary reads it, and a failed write ends the run before the summary.
 fn print_file(
     file: &OsStr,
-    report: &Report<'_>,
+    (report, json5): (&Report<'_>, bool),
     schema_errors: &[(usize, String, bool)],
     printer: &mut Printer<impl Write>,
     counts: &mut Counts,
@@ -683,11 +700,11 @@ fn print_file(
             Severity::Warning => counts.warnings += 1,
             _ => {}
         }
-        printer.problem(file, report, problem)?;
+        printer.problem(file, report, json5, problem)?;
     }
     for (offset, message, summary) in schema_errors {
         counts.errors += usize::from(!summary);
-        printer.schema_error(file, report, *offset, message, *summary)?;
+        printer.schema_error(file, report, json5, *offset, message, *summary)?;
     }
     counts.files += usize::from(counts.errors + counts.warnings > before);
     Ok(())
@@ -932,11 +949,18 @@ mod tests {
 
     #[test]
     fn a_large_json_lines_file_checked_in_parts_reports_what_one_pass_does() {
-        // Problems in every part: duplicate keys, and strings the schema wants as integers.
+        // Problems in every part: duplicate keys, and strings the schema wants as integers. Every
+        // thousandth line has more schema errors than a document reports, and two in each
+        // thousand have values the schema cannot check.
         let pad = "x".repeat(500);
+        let wide: Vec<String> = (0..150).map(|k| format!("\"k{k}\": \"s\"")).collect();
+        let wide = format!("{{{}}}", wide.join(", "));
         let mut text = String::from("\u{FEFF}");
         for i in 0..4_000 {
             let _ = match i % 7 {
+                _ if i % 1_000 == 999 => writeln!(text, "{wide}"),
+                _ if i % 1_000 == 500 => writeln!(text, "{{\"a\": 1e400}}"),
+                _ if i % 1_000 == 501 => writeln!(text, r#"{{"\ud800": 1, "\ud801": 2}}"#),
                 0 => writeln!(text, "{{\"a\": {i}, \"a\": 1}}"),
                 1 => write!(text, "{{\"a\": \"{i}\", \"p\": \"{pad}\"}}\r\n"),
                 _ => writeln!(text, "{{\"a\": {i}, \"p\": \"{pad}\"}}"),
@@ -952,7 +976,11 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("jsonvet-split-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("a temporary directory");
         let path = dir.join("schema.json");
-        std::fs::write(&path, r#"{"properties": {"a": {"type": "integer"}}}"#).expect("written");
+        let schema = concat!(
+            r#"{"properties": {"a": {"type": "integer"}}, "#,
+            r#""patternProperties": {"^k": {"type": "integer"}}}"#,
+        );
+        std::fs::write(&path, schema).expect("written");
         let settings = Settings::default();
         let schema = Schema::load(&path, &settings, false).expect("a schema");
         let _ = std::fs::remove_dir_all(&dir);
@@ -966,7 +994,10 @@ mod tests {
             }
         }
         let (_, errors) = check("x.jsonl", &texts[0], &settings, Some(&schema), 8);
-        assert_eq!(errors.len(), 572);
+        // 570 strings, 100 and a summary for each wide line, and one for each line not checked.
+        assert_eq!(errors.len(), 570 + 4 * 101 + 8);
+        let unchecked = errors.iter().filter(|(_, m, _)| m.contains("not checked"));
+        assert_eq!(unchecked.count(), 8);
     }
 
     #[test]

@@ -191,14 +191,14 @@ mod tests {
         let text = r#"{"a": [1, {"b": 2}], "b\u00e9/~": "x", "a": "last"}"#;
         let (_, events) = jsonvet::parse(text, &Config::new(Dialect::Json));
         let events = events.unwrap_or_default();
-        let documents = documents(&events);
+        let documents: Vec<_> = documents(&events).collect();
         assert_eq!(documents[0].value, json!({"a": "last", "b\u{e9}/~": "x"}));
         let schema =
             json!({"properties": {"a": {"type": "integer"}, "b\u{e9}/~": {"type": "integer"}}});
         let validator = jsonschema::validator_for(&schema).expect("a schema");
         let errors: Vec<_> = validator
             .iter_errors(&documents[0].value)
-            .flat_map(|e| found(None, &documents[0].value, &e))
+            .flat_map(|e| found(None, &documents[0].value, &e, String::new))
             .collect();
         let paths: Vec<_> = errors.iter().map(|e| e.path.join("/")).collect();
         assert_eq!(paths, ["a", "b\u{e9}/~"]);

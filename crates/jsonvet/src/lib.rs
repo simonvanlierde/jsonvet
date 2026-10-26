@@ -110,6 +110,16 @@ pub struct Lines<'a> {
     syntax_error: bool,
 }
 
+impl<'a> Lines<'a> {
+    /// The events of these lines, taken out so [`join_lines`] does not copy them, or `None`
+    /// after a syntax error in them.
+    ///
+    /// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
+    pub fn take_events(&mut self) -> Option<Vec<Event<'a>>> {
+        (!self.syntax_error).then(|| std::mem::take(&mut self.events))
+    }
+}
+
 /// Check the `lines` of a JSON Lines `text`, one of its [`line_parts`], as [`parse`] would
 /// within the whole text, with or without `events`.
 ///
@@ -133,7 +143,7 @@ pub fn parse_lines<'a>(
 
 /// The report and events of a JSON Lines `text` from its [`line_parts`] checked in order, the
 /// same as [`parse`] gives for the whole text: problems end at the first syntax error, and there
-/// are no events after one.
+/// are no events after one. Events taken with [`Lines::take_events`] are left out.
 ///
 /// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
 #[doc(hidden)]
