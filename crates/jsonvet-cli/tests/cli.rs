@@ -1958,6 +1958,54 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
     }
 
     #[test]
+    fn a_quiet_schema_error_under_an_embedded_id_does_not_point_at_the_root() {
+        let schema = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "maxProperties": 9,
+  "properties": { "a": { "$ref": "https://ex.com/sub" } },
+  "$defs": { "s": { "$id": "https://ex.com/sub", "maxProperties": 1 } }
+}"#;
+        let dir = workdir(&[
+            ("s.json", schema),
+            ("a.json", r#"{"$schema":"./s.json","a":{"x":1,"y":2}}"#),
+            (
+                "b.json",
+                r#"{"$schema":"./s.json","b":1,"c":1,"d":1,"e":1,"f":1,"g":1,"h":1,"i":1,"j":1}"#,
+            ),
+        ]);
+        // The root's `maxProperties` is at 4:20, and `$.a` meets its limit.
+        let (code, out) = jsonvet(&dir, &["a.json"]);
+        assert_eq!(code, 1, "{out}");
+        assert!(!out.contains("s.json:4:20"), "{out}");
+        assert!(
+            out.contains("value fails \"maxProperties\" (the schema ./s.json) (at $.a)"),
+            "{out}"
+        );
+        let (code, out) = jsonvet(&dir, &["b.json"]);
+        assert_eq!(code, 1, "{out}");
+        assert!(
+            out.contains("value fails \"maxProperties\" (the schema ./s.json:4:20) (at $)"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn a_quiet_schema_property_named_like_a_keyword_still_has_places() {
+        let schema = "{\"properties\":{\"e\":{\"properties\":{\"enum\":{\"minimum\":7}}}}}";
+        let dir = workdir(&[
+            ("s.json", schema),
+            ("a.json", r#"{"$schema":"./s.json","e":{"enum":1}}"#),
+        ]);
+        let (code, out) = jsonvet(&dir, &["a.json"]);
+        assert_eq!(code, 1, "{out}");
+        assert!(
+            out.contains("value fails \"minimum\" (the schema ./s.json:1:53)"),
+            "{out}"
+        );
+    }
+
+    #[test]
     fn a_configured_schema_that_no_file_matches_is_still_read() {
         let dir = workdir(&[
             ("ok.json", "{}"),

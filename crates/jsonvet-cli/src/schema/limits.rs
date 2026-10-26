@@ -50,6 +50,13 @@ pub(super) fn registry(schema: &Value) -> Result<Registry<'_>, ReferencingError>
         .prepare()
 }
 
+/// The base URI jsonschema resolves `schema`'s root against, without a fragment.
+pub(super) fn base(schema: &Value) -> Option<String> {
+    let resource = ResourceRef::new(schema, Draft::default().detect(schema));
+    let uri = referencing::uri::from_str(resource.id().unwrap_or(DEFAULT_BASE)).ok()?;
+    uri.as_str().split('#').next().map(str::to_owned)
+}
+
 /// How deep and how big a schema gets when its `$ref`s are followed, resolved as jsonschema
 /// resolves them: against the base each `$id` sets. A `$ref` back to a schema on the way to it
 /// is recursion, which jsonschema handles: it adds nothing.

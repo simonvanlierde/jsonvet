@@ -99,6 +99,9 @@ pub(crate) struct Schema {
 struct Quiet {
     name: String,
     places: HashMap<String, (usize, usize)>,
+    /// The root's base URI without a fragment. A schema path is relative to the nearest `$id`,
+    /// so `places` holds only for errors whose keyword resolves against this.
+    base: Option<String>,
 }
 
 /// The keywords whose values a jsonschema error message can quote, and those whose members' can.
@@ -128,6 +131,16 @@ const QUOTED: [&str; 21] = [
 ];
 const QUOTED_MEMBERS: [&str; 2] = ["dependentRequired", "dependencies"];
 
+/// The keywords whose members are named by the schema's author, not keywords themselves.
+const NAMES: [&str; 6] = [
+    "properties",
+    "patternProperties",
+    "$defs",
+    "definitions",
+    "dependentSchemas",
+    "dependencies",
+];
+
 impl Quiet {
     /// The places of the keywords in [`QUOTED`] in `schema`, found in its `events`, with the
     /// line and column of each from `report`.
@@ -138,7 +151,7 @@ impl Quiet {
         report: &jsonvet::Report<'_>,
     ) -> Quiet {
         let mut targets = Vec::new();
-        quoted(schema, &mut Vec::new(), false, &mut targets);
+        quoted(schema, &mut Vec::new(), None, &mut targets);
         let places = place(events, &targets)
             .into_iter()
             .zip(targets)
@@ -155,6 +168,7 @@ impl Quiet {
         Quiet {
             name: name.to_owned(),
             places,
+            base: limits::base(schema),
         }
     }
 
@@ -213,7 +227,10 @@ impl Quiet {
             _ => Cow::Borrowed(path),
         };
         let name = &self.name;
-        match self.places.get(path.as_ref()) {
+        let at_root = error
+            .absolute_keyword_location()
+            .is_none_or(|uri| uri.as_str().split('#').next() == self.base.as_deref());
+        match self.places.get(path.as_ref()).filter(|_| at_root) {
             Some((line, column)) => {
                 format!("value fails \"{keyword}\" (the schema {name}:{line}:{column})")
             }
@@ -223,26 +240,24 @@ impl Quiet {
 }
 
 /// The paths in `schema`, under `path`, of the keywords in [`QUOTED`], and of the members of
-/// those in [`QUOTED_MEMBERS`] (`members`), as targets for [`place`].
+/// those in [`QUOTED_MEMBERS`], as targets for [`place`]. `parent` is the keyword `schema` is
+/// the value of, if any.
 fn quoted(
     schema: &Value,
     path: &mut Vec<String>,
-    members: bool,
+    parent: Option<&str>,
     targets: &mut Vec<(Vec<String>, Vec<String>)>,
 ) {
+    let members = parent.is_some_and(|parent| QUOTED_MEMBERS.contains(&parent));
+    let names = parent.is_some_and(|parent| NAMES.contains(&parent));
     for (key, member) in children(schema) {
         path.push(key.clone().into_owned());
-        if members || QUOTED.contains(&key.as_ref()) {
+        if members || (!names && QUOTED.contains(&key.as_ref())) {
             targets.push((path.clone(), Vec::new()));
         }
-        // An `enum` or `const` holds values, not schemas, and can be large.
-        if !["enum", "const"].contains(&key.as_ref()) {
-            quoted(
-                member,
-                path,
-                QUOTED_MEMBERS.contains(&key.as_ref()),
-                targets,
-            );
+        // An `enum` or `const` holds values, not schemas, and can be large. A name is no keyword.
+        if names || !["enum", "const"].contains(&key.as_ref()) {
+            quoted(member, path, (!names).then_some(key.as_ref()), targets);
         }
         path.pop();
     }
