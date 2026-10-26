@@ -23,7 +23,8 @@ repos:
           - id: ruff-check
           - id: ruff-format
 
-    # Security checks for the workflows, action.yml and this file, offline (no GitHub token).
+    # Security checks for the workflows, action.yml and this file. zizmor adds its online audits
+    # (ref-version-mismatch among them) when GH_TOKEN is set; CI runs it without one.
     - repo: https://github.com/zizmorcore/zizmor-pre-commit
       rev: v1.30.1
       hooks:
