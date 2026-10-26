@@ -301,7 +301,7 @@ impl Schema {
             return Err(at(problem.offset(), problem));
         }
         let events = events.unwrap_or_default();
-        let mut documents = documents(&events);
+        let mut documents: Vec<_> = documents(&events).collect();
         if documents.len() != 1 {
             return Err(format!("the schema {name} must hold one value"));
         }
