@@ -17,7 +17,7 @@ lint:
     cargo fmt --all --check
     cargo clippy --workspace --all-targets --locked -- -D warnings
     RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
-    cargo deny check
+    cargo deny check --hide-inclusion-graph
     prek run ruff-check ruff-format zizmor --all-files --show-diff-on-failure
     uv run scripts/check-versions.py
     just matrix-check

@@ -63,7 +63,7 @@ repos:
             stages: [pre-push]
           - id: cargo-deny
             name: cargo deny
-            entry: cargo deny check
+            entry: cargo deny check --hide-inclusion-graph
             language: system
             files: ^(Cargo\.(toml|lock)|deny\.toml|crates/[^/]+/Cargo\.toml)$
             pass_filenames: false
