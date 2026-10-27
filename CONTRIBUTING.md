@@ -19,7 +19,6 @@ Some checks need tools that `mise.toml` does not install:
 | --- | --- |
 | valgrind and gungraun-runner | `just counts` and `just scaling` (Linux only) |
 | wasm-bindgen-cli and wasm-opt | `just playground` |
-| node | the playground's tests |
 | docker | `just matrix` |
 | cargo-release | releasing |
 

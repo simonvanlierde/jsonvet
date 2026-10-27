@@ -48,15 +48,15 @@ A file or folder you name is always checked, even when an ignore file or `exclud
 
 ## Output
 
-Each problem is one line: `file:line:col: severity[rule] message`. On a terminal, each problem
-shows as a code frame instead, with its line of the file and any related place marked, and a last
-line counts them. pre-commit runs hooks under a terminal when its color is on, so a commit made
-from a terminal shows frames. CI, pre-commit.ci and pipes get one line per problem, and `| cat`
-forces lines.
+Each problem is one line: `file:line:col: severity[rule] message`. On a terminal, each problem shows
+as a code frame instead, with its line of the file and any related place marked, and a last line
+counts them. After 1,000 frames in a run, a line says so and the other problems show one line each.
+pre-commit runs hooks under a terminal when its color is on, so a commit made from a terminal shows
+frames. CI, pre-commit.ci and pipes get one line per problem, and `| cat` forces lines.
 
 Frames are in color unless `NO_COLOR` is set or you pass `--color never`. `--color always` or
-`FORCE_COLOR` also color the severity and rule of piped lines. `FORCE_COLOR` set to `0` or `false`
-counts as unset. `NO_COLOR` wins over `FORCE_COLOR`, and `--color` wins over both.
+`FORCE_COLOR` also color the severity and rule of piped lines. `FORCE_COLOR=0` or `false` turns
+color off, even on a terminal. `NO_COLOR` wins over `FORCE_COLOR`, and `--color` wins over both.
 
 - Lines and columns count from 1, and columns count Unicode code points. A byte order mark is
   column 1.
