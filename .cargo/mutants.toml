@@ -16,13 +16,13 @@ exclude_re = [
   "parse.rs:.* replace && with \\|\\| in Keys<'a>::first_or_insert",
   # Speed only: which column-count branch runs.
   "report.rs:\\d+:26: replace - with \\+ in Report<'a>::location",
-  "parse.rs:.* replace match guard self.invalid_code_point.is_on\\(\\) with true in Parser<'a>::string",
-  "parse.rs:.* replace match guard decode with true in Parser<'a>::string",
+  # With `decode` off, the extra value goes to an event sink that is absent, or to a key path
+  # that returns before it reads it.
+  "parse.rs:.* replace match guard decode with true in Parser<.*>::string",
   # OR of bits that never overlap.
   "parse.rs:.* replace \\| with \\^ in push_wtf8",
+  "parse.rs:.* replace \\| with \\^ in string_stops",
   "path.rs:.* replace \\| with \\^ in decode",
-  # A match arm the fallback repeats.
-  "parse.rs:.* delete match arm b'\\\\'' in Parser<'a>::escape",
   # A Windows-only branch.
   "sarif.rs:\\d+:45: replace == with != in uri",
   # Loop guards the body always stops first, and star backtracking that only retries more.
@@ -53,6 +53,15 @@ exclude_re = [
   "lib.rs:.* replace - with (\\+|/) in run_with",
   # Speed only: how many threads a split JSON Lines file uses, which gives the same report.
   "lib.rs:.* replace / with (%|\\*) in run_with",
+  # A related mark at the problem's own byte starts the excerpt at the same offset either way.
+  "frame.rs:\\d+:39: replace < with <= in render",
+  # `place` runs at every character boundary, so a later call sets the mark's start right; only
+  # a mark inside a multi-byte character, which jsonvet never makes, could differ. By line, as
+  # the same test for the mark's end shares the column.
+  "frame.rs:197:49: replace && with \\|\\| in Excerpt::snippet",
+  # Extra places only for keys whose errors never look a place up: only the keywords in QUOTED
+  # give errors that do.
+  "schema/mod.rs:.* replace && with \\|\\| in quoted",
   # Any other false schema is reported at its own value, which the comparison after the guard
   # turns away.
   "schema/mod.rs:.* replace match guard error .* with true in unexpected",
