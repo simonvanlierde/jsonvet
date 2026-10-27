@@ -559,9 +559,14 @@ impl<'e> Checking<'_, 'e> {
         }
     }
 
-    /// The errors, placed in a second walk over the file's events, which `walk` hands to its
-    /// argument in order. It is called only if there is an error to place.
-    fn errors(self, walk: impl FnOnce(&mut dyn FnMut(&Event<'e>))) -> Vec<(usize, String, bool)> {
+    /// The errors, placed in a second walk over the file's events. `walk` gets the event range
+    /// and offset of each document with errors, and hands its argument at least those
+    /// documents' events, in order, each with its index from the first walk. It is called only if
+    /// there is an error to place.
+    fn errors(
+        self,
+        walk: impl FnOnce(&[(Range<usize>, usize)], &mut dyn FnMut(usize, &Event<'e>)),
+    ) -> Vec<(usize, String, bool)> {
         let pending: Vec<(Range<usize>, &[Found])> = self
             .documents
             .iter()
@@ -570,12 +575,20 @@ impl<'e> Checking<'_, 'e> {
                 Checked::Unchecked(..) => None,
             })
             .collect();
+        let failing: Vec<(Range<usize>, usize)> = self
+            .documents
+            .iter()
+            .filter_map(|checked| match checked {
+                Checked::Found(events, offset, _) => Some((events.clone(), *offset)),
+                Checked::Unchecked(..) => None,
+            })
+            .collect();
         let mut spots = Vec::with_capacity(pending.len());
         // The place of the document the walk is in.
         let mut place: Option<Place<'e>> = None;
         if !pending.is_empty() {
-            let (mut i, mut next) = (0, 0);
-            walk(&mut |event| {
+            let mut next = 0;
+            walk(&failing, &mut |i, event| {
                 while pending.get(next).is_some_and(|(events, _)| events.end <= i) {
                     next += 1;
                 }
@@ -588,7 +601,6 @@ impl<'e> Checking<'_, 'e> {
                         place.event(event);
                     }
                 }
-                i += 1;
             });
         }
         // The walk reaches every document, so this is the last one's place.
@@ -753,11 +765,18 @@ impl Schema {
         self.check_with(
             |sink| jsonvet::parse_with(text, &config, sink),
             |report| report.problems().iter().any(|p| p.rule() == Rule::Syntax),
+            |_, sink| {
+                let mut i = 0;
+                jsonvet::parse_with(text, &config, &mut |event| {
+                    sink(i, &event);
+                    i += 1;
+                });
+            },
         )
     }
 
     /// The `lines` of a JSON Lines `text`, one part of a split file, checked as [`Schema::check`]
-    /// checks a whole text.
+    /// checks a whole text. Each line is a document, so only the lines with errors are read again.
     pub(crate) fn check_lines(
         &self,
         text: &str,
@@ -768,25 +787,50 @@ impl Schema {
         self.check_with(
             |sink| jsonvet::parse_lines(text, lines.clone(), &config, Some(sink)),
             jsonvet::Lines::syntax_error,
+            |failing, sink| {
+                // Documents with no events between them are read again as one range.
+                let mut documents = failing.iter().peekable();
+                while let Some((events, offset)) = documents.next() {
+                    let mut last = (events.end, *offset);
+                    while let Some((next, offset)) =
+                        documents.next_if(|(next, _)| next.start == last.0)
+                    {
+                        last = (next.end, *offset);
+                    }
+                    let start = text[..*offset].rfind('\n').map_or(0, |at| at + 1);
+                    let end = text[last.1..]
+                        .find('\n')
+                        .map_or(text.len(), |at| last.1 + at + 1);
+                    let mut i = events.start;
+                    jsonvet::parse_lines(
+                        text,
+                        start..end,
+                        &config,
+                        Some(&mut |event| {
+                            sink(i, &event);
+                            i += 1;
+                        }),
+                    );
+                }
+            },
         )
     }
 
     /// What `read` gives, checking each event it hands its sink, and the schema errors unless
-    /// `syntax_error` says it found one. `read` runs again only if there is an error to place.
+    /// `syntax_error` says it found one. `again` runs only if there is an error to place, as
+    /// [`Checking::errors`]' walk.
     fn check_with<'t, R>(
         &self,
-        read: impl Fn(&mut dyn FnMut(Event<'t>)) -> R,
+        read: impl FnOnce(&mut dyn FnMut(Event<'t>)) -> R,
         syntax_error: impl FnOnce(&R) -> bool,
+        again: impl FnOnce(&[(Range<usize>, usize)], &mut dyn FnMut(usize, &Event<'t>)),
     ) -> (R, Vec<(usize, String, bool)>) {
         let mut checking = self.checking();
         let first = read(&mut |event| checking.event(&event));
         if syntax_error(&first) {
             return (first, Vec::new());
         }
-        let errors = checking.errors(|sink| {
-            read(&mut |event| sink(&event));
-        });
-        (first, errors)
+        (first, checking.errors(again))
     }
 
     fn checking<'e>(&self) -> Checking<'_, 'e> {
