@@ -359,7 +359,7 @@ impl Over {
             ),
             Problem::Twice => format!(
                 "this `{key}` takes the schema past {MAX_SCHEMA_SIZE} objects and arrays, \
-                 counting twice the schemas beside it that jsonschema checks again for it"
+                 counting the schemas beside it twice, as jsonschema checks them again for it"
             ),
             Problem::Unresolved(error) => format!("this `{key}` cannot be resolved: {error}"),
         }

@@ -15,8 +15,9 @@ duplicate keys and the rules of each dialect.
 Usage: jsonvet [OPTIONS] [FILE]...
 
 A FILE of - reads standard input. A directory stands for the files under it with an extension
-or name jsonvet checks by default, skipping hidden files, what .gitignore and .ignore name, and
-the exclude setting. A file named on the command line is always checked.
+or name jsonvet checks by default. jsonvet skips hidden files there, and the files that
+.gitignore, .ignore and the exclude setting name. A file named on the command line is always
+checked.
 
 Options:
       --dialect DIALECT[:GLOB]  Check files matching GLOB (every file, without one) as DIALECT:
@@ -35,8 +36,8 @@ Options:
                                 docs/usage.md in the repository lists its fields).
       --color WHEN              Color text output: auto (the default), always or never. Auto
                                 colors it on a terminal, unless NO_COLOR is set; FORCE_COLOR
-                                colors it anywhere. On a terminal, each problem shows under
-                                its line of the file; elsewhere it stays one line.
+                                colors it anywhere. On a terminal, each problem also shows
+                                the line of the file it is on; elsewhere it stays one line.
       --schema FILE             Check each file against the JSON Schema in FILE, reported
                                 under the rule schema, instead of the schemas from settings
                                 or a file's own local $schema. Nothing is fetched. Limits:

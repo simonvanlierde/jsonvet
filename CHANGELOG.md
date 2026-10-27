@@ -68,6 +68,10 @@ Most users need no change. Check these if they apply to you:
   costs about 2% more time there. The output is the same.
 - Release tags are signed with the maintainer's key, from this release on. `git verify-tag v3.2.0`
   checks one, and GitHub shows it as verified.
+- Clearer wording in `--help` and in one message. A schema refused for its size under an
+  `unevaluated*` keyword now ends `counting the schemas beside it twice, as jsonschema checks them
+  again for it`, instead of `counting twice the schemas beside it that jsonschema checks again for
+  it`.
 
 ### Fixed
 

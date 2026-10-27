@@ -3217,7 +3217,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         assert!(
             err.ends_with(
                 "this `unevaluatedProperties` takes the schema past 5000000 objects and arrays, \
-                 counting twice the schemas beside it that jsonschema checks again for it\n"
+                 counting the schemas beside it twice, as jsonschema checks them again for it\n"
             ),
             "{err}"
         );
