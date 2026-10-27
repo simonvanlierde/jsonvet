@@ -265,6 +265,9 @@ fn positions_follow_json5_line_terminators() {
     // The parse the CLI uses for --schema places problems the same way.
     let (report, _) = jsonvet::parse("{a: 1,\u{2028} a: 2}", &Config::new(Json5));
     assert_eq!(report.location(report.problems()[0].offset()).line, 2);
+    // So does the streaming parse it uses for large files.
+    let report = jsonvet::parse_with("{a: 1,\u{2028} a: 2}", &Config::new(Json5), &mut |_| {});
+    assert_eq!(report.location(report.problems()[0].offset()).line, 2);
 }
 
 #[test]
