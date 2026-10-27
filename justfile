@@ -72,11 +72,12 @@ matrix-check:
 fuzz TARGET:
     cd fuzz && cargo +nightly fuzz run -O {{ TARGET }} -- -max_total_time=1200 -print_final_stats=1
 
-# Mutation testing over the crates in one go, which takes over an hour; mutants.yml splits it
-# into ten shards. The 8 GiB cap, as in mutants.yml, makes a mutant that allocates without end
-# fail its test instead of taking the machine's memory.
+# Mutation testing over the crates in one go, which takes over an hour on one CI runner;
+# mutants.yml splits it into ten shards. The 8 GiB cap, as in mutants.yml, makes a mutant that
+# allocates without end fail its test instead of taking the machine's memory. macOS refuses the
+# cap, so the run goes on without it there.
 mutants:
-    ulimit -v 8388608 && cargo mutants --workspace --no-shuffle
+    ulimit -v 8388608 2>/dev/null || echo "no memory cap on this system"; cargo mutants --workspace --no-shuffle
 
 # Time jsonvet against check-json5 1.4.1 (needs hyperfine).
 bench *ARGS:
