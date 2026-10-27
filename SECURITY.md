@@ -16,6 +16,9 @@ from such a schema, whether it cannot be used or a value fails it, quotes anythi
 ([0012](docs/decisions/0012-schema-paths-stay-in-the-project.md)). A way to read or show a file
 outside the project through one is a security bug too.
 
+[docs/assurance-case.md](docs/assurance-case.md) argues, claim by claim, how jsonvet meets
+these requirements.
+
 ## Known limits
 
 Two cases are known and still open, both in a schema jsonvet cannot check a part at a time
