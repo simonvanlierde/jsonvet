@@ -482,38 +482,32 @@ impl<'e> Checking<'_, 'e> {
     /// The errors, placed in a second walk over the file's events, which `walk` hands to its
     /// argument in order. It is called only if there is an error to place.
     fn errors(self, walk: impl FnOnce(&mut dyn FnMut(&Event<'e>))) -> Vec<(usize, String, bool)> {
-        let pending: Vec<(Range<usize>, &[Found])> = self
+        let mut pending: Vec<(Range<usize>, Place<'e>)> = self
             .documents
             .iter()
             .filter_map(|checked| match checked {
-                Checked::Found(events, _, found) => Some((events.clone(), &found.kept[..])),
+                Checked::Found(events, _, found) => Some((
+                    events.clone(),
+                    Place::new(place::found_targets(&found.kept)),
+                )),
                 Checked::Unchecked(..) => None,
             })
             .collect();
-        // Each document's errors are placed while the walk is in it, so one document's
-        // placing is held at a time, not every failing document's.
-        let mut spots = Vec::with_capacity(pending.len());
         if !pending.is_empty() {
             let (mut i, mut next) = (0, 0);
-            let mut open: Option<Place<'e>> = None;
             walk(&mut |event| {
-                if let Some((events, found)) = pending.get(next) {
-                    if i == events.start {
-                        open = Some(Place::new(place::found_targets(found)));
-                    }
-                    if let Some(place) = &mut open {
-                        place.event(event);
-                    }
-                    if i + 1 == events.end {
-                        spots.push(open.take().map_or_else(Vec::new, Place::finish));
-                        next += 1;
-                    }
+                while pending.get(next).is_some_and(|(events, _)| events.end <= i) {
+                    next += 1;
+                }
+                if let Some((events, place)) = pending.get_mut(next)
+                    && events.contains(&i)
+                {
+                    place.event(event);
                 }
                 i += 1;
             });
         }
-        drop(pending);
-        let mut spots = spots.into_iter();
+        let mut pending = pending.into_iter();
         let mut errors = Vec::new();
         for checked in self.documents {
             let (offset, found) = match checked {
@@ -527,7 +521,10 @@ impl<'e> Checking<'_, 'e> {
                 }
                 Checked::Found(_, offset, found) => (offset, found),
             };
-            let spots = place::found_spots(&found.kept, spots.next().unwrap_or_default());
+            let spots = pending
+                .next()
+                .map_or_else(Vec::new, |(_, place)| place.finish());
+            let spots = place::found_spots(&found.kept, spots);
             let mut placed: Vec<(usize, String, bool)> = found
                 .kept
                 .into_iter()
