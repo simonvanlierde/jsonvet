@@ -240,11 +240,11 @@ mod tests {
 
     /// The plain frame of each problem in `text`, checked as JSON5.
     fn frames(text: &str) -> String {
-        frames_in(text, Dialect::Json5)
+        frames_in(text, Dialect::Json5, &Renderer::plain())
     }
 
-    /// The plain frame of each problem in `text`, checked in `dialect`.
-    fn frames_in(text: &str, dialect: Dialect) -> String {
+    /// The frame of each problem in `text`, checked in `dialect`, drawn by `renderer`.
+    fn frames_in(text: &str, dialect: Dialect, renderer: &Renderer) -> String {
         let report = check(text, &Config::new(dialect));
         let mut out = String::new();
         for problem in report.problems() {
@@ -262,7 +262,7 @@ mod tests {
             let rule = problem.rule().id();
             let severity = problem.severity();
             out += &render(
-                &Renderer::plain(),
+                renderer,
                 "f",
                 severity,
                 rule,
@@ -321,7 +321,7 @@ mod tests {
     #[test]
     fn a_line_separator_ends_a_frame_line_only_in_json5() {
         let text = "{\"a\": \"x\u{2028}y\", \"a\": 2}\n";
-        let frame = frames_in(text, Dialect::Jsonc);
+        let frame = frames_in(text, Dialect::Jsonc, &Renderer::plain());
         assert!(frame.contains(" --> f:1:14\n"), "{frame}");
         let line = frame
             .lines()
@@ -400,7 +400,7 @@ mod tests {
             text in soup(),
             dialect in prop::sample::select(Dialect::ALL.to_vec()),
         ) {
-            let frame = frames_in(&text, dialect);
+            let frame = frames_in(&text, dialect, &Renderer::plain());
             let report = check(&text, &Config::new(dialect));
             for problem in report.problems() {
                 let at = report.location(problem.offset());
@@ -432,6 +432,32 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn one_char_spans_the_character_at_an_offset_and_nothing_at_a_line_break() {
+        let at = |text, dialect, offset| one_char(&check(text, &Config::new(dialect)), offset);
+        assert_eq!(at("aé", Dialect::Jsonc, 0), (0, 1));
+        // `é` is 2 bytes.
+        assert_eq!(at("aé", Dialect::Jsonc, 1), (1, 3));
+        assert_eq!(at("aé", Dialect::Jsonc, 3), (3, 3));
+        assert_eq!(at("a\nb", Dialect::Jsonc, 1), (1, 1));
+        assert_eq!(at("a\rb", Dialect::Jsonc, 1), (1, 1));
+        // U+2028 (3 bytes) ends a line only in JSON5.
+        assert_eq!(at("a\u{2028}b", Dialect::Json5, 1), (1, 1));
+        assert_eq!(at("a\u{2028}b", Dialect::Jsonc, 1), (1, 4));
+    }
+
+    #[test]
+    fn a_close_related_place_before_the_problem_keeps_its_own_context() {
+        // Both keys far into a long line, the related one first: the excerpt starts
+        // [`CONTEXT`] characters before it, not before the problem. A wide terminal keeps
+        // annotate-snippets from cutting the line itself.
+        let text = format!("[{}{{a: 1, a: 2}}]", "1, ".repeat(100));
+        let frame = frames_in(&text, Dialect::Json5, &Renderer::plain().term_width(1000));
+        let related = text.find("a: 1").expect("the first key");
+        let shown = &text[related - super::CONTEXT..];
+        assert!(frame.contains(&format!("1 | …{shown}\n")), "{frame}");
     }
 
     #[test]
