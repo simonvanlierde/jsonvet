@@ -367,14 +367,16 @@ proptest! {
             prop_assert_eq!(ranges.first().map(|r| r.start), Some(0));
             prop_assert_eq!(ranges.last().map(|r| r.end), Some(text.len()));
             prop_assert!(text.is_empty() || ranges.iter().all(|r| !r.is_empty()), "{:?}", ranges);
+            let mut joined = Vec::new();
+            let mut push = |event| joined.push(event);
             let lines = ranges
                 .into_iter()
-                .map(|lines| parse_lines(&text, lines, &config, events))
+                .map(|lines| parse_lines(&text, lines, &config, events.then_some(&mut push)))
                 .collect();
-            let (report, joined) = join_lines(&text, lines);
+            let (report, syntax_error) = join_lines(&text, lines);
             prop_assert_eq!(report.problems(), whole.problems(), "{} parts", parts);
             if events {
-                prop_assert_eq!(&joined, &whole_events, "{} parts", parts);
+                prop_assert_eq!(&(!syntax_error).then_some(joined), &whole_events, "{} parts", parts);
             }
         }
     }

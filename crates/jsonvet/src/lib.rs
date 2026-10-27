@@ -125,15 +125,14 @@ pub fn line_parts(text: &str, parts: usize) -> Vec<std::ops::Range<usize>> {
     ranges
 }
 
-/// The problems and events of some lines of a JSON Lines text, from [`parse_lines`].
+/// The problems of some lines of a JSON Lines text, from [`parse_lines`].
 #[doc(hidden)]
-pub struct Lines<'a> {
+pub struct Lines {
     problems: Vec<Problem>,
-    events: Vec<Event<'a>>,
     syntax_error: bool,
 }
 
-impl Lines<'_> {
+impl Lines {
     /// Whether these lines have a syntax error.
     ///
     /// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
@@ -143,7 +142,8 @@ impl Lines<'_> {
 }
 
 /// Check the `lines` of a JSON Lines `text`, one of its [`line_parts`], as [`parse`] would
-/// within the whole text, with or without `events`.
+/// within the whole text, and hand each of their values to `sink` as an event, in order, as it
+/// is read. Lines with a syntax error give the events before it.
 ///
 /// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
 #[doc(hidden)]
@@ -151,63 +151,32 @@ pub fn parse_lines<'a>(
     text: &'a str,
     lines: std::ops::Range<usize>,
     config: &Config,
-    events: bool,
-) -> Lines<'a> {
+    sink: Option<&mut dyn FnMut(Event<'a>)>,
+) -> Lines {
     debug_assert_eq!(config.dialect(), Dialect::JsonLines);
-    let (problems, events) = parse::check_lines(text, lines, config, events);
+    let problems = parse::walk(text, lines, config, sink);
     let syntax_error = problems.iter().any(|p| p.rule() == Rule::Syntax);
     Lines {
         problems,
-        events,
         syntax_error,
     }
 }
 
-/// Check the `lines` of a JSON Lines `text` as [`parse_lines`] does, and hand each of their
-/// values to `sink` as an event, in order, as it is read, instead of keeping them. Lines with a
-/// syntax error give the events before it.
+/// The report of a JSON Lines `text` from its [`line_parts`] checked in order, the same as
+/// [`parse`] gives for the whole text: problems end at the first syntax error. Also whether
+/// there is one, after which [`parse`] gives no events.
 ///
 /// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
 #[doc(hidden)]
-pub fn parse_lines_with<'a>(
-    text: &'a str,
-    lines: std::ops::Range<usize>,
-    config: &Config,
-    sink: &mut dyn FnMut(Event<'a>),
-) -> Lines<'a> {
-    debug_assert_eq!(config.dialect(), Dialect::JsonLines);
-    let problems = parse::walk(text, lines, config, Some(sink));
-    let syntax_error = problems.iter().any(|p| p.rule() == Rule::Syntax);
-    Lines {
-        problems,
-        events: Vec::new(),
-        syntax_error,
-    }
-}
-
-/// The report and events of a JSON Lines `text` from its [`line_parts`] checked in order, the
-/// same as [`parse`] gives for the whole text: problems end at the first syntax error, and there
-/// are no events after one. Parts from [`parse_lines_with`] add no events.
-///
-/// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
-#[doc(hidden)]
-pub fn join_lines<'a>(
-    text: &'a str,
-    parts: Vec<Lines<'a>>,
-) -> (Report<'a>, Option<Vec<Event<'a>>>) {
+pub fn join_lines(text: &str, parts: Vec<Lines>) -> (Report<'_>, bool) {
     let mut problems = Vec::new();
-    let mut events = Some(Vec::new());
     for mut part in parts {
         problems.append(&mut part.problems);
         if part.syntax_error {
-            events = None;
-            break;
-        }
-        if let Some(events) = &mut events {
-            events.append(&mut part.events);
+            return (Report::new(text, problems, false), true);
         }
     }
-    (Report::new(text, problems, false), events)
+    (Report::new(text, problems, false), false)
 }
 
 /// Guards on the public API: each example must fail to compile.

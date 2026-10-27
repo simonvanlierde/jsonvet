@@ -642,18 +642,19 @@ fn check<'t>(
             |lines| match schema {
                 Some(schema) => schema.check_lines(text, lines.clone(), &config),
                 None => (
-                    jsonvet::parse_lines(text, lines.clone(), &config, false),
+                    jsonvet::parse_lines(text, lines.clone(), &config, None),
                     Vec::new(),
                 ),
             },
         )
         .into_iter()
         .unzip();
-        let (report, events) = jsonvet::join_lines(text, lines);
-        // `events` is `None` after a syntax error in any part, so the file gets no schema errors.
-        let errors = match events {
-            Some(_) => errors.into_iter().flatten().collect(),
-            None => Vec::new(),
+        let (report, syntax_error) = jsonvet::join_lines(text, lines);
+        // A file with a syntax error in any part gets no schema errors.
+        let errors = if syntax_error {
+            Vec::new()
+        } else {
+            errors.into_iter().flatten().collect()
         };
         return (report, errors);
     }

@@ -234,12 +234,13 @@ fn json_lines_parts(bencher: Bencher, parts: usize) {
     let config = Config::new(Dialect::JsonLines);
     bencher.bench(|| {
         let text = black_box(text.as_str());
+        let mut events = 0;
         let lines = line_parts(text, parts)
             .into_iter()
-            .map(|range| parse_lines(text, range, &config, true))
+            .map(|range| parse_lines(text, range, &config, Some(&mut |_| events += 1)))
             .collect();
-        let (report, events) = join_lines(text, lines);
-        (report.problems().len(), events.map(|e| e.len()))
+        let (report, syntax_error) = join_lines(text, lines);
+        (report.problems().len(), syntax_error, events)
     });
 }
 

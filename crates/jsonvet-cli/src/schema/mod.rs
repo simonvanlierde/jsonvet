@@ -507,10 +507,10 @@ impl<'e> Checking<'_, 'e> {
             })
             .collect();
         let mut spots = Vec::with_capacity(pending.len());
-        // The place of the document at `opened`.
+        // The place of the document the walk is in.
         let mut place: Option<Place<'e>> = None;
         if !pending.is_empty() {
-            let (mut i, mut next, mut opened) = (0, 0, usize::MAX);
+            let (mut i, mut next) = (0, 0);
             walk(&mut |event| {
                 while pending.get(next).is_some_and(|(events, _)| events.end <= i) {
                     next += 1;
@@ -518,12 +518,10 @@ impl<'e> Checking<'_, 'e> {
                 if let Some((events, found)) = pending.get(next)
                     && events.contains(&i)
                 {
-                    match &mut place {
-                        Some(place) if opened == next => place.event(event),
-                        _ => {
-                            open(&mut place, found, &mut spots, event);
-                            opened = next;
-                        }
+                    if i == events.start {
+                        open(&mut place, found, &mut spots, event);
+                    } else if let Some(place) = &mut place {
+                        place.event(event);
                     }
                 }
                 i += 1;
@@ -532,7 +530,6 @@ impl<'e> Checking<'_, 'e> {
         // The walk reaches every document, so this is the last one's place.
         spots.extend(place.map(Place::finish));
         debug_assert_eq!(spots.len(), pending.len());
-        drop(pending);
         let mut spots = spots.into_iter();
         let mut errors = Vec::new();
         for checked in self.documents {
@@ -706,14 +703,14 @@ impl Schema {
 
     /// The `lines` of a JSON Lines `text`, one part of a split file, checked as [`Schema::check`]
     /// checks a whole text.
-    pub(crate) fn check_lines<'t>(
+    pub(crate) fn check_lines(
         &self,
-        text: &'t str,
+        text: &str,
         lines: Range<usize>,
         config: &Config,
-    ) -> (jsonvet::Lines<'t>, Vec<(usize, String, bool)>) {
+    ) -> (jsonvet::Lines, Vec<(usize, String, bool)>) {
         self.check_with(
-            |sink| jsonvet::parse_lines_with(text, lines.clone(), config, sink),
+            |sink| jsonvet::parse_lines(text, lines.clone(), config, Some(sink)),
             jsonvet::Lines::syntax_error,
         )
     }

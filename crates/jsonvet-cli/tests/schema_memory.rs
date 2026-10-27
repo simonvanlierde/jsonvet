@@ -84,10 +84,6 @@ fn peak(name: &str, schema: &str, lines: bool) -> (usize, Result<u8, String>, St
     (peak, code, String::from_utf8_lossy(&out).into_owned())
 }
 
-fn assert_under_bound(peak: usize) {
-    assert_under(peak, MAX_BYTES_PER_BYTE);
-}
-
 fn assert_under(peak: usize, per_byte: usize) {
     assert!(
         peak <= per_byte * FILE_BYTES,
@@ -103,7 +99,7 @@ fn schema_memory_stays_under_its_bound_on_a_valid_10_mb_file() {
         r#"{"type": "array", "minItems": 1, "items": {"type": "object", "required": ["x"]}}"#;
     let (peak, code, out) = peak("valid", schema, false);
     assert_eq!(code, Ok(0), "{out}");
-    assert_under_bound(peak);
+    assert_under(peak, MAX_BYTES_PER_BYTE);
 }
 
 /// An error sends jsonvet back over the file to place it.
@@ -113,7 +109,7 @@ fn schema_memory_stays_under_its_bound_placing_an_error_in_a_10_mb_file() {
     let (peak, code, out) = peak("error", schema, false);
     assert_eq!(code, Ok(1), "{out}");
     assert!(out.contains("(at $[7].x)"), "{out}");
-    assert_under_bound(peak);
+    assert_under(peak, MAX_BYTES_PER_BYTE);
 }
 
 /// A JSON Lines file this size is split across threads, one part per thread, and an error on

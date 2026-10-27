@@ -21,11 +21,13 @@ fuzz_target!(|text: &str| {
     let config = Config::new(Dialect::JsonLines);
     let (whole, events) = parse(text, &config);
     for parts in 2..=4 {
+        let mut joined = Vec::new();
         let lines = line_parts(text, parts)
             .into_iter()
-            .map(|lines| parse_lines(text, lines, &config, true))
+            .map(|lines| parse_lines(text, lines, &config, Some(&mut |e| joined.push(e))))
             .collect();
-        let (report, joined) = join_lines(text, lines);
+        let (report, syntax_error) = join_lines(text, lines);
+        let joined = (!syntax_error).then_some(joined);
         assert_eq!(report.problems(), whole.problems(), "{text:?} in {parts} parts");
         assert_eq!(joined, events, "{text:?} in {parts} parts");
     }

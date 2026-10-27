@@ -41,26 +41,16 @@ pub(crate) fn check<'a>(
     config: &Config,
     events: bool,
 ) -> (Vec<Problem>, Vec<Event<'a>>) {
-    check_lines(text, 0..text.len(), config, events)
-}
-
-/// Check the lines of a JSON Lines `text` in `lines`, which starts at a line's start and ends
-/// after a newline or at the end, as [`check`] would within the whole text: offsets count from
-/// the start of `text`, and a byte order mark counts only at its start.
-pub(crate) fn check_lines<'a>(
-    text: &'a str,
-    lines: std::ops::Range<usize>,
-    config: &Config,
-    events: bool,
-) -> (Vec<Problem>, Vec<Event<'a>>) {
     let mut list = Vec::new();
     let mut push = |event| list.push(event);
-    let problems = walk(text, lines, config, events.then_some(&mut push));
+    let problems = walk(text, 0..text.len(), config, events.then_some(&mut push));
     (problems, list)
 }
 
-/// Check the lines of `text` in `lines` as [`check_lines`] does, handing each value to `sink`
-/// as it is read, up to any syntax error, instead of listing them.
+/// Check the lines of `text` in `lines`, handing each value to `sink` as it is read, up to any
+/// syntax error. For JSON Lines, `lines` can start at any line's start and end after a newline
+/// or at the end, and the problems are those [`check`] finds there within the whole text:
+/// offsets count from the start of `text`, and a byte order mark counts only at its start.
 pub(crate) fn walk<'a>(
     text: &'a str,
     lines: std::ops::Range<usize>,
