@@ -36,6 +36,16 @@ fn no_hang(start: std::time::Instant) {
     assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
 }
 
+/// A command for `bin` without the caller's `NO_COLOR`, `FORCE_COLOR` and `GITHUB_ACTIONS`,
+/// which change how its output looks. A test that wants one sets it again.
+fn command(bin: &str) -> Command {
+    let mut command = Command::new(bin);
+    for var in ["NO_COLOR", "FORCE_COLOR", "GITHUB_ACTIONS"] {
+        command.env_remove(var);
+    }
+    command
+}
+
 /// Run jsonvet in `dir`; return its exit code and standard output.
 fn jsonvet(dir: &Path, args: &[&str]) -> (i32, String) {
     let (code, out, _) = jsonvet_stderr(dir, args);
@@ -121,12 +131,10 @@ fn github_annotations_follow_each_problem() {
         ("dup.json", "{\"a\":1,\"a\":2}"),
     ]);
     let run = |actions: &str| {
-        let out = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
+        let out = command(env!("CARGO_BIN_EXE_jsonvet"))
             .args(["--dialect=json:*.json", "bom.json", "dup.json"])
             .current_dir(&dir)
             .env("GITHUB_ACTIONS", actions)
-            .env_remove("NO_COLOR")
-            .env_remove("FORCE_COLOR")
             .output()
             .expect("run jsonvet");
         String::from_utf8(out.stdout).expect("UTF-8 output")
@@ -225,10 +233,9 @@ fn a_closed_pipe_keeps_the_verdict() {
     // About 216 KB of output, far more than a pipe holds, so jsonvet blocks writing until the
     // reader closes. The command line stays near 27,000 characters, under Windows' 32,767.
     let files = vec!["bad.json"; 3000];
-    let mut child = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
+    let mut child = command(env!("CARGO_BIN_EXE_jsonvet"))
         .args(&files)
         .current_dir(&dir)
-        .env_remove("GITHUB_ACTIONS")
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
@@ -246,7 +253,7 @@ fn help_into_a_closed_pipe_succeeds() {
     for flag in ["--help", "--version"] {
         let (reader, writer) = std::io::pipe().expect("a pipe");
         drop(reader);
-        let out = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
+        let out = command(env!("CARGO_BIN_EXE_jsonvet"))
             .arg(flag)
             .stdout(writer)
             .output()
@@ -273,10 +280,9 @@ fn help_version_and_the_check_json5_name() {
             "{flag}"
         );
     }
-    let out = Command::new(env!("CARGO_BIN_EXE_check-json5"))
+    let out = command(env!("CARGO_BIN_EXE_check-json5"))
         .arg("dup.json")
         .current_dir(&dir)
-        .env_remove("GITHUB_ACTIONS")
         .output()
         .expect("run check-json5");
     assert_eq!(out.status.code(), Some(1));
@@ -304,10 +310,9 @@ fn only_regular_files_are_read() {
         .status()
         .expect("run mkfifo");
     assert!(fifo.success());
-    let mut child = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
+    let mut child = command(env!("CARGO_BIN_EXE_jsonvet"))
         .args(["zero.json", "fifo.json", "link.json"])
         .current_dir(&dir)
-        .env_remove("GITHUB_ACTIONS")
         .stdout(std::process::Stdio::piped())
         .spawn()
         .expect("run jsonvet");
@@ -767,14 +772,11 @@ fn color_forced_off_a_terminal_keeps_one_line_per_problem() {
         ("ok.json", "{}"),
     ]);
     let run = |args: &[&str], vars: &[(&str, &str)]| {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_jsonvet"));
+        let mut command = command(env!("CARGO_BIN_EXE_jsonvet"));
         command
             .args(args)
             .args(["dup.json", "open.json", "ok.json", "gone.json"])
             .current_dir(&dir)
-            .env_remove("GITHUB_ACTIONS")
-            .env_remove("NO_COLOR")
-            .env_remove("FORCE_COLOR")
             .envs(vars.iter().copied());
         let out = command.output().expect("run jsonvet");
         assert_eq!(out.status.code(), Some(1), "{args:?} {vars:?}");
@@ -1099,10 +1101,9 @@ fn a_failed_write_is_an_error() {
     let dir = workdir(&[("bad.json", "[1,")]);
     for args in [&["bad.json"][..], &["--version"]] {
         let full = fs::File::create("/dev/full").expect("open /dev/full");
-        let out = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
+        let out = command(env!("CARGO_BIN_EXE_jsonvet"))
             .args(args)
             .current_dir(&dir)
-            .env_remove("GITHUB_ACTIONS")
             .stdout(full)
             .output()
             .expect("run jsonvet");
@@ -1135,12 +1136,9 @@ fn a_file_that_cannot_be_read_says_why() {
 fn jsonvet_stdin(dir: &Path, args: &[&str], input: &str) -> (i32, String, String) {
     use std::io::Write as _;
     use std::process::Stdio;
-    let mut child = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
+    let mut child = command(env!("CARGO_BIN_EXE_jsonvet"))
         .args(args)
         .current_dir(dir)
-        .env_remove("GITHUB_ACTIONS")
-        .env_remove("NO_COLOR")
-        .env_remove("FORCE_COLOR")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -1289,17 +1287,10 @@ fn jsonvet_stderr(dir: &Path, args: &[&str]) -> (i32, String, String) {
 /// Run jsonvet in `dir`, as in GitHub Actions when `annotate` is set; return its exit code,
 /// stdout and stderr.
 fn run_jsonvet(dir: &Path, args: &[impl AsRef<OsStr>], annotate: bool) -> (i32, String, String) {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_jsonvet"));
-    // Either would change how text output looks.
-    command
-        .args(args)
-        .current_dir(dir)
-        .env_remove("NO_COLOR")
-        .env_remove("FORCE_COLOR");
+    let mut command = command(env!("CARGO_BIN_EXE_jsonvet"));
+    command.args(args).current_dir(dir);
     if annotate {
         command.env("GITHUB_ACTIONS", "true");
-    } else {
-        command.env_remove("GITHUB_ACTIONS");
     }
     let out = command.output().expect("run jsonvet");
     (
@@ -3073,12 +3064,11 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
             ),
             ("deep.json", &text),
         ]);
-        let out = Command::new("sh")
+        let out = command("sh")
             .arg("-c")
             .arg("ulimit -s 256 && exec \"$0\" --schema schema.json deep.json")
             .arg(env!("CARGO_BIN_EXE_jsonvet"))
             .current_dir(&dir)
-            .env_remove("GITHUB_ACTIONS")
             .output()
             .expect("run jsonvet");
         let stdout = String::from_utf8_lossy(&out.stdout);
@@ -3100,12 +3090,11 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
             ("schema.json", r#"{"items": {"type": "string"}}"#),
             ("many.json", &text),
         ]);
-        let out = Command::new("sh")
+        let out = command("sh")
             .arg("-c")
             .arg("ulimit -v 300000 && exec \"$0\" --schema schema.json many.json")
             .arg(env!("CARGO_BIN_EXE_jsonvet"))
             .current_dir(&dir)
-            .env_remove("GITHUB_ACTIONS")
             .output()
             .expect("run jsonvet");
         let stdout = String::from_utf8_lossy(&out.stdout);
@@ -3138,14 +3127,13 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
     /// Run jsonvet under `ulimit -v` (in KB) on `file` with `--schema schema.json`.
     #[cfg(target_os = "linux")]
     fn capped(dir: &Path, kilobytes: usize, file: &str) -> (Option<i32>, String) {
-        let out = Command::new("sh")
+        let out = command("sh")
             .arg("-c")
             .arg(format!(
                 "ulimit -v {kilobytes} && exec \"$0\" --schema schema.json {file}"
             ))
             .arg(env!("CARGO_BIN_EXE_jsonvet"))
             .current_dir(dir)
-            .env_remove("GITHUB_ACTIONS")
             .output()
             .expect("run jsonvet");
         (
@@ -3667,15 +3655,14 @@ mod file_reads {
     use std::process::{Command, Stdio};
     use std::time::{Duration, Instant};
 
-    use super::workdir;
+    use super::{command, workdir};
 
     /// Run jsonvet in `dir` with `XDG_CONFIG_HOME` and `APPDATA` set to `user`, and kill it
     /// after 10 seconds; return its exit code, stdout and stderr.
     fn run(dir: &Path, user: &Path, args: &[&str]) -> (i32, String, String) {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
+        let mut child = command(env!("CARGO_BIN_EXE_jsonvet"))
             .args(args)
             .current_dir(dir)
-            .env_remove("GITHUB_ACTIONS")
             .env("XDG_CONFIG_HOME", user)
             .env("APPDATA", user)
             .stdout(Stdio::piped())

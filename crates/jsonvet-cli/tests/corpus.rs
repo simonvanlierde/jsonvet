@@ -46,6 +46,8 @@ fn corpus() {
                 .args(["--no-config", "--dialect", &dialect, &file])
                 .current_dir(&root)
                 .env_remove("GITHUB_ACTIONS")
+                .env_remove("NO_COLOR")
+                .env_remove("FORCE_COLOR")
                 .output()
                 .expect("run jsonvet");
             let code = run.status.code().expect("an exit code");
