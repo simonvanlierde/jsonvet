@@ -73,6 +73,14 @@ impl<'a> Report<'a> {
         &self.problems
     }
 
+    /// Whether `c` ends a line, as [`location`](Self::location) counts lines: LF and CR, and
+    /// U+2028 and U+2029 only in JSON5. Public only for the CLI's code frames, so they cut lines
+    /// where the report counts them; not part of the crate's API.
+    #[doc(hidden)]
+    pub fn ends_line(&self, c: char) -> bool {
+        matches!(c, '\n' | '\r') || (self.json5 && matches!(c, '\u{2028}' | '\u{2029}'))
+    }
+
     /// True when no problem is an error.
     pub fn passed(&self) -> bool {
         self.problems.iter().all(|p| p.severity() < Severity::Error)

@@ -79,13 +79,11 @@ pub(crate) struct Look {
     pub(crate) color: bool,
 }
 
-/// Where a problem is in its file: the text, whether U+2028 and U+2029 end its lines (JSON5),
-/// what a code frame marks, and where the problem ends, for SARIF and annotations, when it ends
+/// Where a problem is in its file: the file's report, what a code frame marks, and where the problem ends, for SARIF and annotations, when it ends
 /// past its start.
 #[derive(Clone, Copy)]
 struct Place<'t> {
-    text: &'t str,
-    json5: bool,
+    report: &'t Report<'t>,
     mark: Mark<'t>,
     end: Option<Location>,
 }
@@ -138,15 +136,13 @@ impl<W: Write> Printer<W> {
         Printer { out, sink }
     }
 
-    /// A problem in a file's contents, checked as JSON5 if `json5`.
+    /// A problem in a file's contents.
     pub(crate) fn problem(
         &mut self,
         file: &OsStr,
         report: &Report<'_>,
-        json5: bool,
         problem: &Problem,
     ) -> io::Result<()> {
-        let text = report.text();
         let (offset, end) = (problem.offset(), problem.end());
         let mut message = problem.to_string();
         let title = message.len();
@@ -162,13 +158,12 @@ impl<W: Write> Printer<W> {
             let _ = write!(message, " ({what} {}:{})", at.line, at.column);
             Mark {
                 at,
-                span: frame::one_char(text, json5, related.offset),
+                span: frame::one_char(report, related.offset),
                 label: Some(label),
             }
         });
         let place = Place {
-            text,
-            json5,
+            report,
             mark: Mark {
                 at: report.location(offset),
                 span: (offset, end),
@@ -187,13 +182,11 @@ impl<W: Write> Printer<W> {
     }
 
     /// A value the `--schema` schema rejects, at `offset`. A `summary` of the errors not listed
-    /// is left out of SARIF and JSON, where each result is one finding. `json5` as for
-    /// [`Printer::problem`].
+    /// is left out of SARIF and JSON, where each result is one finding.
     pub(crate) fn schema_error(
         &mut self,
         file: &OsStr,
         report: &Report<'_>,
-        json5: bool,
         offset: usize,
         message: &str,
         summary: bool,
@@ -201,13 +194,11 @@ impl<W: Write> Printer<W> {
         if summary && !matches!(self.sink, Sink::Text { .. }) {
             return Ok(());
         }
-        let text = report.text();
         let place = Place {
-            text,
-            json5,
+            report,
             mark: Mark {
                 at: report.location(offset),
-                span: frame::one_char(text, json5, offset),
+                span: frame::one_char(report, offset),
                 label: None,
             },
             end: None,
@@ -293,17 +284,13 @@ impl<W: Write> Printer<W> {
         // Escaped once, for the line and the annotation alike.
         let message = &printable(message);
         if let Some(renderer) = frames {
-            let text = place.map_or("", |p| p.text);
-            let primary = place.map(|p| p.mark);
             let frame = frame::render(
                 renderer,
-                text,
-                place.is_some_and(|p| p.json5),
                 file,
                 severity,
                 rule,
                 frame_title,
-                primary,
+                place.map(|p| (p.report, p.mark)),
                 related,
             );
             // A blank line after each frame keeps one problem apart from the next.
@@ -411,7 +398,7 @@ mod tests {
             let report = check(text, &Config::new(Dialect::Json));
             for problem in report.problems() {
                 printer
-                    .problem(OsStr::new(file), &report, false, problem)
+                    .problem(OsStr::new(file), &report, problem)
                     .expect("a write to memory");
             }
         }
