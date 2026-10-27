@@ -1,5 +1,5 @@
 //! Wall-clock benchmarks of the library with divan, which `.github/workflows/codspeed.yml` runs
-//! under `CodSpeed` on every pull request: `check` in every dialect, `parse` with its events, the
+//! under `CodSpeed` on every pull request: `check` in every dialect, `parse` with its events, `parse_with` and its sink, the
 //! JSON Lines split that jsonvet-cli runs on threads, and line and column lookups. Run them with
 //! `cargo bench -p jsonvet --bench codspeed`, or as CI does with `cargo codspeed build -p jsonvet
 //! --bench codspeed` and then `cargo codspeed run -p jsonvet`.
@@ -203,7 +203,7 @@ mod check_dialect {
     }
 }
 
-/// `parse`, which also builds the events that `--schema` checks.
+/// `parse`, which also collects the events into a `Vec`.
 mod parse_events {
     use super::{Bencher, Config, Dialect, black_box, parse};
 
@@ -212,6 +212,33 @@ mod parse_events {
         bencher.bench(|| {
             let (report, events) = parse(black_box(text), black_box(&config));
             (report.problems().len(), events.map(|e| e.len()))
+        });
+    }
+
+    #[divan::bench]
+    fn json(bencher: Bencher) {
+        run(bencher, &super::document(), Dialect::Json);
+    }
+
+    #[divan::bench]
+    fn json5(bencher: Bencher) {
+        run(bencher, &super::json5_document(), Dialect::Json5);
+    }
+}
+
+/// `parse_with`, which hands each event to a sink as it goes: what `--schema` runs on. The sink
+/// only counts, so this measures the parse and the call per event, not what a caller does with it.
+mod parse_with {
+    use super::{Bencher, Config, Dialect, black_box};
+
+    fn run(bencher: Bencher, text: &str, dialect: Dialect) {
+        let config = Config::new(dialect);
+        bencher.bench(|| {
+            let mut events = 0_usize;
+            let report = jsonvet::parse_with(black_box(text), black_box(&config), &mut |_| {
+                events += 1;
+            });
+            (report.problems().len(), events)
         });
     }
 
