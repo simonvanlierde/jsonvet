@@ -1046,7 +1046,7 @@ mod tests {
         assert!(
             other
                 .lines()
-                .any(|l| l.starts_with("1 | {") && l.ends_with("y\", \"a\": 2}")),
+                .any(|l| l.starts_with("1 | {\"a\": \"x\u{FFFD}y\", \"a\": 2}")),
             "{other}"
         );
         let _ = std::fs::remove_dir_all(&dir);
