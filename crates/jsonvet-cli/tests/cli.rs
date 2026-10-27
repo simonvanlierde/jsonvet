@@ -1772,6 +1772,32 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         }
     }
 
+    /// A config file's schema is named in errors by its path from the working directory, as a
+    /// `$schema` is, so the output is the same on every machine.
+    #[test]
+    fn a_config_schema_is_named_from_the_working_directory() {
+        let config =
+            |schema| format!("schemas = [{{ files = \"*.json\", schema = \"{schema}\" }}]\n");
+        let dir = workdir(&[
+            ("jsonvet.toml", &config("s.json")),
+            ("s.json", "{\"enum\": [1]}"),
+            ("a.json", "2"),
+            ("sub/jsonvet.toml", &config("../s.json")),
+            ("sub/b.json", "2"),
+        ]);
+        let sub = format!("sub{}../s.json", std::path::MAIN_SEPARATOR);
+        for (file, name) in [("a.json", "s.json"), ("sub/b.json", sub.as_str())] {
+            let (code, out) = jsonvet(&dir, &[file]);
+            assert_eq!(code, 1, "{out}");
+            assert_eq!(
+                out,
+                format!(
+                    "{file}:1:1: error[schema] value fails \"enum\" (the schema {name}:1:10) (at $)\n"
+                )
+            );
+        }
+    }
+
     /// A file outside the test's project, holding `TOPSECRET` where an error would quote it.
     fn outside(dir: &Path, name: &str, text: &str) -> PathBuf {
         let folder = dir.with_extension("outside");

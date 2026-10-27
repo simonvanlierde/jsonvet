@@ -88,7 +88,9 @@ pub(crate) struct Settings {
 #[derive(Clone, Debug)]
 pub(crate) struct SchemaPattern {
     pub(crate) files: Glob,
-    /// The schema file, as the config file's own folder joined with the path it gives.
+    /// The schema file, as the config file's own folder joined with the path it gives, relative
+    /// to the working directory when the folder is in it, as a `$schema` is: its errors name it
+    /// by this, so they read the same on every machine.
     pub(crate) schema: PathBuf,
     /// The absolute directory `files` is relative to, normalized, as for [`DialectPattern`].
     pub(crate) base: String,
@@ -199,9 +201,8 @@ impl<'p> Located<'p> {
 /// gives. The working directory is asked for once rather than for each path: jsonvet never
 /// changes it.
 fn absolute(path: &str) -> Option<String> {
-    static CWD: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
     let path = Path::new(path);
-    let absolute = match CWD.get_or_init(|| std::env::current_dir().ok()) {
+    let absolute = match cwd() {
         Some(cwd) if path.is_relative() && !path.as_os_str().is_empty() => {
             std::path::absolute(cwd.join(path))
         }
@@ -210,6 +211,12 @@ fn absolute(path: &str) -> Option<String> {
     absolute
         .ok()
         .map(|absolute| glob::normalize(&absolute.to_string_lossy()))
+}
+
+/// The working directory, asked for once: jsonvet never changes it.
+fn cwd() -> Option<&'static PathBuf> {
+    static CWD: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    CWD.get_or_init(|| std::env::current_dir().ok()).as_ref()
 }
 
 /// The settings for each file: the nearest config file above it, or the one `--config` names,
@@ -632,6 +639,9 @@ fn schema_entry(
     if let Some(root) = root {
         confined(schema, folder, root).map_err(|e| (schema_at, e))?;
     }
+    let folder = cwd()
+        .and_then(|cwd| folder.strip_prefix(cwd).ok())
+        .unwrap_or(folder);
     Ok(Some(SchemaPattern {
         files: Glob::new(files),
         schema: folder.join(schema),
