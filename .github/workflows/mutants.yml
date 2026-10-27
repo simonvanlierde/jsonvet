@@ -40,7 +40,10 @@ jobs:
       - name: cargo mutants
         env:
           SHARD: ${{ matrix.shard }}
+        # A mutant that allocates without end must fail its test, not take the runner's 16 GB and
+        # lose the job: each process gets 8 GiB of address space.
         run: |
+          ulimit -v 8388608
           cargo mutants --workspace --no-shuffle --shard "$SHARD/10" --sharding round-robin || [ $? -eq 3 ]
           test ! -s mutants.out/missed.txt
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
