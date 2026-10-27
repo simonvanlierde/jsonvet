@@ -93,14 +93,21 @@ pub(crate) struct Printer<W: Write> {
     sink: Sink,
 }
 
+/// How many code frames one run draws before the rest of its problems show as lines. A frame
+/// costs about 24 µs, against about 1 µs for a line, so 1,000 take about 25 ms and some 10,000
+/// lines of terminal, more than anyone reads; past that, frames only slow the run (320,000
+/// problems took 7.6 s framed).
+pub(crate) const MAX_FRAMES: usize = 1_000;
+
 /// What each format keeps while the run goes on.
 enum Sink {
     /// With `annotate`, each problem is also a GitHub Actions annotation. With a renderer, each
-    /// problem is a code frame instead of a line. With `color`, a line shows its severity and
-    /// rule in color.
+    /// problem is a code frame instead of a line, up to [`MAX_FRAMES`], counted in `framed`.
+    /// With `color`, a line shows its severity and rule in color.
     Text {
         annotate: bool,
         frames: Option<Renderer>,
+        framed: usize,
         color: bool,
     },
     /// The results, held until `finish` writes the document, and how many past
@@ -125,6 +132,7 @@ impl<W: Write> Printer<W> {
                         Renderer::plain()
                     }
                 }),
+                framed: 0,
                 color: look.color,
             },
             Format::Sarif => Sink::Sarif {
@@ -277,8 +285,20 @@ impl<W: Write> Printer<W> {
             Sink::Text {
                 annotate,
                 frames,
+                framed,
                 color,
-            } => (*annotate, frames.as_ref(), *color),
+            } => {
+                if frames.is_some() && *framed == MAX_FRAMES {
+                    *frames = None;
+                    writeln!(
+                        self.out,
+                        "jsonvet: {MAX_FRAMES} problems shown with their lines; the rest show \
+                         one line each, which is much faster\n"
+                    )?;
+                }
+                *framed += 1;
+                (*annotate, frames.as_ref(), *color)
+            }
         };
         let file = &file.to_string_lossy();
         // Escaped once, for the line and the annotation alike.
@@ -375,7 +395,7 @@ mod tests {
 
     use jsonvet::{Config, Dialect, check};
 
-    use super::{Format, Look, Printer, escape, line_start, printable};
+    use super::{Format, Look, MAX_FRAMES, Printer, escape, line_start, printable};
 
     /// On a terminal in color, each problem is a code frame, with the same color codes on every
     /// platform.
@@ -407,6 +427,44 @@ mod tests {
             .expect("a write to memory");
         let out = String::from_utf8(out).expect("UTF-8");
         insta::assert_snapshot!(out.replace('\u{1b}', "␛"));
+    }
+
+    /// Past [`MAX_FRAMES`] code frames in a run, problems show one line each, after a line that
+    /// says so.
+    #[test]
+    fn code_frames_stop_after_the_cap() {
+        let mut out = Vec::new();
+        let look = Look {
+            frames: true,
+            color: false,
+        };
+        let mut printer = Printer::new(&mut out, Format::Text, false, look);
+        // MAX_FRAMES + 1 duplicate keys, over two files: the cap is per run, not per file.
+        for text in [
+            format!("{{{}}}", vec!["\"a\": 1"; MAX_FRAMES].join(",")),
+            "{\"a\": 1, \"a\": 2, \"a\": 3}".to_owned(),
+        ] {
+            let report = check(&text, &Config::new(Dialect::Json));
+            for problem in report.problems() {
+                printer
+                    .problem(OsStr::new("dup.json"), &report, problem)
+                    .expect("a write to memory");
+            }
+        }
+        let out = String::from_utf8(out).expect("UTF-8");
+        let frames = out.matches("\nerror[duplicate-key]: ").count() + 1;
+        assert_eq!(frames, MAX_FRAMES, "{out}");
+        let (_, rest) = out
+            .split_once(&format!(
+                "jsonvet: {MAX_FRAMES} problems shown with their lines; the rest show one line each"
+            ))
+            .expect("the line saying frames stopped");
+        let lines: Vec<&str> = rest.lines().skip(2).collect();
+        assert_eq!(
+            lines,
+            ["dup.json:1:18: error[duplicate-key] duplicate key $.a (first at 1:2)"],
+            "{rest}"
+        );
     }
 
     #[test]
