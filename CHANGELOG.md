@@ -36,7 +36,8 @@ Most users need no change. Check these if they apply to you:
   `Report::text()` gives the text a report is about.
 - A playground at <https://simonvanlierde.github.io/jsonvet/>. Paste text, pick a dialect, and see
   each problem with its line, column and rule as you type. It runs jsonvet in your browser as
-  WebAssembly, so the text never leaves your machine. It has no `--schema` checks.
+  WebAssembly, so the text never leaves your machine. It has no `--schema` checks. The page
+  sets a Content Security Policy that lets it load scripts only from its own site.
 
 ### Changed
 

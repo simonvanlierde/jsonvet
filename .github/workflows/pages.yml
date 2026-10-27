@@ -72,7 +72,8 @@ jobs:
           tar --extract --gzip --file binaryen.tar.gz --strip-components=1 "binaryen-${BINARYEN}/bin/wasm-opt"
           bin/wasm-opt -Oz --output playground/pkg/jsonvet_wasm_bg.wasm playground/pkg/jsonvet_wasm_bg.wasm
           rm -r binaryen.tar.gz bin
-      # Load the built module and check one text, which the build alone does not do.
+      # Load the built module and check one text, which the build alone does not do. Then check the
+      # page keeps its CSP and loads its script from a file.
       - name: Smoke test the wasm
         run: |
           node --input-type=module <<'EOF'
@@ -82,6 +83,16 @@ jobs:
           const problems = JSON.parse(check('{"a":1,"a":2}', "json5"));
           if (problems.length !== 1 || problems[0].line !== 1) {
             console.error(problems);
+            process.exit(1);
+          }
+          // The CSP allows no inline script, so a script left in the page would not run.
+          const page = readFileSync("playground/index.html", "utf8");
+          if (!/<meta http-equiv="Content-Security-Policy" content="[^"]*script-src 'self'/.test(page)) {
+            console.error("playground/index.html has no Content-Security-Policy meta tag");
+            process.exit(1);
+          }
+          if (/<script(?![^>]*\ssrc=)[^>]*>/.test(page)) {
+            console.error("playground/index.html has an inline script");
             process.exit(1);
           }
           EOF
