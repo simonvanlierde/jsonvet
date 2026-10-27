@@ -439,8 +439,10 @@ one exists is in [design.md](design.md#--schema).
   lone surrogates such as `"\ud800"`, since both become U+FFFD. In the schema file, either one is
   a usage error.
 - **Memory.** jsonvet holds each document's values in memory: 4 to 22 times its size, the most for
-  many small records. A JSON Lines file holds one line's values at a time. Without a schema, memory
-  stays near the file's size. A top-level array that fails everywhere takes no more than a valid
+  many small records. A JSON Lines file holds one line's values at a time, but one of 1 MB or more
+  is checked in parts on several threads, and each part also keeps its parser events: about 12
+  times the file's size for 36 MB of small records. Without a schema, memory stays near the
+  file's size. A top-level array that fails everywhere takes no more than a valid
   one when only `items` checks its elements, as in
   `{"type": "array", "items": {"$ref": "#/$defs/record"}}`, and so does a top-level object when
   only `properties`, `patternProperties` and `additionalProperties` check its members. jsonvet then

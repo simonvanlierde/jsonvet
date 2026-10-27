@@ -47,7 +47,8 @@ Actions is reported upstream (SECURITY.md, "Scope").
   attestation fails, and only an explicit `verify: false` skips the check.
 - **Least privilege.** The library has no file or network access; the CLI reads only what it is
   given or finds by the config search, and never writes. Workflows start from `contents: read`,
-  and only the jobs that attest or publish get `id-token: write`.
+  and only the jobs that attest or publish get `id-token: write`, besides the CodSpeed and
+  Scorecard jobs, which use it to upload their results.
 - **Economy of mechanism.** One parser serves all six dialects
   ([0001](decisions/0001-one-parser-and-the-1.4-contract.md)), and one escaping rule serves every
   output format.
