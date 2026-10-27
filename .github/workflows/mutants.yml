@@ -1,6 +1,6 @@
 name: mutants
 
-# cargo-mutants over both crates once a week (see docs/design.md, "Mutations"). It fails when a
+# cargo-mutants over the crates once a week (see docs/design.md, "Mutations"). It fails when a
 # mutant survives that .cargo/mutants.toml does not list as changing no behaviour.
 on:
   schedule:
@@ -16,7 +16,12 @@ env:
 jobs:
   mutants:
     runs-on: ubuntu-latest
-    # A run takes about 25 minutes on a laptop.
+    # One runner could not finish the run in an hour, so ten shards each take a tenth. Round-robin
+    # spreads the mutants that hang until the timeout, about two minutes each, over every shard.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -33,11 +38,13 @@ jobs:
       # Exit 3 means some mutants hung until the timeout, which counts as caught; a missed one
       # gives 2, unless a timeout came too, so check the list as well.
       - name: cargo mutants
+        env:
+          SHARD: ${{ matrix.shard }}
         run: |
-          cargo mutants --workspace --no-shuffle || [ $? -eq 3 ]
+          cargo mutants --workspace --no-shuffle --shard "$SHARD/10" --sharding round-robin || [ $? -eq 3 ]
           test ! -s mutants.out/missed.txt
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: mutants.out
+          name: mutants.out-${{ matrix.shard }}
           path: mutants.out/

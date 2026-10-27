@@ -72,7 +72,7 @@ matrix-check:
 fuzz TARGET:
     cd fuzz && cargo +nightly fuzz run -O {{ TARGET }} -- -max_total_time=1200 -print_final_stats=1
 
-# Mutation testing over both crates, as mutants.yml runs it; about 25 minutes.
+# Mutation testing over the crates in one go, which takes over an hour; mutants.yml splits it into ten shards.
 mutants:
     cargo mutants --workspace --no-shuffle
 
