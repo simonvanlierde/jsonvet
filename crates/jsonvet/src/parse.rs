@@ -859,12 +859,15 @@ impl<'a> Parser<'a, '_> {
                 b'\n' | b'\r' => {
                     return Err(Fail::inside(self.pos, SyntaxKind::LineBreakInString, start));
                 }
-                0..0x20 if !self.json5 => {
+                // Outside JSON5 only: string_stops lets JSON5 pass control characters.
+                0..0x20 => {
                     return Err(self.fail(SyntaxKind::ControlCharacter {
                         found: char::from(b),
                     }));
                 }
-                0x80.. if self.invalid_code_point.is_on() => {
+                // Past ASCII: string_stops stops there only with the invalid-code-point check on.
+                _ => {
+                    debug_assert!(b >= 0x80 && self.invalid_code_point.is_on());
                     let c = self.char_at(self.pos);
                     if is_noncharacter(u32::from(c)) {
                         self.report(
@@ -877,10 +880,6 @@ impl<'a> Parser<'a, '_> {
                         );
                     }
                     self.pos += c.len_utf8();
-                }
-                _ => {
-                    debug_assert!(false, "plain_bytes stopped at a byte no arm handles");
-                    self.pos += 1;
                 }
             }
         }
@@ -924,7 +923,6 @@ impl<'a> Parser<'a, '_> {
             ));
         }
         match b {
-            b'\'' => Ok(Some(u32::from('\''))),
             b'v' => Ok(Some(0xB)),
             // `\0` may not be followed by a digit: JSON5 has no octal escapes.
             b'0' if self.peek().is_some_and(|d| d.is_ascii_digit()) => {
@@ -952,6 +950,7 @@ impl<'a> Parser<'a, '_> {
                 }
                 Ok(None)
             }
+            // Any other character stands for itself: `\'` among them.
             _ => {
                 let c = self.char_at(at + 1);
                 self.pos = at + 1 + c.len_utf8();
