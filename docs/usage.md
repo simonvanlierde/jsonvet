@@ -344,7 +344,8 @@ exists is in [design.md](design.md#--schema).
 
   Errors from such a schema quote nothing from it, since the file may not be yours to show. They
   name the keyword and, where jsonvet can tell, its place, as in
-  `value fails "enum" (the schema s.json:3:11)`. That hides `const` and `enum` values, patterns,
+  `value fails "enum" (the schema s.json:3:11)`, with the schema's path from the working
+  directory. That hides `const` and `enum` values, patterns,
   the property names `required` and `dependentRequired` ask for, the limits of `minimum`,
   `maxLength` and the like, and the schema under `not`. The checked
   file's own keys and values, type names and format names may still show.
@@ -374,11 +375,14 @@ exists is in [design.md](design.md#--schema).
   `properties`, `patternProperties` and `additionalProperties` check a top-level object's members,
   jsonvet checks one element or member at a time. Otherwise jsonschema holds every error in the
   document at once: about 420 bytes each, and more for one that holds part of the schema, such as
-  an `anyOf` error.
+  an `anyOf` error. A file checked against its own `$schema` counts the same as one checked with
+  `--schema`. It may also be held while the other threads read their files, one file per thread.
 - **Regexes.** A pattern with a back-reference or lookaround may backtrack 5,000 times per string.
   A string or key that needs more, where the pattern decides the result, is an error saying the
   pattern could not be checked. A document that also has an error either way reports only that
-  one.
+  one. A schema with more than 1,000 different patterns, or a pattern that takes more than 2 MB
+  compiled, is a usage error (exit 2). The largest in SchemaStore takes 715 KB, and its schema has
+  457 patterns.
 - **The schema file.** It may be in any dialect. Its `$schema` picks the draft, from draft 4 to
   2020-12. A schema jsonvet cannot read or use is a usage error (exit 2). That covers:
   - a `$ref` to another file, or to nothing in the file, even one nothing uses. A `$ref` resolves
