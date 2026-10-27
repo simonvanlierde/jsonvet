@@ -192,8 +192,10 @@ schemas = [{ files = "config/server.json5", schema = "schemas/server.schema.json
 
 A schema path in the config file is relative to the config file's folder. A `$schema` path is
 relative to the file's own folder. Both must stay inside the project: a path that starts with `/`,
-or climbs out with `..`, is a schema error even if nothing is there. A `$schema` URL means no schema
-check for that file, and so does a path inside the project to a file that does not exist.
+or climbs out with `..`, is refused even if nothing is there. For a `$schema` that is a schema
+error, and for a config file entry a usage error. A config file named with `--config` may name any
+schema. A `$schema` URL means no schema check for that file, and so does a path inside the project
+to a file that does not exist.
 `--schema` overrides both.
 
 Schema errors are always errors. jsonvet never fetches a schema from the network or another file,

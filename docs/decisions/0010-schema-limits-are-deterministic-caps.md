@@ -52,7 +52,7 @@ caps above stay: they count the cost before jsonschema runs, whatever its versio
 `nested_unevaluated_properties_are_a_usage_error` and
 `a_ref_resolves_against_its_own_base_not_a_like_named_id_elsewhere` in `cli.rs`'s `mod schema`;
 `schema_errors_past_the_first_100` and `schema_refs_to_many_ids` in `scaling.rs`; and `schemastore.rs`,
-which checks 11 real schemas from SchemaStore with their test files.
+which checks the real schemas from SchemaStore in `tests/schemastore/` with their test files.
 
 ## Revisit if
 
