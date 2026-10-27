@@ -71,10 +71,11 @@ fn run_here() -> ExitCode {
     let stdout = io::stdout().lock();
     let set = |name| std::env::var_os(name).is_some_and(|v| !v.is_empty());
     // NO_COLOR wins over FORCE_COLOR: asking for no color is the safer wish to honour.
+    // FORCE_COLOR=0 and =false ask for no color, as Node and chalk read them.
     let color = if set("NO_COLOR") {
         Some(false)
     } else if set("FORCE_COLOR") {
-        Some(true)
+        Some(std::env::var_os("FORCE_COLOR").is_none_or(|v| v != "0" && v != "false"))
     } else {
         None
     };

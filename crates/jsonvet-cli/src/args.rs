@@ -36,8 +36,9 @@ Options:
                                 docs/usage.md in the repository lists its fields).
       --color WHEN              Color text output: auto (the default), always or never. Auto
                                 colors it on a terminal, unless NO_COLOR is set; FORCE_COLOR
-                                colors it anywhere. On a terminal, each problem also shows
-                                the line of the file it is on; elsewhere it stays one line.
+                                colors it anywhere, and FORCE_COLOR=0 or false nowhere. On a
+                                terminal, each problem also shows the line of the file it is
+                                on; elsewhere it stays one line.
       --schema FILE             Check each file against the JSON Schema in FILE, reported
                                 under the rule schema, instead of the schemas from settings
                                 or a file's own local $schema. Nothing is fetched. Limits:

@@ -787,6 +787,14 @@ fn color_forced_off_a_terminal_keeps_one_line_per_problem() {
     assert_eq!(run(&[], &[("FORCE_COLOR", "1")]), colored);
     // Set to the empty string, either counts as unset.
     assert_eq!(run(&[], &[("FORCE_COLOR", "")]), plain);
+    // `0` and `false` ask for no color, as Node and chalk read them; any other value for color.
+    assert_eq!(run(&[], &[("FORCE_COLOR", "0")]), plain);
+    assert_eq!(run(&[], &[("FORCE_COLOR", "false")]), plain);
+    assert_eq!(run(&[], &[("FORCE_COLOR", "true")]), colored);
+    assert_eq!(
+        run(&["--color", "always"], &[("FORCE_COLOR", "0")]),
+        colored
+    );
     assert_eq!(run(&[], &[("FORCE_COLOR", "1"), ("NO_COLOR", "1")]), plain);
     assert_eq!(run(&[], &[("FORCE_COLOR", "1"), ("NO_COLOR", "")]), colored);
     assert_eq!(run(&["--color", "never"], &[("FORCE_COLOR", "1")]), plain);
