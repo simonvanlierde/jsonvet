@@ -44,7 +44,7 @@ OBJECTS = [
 ]
 KEYS = ["a", "b c", "ünï", "$x", "1st", 'q\\"', "\\u0061", "\\ud800", "\\udbff", "a\\u093e"]
 
-# Corpus files that meet a deliberate difference listed in docs/design.md.
+# Corpus files that meet an accepted difference listed in docs/design.md.
 KNOWN = {
     "corpus-json5-depth-10000.json": "accepted: 1.4 stops at 9,998 levels, jsonvet at 10,000",
     "corpus-json5-combining-mark-starts-key-escaped.json": (

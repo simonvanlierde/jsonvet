@@ -214,7 +214,7 @@ main() {
   if [[ ${#files[@]} -eq 0 ]]; then
     echo "::warning title=jsonvet action::found no JSON files to check" >&2
   fi
-  # shortcut: one command line for all files; Windows caps it at 32,767 characters, so a
+  # NOTE: one command line for all files; Windows caps it at 32,767 characters, so a
   # repository with thousands of files needs batching there.
 
   # A failing check must not end the script before the SARIF run; the step still exits with the

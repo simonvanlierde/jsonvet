@@ -10,7 +10,7 @@ table shows the median.
 
 Needs hyperfine and a release build (`cargo build --release -p jsonvet-cli`). The reference is
 installed into its own virtual environment and run from there, so uvx's start-up is not timed.
-Every case passes in both tools, apart from the duplicate key the `dup` files hold on purpose.
+Every case passes in both tools, apart from the `dup` files, which hold a duplicate key.
 """
 
 import argparse
