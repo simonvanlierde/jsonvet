@@ -1,6 +1,6 @@
 //! The heap `--schema` takes at its peak on a generated 10 MB file, counted by a global allocator
-//! in its own test binary. nextest runs each test in a process of its own, and a lock keeps
-//! `cargo test`'s threads from counting at once, so no other test allocates while one counts.
+//! in its own test binary. Each test holds `COUNTING` from before it builds its files, so no
+//! other test allocates while one counts, under `cargo test` threads as well as nextest processes.
 
 #![allow(
     clippy::expect_used,
@@ -11,7 +11,7 @@ use std::ffi::OsString;
 use std::fmt::Write;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 use jsonvet_cli::Terminal;
 use peak_alloc::PeakAlloc;
@@ -32,8 +32,16 @@ const MAX_BYTES_PER_BYTE: usize = 24;
 /// takes 1 byte per byte, the file's text. Parts that kept their events would take 17.
 const MAX_JSON_LINES_BYTES_PER_BYTE: usize = 4;
 
-/// Held while a run counts, so runs on other threads do not add to its peak.
+/// Held by each test from its start, so tests on other threads do not add to its peak.
 static COUNTING: Mutex<()> = Mutex::new(());
+
+/// Take `COUNTING`. A test that panicked holding it freed what it held, so the count is still
+/// sound.
+fn counting() -> MutexGuard<'static, ()> {
+    COUNTING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 /// A fresh folder for the test `name`, marked as a repository so the project ends there.
 fn folder(name: &str) -> PathBuf {
@@ -63,6 +71,7 @@ fn rows(bytes: usize, open: &str, between: &str, close: &str) -> String {
 /// The peak heap of one `--schema` run against `schema` on a generated 10 MB array, or JSON Lines
 /// file with `lines`, beyond what was in use before it, with its exit code and output.
 fn peak(name: &str, schema: &str, lines: bool) -> (usize, Result<u8, String>, String) {
+    let _counting = counting();
     let dir = folder(name);
     let text = if lines {
         rows(FILE_BYTES, "", "\n", "\n")
@@ -82,11 +91,8 @@ fn peak(name: &str, schema: &str, lines: bool) -> (usize, Result<u8, String>, St
 }
 
 /// The peak heap of one run with `args`, beyond what was in use before it, with its exit code and
-/// output.
+/// output. The caller holds [`counting`].
 fn run(args: &[OsString]) -> (usize, Result<u8, String>, String) {
-    let _counting = COUNTING
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let before = ALLOCATOR.current_usage();
     ALLOCATOR.reset_peak_usage();
     let mut out = Vec::new();
@@ -183,6 +189,7 @@ fn own_schema_files(
 /// checked as `--schema` checks it, or, for a schema that is not there, as a plain check does.
 #[test]
 fn a_local_dollar_schema_takes_what_schema_or_a_plain_check_does() {
+    let _counting = counting();
     let (own, given) = own_schema_files("own", "s.json", 1, FILE_BYTES);
     let (with_schema, code, out) = run(&given);
     assert_eq!(code, Ok(0), "{out}");
@@ -202,6 +209,7 @@ fn a_local_dollar_schema_takes_what_schema_or_a_plain_check_does() {
 /// them are checked at once. 12 files of 2 MB fit one chunk by their size alone.
 #[test]
 fn files_with_a_local_dollar_schema_are_checked_as_few_at_a_time_as_with_schema() {
+    let _counting = counting();
     let (count, bytes) = (12, 2 << 20);
     let (own, given) = own_schema_files("own-many", "s.json", count, bytes);
     let (with_schema, code, out) = run(&given);
@@ -221,6 +229,7 @@ fn files_with_a_local_dollar_schema_are_checked_as_few_at_a_time_as_with_schema(
 /// when such an error comes. Compiled when the schema was, they took half as much again.
 #[test]
 fn a_regex_with_lookaround_compiles_the_schema_once() {
+    let _counting = counting();
     let schema = |first: &str| {
         let regexes: Vec<String> = (0..100)
             .map(|i| format!("\"{first}(?:[a-z]{{20}}){{100}}N{i}\": {{}}"))
