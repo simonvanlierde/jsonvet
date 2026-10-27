@@ -53,6 +53,20 @@ pub(crate) fn check_lines<'a>(
     config: &Config,
     events: bool,
 ) -> (Vec<Problem>, Vec<Event<'a>>) {
+    let mut list = Vec::new();
+    let mut push = |event| list.push(event);
+    let problems = walk(text, lines, config, events.then_some(&mut push));
+    (problems, list)
+}
+
+/// Check the lines of `text` in `lines` as [`check_lines`] does, handing each value to `sink`
+/// as it is read, up to any syntax error, instead of listing them.
+pub(crate) fn walk<'a>(
+    text: &'a str,
+    lines: std::ops::Range<usize>,
+    config: &Config,
+    sink: Option<&mut dyn FnMut(Event<'a>)>,
+) -> Vec<Problem> {
     let dialect = config.dialect();
     let text = &text[..lines.end];
     let mut parser = Parser {
@@ -69,7 +83,7 @@ pub(crate) fn check_lines<'a>(
         problems: Vec::new(),
         stack: Vec::new(),
         spare_keys: Vec::new(),
-        events: events.then(Vec::new),
+        events: sink,
     };
     if lines.start == 0 {
         parser.byte_order_mark(config.severity(Rule::ByteOrderMark));
@@ -92,7 +106,7 @@ pub(crate) fn check_lines<'a>(
             }),
         });
     }
-    (parser.problems, parser.events.unwrap_or_default())
+    parser.problems
 }
 
 /// A decoded key as WTF-8: UTF-8, except that a lone surrogate escape such as `\\uD800` is kept
@@ -126,7 +140,7 @@ impl Fail {
     }
 }
 
-struct Parser<'a> {
+struct Parser<'a, 's> {
     text: &'a str,
     bytes: &'a [u8],
     pos: usize,
@@ -142,8 +156,8 @@ struct Parser<'a> {
     stack: Vec<Frame<'a>>,
     /// Emptied key lists from closed objects, reused so each object does not allocate anew.
     spare_keys: Vec<Keys<'a>>,
-    /// The values seen so far, when the caller asked for them.
-    events: Option<Vec<Event<'a>>>,
+    /// Where each value goes as it is read, when the caller asked for them.
+    events: Option<&'s mut dyn FnMut(Event<'a>)>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -273,7 +287,7 @@ enum State {
     Done,
 }
 
-impl<'a> Parser<'a> {
+impl<'a> Parser<'a, '_> {
     fn peek(&self) -> Option<u8> {
         self.bytes.get(self.pos).copied()
     }
@@ -442,8 +456,8 @@ impl<'a> Parser<'a> {
     }
 
     fn emit(&mut self, offset: usize, kind: EventKind<'a>) {
-        if let Some(events) = &mut self.events {
-            events.push(Event { offset, kind });
+        if let Some(sink) = &mut self.events {
+            sink(Event { offset, kind });
         }
     }
 

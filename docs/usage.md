@@ -417,7 +417,6 @@ one exists is in [design.md](design.md#--schema).
   own keys and values, type names such as `"integer"` and format names may still show.
   `--schema`, `--config FILE` and the user's own config file may name a schema anywhere, and their
   errors quote it.
-
 - **Severity.** Schema errors are always errors, in text, annotations, SARIF and JSON. `--error`,
   `--warn`, `--ignore` and the config file do not take `schema`, and exit 2 if you give it to
   them.
@@ -439,15 +438,16 @@ one exists is in [design.md](design.md#--schema).
   and not checked. The same goes for a document with two keys in one object that differ only in
   lone surrogates such as `"\ud800"`, since both become U+FFFD. In the schema file, either one is
   a usage error.
-- **Memory.** jsonvet holds each document's values in memory: 14 to 27 times its size. A JSON
-  Lines file holds one line's values at a time. Without a schema, memory stays near the file's
-  size. A top-level array that fails everywhere takes no more than a valid one when only `items`
-  checks its elements, as in `{"type": "array", "items": {"$ref": "#/$defs/record"}}`, and so
-  does a top-level object when only `properties`, `patternProperties` and `additionalProperties`
-  check its members. jsonvet then checks one element or member at a time. Otherwise jsonschema
-  finds every error in the document before jsonvet sees the first. Each takes about 420 bytes
-  (2,000,000 failing keys in a 42 MB file took 1.4 GB, against 0.52 GB when they pass), and more
-  when it holds part of the schema: an `anyOf` error holds every branch's errors.
+- **Memory.** jsonvet holds each document's values in memory: 4 to 22 times its size, the most for
+  many small records. A JSON Lines file holds one line's values at a time. Without a schema, memory
+  stays near the file's size. A top-level array that fails everywhere takes no more than a valid
+  one when only `items` checks its elements, as in
+  `{"type": "array", "items": {"$ref": "#/$defs/record"}}`, and so does a top-level object when
+  only `properties`, `patternProperties` and `additionalProperties` check its members. jsonvet then
+  checks one element or member at a time. Otherwise jsonschema finds every error in the document
+  before jsonvet sees the first. Each takes about 420 bytes (2,000,000 failing keys in a 42 MB file
+  took 1.4 GB, against 0.52 GB when they pass), and more when it holds part of the schema: an
+  `anyOf` error holds every branch's errors.
 - **Regexes.** A pattern with a back-reference or lookaround may backtrack 5,000 times per string.
   A key or string that needs more, where the pattern applies and whether it matches would change
   the result, is an error at that key or string: the pattern could not be checked. When the

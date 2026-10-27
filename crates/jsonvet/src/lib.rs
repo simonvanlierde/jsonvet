@@ -76,6 +76,29 @@ pub fn parse<'a>(text: &'a str, config: &Config) -> (Report<'a>, Option<Vec<Even
     )
 }
 
+/// Check one text as [`check`] does, and hand each of its values to `sink` as an event, in
+/// document order, as it is read. A text with a syntax error gives the events before it.
+///
+/// ```
+/// use jsonvet::{parse_with, Config, Dialect, EventKind};
+///
+/// let mut kinds = Vec::new();
+/// let report = parse_with("[1, true]", &Config::new(Dialect::Json), &mut |e| kinds.push(e.kind));
+/// assert!(report.passed());
+/// assert_eq!(kinds[2], EventKind::Bool(true));
+/// ```
+///
+/// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
+#[doc(hidden)]
+pub fn parse_with<'a>(
+    text: &'a str,
+    config: &Config,
+    sink: &mut dyn FnMut(Event<'a>),
+) -> Report<'a> {
+    let problems = parse::walk(text, 0..text.len(), config, Some(sink));
+    Report::new(text, problems, config.dialect() == Dialect::Json5)
+}
+
 /// Up to `parts` ranges of a JSON Lines text, in order and covering it, each ending after a
 /// newline or at the end: [`parse_lines`] checks each on its own, on any thread, and
 /// [`join_lines`] puts them back together. A raw newline cannot sit inside a JSON string, and

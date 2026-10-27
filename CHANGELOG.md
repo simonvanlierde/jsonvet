@@ -57,6 +57,12 @@ Most users need no change. Check these if they apply to you:
 - Strings check faster. A 9 MB file of short keys and values checks 8% faster, and files full of
   escapes or of JSON5 strings with tabs 10 to 25% faster. Pretty-printed JSON gains about 3%.
   The problems reported are unchanged.
+- `--schema` takes less memory on large files. jsonvet used to keep every value the parser read
+  until the whole file was folded into values. Now it folds them as it reads, and checks each
+  document as soon as it is complete. On a 12 MB file of small records, peak memory went from
+  378 MB to 266 MB. A JSON Lines file of 1 MB or more is checked in parts, as before. A file with
+  schema errors is read a second time to place them, which costs about 2% more time there. The
+  output is the same.
 
 ### Fixed
 

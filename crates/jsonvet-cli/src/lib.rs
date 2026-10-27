@@ -41,8 +41,9 @@ const STACK: usize = 64 << 20;
 const CHUNK_BYTES: usize = 64 << 20;
 
 /// How many bytes of memory a byte of file text takes with `--schema`, which holds the file's
-/// events and one document's value at a time: 14 to 27 per byte of that document
-/// (docs/design.md, "Memory").
+/// value one document at a time: 4 to 22 per byte of that document (docs/design.md, "Memory").
+/// Each part of a split JSON Lines file also holds its events. I keep 20 from when it held every
+/// event too, as headroom.
 const SCHEMA_BYTES: usize = 20;
 
 /// From this size, a JSON Lines file is split at newlines and its parts checked on the cores
@@ -658,10 +659,8 @@ fn check<'t>(
     }
     match schema {
         Some(schema) => {
-            let (report, events) = jsonvet::parse(text, &config.max_depth(SCHEMA_MAX_DEPTH));
-            // `events` is `None` after a syntax error, so such a file gets no schema errors.
-            let errors = events.map_or_else(Vec::new, |events| schema.errors(&events));
-            (report, errors)
+            // A file with a syntax error gets no schema errors.
+            schema.check(text, &config.max_depth(SCHEMA_MAX_DEPTH))
         }
         None => (jsonvet::check(text, &config), Vec::new()),
     }
