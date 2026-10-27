@@ -26,7 +26,8 @@ it's at least 5% faster end to end with the same output. Record what we turn dow
 
 Kept under the rule: checking files on every core (#62, 1,100 files 14.2 to 4.0 ms) and splitting
 large JSON Lines files (#68, 78 MB 264 to 89 ms), and a byte table for strings (#116: 9 MB of
-short keys 27.5 to 25.3 ms, escape-heavy files 17 to 22% faster, under 5% on `scripts/bench.py`).
+short keys 27.5 to 25.3 ms, files full of escapes or JSON5 tabs 10 to 25% faster, up to 6% on
+`scripts/bench.py`).
 A speed-up past 5% on one kind of file counts, if it is no slower on the others. A 5% call needs
 a quiet machine and the median.
 

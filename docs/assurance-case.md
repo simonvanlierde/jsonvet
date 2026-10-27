@@ -42,7 +42,7 @@ Actions is reported upstream (SECURITY.md, "Scope").
 | Output | File names, paths and messages printed to a terminal, a CI log, JSON or SARIF | One escaping rule for every format: control, bidi and zero-width characters are printed as `\u` escapes, line breaks as `\r` and `\n`, and workflow-command values are percent-encoded (`printable` and `escape` in `crates/jsonvet-cli/src/output.rs`, [0007](decisions/0007-hand-written-output-with-one-escaping-rule.md)); SARIF stops at 25,000 results (`MAX_RESULTS`) |
 | The GitHub Action | Its inputs, and the wheel it downloads from PyPI | Inputs reach the script through environment variables, never expanded into the shell (`action.yml`); the wheel is checked with `gh attestation verify` against this repository's release workflow before it is installed (`verify_wheel` in `scripts/action.sh`) |
 | The playground | Text pasted into a static page | The library compiled to WebAssembly with no file or network access; a Content-Security-Policy that allows only the page's own script and wasm, and no forms or other origins (`playground/index.html`) |
-| Release and CI | Code, dependencies, the built files | Pull requests run under `pull_request` with a read-only token and no secrets, and every checkout drops its credentials; actions are pinned by commit; zizmor checks the workflows; `cargo deny` checks licences, sources and RustSec advisories; the jobs that publish run on `v*` tags only, run no project code, and wait for the maintainer's approval in the `pypi` and `crates-io` environments; every release file gets a build provenance attestation (`.github/workflows/release.yml`, [GOVERNANCE.md](../GOVERNANCE.md#access)) |
+| Release and CI | Code, dependencies, the built files | Pull requests run under `pull_request` with a read-only token and no secrets, except that CodSpeed's job also gets an OpenID Connect token to upload its results (a pull request from a fork gets none); every checkout drops its credentials; actions are pinned by commit; zizmor checks the workflows; `cargo deny` checks licences, sources and RustSec advisories; the jobs that publish run on `v*` tags only, run no project code, and wait for the maintainer's approval in the `pypi` and `crates-io` environments; every release file gets a build provenance attestation (`.github/workflows/release.yml`, [GOVERNANCE.md](../GOVERNANCE.md#access)) |
 
 ## Secure design principles
 
@@ -50,9 +50,9 @@ Actions is reported upstream (SECURITY.md, "Scope").
   options. A schema path that leaves the project is an error even if nothing is there. The Action
   stops if a wheel's attestation fails, and only an explicit `verify: false` skips the check.
 - **Least privilege.** The library has no file or network access; the CLI reads only what it is
-  given or finds by the config search, and never writes. Workflows start from `contents: read`,
-  and only the jobs that attest or publish get `id-token: write`, besides the CodSpeed and
-  Scorecard jobs, which use it to upload their results.
+  given or finds by the config search, and never writes. Workflows start from `contents: read`.
+  `id-token: write` goes only to the release jobs that attest or publish, the Pages `deploy` job,
+  and the CodSpeed and Scorecard jobs, which upload their results with it.
 - **Economy of mechanism.** One parser serves all six dialects
   ([0001](decisions/0001-one-parser-and-the-1.4-contract.md)), and one escaping rule serves every
   output format.
@@ -77,8 +77,9 @@ Actions is reported upstream (SECURITY.md, "Scope").
   symlinked configs followed but their values not shown, and devices and FIFOs refused.
 - **Hash flooding (CWE-407).** SipHash with OS keys for the duplicate-key index.
 - **Supply chain (CWE-494, CWE-1357).** Trusted publishing with no stored token, attestations on
-  every release file, signed release tags, Renovate with a seven-day wait before a new version,
-  and `cargo deny` on every pull request and every Monday.
+  every release file, signed release tags, Renovate with a seven-day wait before a new version (a
+  `Cargo.lock` refresh skips the wait and waits for review instead), and `cargo deny` on every pull
+  request and every Monday.
 - **Bugs not caught by review.** Four cargo-fuzz targets on every pull request that touches the
   library and for 20 minutes each every week, weekly mutation testing, a differential test
   against check-json5 1.4.1 on every pull request, and clippy's pedantic lints as errors.

@@ -16,7 +16,9 @@ inputs:
     required: false
     default: ""
   args:
-    description: Extra jsonvet options, separated by spaces, such as `--strict package.json`.
+    description: >-
+      Extra jsonvet options, separated by spaces, such as `--strict package.json`. On pull
+      requests, do not pass `--config` a file the pull request can change: let the search find it.
     required: false
     default: ""
   sarif:
