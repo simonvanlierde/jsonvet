@@ -417,7 +417,13 @@ pub(crate) fn confined(path: &str, base: &Path, root: &Path) -> Result<bool, Str
     let outside = || format!("the schema {path} is outside the project, so it is not read");
     let given = Path::new(path);
     // Before the path is touched: on Windows, opening `\\host\share\s.json` connects to the host.
-    if given.has_root() || matches!(given.components().next(), Some(Component::Prefix(_))) {
+    // A drive or UNC path is refused on every OS, so a file gets the same verdict everywhere.
+    let drive = matches!(path.as_bytes(), [letter, b':', ..] if letter.is_ascii_alphabetic());
+    if drive
+        || path.starts_with("\\\\")
+        || given.has_root()
+        || matches!(given.components().next(), Some(Component::Prefix(_)))
+    {
         return Err(outside());
     }
     let base = if base.as_os_str().is_empty() {
@@ -676,18 +682,20 @@ mod tests {
     use super::{Glob, Settings, absolute, confined};
 
     #[test]
-    fn a_schema_path_with_a_root_or_prefix_is_refused_before_it_is_opened() {
+    fn a_schema_path_with_a_root_drive_or_prefix_is_refused_before_it_is_opened() {
         let base = std::path::Path::new(".");
         let root = std::fs::canonicalize(base).expect("the working directory");
         let root = root.as_path();
-        let mut paths = vec!["/etc/passwd", "//host/share/s.json"];
+        let mut paths = vec![
+            "/etc/passwd",
+            "//host/share/s.json",
+            "C:\\s.json",
+            "C:/s.json",
+            "c:s.json",
+            "\\\\host\\share\\s.json",
+        ];
         if cfg!(windows) {
-            paths.extend([
-                "C:\\s.json",
-                "C:s.json",
-                "\\\\host\\share\\s.json",
-                "\\s.json",
-            ]);
+            paths.push("\\s.json");
         }
         for path in paths {
             let refused = confined(path, base, root).expect_err(path);

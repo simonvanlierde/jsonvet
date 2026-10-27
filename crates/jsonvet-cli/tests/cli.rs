@@ -1750,18 +1750,25 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         );
     }
 
-    /// A rooted `$schema` is an error even when nothing is there; a missing path inside the
-    /// project is no schema check.
+    /// A rooted `$schema` is an error even when nothing is there, and so is a drive or UNC path
+    /// on every OS, as on Windows; a missing path inside the project is no schema check.
     #[test]
     fn a_rooted_dollar_schema_is_an_error_and_a_missing_one_is_not() {
+        // As written in JSON, where a backslash is doubled.
         for (schema, expected) in [
             ("/schemas/v1.json", 1),
             ("//host/x.json", 1),
+            ("C:/x.json", 1),
+            ("C:x.json", 1),
+            (r"\\\\host\\share\\x.json", 1),
             ("missing.json", 0),
         ] {
             let dir = workdir(&[("f.json", &format!("{{\"$schema\": \"{schema}\"}}"))]);
             let (code, out) = jsonvet(&dir, &["f.json"]);
             assert_eq!(code, expected, "{schema}: {out}");
+            if expected == 1 {
+                assert!(out.contains("is outside the project"), "{schema}: {out}");
+            }
         }
     }
 
@@ -1816,6 +1823,15 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
             cases.push(("to-dangling.json", "dangling.json".to_owned()));
             cases.push(("through-dir.json", "out-dir/missing.json".to_owned()));
             cases.push(("through-dead-dir.json", "dead-dir/s.json".to_owned()));
+        }
+        // Backslashes separate folders only on Windows; elsewhere each of these is one file
+        // name, inside the project and missing. As written in JSON, where a backslash is doubled.
+        if cfg!(windows) {
+            cases.push(("back.json", format!(r"..\\{folder}.outside\\secret.json")));
+            cases.push((
+                "back-sub.json",
+                format!(r"sub\\..\\..\\{folder}.outside\\x.json"),
+            ));
         }
         for (file, schema) in &cases {
             fs::write(dir.join(file), format!("{{\"$schema\": \"{schema}\"}}"))
