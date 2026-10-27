@@ -55,9 +55,9 @@ Most users need no change. Check these if they apply to you:
   the problem marked under it, and the related place, such as a duplicate key's first copy.
   pre-commit in a terminal shows frames too. CI, pre-commit.ci and pipes keep one line per
   problem, and `| cat` forces lines.
-- Strings check faster. A 9 MB file of short keys and values checks 8% faster, and files full of
-  escapes or of JSON5 strings with tabs 10 to 25% faster. 9 MB of pretty-printed records checks 8
-  to 9% faster (median of 30). The problems reported are unchanged.
+- Strings check faster: 8% on a 9 MB file of short keys and values, 8 to 9% on 9 MB of
+  pretty-printed records (median of 30), and 10 to 25% on files full of escapes or of JSON5
+  strings with tabs. The problems reported are unchanged.
 - `--schema` takes less memory on large files. jsonvet used to keep every value the parser read
   until the whole file was folded into values. Now it folds them as it reads, and checks each
   document as soon as it is complete. On a 12 MB file of small records, peak memory went from
