@@ -10,7 +10,7 @@
 use std::ffi::OsString;
 use std::fmt::Write;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use jsonvet_cli::Terminal;
@@ -35,21 +35,20 @@ const MAX_JSON_LINES_BYTES_PER_BYTE: usize = 4;
 /// Held while a run counts, so runs on other threads do not add to its peak.
 static COUNTING: Mutex<()> = Mutex::new(());
 
-/// The peak heap of one `--schema` run against `schema` on a generated 10 MB array, or JSON Lines
-/// file with `lines`, beyond what was in use before it, with its exit code and output.
-fn peak(name: &str, schema: &str, lines: bool) -> (usize, Result<u8, String>, String) {
+/// A fresh folder for the test `name`, marked as a repository so the project ends there.
+fn folder(name: &str) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("schema-memory-{name}"));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join(".git")).expect("create the directory");
-    // Rows as the CodSpeed cases write them: small records of numbers, strings and arrays.
-    let (open, between, close) = if lines {
-        ("", "\n", "\n")
-    } else {
-        ("[", ", ", "]")
-    };
+    dir
+}
+
+/// Rows as the CodSpeed cases write them, small records of numbers, strings and arrays, after
+/// `open` and joined by `between`, to at least `bytes` bytes, then `close`.
+fn rows(bytes: usize, open: &str, between: &str, close: &str) -> String {
     let mut text = String::from(open);
     let mut i = 0;
-    while text.len() < FILE_BYTES {
+    while text.len() < bytes {
         if i > 0 {
             text.push_str(between);
         }
@@ -58,24 +57,40 @@ fn peak(name: &str, schema: &str, lines: bool) -> (usize, Result<u8, String>, St
         i += 1;
     }
     text.push_str(close);
+    text
+}
+
+/// The peak heap of one `--schema` run against `schema` on a generated 10 MB array, or JSON Lines
+/// file with `lines`, beyond what was in use before it, with its exit code and output.
+fn peak(name: &str, schema: &str, lines: bool) -> (usize, Result<u8, String>, String) {
+    let dir = folder(name);
+    let text = if lines {
+        rows(FILE_BYTES, "", "\n", "\n")
+    } else {
+        rows(FILE_BYTES, "[", ", ", "]")
+    };
     let file = dir.join(if lines { "file.jsonl" } else { "file.json" });
     fs::write(&file, &text).expect("write the file");
     drop(text);
     fs::write(dir.join("schema.json"), schema).expect("write the schema");
-
-    let args = vec![
+    run(&[
         OsString::from("--no-config"),
         OsString::from("--schema"),
         OsString::from(dir.join("schema.json")),
         OsString::from(file),
-    ];
+    ])
+}
+
+/// The peak heap of one run with `args`, beyond what was in use before it, with its exit code and
+/// output.
+fn run(args: &[OsString]) -> (usize, Result<u8, String>, String) {
     let _counting = COUNTING
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let before = ALLOCATOR.current_usage();
     ALLOCATOR.reset_peak_usage();
     let mut out = Vec::new();
-    let code = jsonvet_cli::run_with(args, false, Terminal::default(), &mut out);
+    let code = jsonvet_cli::run_with(args.to_vec(), false, Terminal::default(), &mut out);
     let peak = ALLOCATOR.peak_usage() - before;
     eprintln!(
         "peak heap: {peak} bytes, {} per byte of the file",
@@ -121,4 +136,82 @@ fn schema_memory_stays_under_its_bound_on_a_split_10_mb_json_lines_file() {
     assert_eq!(code, Ok(1), "{out}");
     assert!(out.contains(":8:7: error[schema]"), "{out}");
     assert_under(peak, MAX_JSON_LINES_BYTES_PER_BYTE);
+}
+
+/// A schema for files `{"$schema": ..., "rows": [...]}` that each row passes.
+const ROWS: &str = r#"{"properties": {"rows": {"items": {"type": "object", "required": ["x"]}}}}"#;
+
+/// `count` files of `bytes` each whose `$schema` names `own`, in a fresh folder with [`ROWS`] as
+/// `s.json`: the arguments that check them against their own `$schema`, and against `--schema`.
+fn own_schema_files(
+    name: &str,
+    own: &str,
+    count: usize,
+    bytes: usize,
+) -> (Vec<OsString>, Vec<OsString>) {
+    let dir = folder(name);
+    fs::write(dir.join("s.json"), ROWS).expect("write the schema");
+    let text = rows(
+        bytes,
+        &format!("{{\"$schema\": \"{own}\", \"rows\": ["),
+        ", ",
+        "]}",
+    );
+    let files: Vec<OsString> = (0..count)
+        .map(|i| {
+            let file = dir.join(format!("f{i}.json"));
+            fs::write(&file, &text).expect("write a file");
+            file.into_os_string()
+        })
+        .collect();
+    let own = ["--no-config".into()]
+        .into_iter()
+        .chain(files.clone())
+        .collect();
+    let given = [
+        "--no-config".into(),
+        "--schema".into(),
+        dir.join("s.json").into_os_string(),
+    ]
+    .into_iter()
+    .chain(files)
+    .collect();
+    (own, given)
+}
+
+/// A file's own `$schema` is found as the file is read, with no event kept, so the file is then
+/// checked as `--schema` checks it, or, for a schema that is not there, as a plain check does.
+#[test]
+fn a_local_dollar_schema_takes_what_schema_or_a_plain_check_does() {
+    let (own, given) = own_schema_files("own", "s.json", 1, FILE_BYTES);
+    let (with_schema, code, out) = run(&given);
+    assert_eq!(code, Ok(0), "{out}");
+    let (peak, code, out) = run(&own);
+    assert_eq!(code, Ok(0), "{out}");
+    assert!(
+        peak <= with_schema + with_schema / 4,
+        "a local `$schema` took {peak} bytes, `--schema` {with_schema}"
+    );
+    let (missing, _) = own_schema_files("own-missing", "node_modules/s.json", 1, FILE_BYTES);
+    let (peak, code, out) = run(&missing);
+    assert_eq!(code, Ok(0), "{out}");
+    assert_under(peak, MAX_JSON_LINES_BYTES_PER_BYTE);
+}
+
+/// Files with a local `$schema` count toward a chunk as files with `--schema` do, so no more of
+/// them are checked at once. 12 files of 2 MB fit one chunk by their size alone.
+#[test]
+fn files_with_a_local_dollar_schema_are_checked_as_few_at_a_time_as_with_schema() {
+    let (count, bytes) = (12, 2 << 20);
+    let (own, given) = own_schema_files("own-many", "s.json", count, bytes);
+    let (with_schema, code, out) = run(&given);
+    assert_eq!(code, Ok(0), "{out}");
+    let (peak, code, out) = run(&own);
+    assert_eq!(code, Ok(0), "{out}");
+    // A `$schema` is found only once its file is read, so the texts the other threads read in
+    // the meantime are held for the next chunk: at most every file's.
+    assert!(
+        peak <= with_schema + count * bytes,
+        "local `$schema`s took {peak} bytes, `--schema` {with_schema}"
+    );
 }

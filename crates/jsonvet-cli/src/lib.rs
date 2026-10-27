@@ -9,7 +9,7 @@ use std::process::ExitCode;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use jsonvet::{Dialect, Event, EventKind, Report, Severity};
+use jsonvet::{Dialect, Event, EventKind, Report, Rule, Severity};
 
 mod args;
 mod frame;
@@ -167,12 +167,13 @@ pub fn run_with(
     // a schema a file takes SCHEMA_BYTES times its size, so the chunk is cut from the sizes
     // before any file is read: otherwise every core would start on a file at once. Without
     // a schema the files are not sized first, which made a walk of 10,000 files 7 ms slower.
+    // A file whose own `$schema` may name a schema is known only once read: it counts the same,
+    // and the texts read past the end of the chunk are kept, in `ahead`, for the next one.
     // NOTE: each chunk waits for its slowest file before the next starts; hand files out
     // one at a time across chunks if one big file among many small ones holds a run up.
-    // NOTE: a file's own `$schema` is found only once it is read, so such a file counts its
-    // size once; size every file if a run of large files with one runs out of memory.
     let mut rest = &files[..];
     let shares = schema_shares(&files, threads);
+    let mut ahead = Vec::new();
     let written = loop {
         if rest.is_empty() {
             let line = (summary && !files.is_empty()).then(|| counts.summary(files.len()));
@@ -180,11 +181,9 @@ pub fn run_with(
                 .map_or(Ok(()), |line| printer.text_line(&line))
                 .and_then(|()| printer.finish());
         }
-        let offered = match shares.get(files.len() - rest.len()..) {
-            Some(shares) if !shares.is_empty() => &rest[..chunk_len(shares)],
-            _ => rest,
-        };
-        let texts = read_chunk(offered, threads);
+        let shares = shares.get(files.len() - rest.len()..);
+        let with_schema = |job: &Job, text: &str| with_schema(job, &shown(&job.1), text);
+        let texts = take_chunk(&mut ahead, rest, shares, threads, &with_schema);
         let chunk;
         (chunk, rest) = rest.split_at(texts.len());
         let jobs: Vec<_> = chunk.iter().zip(&texts).collect();
@@ -193,12 +192,13 @@ pub fn run_with(
             &jobs,
             threads,
             || false,
-            |(((settings, schema), file), text)| {
+            |(((settings, schema), file), (text, with))| {
                 let name = shown(file);
                 let name = name.to_string_lossy();
                 text.as_deref().map(|text| match schema {
                     Some(schema) => check(&name, text, settings, Some(schema), parts),
-                    None => check_own_schema(&name, text, settings, &root, &load, parts),
+                    None if *with => check_own_schema(&name, text, settings, &root, &load, parts),
+                    None => check(&name, text, settings, None, parts),
                 })
             },
         );
@@ -235,20 +235,70 @@ pub fn run_with(
     Ok(u8::from(counts.errors > 0 || too_many_warnings))
 }
 
-/// The texts of the first of `files`, read on up to `threads` threads until they hold
-/// [`CHUNK_BYTES`], and always the first.
-fn read_chunk<S: Sync>(files: &[(S, OsString)], threads: usize) -> Vec<Result<String, String>> {
+/// The texts of the first of `files`, read on up to `threads` threads until their [`weight`]s
+/// reach [`CHUNK_BYTES`], and always the first, each with whether `with_schema` says it is
+/// checked against a schema.
+fn read_chunk<S: Sync>(
+    files: &[(S, OsString)],
+    threads: usize,
+    with_schema: &(impl Fn(&(S, OsString), &str) -> bool + Sync),
+) -> Vec<(Result<String, String>, bool)> {
     let bytes = AtomicUsize::new(0);
     let full = || bytes.load(Ordering::Relaxed) >= CHUNK_BYTES;
-    parallel(files, threads, full, |(_, file)| {
-        let text = if file == STDIN {
+    parallel(files, threads, full, |file| {
+        let text = if file.1 == STDIN {
             read_stdin()
         } else {
-            read(Path::new(file))
+            read(Path::new(&file.1))
         };
-        bytes.fetch_add(text.as_ref().map_or(0, String::len), Ordering::Relaxed);
-        text
+        let with = text.as_ref().is_ok_and(|text| with_schema(file, text));
+        bytes.fetch_add(weight(&text, with), Ordering::Relaxed);
+        (text, with)
     })
+}
+
+/// The texts of the next chunk of `rest`, the files left, each with whether it is checked
+/// against a schema: up to and including the one whose [`weight`] fills [`CHUNK_BYTES`], from
+/// `ahead`, the texts of the first of them read already, or if none are, from those read now.
+/// `shares` are the files' [`schema_share`]s, if any.
+fn take_chunk(
+    ahead: &mut Vec<(Result<String, String>, bool)>,
+    rest: &[Job],
+    shares: Option<&[usize]>,
+    threads: usize,
+    with_schema: &(impl Fn(&Job, &str) -> bool + Sync),
+) -> Vec<(Result<String, String>, bool)> {
+    if ahead.is_empty() {
+        let offered = match shares {
+            Some(shares) if !shares.is_empty() => &rest[..chunk_len(shares)],
+            _ => rest,
+        };
+        *ahead = read_chunk(offered, threads, with_schema);
+    }
+    let weights: Vec<usize> = ahead
+        .iter()
+        .map(|(text, with)| weight(text, *with))
+        .collect();
+    ahead.drain(..chunk_len(&weights)).collect()
+}
+
+/// Whether the file of `job`, shown as `name`, with `text`, is checked against a schema: the one
+/// given, or one its own `$schema` may name.
+fn with_schema(((settings, schema), _): &Job, name: &OsStr, text: &str) -> bool {
+    schema.is_some()
+        || may_name_a_path(text)
+            && settings.config_for(&name.to_string_lossy()).dialect() != Dialect::JsonLines
+}
+
+/// The memory a text read takes while it is checked, as far as a chunk counts it: its size, or
+/// with a schema, [`SCHEMA_BYTES`] times that, capped at [`CHUNK_BYTES`].
+fn weight(text: &Result<String, String>, with_schema: bool) -> usize {
+    let size = text.as_ref().map_or(0, String::len);
+    if with_schema {
+        size.saturating_mul(SCHEMA_BYTES).min(CHUNK_BYTES)
+    } else {
+        size
+    }
 }
 
 /// The memory a file takes while a schema checks it, as far as a chunk counts it:
@@ -450,31 +500,49 @@ impl Schemas {
     }
 }
 
-/// The local schema path a file's `$schema` names, and the offset of its value: a string member
-/// of the top-level object that is no URL. jsonvet fetches no schemas, so a URL names none.
-fn own_schema<'e>(events: &'e [Event<'_>]) -> Option<(usize, &'e str)> {
-    if events.first()?.kind != EventKind::ObjectStart {
-        return None;
-    }
-    let mut depth = 0;
-    let mut events = events[1..].iter();
-    while let Some(event) = events.next() {
-        match &event.kind {
-            EventKind::ObjectStart | EventKind::ArrayStart => depth += 1,
-            EventKind::End => depth -= 1,
-            EventKind::Key(key) if depth == 0 && **key == *b"$schema" => {
-                let value = events.next()?;
-                let EventKind::String(path) = &value.kind else {
-                    return None;
-                };
+/// The local schema path a file's `$schema` names, and the offset of its value, found as the
+/// file's events come in: a string member of the top-level object that is no URL. jsonvet fetches
+/// no schemas, so a URL names none. It keeps no event, so the file's memory stays its text.
+#[derive(Default)]
+struct OwnSchema {
+    /// How many levels under the top-level object the events are, once it opens.
+    depth: Option<usize>,
+    /// Whether the next event is the value of the top-level `$schema`.
+    value: bool,
+    /// Whether the first top-level `$schema`, or the end of the object, has been seen.
+    done: bool,
+    /// What that `$schema` names.
+    found: Option<(usize, String)>,
+}
+
+impl OwnSchema {
+    fn event(&mut self, event: &Event<'_>) {
+        if self.done {
+            return;
+        }
+        if self.value {
+            self.done = true;
+            if let EventKind::String(path) = &event.kind {
                 // A fragment points into the schema, as in `s.json#`; the file is the same.
                 let path = path.split_once('#').map_or(&**path, |(path, _)| path);
-                return (!path.is_empty() && !is_url(path)).then_some((value.offset, path));
+                self.found =
+                    (!path.is_empty() && !is_url(path)).then(|| (event.offset, path.to_owned()));
             }
+            return;
+        }
+        let Some(depth) = &mut self.depth else {
+            self.depth = Some(0);
+            self.done = event.kind != EventKind::ObjectStart;
+            return;
+        };
+        match &event.kind {
+            EventKind::ObjectStart | EventKind::ArrayStart => *depth += 1,
+            EventKind::End if *depth == 0 => self.done = true,
+            EventKind::End => *depth -= 1,
+            EventKind::Key(key) if *depth == 0 && **key == *b"$schema" => self.value = true,
             _ => {}
         }
     }
-    None
 }
 
 /// Whether some `$schema` in `text` may hold a path rather than a URL, so the text is worth
@@ -581,8 +649,8 @@ fn split(text: &str, dialect: Dialect, parts: usize) -> Vec<std::ops::Range<usiz
     jsonvet::line_parts(text, if split { parts } else { 1 })
 }
 
-/// Check a file's text with no schema given for it, against the schema its own `$schema` names if
-/// any, relative to the file's folder, through `load`. The schema must be inside the file's own
+/// Check a file's text with no schema given for it, which [`with_schema`] says may name one in its
+/// own `$schema`, against that schema if any, relative to the file's folder, through `load`. The schema must be inside the file's own
 /// project, as `root` gives it, and its errors quote nothing from it (ADR 0012). One that does not
 /// exist is skipped; one outside the project or that cannot be used is an error at the `$schema`
 /// value. JSON Lines holds many documents, so no one `$schema` applies.
@@ -595,21 +663,20 @@ fn check_own_schema<'t>(
     parts: usize,
 ) -> (Report<'t>, Vec<(usize, String, bool)>) {
     let config = settings.config_for(name);
-    if config.dialect() == Dialect::JsonLines || !may_name_a_path(text) {
-        return check(name, text, settings, None, parts);
-    }
     // With the file's own depth limit, so a file with no usable `$schema` gets the report a
     // plain check gives, without a second parse.
-    let (report, events) = jsonvet::parse(text, &config);
-    let Some((offset, path)) = events.as_deref().and_then(own_schema) else {
+    let mut own = OwnSchema::default();
+    let report = jsonvet::parse_with(text, &config, &mut |event| own.event(&event));
+    let syntax_error = report.problems().iter().any(|p| p.rule() == Rule::Syntax);
+    let Some((offset, path)) = own.found.filter(|_| !syntax_error) else {
         return (report, Vec::new());
     };
     let folder = Path::new(name).parent().unwrap_or(Path::new(""));
-    let error = match settings::confined(path, folder, &root(Path::new(name))) {
+    let error = match settings::confined(&path, folder, &root(Path::new(name))) {
         // A schema that is not there is skipped like a URL: tools name one under
         // `node_modules` that a CI run may not have installed.
         Ok(false) => return (report, Vec::new()),
-        Ok(true) => match load(&folder.join(path), true) {
+        Ok(true) => match load(&folder.join(&path), true) {
             // As with `--schema`, so the depth cap applies.
             Ok(schema) => return check(name, text, settings, Some(&schema), parts),
             Err(e) => e,
