@@ -14,7 +14,7 @@ release than Cargo.toml.
 
 Needs hyperfine and a release build (`cargo build --release -p jsonvet-cli`). Each check-json5 is
 installed into its own virtual environment and run from there, so uvx's start-up is not timed.
-1.0.1 was never on PyPI, so it comes from its git tag.
+1.0.1 was never on PyPI, so it comes from the commit its v1.0.1 tag names.
 Every case passes in both tools, apart from the `dup` files, which hold a duplicate key.
 """
 
@@ -32,7 +32,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DESIGN = ROOT / "docs" / "design.md"
-REFERENCES = {"1.4.1": "check-json5==1.4.1", "1.0.1": "check-json5 @ git+https://github.com/maresb/check-json5@v1.0.1"}
+# 1.0.1 by its commit, the v1.0.1 tag: a tag can be moved.
+REFERENCES = {
+    "1.4.1": "check-json5==1.4.1",
+    "1.0.1": "check-json5 @ git+https://github.com/maresb/check-json5@82381b1133603e4ff6eb3d866ec4501d121b669b",
+}
 MARKERS = ("<!-- speed:start -->\n", "<!-- speed:end -->")
 
 

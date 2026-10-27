@@ -12,10 +12,10 @@ Most users need no change. Check these if they apply to you:
 
 1. If a file has a top-level `$schema` that is a path, jsonvet now checks the file against that
    schema. So a run that passed can now fail (exit 1): when the file fails the schema, when the
-   schema exists but jsonvet cannot read or use it, and when the path starts with `/` or `//` or
-   climbs out of the repository with `..`, even if nothing is there. Fix the file, make the
-   `$schema` a URL, or pass `--schema`. Action users on `@v3` get this as soon as 3.2.0 is on
-   PyPI. pre-commit users get it when they bump `rev`.
+   schema exists but jsonvet cannot read or use it, and when the path is absolute, has a drive or
+   `\\` prefix, or leads out of the project through `..` or a symlink, even if nothing is there.
+   Fix the file, make the `$schema` a URL, or pass `--schema`. Action users on `@v3` get this as
+   soon as 3.2.0 is on PyPI. pre-commit users get it when they bump `rev`.
 2. If a script reads piped text output while `FORCE_COLOR` is set to anything but `0` or `false`,
    the lines now carry color codes. Pass `--color never` to get plain lines.
 3. If a `--schema` has more than 1,000 different patterns, or a pattern that takes more than 2 MB
