@@ -95,14 +95,17 @@ fast. Other JSON5 syntax went to a pure-Python parser, and so did the second pas
 duplicate key's position. jsonvet does everything in one pass of one parser, and checks files on
 every core.
 
-A JSON Lines file of 1 MB or more is cut at newlines into one part for each core its chunk of
+A JSON Lines file of 1 MB or more is cut at newlines into parts, one for each core its chunk of
 files leaves free, and the parts are checked at once. A newline inside a JSON string must be
 escaped, and JSON Lines has no comments, so every raw newline ends a record. Each part counts
-offsets from the start of the file, problems stop at the first syntax error as in one pass, and
-the output is the same. Reading the file stays on one thread, so records that are mostly one
-long string gain little. With `--schema`, each part's lines are also checked against the schema
-in that part, each line as it is read, and the part is read again only to place its errors. Each line is a document of its own, and the error cap counts per document, so the
-parts' schema errors joined in order are the ones one pass finds.
+offsets from the start of the file, and problems stop at the first syntax error, as in one pass.
+The output is the same. Reading the file stays on one thread, so records that are mostly one long
+string gain little.
+
+With `--schema`, each part also checks its own lines against the schema, each line as it is read.
+It reads the part again only to place its errors. Each line is a document of its own, and the
+error cap counts per document, so the parts' schema errors joined in order are the ones one pass
+finds.
 
 We adopt a speed-up only when it measures at least 5% faster end to end; see
 [0004](decisions/0004-measure-before-adopting-a-speed-up.md), which also lists what we turned
@@ -203,9 +206,9 @@ timeout, so a file gets the same verdict on every machine; see
   folded and checked one at a time, so a JSON Lines file holds one line's values at once: 80 MB of
   nested records took 80 MB, against 3.4 GB when the whole file was folded first. A JSON Lines
   file of 1 MB or more is split across threads, and each part folds its lines as it reads them
-  too: when each part kept its events, those 80 MB took 0.56 GB. jsonschema
-  collects every error before handing out the first, so a 10 MB array of 5,000,000 failing numbers
-  took 2.0 GB, against 0.37 GB when it passes. So jsonvet splits two shapes of schema:
+  too. When each part kept its events, those 80 MB took 0.56 GB. jsonschema collects every error
+  before handing out the first, so a 10 MB array of 5,000,000 failing numbers took 2.0 GB, against
+  0.37 GB when it passes. So jsonvet splits two shapes of schema:
   - When nothing but `items` checks a top-level array's elements, and every `$ref` points into
     `$defs` or `definitions`, jsonvet checks the schema without `items` on the whole array, then
     `items` on one element at a time: 0.37 GB both ways, with the same output. jsonschema runs
@@ -215,52 +218,52 @@ timeout, so a file gets the same verdict on every machine; see
     own. Its errors past the first 100 differ: jsonschema in one pass gives them keyword by
     keyword, the split member by member.
 
-  Any other schema is checked in one pass. Files are read a chunk at a time, until they hold
-  64 MB. For a file with a schema each byte counts 20 times, and the chunk is cut from the
-  files' sizes before any is read, so a file of 3.2 MB or more is checked on its own. Counted
+  Any other schema is checked in one pass. Files are read a chunk at a time, until they hold 64 MB.
+  For a file with a schema each byte counts 20 times, and the chunk is cut from the files' sizes
+  before any is read, so a file of 3.2 MB or more is checked on its own. When the chunk was counted
   only after reading, every core took a file at once: twelve 10 MB files took 3.4 GB instead of
-  0.30 GB. Without a schema the text is counted as it is read, since sizing 10,000 files first
-  cost 7 ms. A file's own `$schema` is known only once the file is read, so such a file counts
-  its size once, not 20 times.
-- **Errors.** A jsonschema error holds more than its message. An `anyOf` error holds every
-  branch's errors, so 40 errors from a 1 KB schema took 3.2 GB when jsonvet kept them until it
-  placed them. An `enum` error shares its values, as jsonschema 0.60 does, instead of copying them. jsonvet keeps each error's message and path
-  as it comes and drops the rest. Past the 100th it stops asking, so the last line says there are
-  more but not how many. What one jsonschema call collects is still all in memory at once. That
-  is one element or member for a split schema, and the whole document otherwise, so an `anyOf`
-  around `additionalProperties` can still take gigabytes on a document of many failing values
-  ([the cost of each error](usage.md#json-schema-limits)).
+  0.30 GB. Without a schema the text is counted as it is read, since sizing 10,000 files first cost
+  7 ms. A file's own `$schema` is known only once the file is read, so such a file counts its size
+  once, not 20 times.
+- **Errors.** A jsonschema error holds more than its message. An `anyOf` error holds every branch's
+  errors, so 40 errors from a 1 KB schema took 3.2 GB when jsonvet kept them until it placed them.
+  Since jsonschema 0.60, an `enum` error shares its values instead of copying them. jsonvet keeps
+  each error's message and path as it comes and drops the rest. Past the 100th it stops asking, so
+  the last line says there are more but not how many. What one jsonschema call collects is still all
+  in memory at once. That is one element or member for a split schema, and the whole document
+  otherwise, so an `anyOf` around `additionalProperties` can still take gigabytes on a document of
+  many failing values ([the cost of each error](usage.md#json-schema-limits)).
 - **Schema depth and `$ref` chains.** Without the check, 1,000 `allOf` and `$ref` hops overflow
   the 64 MB stack at once against a 512-level array. A `$ref` back to a schema on the way to it
   is recursion and adds nothing. The error lands at the `$ref` that crosses the line. jsonvet
   resolves each `$ref` with the `referencing` crate jsonschema itself uses, against the base the
   `$id`s above it set, so the two follow the same schemas. A `$ref` that resolves to nothing is
   an error at that `$ref`, as the count cannot follow it.
-- **Schema size.** jsonschema may check every schema a value reaches, so a schema where each
-  level `$ref`s the next twice doubles the work per level, well under the depth cap: 24 levels
-  took 12.9 s and 11.4 GB for one `{}`. jsonvet counts the objects and arrays with each `$ref`
-  replaced by what it points at, and stops at 5,000,000. That lets 18 such levels through (about
-  3.9 million, 1 s and 340 MB per failing value) and SchemaStore's 1.6 MB `azure-pipelines.json`
-  (about 3.2 million). The values in each `enum` and `const` count too, as jsonschema may compare a value with
-  each one. `unevaluatedProperties` and `unevaluatedItems` make jsonschema check the schemas
-  beside them that apply to the same value a second time, to find what they evaluated, so those
-  count twice there. Nested in each other's `anyOf`, each level doubled the time, and the cap
-  stops 20 such levels. A `$ref` from `properties` is not checked again, so OpenAPI 3.1's
-  schema, with `unevaluatedProperties` on most objects, comes to about 1.25 million. A schema
-  measured while a `$ref` back up to a schema above it was skipped is measured again wherever it
-  is reached, as it can be deeper there.
+- **Schema size.** jsonschema may check every schema a value reaches, so a schema where each level
+  `$ref`s the next twice doubles the work per level, well under the depth cap: 24 levels took 12.9 s
+  and 11.4 GB for one `{}`. jsonvet counts the objects and arrays with each `$ref` replaced by what
+  it points at, and stops at 5,000,000. That lets 18 such levels through (about 3.9 million, 1 s and
+  340 MB per failing value) and SchemaStore's 1.6 MB `azure-pipelines.json` (about 3.2 million). The
+  values in each `enum` and `const` count too, as jsonschema may compare a value with each one.
+  `unevaluatedProperties` and `unevaluatedItems` make jsonschema check the schemas beside them that
+  apply to the same value a second time, to find what they evaluated, so those count twice there.
+  Nested in each other's `anyOf`, each level doubled the time, and the cap stops 20 such levels. A
+  `$ref` from `properties` is not checked again, so OpenAPI 3.1's schema, with
+  `unevaluatedProperties` on most objects, comes to about 1.25 million. A schema measured while a
+  `$ref` back up to a schema above it was skipped is measured again wherever it is reached, as it
+  can be deeper there.
 - **Regex backtracking.** Schema regexes with back-references or lookaround run on fancy-regex,
-  which backtracks. With the cap, `^(a|a)*\1b` over 5,000 strings takes under a second, not
-  minutes. An over-cap match is neither a match nor a miss, so jsonschema checks the value again
-  under each outcome, up to 64 times, and reports the match only when the outcomes disagree on
-  the result: at the string, or for a key, at its object. jsonvet names the pattern from the
-  error's schema path, and tries that pattern on the object's keys to place one error at each key
-  it could not be matched on. A split schema with such a regex is also checked for validity a
-  part at a time, because one pass over a whole document repeats every over-cap match in it once
-  per outcome: 2,000 over-cap keys took 10.7 s in one pass and 0.10 s a member at a time. When
-  every regex compiles for the linear-time `regex` crate, no match can run past the cap. So jsonvet
-  first checks in one pass whether the document is valid: 7% quicker on a valid 17 MB object. A
-  schema that cannot be split still takes the long way ([SECURITY.md](../SECURITY.md#known-limits)).
+  which backtracks. With the cap, `^(a|a)*\1b` over 5,000 strings takes under a second, not minutes.
+  An over-cap match is neither a match nor a miss. So jsonschema checks the value again under each
+  outcome, up to 64 times. It reports the match only when the outcomes disagree on the result: at
+  the string, or for a key, at its object. jsonvet names the pattern from the error's schema path,
+  and tries that pattern on the object's keys to place one error at each key it could not be matched
+  on. A split schema with such a regex is also checked for validity a part at a time. One pass over
+  a whole document repeats every over-cap match in it once per outcome: 2,000 over-cap keys took
+  10.7 s in one pass and 0.10 s a member at a time. When every regex compiles for the linear-time
+  `regex` crate, no match can run past the cap. So jsonvet first checks in one pass whether the
+  document is valid: 7% quicker on a valid 17 MB object. A schema that cannot be split still takes
+  the long way ([SECURITY.md](../SECURITY.md#known-limits)).
 
 ## Configuration
 
@@ -339,7 +342,7 @@ root `setup.py` is a placeholder that depends on the exact released `jsonvet` wh
 install downloads a prebuilt binary and never compiles Rust; see
 [0008](decisions/0008-binary-wheels-behind-a-placeholder.md). maturin builds the wheels with
 `bindings = "bin"`, for Linux (glibc and musl, x86-64 and arm64), macOS (x86-64 and arm64) and
-Windows (x64 and arm64).
+Windows (x86-64 and arm64).
 
 ## Testing
 
@@ -367,13 +370,13 @@ and Windows, plus the oldest supported Rust (1.88). Each layer exists for one re
 
 ## Publishing
 
-A release publishes to PyPI and crates.io from `release.yml`, with trusted publishing on both.
-A pushed `vX.Y.Z` tag starts it, not a published GitHub release, so the release can be immutable:
-the workflow drafts it, attaches the binary archives, the SBOM and `SHA256SUMS`, and publishes it
-after the packages are up. The archives hold the binaries from each wheel, not a second build, so PyPI and
-the GitHub release ship the same bytes. Each file gets a build provenance attestation, and the
-PyPI upload adds PEP 740 attestations. The binaries are not built with `cargo auditable`: maturin
-cannot run it without a cargo wrapper inside every build container, so the SBOM lists the
+A release publishes to PyPI and crates.io from `release.yml`, with trusted publishing on both. A
+pushed `vX.Y.Z` tag starts it, not a published GitHub release, so the release can be immutable. The
+workflow drafts the release, attaches the binary archives, the SBOM and `SHA256SUMS`, and publishes
+it after the packages are up. The archives hold the binaries from each wheel, not a second build, so
+PyPI and the GitHub release ship the same bytes. Each file gets a build provenance attestation, and
+the PyPI upload adds PEP 740 attestations. The binaries are not built with `cargo auditable`:
+maturin cannot run it without a cargo wrapper inside every build container, so the SBOM lists the
 dependencies instead.
 
 The `check-json5` package uploads after the `jsonvet` wheels, and `jsonvet-cli` after the

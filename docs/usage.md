@@ -79,9 +79,9 @@ line, with its severity and rule in color. `NO_COLOR` wins over `FORCE_COLOR`, a
   a word such as `True`. Select a dialect with `--dialect jsonc:GLOB`, or a `dialects` entry in
   the configuration file.
 - A UTF-16 or UTF-32 file fails with `file is UTF-16 (LE); jsonvet reads UTF-8`. jsonvet knows
-  one by its byte order mark, or without one by the zero bytes in its first four bytes. A
-  little-endian file without a mark that starts with a quote is the exception: it fails as a
-  syntax error, because JSON5 allows a raw U+0000 in a string, so UTF-8 can start the same way.
+  one by its byte order mark, or without one by the zero bytes in its first four bytes. The
+  exception is a little-endian file without a mark that starts with a quote. It fails as a syntax
+  error, because JSON5 allows a raw U+0000 in a string, so a UTF-8 file can start the same way.
   Any other file that is not UTF-8 fails with `not valid UTF-8 (byte N)`.
 - In GitHub Actions, each problem is also printed as an annotation. When the problem covers some
   text, such as a duplicate key or a number, the annotation marks it to its last column.
@@ -254,12 +254,13 @@ in `$XDG_CONFIG_HOME`, or `~/.config` without it, on Linux and macOS, and in `%A
 Windows. Its globs are relative to the working directory. Any project file replaces it, and
 `--config` and `--no-config` skip it.
 
-A config file that is not a regular file, such as a FIFO, is skipped; a `--schema` file that is not
-one is a usage error. A config file may hold at most 16 MB and a schema 64 MB. An error in a
+A config file that is not a regular file, such as a FIFO, is skipped. A `--schema` file that is
+not one is a usage error. A config file may hold at most 16 MB and a schema 64 MB. An error in a
 config file that is a symlink names its line and column, but not the key or value, since the
 link may lead to a file that is not yours to show.
 
-A folder walk skips what the `exclude` setting of each folder's nearest file names.
+A folder walk skips the paths that the `exclude` setting names in each folder's nearest config
+file.
 
 The file takes four keys, `rules`, `dialects`, `exclude` and `schemas`. Any other key, at the top
 or in a `dialects` or `schemas` entry, is a usage error, so a typo never goes unnoticed. The error
@@ -324,11 +325,11 @@ and `@v3.0.0` gets 3.0.0. Pinned to a commit SHA or a branch, it installs the re
 that commit's `Cargo.toml`. Between releases that is the last release, not the code in the
 commit. The step log names the version it installed.
 
-Pinning the Action does not pin the wheel's bytes, so before installing the wheel from PyPI the
-Action checks its build provenance attestation with `gh attestation verify`: it must come from
-jsonvet's `release.yml`. Hosted runners have `gh`; on a runner without it, and for releases before
-3.1.0, which have no attestation, the wheel installs unchecked, with a notice in the log. Set
-`verify: false` on GitHub Enterprise Server.
+Pinning the Action does not pin the wheel's bytes. So before it installs the wheel from PyPI, the
+Action checks the wheel's build provenance attestation with `gh attestation verify`: the wheel
+must come from jsonvet's `release.yml`. Hosted runners have `gh`. On a runner without it, the
+wheel installs unchecked, with a notice in the log, and so does a release before 3.1.0, which has
+no attestation. Set `verify: false` on GitHub Enterprise Server.
 
 ## SARIF
 
@@ -341,8 +342,8 @@ jsonvet --format sarif $(git ls-files '*.json') > jsonvet.sarif
 - Each problem is a result with its rule, severity, message and position. The position has an
   `endColumn` (and an `endLine` when the end is on a later line): the column just past the text
   the problem is about. A problem between two characters, such as a missing `,`, has no end, as in
-  a GitHub annotation. A schema error has no end. A duplicate key also
-  points at the first copy. A file jsonvet cannot read is a result under the rule `unreadable`.
+  a GitHub annotation. A schema error has no end. A duplicate key also points at the first copy. A
+  file jsonvet cannot read is a result under the rule `unreadable`.
 - Each rule carries its help text and a link to its section above, which GitHub code scanning
   shows on each alert.
 - The exit status and `--max-warnings` work as with text. No annotations are printed.
@@ -398,13 +399,13 @@ one exists is in [design.md](design.md#--schema).
   last `schemas` entry in its config file that matches it. Without one, a file whose top-level
   object has a `$schema` string that is a path, not a URL, is checked against that file, relative
   to the file's own folder. For standard input without `--stdin-filename`, that folder is the
-  current folder. A `$schema` URL is skipped, since jsonvet fetches nothing, and so is
-  `$schema` in JSON Lines. So is a `$schema` path to a file that does not exist, such as one under
+  current folder. jsonvet skips a `$schema` URL, since it fetches nothing. It also skips `$schema`
+  in JSON Lines, and a `$schema` path to a file that does not exist, such as one under
   `node_modules` that was not installed. A file with no schema is checked for syntax only. A
   `$schema` file that exists but jsonvet cannot read or use is a schema error at the `$schema`
   value, not a usage error. A missing schema named by `--schema` or a config file is a usage
   error. A fragment, as in `s.json#`, is dropped from a `$schema` path.
-- **Inside the project.** A pull request can change a `$schema` or a config file, so a schema
+- **Inside the project.** A pull request can change a `$schema` or a config file. So a schema
   named by a `$schema`, or by a config file the search finds, must be inside the checked file's
   own project: the folder where the [config search](#configuration-file) for that file stops. That
   is the nearest folder above the file with a `.git`, or without one the working directory, or the
@@ -426,10 +427,10 @@ one exists is in [design.md](design.md#--schema).
 - **Errors.** A document lists at most 100 schema errors. They are the first 100 that jsonschema
   finds, and it takes an object's keys in sorted order, not file order. A top-level object checked
   one member at a time (see Memory) gives them by member instead of by keyword. They print in
-  file order. If there are more, one more line follows them,
-  `... and more schema errors in this document`, at the document's start. jsonvet stops looking
-  at the 101st, so it gives no count. SARIF and JSON leave that line out. `additionalProperties` gives one error per key it does not allow,
-  at that key, and each one counts toward the 100.
+  file order. If there are more, one more line follows them, placed at the document's start:
+  `... and more schema errors in this document`. jsonvet stops looking at the 101st, so it gives
+  no count. SARIF and JSON leave that line out. `additionalProperties` gives one error per key it
+  does not allow, at that key, and each one counts toward the 100.
 - **Messages.** Each message ends with the JSONPath of the value, as duplicate keys do. A message
   quotes the value unless that makes it long; then it says `value`. A message, with its path, is
   cut at 200 bytes and ends in `...`. The wording comes from the jsonschema crate and may change
@@ -442,17 +443,19 @@ one exists is in [design.md](design.md#--schema).
   lone surrogates such as `"\ud800"`, since both become U+FFFD. In the schema file, either one is
   a usage error.
 - **Memory.** jsonvet holds each document's values in memory: 4 to 22 times its size, the most for
-  many small records. A JSON Lines file holds one line's values at a time, or one per thread
-  when a file of 1 MB or more is checked in parts on several threads, so memory stays near the
-  file's size, as it does without a schema: 38 MB for 36 MB of small records. Errors add to that:
-  about 700 bytes for each line with one, so 36 MB where every line fails took 0.56 GB. A top-level array that fails everywhere takes no more than a valid
-  one when only `items` checks its elements, as in
-  `{"type": "array", "items": {"$ref": "#/$defs/record"}}`, and so does a top-level object when
-  only `properties`, `patternProperties` and `additionalProperties` check its members. jsonvet then
-  checks one element or member at a time. Otherwise jsonschema finds every error in the document
-  before jsonvet sees the first. Each takes about 420 bytes (2,000,000 failing keys in a 42 MB file
-  took 1.4 GB, against 0.52 GB when they pass), and more when it holds part of the schema: an
-  `anyOf` error holds every branch's errors.
+  many small records. A JSON Lines file holds one line's values at a time. When a file of 1 MB or
+  more is checked in parts on several threads, it holds one line's values per thread. So memory
+  stays near the file's size, as it does without a schema: 38 MB for 36 MB of small records.
+  Errors add to that: about 700 bytes for each line with one, so 36 MB where every line fails took
+  0.56 GB.
+
+  A top-level array that fails everywhere takes no more than a valid one when only `items` checks
+  its elements, as in `{"type": "array", "items": {"$ref": "#/$defs/record"}}`. The same goes for a
+  top-level object when only `properties`, `patternProperties` and `additionalProperties` check
+  its members. jsonvet then checks one element or member at a time. Otherwise jsonschema finds
+  every error in the document before jsonvet sees the first. Each error takes about 420 bytes
+  (2,000,000 failing keys in a 42 MB file took 1.4 GB, against 0.52 GB when they pass), and more
+  when it holds part of the schema: an `anyOf` error holds every branch's errors.
 - **Regexes.** A pattern with a back-reference or lookaround may backtrack 5,000 times per string.
   A key or string that needs more is an error at that key or string, when the pattern applies
   there and the result depends on whether it matches: the pattern could not be checked. When the
