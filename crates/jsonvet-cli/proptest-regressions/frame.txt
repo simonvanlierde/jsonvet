@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc fa80a92a2c28514ce7b5f68dc57e9acb3096af1a225ab4edbd2d2bf67bf0751c # shrinks to text = "/*[中", dialect = Jsonc
