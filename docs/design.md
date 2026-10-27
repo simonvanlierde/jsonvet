@@ -70,7 +70,8 @@ Median of 40 runs from `uv run scripts/bench.py`, on 12 cores of a Ryzen 7 H 255
 <!-- speed:end -->
 
 1.4 sent strict JSON and JSONC to Python's C parser, so those were already fast, and everything
-else through pure Python. jsonvet reads each file once with one parser, and checks files on every
+else through pure Python. 1.0.1, the original hook that pre-commit configs pin from GitHub, sent
+every file through pure Python. jsonvet reads each file once with one parser, and checks files on every
 core.
 
 A JSON Lines file of 1 MB or more is cut at newlines into parts, one for each core that is free,
