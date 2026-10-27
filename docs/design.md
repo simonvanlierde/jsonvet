@@ -81,7 +81,8 @@ the file and stops at its first syntax error, so the output matches one pass. Wi
 each line is its own document and the error cap counts per document, so the parts' errors joined
 in order are the ones one pass finds.
 
-A speed-up must measure at least 5% faster end to end
+A speed-up must measure faster with the same output, and at least 5% faster end to end if it
+adds a dependency, `unsafe` or a slower build
 ([0004](decisions/0004-measure-before-adopting-a-speed-up.md)).
 
 ## Dialects

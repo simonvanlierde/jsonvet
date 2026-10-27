@@ -1,6 +1,6 @@
-# 4. Measure a speed-up first, adopt it only past 5%
+# 4. Measure a speed-up first, and weigh it against what it costs
 
-Status: accepted (2026-10-19)
+Status: accepted (2026-10-19), amended 2026-10-27: a speed-up with no cost needs no 5% bar
 
 ## Context
 
@@ -9,8 +9,11 @@ ideas come with other projects' numbers (ruff: PGO 8 to 14%), not ours.
 
 ## Decision
 
-Build it, time it with `hyperfine -N` against the same build without it, and keep it only when
-it's at least 5% faster end to end with the same output. Record what we turn down here.
+Build it, time it with `hyperfine -N` against the same build without it, and check the output is
+the same. A speed-up that is only code in the crates we already have is kept when it measures
+faster on the case it targets and no slower on the others. One that adds a cost (a dependency,
+`unsafe`, a slower build, a platform-specific path) must pay for it: at least 5% faster end to
+end. Record what we turn down here.
 
 ## Turned down
 
@@ -29,7 +32,8 @@ large JSON Lines files (#68, 78 MB 264 to 89 ms), and a byte table for strings (
 short keys 27.5 to 25.3 ms, files full of escapes or JSON5 tabs 10 to 25% faster, up to 6% on
 `scripts/bench.py`).
 A speed-up past 5% on one kind of file counts, if it is no slower on the others. A 5% call needs
-a quiet machine and the median.
+a quiet machine and the median. The 5% bar first applied to every speed-up; since 2026-10-27 it
+applies only to one that adds a cost, as a small gain in plain code is still worth having.
 
 ## Confirmation
 

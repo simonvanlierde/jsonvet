@@ -17,7 +17,7 @@ a link or a renamed test is fine.
 | [0001](0001-one-parser-and-the-1.4-contract.md) | One hand-written parser for six dialects, under a contract with check-json5 1.4 | 2026-10-13 |
 | [0002](0002-no-unsafe-code.md) | No unsafe code | 2026-10-19 |
 | [0003](0003-siphash-for-duplicate-keys.md) | SipHash with OS keys for the duplicate-key index | 2026-10-20 |
-| [0004](0004-measure-before-adopting-a-speed-up.md) | Measure a speed-up first, adopt it only past 5% | 2026-10-19 |
+| [0004](0004-measure-before-adopting-a-speed-up.md) | Measure a speed-up first, and weigh it against what it costs | 2026-10-19 |
 | [0005](0005-nearest-config-file-replaces.md) | The nearest config file applies, and replaces the ones above it | 2026-10-20 |
 | [0006](0006-offline-json-schema-in-every-build.md) | `--schema` on the jsonschema crate, offline, in every build | 2026-10-18 |
 | [0007](0007-hand-written-output-with-one-escaping-rule.md) | SARIF written by hand, with one escaping rule for every output | 2026-10-14 |
