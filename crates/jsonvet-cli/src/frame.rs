@@ -234,6 +234,7 @@ impl Excerpt {
 mod tests {
     use annotate_snippets::Renderer;
     use jsonvet::{Config, Dialect, Severity, check};
+    use proptest::prelude::*;
 
     use super::{Mark, one_char, render};
 
@@ -343,6 +344,94 @@ mod tests {
         let frame = frames(text);
         assert!(frame.contains(" --> f:2:5\n"), "{frame}");
         assert!(frame.contains("2 | y\", \"a\": 2}"), "{frame}");
+    }
+
+    /// JSON-ish token soup, like `soup()` in the jsonvet crate's tests/properties.rs, with the
+    /// characters that move a frame's columns or lines: tabs, CR, U+2028, wide and control
+    /// characters, and a line long enough to be cut.
+    fn soup() -> impl Strategy<Value = String> {
+        let tokens = prop::sample::select(vec![
+            "[",
+            "]",
+            "{",
+            "}",
+            ":",
+            ",",
+            "\"a\"",
+            "'b'",
+            "c",
+            "1",
+            "True",
+            "NaN",
+            "// x\n",
+            "/*",
+            "\"",
+            "\\",
+            "\n",
+            "\r\n",
+            "\r",
+            "\t",
+            " ",
+            "\u{2028}",
+            "\u{2029}",
+            "é",
+            "中",
+            "😀",
+            "\u{1b}",
+            "\u{202e}",
+            "##[",
+            "{\"a\":1,\"a\":2}",
+        ]);
+        let token = prop_oneof![
+            20 => tokens.prop_map(String::from),
+            1 => Just("1, ".repeat(100)),
+        ];
+        prop::collection::vec(token, 0..40).prop_map(|t| t.concat())
+    }
+
+    proptest! {
+        // Each case draws a frame per problem, which is slow in a debug build.
+        #![proptest_config(ProptestConfig::with_cases(256))]
+
+        /// Every problem's frame names its line and column, and no mark runs past the end of
+        /// the source line it is under.
+        #[test]
+        fn frames_name_each_problem_and_keep_marks_on_their_line(
+            text in soup(),
+            dialect in prop::sample::select(Dialect::ALL.to_vec()),
+        ) {
+            let frame = frames_in(&text, dialect);
+            let report = check(&text, &Config::new(dialect));
+            for problem in report.problems() {
+                let at = report.location(problem.offset());
+                let header = format!(" --> f:{}:{}\n", at.line, at.column);
+                prop_assert!(frame.contains(&header), "{header:?} in {frame}");
+            }
+            let mut source: Option<&str> = None;
+            for line in frame.lines() {
+                let Some((gutter, rest)) = line.split_once("| ").or_else(|| line.split_once('|'))
+                else {
+                    continue;
+                };
+                if gutter.trim().chars().all(|c| c.is_ascii_digit()) && !gutter.trim().is_empty() {
+                    source = Some(rest);
+                } else if let Some(source) = source {
+                    let marks = rest
+                        .split(|c| !matches!(c, ' ' | '^' | '-'))
+                        .next()
+                        .unwrap_or("")
+                        .trim_end();
+                    // A terminal shows `中` and `😀`, the soup's only wide characters, two
+                    // columns wide, and so does annotate-snippets.
+                    let width: usize =
+                        source.chars().map(|c| if matches!(c, '中' | '😀') { 2 } else { 1 }).sum();
+                    prop_assert!(
+                        marks.chars().count() <= width + 1,
+                        "{marks:?} under {source:?} in {frame}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
