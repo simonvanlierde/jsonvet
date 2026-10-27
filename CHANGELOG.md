@@ -11,61 +11,56 @@ version for a new option or output, the patch version for a fix.
 Most users need no change. Check these if they apply to you:
 
 1. If a file has a top-level `$schema` that is a path, jsonvet now checks the file against that
-   schema. A `$schema` that starts with `/` or `//`, or climbs out of the repository with `..`, is
-   now an error even if nothing is there. Make it a URL or a path inside the repository, or pass
-   `--schema`.
-2. If a script reads piped text output while `FORCE_COLOR` is set, the lines now carry color codes.
-   Pass `--color never` to get plain lines.
+   schema. So a run that passed can now fail (exit 1): when the file fails the schema, when the
+   schema exists but jsonvet cannot read or use it, and when the path starts with `/` or `//` or
+   climbs out of the repository with `..`, even if nothing is there. Fix the file, make the
+   `$schema` a URL, or pass `--schema`. Action users on `@v3` get this as soon as 3.2.0 is on
+   PyPI. pre-commit users get it when they bump `rev`.
+2. If a script reads piped text output while `FORCE_COLOR` is set to anything but `0` or `false`,
+   the lines now carry color codes. Pass `--color never` to get plain lines.
 
 ### Added
 
 - A config file can give files a schema: `schemas = [{ files = "config/*.json", schema =
   "server.schema.json" }]` checks the matching files as `--schema` would. A file's own `$schema`
-  can also name a schema on disk, relative to the file. jsonvet still fetches nothing. A `$schema`
-  URL means no schema check, and so does a relative path inside the project to a file that does
-  not exist. Both kinds of schema path must stay inside the checked file's own project: its
-  repository, or where the config search for it stops. A config file named by `--config` is the
-  exception. An error in such a schema names its place but quotes nothing from it. So a pull
-  request cannot make jsonvet read or show a file outside the project.
+  can also name a schema on disk, relative to the file. A `$schema` URL is skipped: jsonvet still
+  fetches nothing. Both kinds of path must stay inside the project, and errors in such a schema
+  quote nothing from it, so a pull request cannot make jsonvet read or show a file outside the
+  project. usage.md has the details.
 - `--color auto|always|never` colors the code frames. `auto`, the default, colors them on a
-  terminal unless `NO_COLOR` is set. `FORCE_COLOR` or `--color always` also color piped output.
-  That output stays one line per problem, with the severity and rule in color.
+  terminal unless `NO_COLOR` is set. `--color always`, or `FORCE_COLOR` set to anything but `0` or
+  `false`, also colors the severity and rule of piped lines.
 - SARIF results and GitHub annotations now have an `endColumn`, so code scanning and pull
   requests mark the whole duplicate key, number or word, not only its first character.
 - The library's `Problem::end()` gives the byte offset where the problem's text ends, and
   `Report::text()` gives the text a report is about.
-- A playground at <https://simonvanlierde.github.io/jsonvet/>. Paste text, pick a dialect, and see
-  each problem with its line, column and rule as you type. It runs jsonvet in your browser as
-  WebAssembly, so the text never leaves your machine. It has no `--schema` checks. The page
-  sets a Content Security Policy that lets it load scripts only from its own site.
+- A playground at <https://simonvanlierde.github.io/jsonvet/> checks text in your browser as you
+  type, in any dialect. It runs jsonvet as WebAssembly, so the text never leaves your machine. It
+  has no `--schema`.
 
 ### Changed
 
-- With `FORCE_COLOR` set, as many Node CI setups do, piped line output now carries color codes
-  around the severity and the rule. `--color never` gives plain lines.
-- `--schema` checks a JSON Lines file of 1 MB or more on several cores, one part of its lines on
-  each. It builds the values of one line at a time and checks that line, instead of the whole file
-  at once. On 8 cores, a 102 MB file checks 2.2x faster and 80 MB of nested records 5.5x faster,
-  with about a third of the peak memory (median of 10). The output is unchanged.
-- `--schema` uses jsonschema 0.60.1. It shares the values of an `enum` or `const` between errors
-  instead of copying them. A schema with an `anyOf` around `additionalProperties` and a
-  200,000-value `enum` took 6.3 GB and 2.7 s on 1,000 failing keys, and now takes 40 MB and 0.03 s.
-  The binary is 135 KB larger.
 - On a terminal, each problem now shows as a code frame: the message, the line of the file with
-  the problem marked under it, and the related place, such as a duplicate key's first copy.
-  pre-commit in a terminal shows frames too. CI, pre-commit.ci and pipes keep one line per
-  problem, and `| cat` forces lines.
+  the problem marked under it, and the related place, such as a duplicate key's first copy. CI,
+  pre-commit.ci and pipes keep one line per problem.
+- The `schema` rule's description in `--list-rules`, `--explain` and SARIF now says the schema
+  comes from `--schema`, the config file's `schemas` or a local `$schema`.
+- `--schema` takes much less memory and time on a JSON Lines file of 1 MB or more: it checks the
+  file on several cores, one line at a time. Against 3.1.1, on 12 cores (median of 5), 36 MB of
+  small records takes 42 MB and 0.07 s instead of 1.14 GB and 1.02 s, and 80 MB of nested records
+  85 MB and 0.14 s instead of 1.85 GB and 1.83 s. The output is unchanged.
+- `--schema` takes less memory on other large files, because it builds each document's values as
+  it reads them. A 16 MB array of small records takes 336 MB instead of 478 MB in 3.1.1.
+- `--schema` uses jsonschema 0.60.1, which shares the values of an `enum` or `const` between errors.
+  An `anyOf` around `additionalProperties` with a 200,000-value `enum` took 6.3 GB and 3.2 s in
+  3.1.1 on 1,000 failing keys, and now takes 42 MB and 0.06 s. The binary is 135 KB larger.
+- `--schema` now checks a string too costly to match against a pattern only where the pattern
+  applies, instead of failing it (see Fixed). That is fast for most files. Known limit: one such
+  string under an `allOf`, beside many strings that fail the pattern, costs more than the file's
+  size explains. SECURITY.md has the numbers.
 - Strings check faster: 8% on a 9 MB file of short keys and values, 8 to 9% on 9 MB of
   pretty-printed records (median of 30), and 10 to 25% on files full of escapes or of JSON5
   strings with tabs. The problems reported are unchanged.
-- `--schema` takes less memory on large files. jsonvet used to keep every value the parser read
-  until it had built the values for the whole file. Now it builds them as it reads, and checks each
-  document as soon as it is complete. On a 12 MB file of small records, peak memory went from
-  378 MB to 266 MB. A JSON Lines file of 1 MB or more is checked in parts on several cores, and
-  each part now builds its values as it reads too. 36 MB of small records takes 38 MB instead of
-  342 MB, 80 MB of nested records takes 80 MB instead of 563 MB, and 36 MB where every line fails
-  takes 0.56 GB instead of 1.67 GB, in no more time. A file with schema errors is read a second
-  time to place them, which costs about 2% more time there. The output is the same.
 - Release tags are signed with the maintainer's key, from this release on. `git verify-tag v3.2.0`
   checks one, and GitHub shows it as verified.
 
@@ -75,13 +70,6 @@ Most users need no change. Check these if they apply to you:
   pattern the schema never applies there. jsonvet tried every pattern on every string, so any Expo
   `app.json` with a string of 5,000 characters or more failed against SchemaStore's schema.
 - The crates on crates.io and the wheels on PyPI now carry the MIT license text, not just its name.
-
-### Security
-
-- `--schema` no longer takes tens of seconds on strings too costly for a pattern under an `allOf`.
-  5,000 such strings took 26.3 s and now take 0.05 s. One such string beside 100,000 that fail the
-  pattern took over 120 s and now takes 2.55 s. A much larger file can still be slow: SECURITY.md
-  has the numbers.
 
 ## [3.1.1] - 2026-10-21
 
