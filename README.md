@@ -271,6 +271,9 @@ Run on 2026-10-21. The full grid, and where each expected verdict comes from: [d
   each release.
 - [CONTRIBUTING.md](https://github.com/simonvanlierde/jsonvet/blob/main/CONTRIBUTING.md): how to
   build, test and release it.
+- [ROADMAP.md](https://github.com/simonvanlierde/jsonvet/blob/main/ROADMAP.md) and
+  [GOVERNANCE.md](https://github.com/simonvanlierde/jsonvet/blob/main/GOVERNANCE.md): what is
+  planned, and who decides.
 
 Found a file jsonvet gets wrong? Please
 [open an issue](https://github.com/simonvanlierde/jsonvet/issues) with the file and the command
