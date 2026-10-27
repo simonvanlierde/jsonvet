@@ -35,9 +35,9 @@ const STACK: usize = 64 << 20;
 /// How much memory the files read at once may take before they are checked and printed.
 const CHUNK_BYTES: usize = 64 << 20;
 
-/// How many bytes of memory a byte of file text takes with `--schema`, which holds the file's
-/// value one document at a time: 4 to 22 per byte of that document (docs/design.md, "Memory").
-/// 20 is near the top of that range: only many small records take more.
+/// How many bytes of memory a byte of file text takes with a schema, which holds the file's value
+/// one document at a time: 4 to 22 per byte of that document (docs/usage.md, "JSON Schema
+/// limits"). 20 is near the top of that range: only many small records take more.
 const SCHEMA_BYTES: usize = 20;
 
 /// From this size, a JSON Lines file is split at newlines and its parts checked on the cores
