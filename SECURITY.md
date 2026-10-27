@@ -8,16 +8,11 @@ crafted file that does any of these as a security bug:
   command;
 - makes the GitHub Action read or write outside the files it was given.
 
-That holds for every file jsonvet reads: the files it checks, a config file (`jsonvet.toml`,
-`pyproject.toml`), an ignore file (`.gitignore`, `.ignore`) and a schema named by `--schema`, a
-config file or a file's `$schema`. A schema path from a `$schema` must stay inside the project,
-and so must one from a config file the search finds. A config file named by `--config` is the
-exception. No error from such a schema quotes anything from it, whether the schema cannot be used
-or a value fails it ([0012](docs/decisions/0012-schema-paths-stay-in-the-project.md)). A way to
-read or show a file outside the project through one is a security bug too.
-
-[docs/assurance-case.md](docs/assurance-case.md) argues, claim by claim, how jsonvet meets
-these requirements.
+That holds for every file jsonvet reads: the files it checks, config and ignore files, and
+schemas. A way to make jsonvet read or show a file outside the project, through a schema path the
+project picks, is a security bug too
+([0012](docs/decisions/0012-schema-paths-stay-in-the-project.md)).
+[docs/assurance-case.md](docs/assurance-case.md) argues how jsonvet meets these requirements.
 
 ## Known limits
 
@@ -26,43 +21,31 @@ time ([design.md](docs/design.md#--schema)). Until they close, review schema cha
 requests from strangers before CI runs them.
 
 - jsonschema collects every error of one validation call before jsonvet sees any. So a schema
-  that puts an `anyOf` around `additionalProperties` can still take gigabytes on a document with
-  many failing values. Each error takes about 420 bytes, on top of the file's own values. The
-  Memory bullet in [usage.md](docs/usage.md#json-schema-limits) sizes both. Closing it needs a way
-  in jsonschema to stop early.
-- A string too costly to match against a pattern under an `allOf` is much cheaper than before,
-  but not free. 5,000 such strings took 26.3 s with jsonschema 0.59 and take 0.05 s now. One such
-  string beside 100,000 strings that fail the pattern went from over 120 s to 2.55 s. But one
-  beside 1,600,000 failing strings (a 9.6 MB file) took 62 s and 7.5 GB, against 6.3 s and 1.35 GB
-  for the same strings without it: about 10 times the time and 5.6 times the memory, growing
-  faster than the input.
+  that puts an `anyOf` around `additionalProperties` can take gigabytes on a document with many
+  failing values ([sizes](docs/usage.md#json-schema-limits)). Closing it needs a way in
+  jsonschema to stop early.
+- A string too costly to match against a pattern under an `allOf`, beside many strings that fail
+  that pattern, costs more than the input explains, and the cost grows faster than the input.
+  One beside 1,600,000 failing strings (a 9.6 MB file) took 62 s and 7.5 GB, against 6.3 s and
+  1.35 GB without it.
 
-Output grows linearly with the input, but can be many times its size. The worst case I could
-build is a JSON5 file of 200,000 duplicate keys of 4 bytes each, under a path cut at 256 bytes.
-It printed 82 times its size as text, 119 times with `--format json`, and 172 times in GitHub
-Actions, where each problem also prints as an annotation. Each problem also repeats the file's
-name. Duplicate-key reports stay complete, as 1.4's are, so a CI log can be large.
+Output grows linearly with the input, but can be many times its size: up to 172 times in GitHub
+Actions, for a file of 200,000 duplicate keys of 4 bytes each. Duplicate-key reports stay
+complete, as 1.4's are, so a CI log can be large.
 
 ## Report a vulnerability
 
 Please report it privately through
-[GitHub's vulnerability reporting](https://github.com/simonvanlierde/jsonvet/security/advisories/new).
-Don't open a public issue or pull request for it: anyone can read those before there is a fix.
-
-Please include:
-
-- The file, or the smallest part of it that still shows the problem.
-- The command you ran, and the jsonvet version (`jsonvet --version`).
-- The impact you expect.
-
-I'll reply within a week, to say whether I can reproduce it and when I expect a fix.
+[GitHub's vulnerability reporting](https://github.com/simonvanlierde/jsonvet/security/advisories/new),
+not in a public issue or pull request. Include the file, or the smallest part of it that still
+shows the problem, the command you ran, the jsonvet version (`jsonvet --version`) and the impact
+you expect. I'll reply within a week, to say whether I can reproduce it and when I expect a fix.
 
 ## Fixes and disclosure
 
-A fix ships in a new release, on the GitHub release, PyPI (`jsonvet` and `check-json5`) and
-crates.io. When the release is out, I publish the GitHub security advisory for it, with a CVE
-where one applies, and credit you unless you'd rather not be named. The CHANGELOG entry for that
-release links the advisory.
+A fix ships in a new release on GitHub, PyPI and crates.io. Then I publish the GitHub security
+advisory, with a CVE where one applies, and link it from the CHANGELOG. It credits you unless
+you'd rather not be named.
 
 ## Scope
 
@@ -76,8 +59,7 @@ In scope:
 
 Out of scope:
 
-- The open cases under "Known limits", which are already known. A new way to reach them, or a
-  fix, is in scope: report it here.
+- The open cases under "Known limits". A new way to reach them, or a fix, is in scope.
 - A vulnerability in a tool jsonvet builds on or runs, such as jsonschema, a runner or GitHub
   Actions. Report it upstream. A pin or setting that jsonvet should change is in scope.
 - A check that jsonvet reports wrongly, or a file it accepts or rejects against its dialect.
@@ -85,8 +67,8 @@ Out of scope:
 
 ## Supported versions
 
-Fixes go into the newest release only, currently 3.x. The `check-json5` package on PyPI installs
-the same code, so it gets the same fixes.
+Fixes go into the newest release only, currently 3.x. The `check-json5` package installs the
+same code.
 
 ## Verifying a release
 
@@ -103,9 +85,7 @@ The same works on a wheel downloaded from PyPI (`pip download jsonvet --no-deps`
 shows the wheels' own PEP 740 attestations on each file's page. To check downloaded archives
 against the release's checksums, run `sha256sum --check --ignore-missing SHA256SUMS`.
 
-The GitHub Action runs this check on the wheel it downloads, from 3.1.0 on, and stops if it fails.
-It cannot pin a hash instead, because the wheels are built after the tag it is pinned to. On a
-runner without `gh`, it installs the wheel unchecked, with a notice. Someone who controls the
-package index cannot use that, because only the runner's owner can remove `gh`. The `verify` input
-turns the check off, for GitHub Enterprise Server
-([reference](docs/usage.md#github-action)).
+The GitHub Action runs this check on the wheel it downloads, and stops if it fails. It cannot pin
+a hash instead, because the wheels are built after the tag it is pinned to. Without `gh` on the
+runner it installs the wheel unchecked ([reference](docs/usage.md#github-action)), but someone who
+controls the package index cannot bring that about: only the runner's owner can remove `gh`.

@@ -23,11 +23,10 @@ events.jsonl:12:1: error[syntax] blank line; JSON Lines needs a value on every l
 text you paste as you type. Nothing to install, and the text stays on your machine.
 
 - **Six dialects, one parser.** Each file is checked in the dialect its extension implies.
-- **JSON Schema with positions.** The schema comes from `--schema`, a config file or a file's
-  `$schema`. Each schema error points at its value's line and column, and a terminal shows it as a
-  code frame. jsonvet never fetches anything from the network.
-- **Fits CI.** Use it as a pre-commit or prek hook, a GitHub Action, a command or a Rust library.
-  It writes text, SARIF for GitHub code scanning, or JSON for scripts and editors.
+- **JSON Schema with positions.** Each schema error points at its value's line and column.
+  jsonvet never fetches anything from the network.
+- **Fits CI.** A pre-commit or prek hook, a GitHub Action, a command or a Rust library, with text,
+  SARIF or JSON output.
 - **Fast.** It was check-json5, a Python hook, until 2.0 rewrote it in Rust. It is up to 1,407
   times faster than check-json5 1.4.1
   ([figures](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#speed)).
@@ -49,14 +48,8 @@ Add this to `.pre-commit-config.yaml` (for [pre-commit](https://pre-commit.com) 
 It checks files by name: `.json`, `.jsonc`, `.json5`, `.jsonl`, `.ndjson`, `.geojson`, `.jsonld`,
 `.hujson`, `.jwcc`, `.code-workspace`, `.code-snippets`, `.webmanifest` and `.babelrc`.
 
-Options go in `args`. This holds `package.json` to strict JSON:
-
-```yaml
-    - id: jsonvet
-      args: [--strict, package.json]
-```
-
-The hook installs a prebuilt binary from PyPI, so you need no Rust.
+Options go in `args`, such as `args: [--strict, package.json]` to hold `package.json` to strict
+JSON. The hook installs a prebuilt binary from PyPI, so you need no Rust.
 
 ### GitHub Action
 
@@ -65,9 +58,9 @@ The hook installs a prebuilt binary from PyPI, so you need no Rust.
 ```
 
 The step fails when a file has an error, and each problem shows up as an annotation on the pull
-request. It runs on Linux, macOS and Windows runners. Before it installs jsonvet from PyPI, it
-checks that the wheel came from this repository's release workflow. Its optional inputs are in
-the [reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#github-action).
+request. Before it installs jsonvet from PyPI, it checks that the wheel came from this
+repository's release workflow. Its inputs are in the
+[reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#github-action).
 
 ### Command line
 
@@ -79,18 +72,12 @@ cargo install jsonvet-cli        # build it from source
 cargo binstall jsonvet-cli       # download the binary from the GitHub release
 ```
 
-Each [GitHub release](https://github.com/simonvanlierde/jsonvet/releases) after 3.0.0 also has
-the `jsonvet` binary for Linux (glibc and musl), macOS and Windows, on x86-64 and ARM64, as
-`jsonvet-<target>.tar.gz` (`.zip` on Windows), with a `SHA256SUMS` file and a CycloneDX SBOM.
-To check that a file came from this repository's release workflow, see
-[SECURITY.md](https://github.com/simonvanlierde/jsonvet/blob/main/SECURITY.md#verifying-a-release).
-
-A folder stands for the files under it with an extension or name from the dialect table below.
-Like ripgrep, jsonvet skips hidden files and the files `.gitignore` names. A file you name is
-always checked. `-` reads standard input. `jsonvet --list-rules` lists the rules, `--explain RULE`
-explains one, and `jsonvet --help` lists every option. The
-[reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md) has the details,
-the output formats and the exit status.
+Each [GitHub release](https://github.com/simonvanlierde/jsonvet/releases) also has the binary
+for Linux, macOS and Windows, with checksums and an SBOM
+([verifying a release](https://github.com/simonvanlierde/jsonvet/blob/main/SECURITY.md#verifying-a-release)).
+A folder stands for the JSON-like files under it, skipping hidden and ignored files, and `-` reads
+standard input. `jsonvet --help` lists every option, and the
+[reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md) has the details.
 
 ### Rust library
 
@@ -153,10 +140,8 @@ dialects = [
 exclude = ["node_modules", "tests/fixtures/*"]
 ```
 
-For each file, jsonvet uses the nearest config file in the file's folder or a parent, up to the
-repository root, so each package in a monorepo can have its own. It replaces any further up, and
-nothing is merged. With none, jsonvet uses your own `jsonvet/jsonvet.toml` in your config folder,
-such as `~/.config`, if you have one. Options on the command line win. The reference says
+Each file takes the nearest config file in its folder or a parent, up to the repository root, so
+each package in a monorepo can have its own. Options on the command line win. The reference says
 [where jsonvet looks](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#configuration-file)
 and [how globs match](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#globs).
 
@@ -170,17 +155,7 @@ server.json5:3:9: error[schema] "80" is not of type "integer" (at $.port)
 server.json5:6:3: error[schema] Additional properties are not allowed ('debug' was unexpected) (at $.debug)
 ```
 
-In the hook, give each schema its own entry:
-
-```yaml
-    - id: jsonvet
-      name: jsonvet (server schema)
-      files: ^config/server\.json5$
-      args: [--schema, schemas/server.schema.json]
-```
-
-To give each file its schema without the command line, list them in the config file, or point
-a file's own `$schema` at a schema on disk:
+A config file can give files a schema, and so can a file's own `$schema` path:
 
 ```toml
 schemas = [{ files = "config/server.json5", schema = "schemas/server.schema.json" }]
@@ -190,15 +165,9 @@ schemas = [{ files = "config/server.json5", schema = "schemas/server.schema.json
 { $schema: "../schemas/server.schema.json", port: 8080 }
 ```
 
-A schema path in the config file is relative to the config file's folder. A `$schema` path is
-relative to the file's own folder. Both must stay inside the project: a path that starts with `/`,
-or climbs out with `..`, is refused even if nothing is there. A refused `$schema` is a schema
-error, and a refused config file entry is a usage error. A config file named with `--config` may
-name any schema. A `$schema` URL means no schema check for that file, and so does a path inside
-the project to a file that does not exist. `--schema` overrides both.
-
-Schema errors are always errors. jsonvet never fetches a schema from the network or another file,
-so every `$ref` must point inside the schema file. The other limits are in the
+Such a schema must stay inside the project. A `$schema` URL is skipped: jsonvet fetches nothing,
+so every `$ref` must point inside the schema file. Schema errors are always errors. The rules for
+schema paths and the limits are in the
 [reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#json-schema-limits).
 
 ## GitHub code scanning
@@ -232,19 +201,16 @@ jobs:
 Bump `rev` to the newest tag. The `check-json5` hook id, the `check-json5` command and `--strict`
 keep working through 3.x.
 
-For the files check-json5 knew, jsonvet gives the same pass or fail as 1.4.1, apart from a few
-edge cases listed in
-[docs/design.md](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#known-differences-from-14).
+jsonvet gives the same pass or fail as 1.4.1, apart from a few
+[edge cases](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#known-differences-from-14).
 One change can fail a file that passed: `.jsonc`, `.code-workspace` and `.code-snippets` files
 are now checked as JSONC, and `.hujson` and `.jwcc` files as JWCC. To keep the old verdict, add
-`--dialect json5:GLOB`. The other changes are in the
-[reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#coming-from-check-json5).
+`--dialect json5:GLOB`.
 
 ## How it is tested
 
-The tests run on Linux, macOS and Windows: the json5-tests suite, edge-case snapshots, property
-tests, fuzzing, mutation testing, a comparison with check-json5 1.4.1, and `--schema` on 12
-SchemaStore schemas with their test files. A
+The tests run on Linux, macOS and Windows, with fuzzing, mutation testing and a comparison with
+check-json5 1.4.1. A
 [conformance matrix](https://github.com/simonvanlierde/jsonvet/blob/main/docs/conformance.md)
 runs the same files against 18 other parsers in four languages:
 
@@ -264,21 +230,16 @@ Run on 2026-10-21. The full grid, and where each expected verdict comes from: [d
 
 ## More
 
-- [Reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md): every option and
-  limit in detail.
-- [Design](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md): why it works the
-  way it does, with the speed figures.
-- [CHANGELOG](https://github.com/simonvanlierde/jsonvet/blob/main/CHANGELOG.md): what changed in
-  each release.
-- [CONTRIBUTING.md](https://github.com/simonvanlierde/jsonvet/blob/main/CONTRIBUTING.md): how to
-  build, test and release it.
-- [ROADMAP.md](https://github.com/simonvanlierde/jsonvet/blob/main/ROADMAP.md) and
-  [GOVERNANCE.md](https://github.com/simonvanlierde/jsonvet/blob/main/GOVERNANCE.md): what is
-  planned, and who decides.
+- [Reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md),
+  [design](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md) and
+  [CHANGELOG](https://github.com/simonvanlierde/jsonvet/blob/main/CHANGELOG.md).
+- [CONTRIBUTING.md](https://github.com/simonvanlierde/jsonvet/blob/main/CONTRIBUTING.md),
+  [ROADMAP.md](https://github.com/simonvanlierde/jsonvet/blob/main/ROADMAP.md) and
+  [GOVERNANCE.md](https://github.com/simonvanlierde/jsonvet/blob/main/GOVERNANCE.md).
 
 Found a file jsonvet gets wrong? Please
-[open an issue](https://github.com/simonvanlierde/jsonvet/issues) with the file and the command
-you ran. If it crashes or hangs jsonvet, report it privately as
+[open an issue](https://github.com/simonvanlierde/jsonvet/issues) with the file and the command.
+If it crashes or hangs jsonvet, report it privately as
 [SECURITY.md](https://github.com/simonvanlierde/jsonvet/blob/main/SECURITY.md) says.
 
 To cite jsonvet, use the DOI
