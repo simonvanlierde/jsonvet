@@ -1,7 +1,7 @@
 //! `--schema` runs in-process with divan, which `.github/workflows/codspeed.yml` measures under
 //! CodSpeed on every pull request, for CPU and for memory: the cases `benches/schema.rs` counts
 //! under callgrind, minus the process start. jsonvet's known memory limits are in `--schema`
-//! (SECURITY.md), so this is where the memory instrument earns its place. Run them with `cargo
+//! (SECURITY.md), so these are the runs CodSpeed measures memory on. Run them with `cargo
 //! bench -p jsonvet-cli --bench codspeed`.
 
 #![allow(

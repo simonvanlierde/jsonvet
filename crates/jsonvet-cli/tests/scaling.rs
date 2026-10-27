@@ -1,7 +1,7 @@
-//! Paths that were once quadratic stay linear. Each test counts the instructions for an input of
-//! size n and of size 10n: linear work gives a ratio near 10, quadratic work near 100. Work
-//! that stops growing past a cap gives a ratio near 1. Valgrind
-//! counts them, because wall-clock time swings too much on a shared machine, so the tests are
+//! Code paths that could turn quadratic stay linear. Each test counts the instructions for an
+//! input of size n and of size 10n: linear work gives a ratio near 10, quadratic work near 100.
+//! Work that stops growing past a cap gives a ratio near 1. Valgrind counts them, because
+//! wall-clock time swings too much on a shared machine. The tests need valgrind, so they are
 //! ignored by default. `just scaling` runs them, as ci.yml's `scaling` job does.
 
 #![allow(

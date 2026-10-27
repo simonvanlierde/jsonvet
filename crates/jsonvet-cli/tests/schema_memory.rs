@@ -24,12 +24,12 @@ static ALLOCATOR: PeakAlloc = PeakAlloc;
 const FILE_BYTES: usize = 10 << 20;
 
 /// The most heap one run may take at its peak, per byte of the file, beyond what was in use
-/// before it. Holding every parser event took 34 bytes per byte here; folding them as they come
-/// takes 18, the file's text and its values.
+/// before it. Folding the parser's events as they come takes 18 bytes per byte here: the file's
+/// text and its values. Holding every event would take 34, so a return to that fails.
 const MAX_BYTES_PER_BYTE: usize = 24;
 
-/// The same for a JSON Lines file, split across threads, each line folded as it is read. Each part
-/// keeping its events took 17 bytes per byte; folding them as they come takes 1, the file's text.
+/// The same for a JSON Lines file, split across threads, each line folded as it is read. That
+/// takes 1 byte per byte, the file's text. Parts that kept their events would take 17.
 const MAX_JSON_LINES_BYTES_PER_BYTE: usize = 4;
 
 /// Held while a run counts, so runs on other threads do not add to its peak.
