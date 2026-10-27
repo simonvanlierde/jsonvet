@@ -188,12 +188,13 @@ impl Excerpt {
         }
         let mut spans = vec![(usize::MAX, usize::MAX); marks.len()];
         let clamp = |offset: usize| offset.clamp(self.range.start, self.range.end);
+        // Called once per character boundary and at the end, so each offset comes up once.
         let place = |spans: &mut [(usize, usize)], offset: usize, len: usize| {
             for (span, mark) in spans.iter_mut().zip(marks) {
-                if clamp(mark.span.0) == offset && span.0 == usize::MAX {
+                if clamp(mark.span.0) == offset {
                     span.0 = len;
                 }
-                if clamp(mark.span.1) == offset && span.1 == usize::MAX {
+                if clamp(mark.span.1) == offset {
                     span.1 = len;
                 }
             }
