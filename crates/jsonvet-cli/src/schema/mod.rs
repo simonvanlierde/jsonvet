@@ -5,6 +5,7 @@
 mod fold;
 mod limits;
 mod place;
+pub(crate) mod select;
 
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap};
@@ -21,6 +22,12 @@ use crate::settings::Settings;
 use fold::{Fold, documents};
 use limits::{MAX_SCHEMA_DEPTH, PATTERN_BYTES, Reach, registry};
 use place::{Place, place, place_found, pointer_path, segments};
+
+/// How deep a file checked against a schema is read. Past it, the file has a syntax error.
+/// jsonschema validates recursively, so depth costs stack (see `STACK` in lib.rs). Its memory for
+/// an error deep under a recursive `$ref` grows linearly with depth: 19 MB for a 60 KB file
+/// nested 10,000 levels.
+pub(crate) const SCHEMA_MAX_DEPTH: usize = 512;
 
 /// How many schema errors one document reports, in the order jsonschema finds them; one more
 /// line says there are more.
@@ -733,17 +740,18 @@ impl Schema {
         Err(at(offset, &error))
     }
 
-    /// `text`'s report under `config`, and its schema errors as (offset, message, summary): each
-    /// document's in order, then a summary if it has more than [`MAX_ERRORS`]. A text with a
-    /// syntax error gets none. The values are checked as the text is read, a document at a time,
+    /// `text`'s report under `config`, read no deeper than [`SCHEMA_MAX_DEPTH`], and its schema
+    /// errors as (offset, message, summary): each document's in order, then a summary if it has
+    /// more than [`MAX_ERRORS`]. A text with a syntax error gets none. The values are checked as the text is read, a document at a time,
     /// and the text is read again only to place errors, so its events are never all held at once.
     pub(crate) fn check<'t>(
         &self,
         text: &'t str,
         config: &Config,
     ) -> (Report<'t>, Vec<(usize, String, bool)>) {
+        let config = config.clone().max_depth(SCHEMA_MAX_DEPTH);
         self.check_with(
-            |sink| jsonvet::parse_with(text, config, sink),
+            |sink| jsonvet::parse_with(text, &config, sink),
             |report| report.problems().iter().any(|p| p.rule() == Rule::Syntax),
         )
     }
@@ -756,8 +764,9 @@ impl Schema {
         lines: Range<usize>,
         config: &Config,
     ) -> (jsonvet::Lines, Vec<(usize, String, bool)>) {
+        let config = config.clone().max_depth(SCHEMA_MAX_DEPTH);
         self.check_with(
-            |sink| jsonvet::parse_lines(text, lines.clone(), config, Some(sink)),
+            |sink| jsonvet::parse_lines(text, lines.clone(), &config, Some(sink)),
             jsonvet::Lines::syntax_error,
         )
     }
