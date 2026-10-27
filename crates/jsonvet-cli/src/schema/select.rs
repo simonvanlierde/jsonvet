@@ -71,7 +71,14 @@ pub(crate) type Loaded = Result<Arc<Schema>, String>;
 /// The schemas `--schema`, config files and `$schema` keys name, each read once, by canonical
 /// path and whether its errors are quiet.
 #[derive(Default)]
-pub(crate) struct Schemas(Mutex<HashMap<(PathBuf, bool), Loaded>>);
+pub(crate) struct Schemas {
+    loaded: Mutex<HashMap<(PathBuf, bool), Loaded>>,
+    /// What each `$schema` path, from each folder of the files that hold one, leads to.
+    own: Mutex<HashMap<(PathBuf, String), Own>>,
+}
+
+/// The schema a file's own `$schema` names: none if it is not there, or why it cannot be used.
+type Own = Result<Option<Arc<Schema>>, String>;
 
 impl Schemas {
     /// The schema at `path`, from `load` the first time it is asked for with `quiet`. Every
@@ -88,13 +95,37 @@ impl Schemas {
             .unwrap_or_else(|_| path.to_owned());
         // A poisoned lock still holds every schema read.
         let mut loaded = self
-            .0
+            .loaded
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         loaded
             .entry((key, quiet))
             .or_insert_with(|| load().map(Arc::new))
             .clone()
+    }
+
+    /// What the `$schema` `path` in a file in `folder` leads to, from `find` the first time it
+    /// is asked for from that folder. Where a path leads, and whether it stays in the project,
+    /// depend on the folder and the path alone, so the answer holds for every file there, and
+    /// thousands of files that name one schema look it up once.
+    fn own(&self, folder: &Path, path: &str, find: impl FnOnce() -> Own) -> Own {
+        let key = (folder.to_owned(), path.to_owned());
+        // A poisoned lock still holds every answer, and none is held while `find` runs: it
+        // looks at the file system. Two threads may then both run it, with the same answer.
+        let known = self
+            .own
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(own) = known.get(&key) {
+            return own.clone();
+        }
+        drop(known);
+        let own = find();
+        self.own
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(key, own.clone());
+        own
     }
 }
 
@@ -176,6 +207,7 @@ pub(crate) fn check_own_schema<'t>(
     name: &str,
     text: &'t str,
     settings: &Settings,
+    schemas: &Schemas,
     root: &impl Fn(&Path) -> PathBuf,
     load: &impl Fn(&Path, bool) -> Loaded,
     parts: usize,
@@ -190,18 +222,20 @@ pub(crate) fn check_own_schema<'t>(
         return (report, Vec::new());
     };
     let folder = Path::new(name).parent().unwrap_or(Path::new(""));
-    let error = match settings::confined(&path, folder, &root(Path::new(name))) {
+    let own = schemas.own(folder, &path, || {
         // A schema that is not there is skipped like a URL: tools name one under
         // `node_modules` that a CI run may not have installed.
-        Ok(false) => return (report, Vec::new()),
-        Ok(true) => match load(&folder.join(&path), true) {
-            // As with `--schema`, so the depth cap applies.
-            Ok(schema) => return check(name, text, settings, Some(&schema), parts),
-            Err(e) => e,
-        },
-        Err(e) => e,
-    };
-    (report, vec![(offset, output::printable(&error), false)])
+        if !settings::confined(&path, folder, &root(Path::new(name)))? {
+            return Ok(None);
+        }
+        load(&folder.join(&path), true).map(Some)
+    });
+    match own {
+        Ok(None) => (report, Vec::new()),
+        // As with `--schema`.
+        Ok(Some(schema)) => check(name, text, settings, Some(&schema), parts),
+        Err(error) => (report, vec![(offset, output::printable(&error), false)]),
+    }
 }
 
 #[cfg(test)]

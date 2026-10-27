@@ -192,7 +192,9 @@ pub fn run_with(
                 let name = name.to_string_lossy();
                 text.as_deref().map(|text| match schema {
                     Some(schema) => check(&name, text, settings, Some(schema), parts),
-                    None if *with => check_own_schema(&name, text, settings, &root, &load, parts),
+                    None if *with => {
+                        check_own_schema(&name, text, settings, &schemas, &root, &load, parts)
+                    }
                     None => check(&name, text, settings, None, parts),
                 })
             },

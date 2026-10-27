@@ -1798,6 +1798,32 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         }
     }
 
+    /// Where a `$schema` leads is looked up once per folder and path, so files in one folder
+    /// share the answer, and the same path from another folder gets its own.
+    #[test]
+    fn one_dollar_schema_from_two_folders_gets_two_verdicts() {
+        let own = "{\"$schema\": \"../s.json\", \"a\": 1}";
+        // Enough files in `sub` that the answer for it is known before `h.json` is checked.
+        let names: Vec<String> = (0..40).map(|i| format!("sub/f{i}.json")).collect();
+        let mut files = vec![("s.json", "{\"required\": [\"b\"]}"), ("h.json", own)];
+        files.extend(names.iter().map(|name| (name.as_str(), own)));
+        let dir = workdir(&files);
+        let mut args: Vec<&str> = names.iter().map(String::as_str).collect();
+        args.push("h.json");
+        let (code, out) = jsonvet(&dir, &args);
+        assert_eq!(code, 1, "{out}");
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines.len(), 41, "{out}");
+        for (line, name) in lines.iter().zip(&names) {
+            let fails = format!("{name}:1:1: error[schema] value fails \"required\"");
+            assert!(line.starts_with(&fails), "{out}");
+        }
+        assert!(
+            lines[40].starts_with("h.json:1:13: error[schema] the schema ../s.json is outside"),
+            "{out}"
+        );
+    }
+
     /// A file outside the test's project, holding `TOPSECRET` where an error would quote it.
     fn outside(dir: &Path, name: &str, text: &str) -> PathBuf {
         let folder = dir.with_extension("outside");
