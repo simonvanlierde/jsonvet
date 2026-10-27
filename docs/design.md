@@ -171,13 +171,14 @@ A schema adds a seventh rule, `schema`, which belongs to the CLI: the library kn
 comes from `--schema FILE`, a config file's `schemas` or a file's own `$schema`. A `$schema` and the
 schemas of a config file the search finds stay inside the project and quote nothing in their errors
 ([ADR 0012](decisions/0012-schema-paths-stay-in-the-project.md)). The library's `parse_with` hands
-the CLI the file's values as events, each with its byte offset, as it reads them. The CLI folds them
-into `serde_json` values and validates each document with the `jsonschema` crate as soon as it is
-complete, with default features off so nothing is fetched. It keeps no event, so a document's values
-are the most it holds. If a document has errors, the CLI reads the file again and maps each error's
-instance path, a JSON Pointer, back to the offset of its value. One walk over a document's events
-finds every error's value, with no pointer kept per value. Every build has `--schema`, the PyPI
-wheels too; see [0006](decisions/0006-offline-json-schema-in-every-build.md).
+the CLI the file's values as events, each with its byte offset, as it reads them. The CLI folds
+them, that is, builds `serde_json` values from them. It validates each document with the
+`jsonschema` crate as soon as the document is complete, with default features off so nothing is
+fetched. It keeps no event, so a document's values are the most it holds. If a document has
+errors, the CLI reads the file again and maps each error's instance path, a JSON Pointer, back
+to the offset of its value. One walk over a document's events finds every error's value, with no
+pointer kept per value. Every build has `--schema`, the PyPI wheels too; see
+[0006](decisions/0006-offline-json-schema-in-every-build.md).
 
 The message names the value by JSONPath, through the same code as `duplicate-key`, so one file's
 problems use one path style. A pointer reads the same for `[0]` and `["0"]`, so a segment counts
@@ -257,9 +258,9 @@ timeout, so a file gets the same verdict on every machine; see
   it could not be matched on. A split schema with such a regex is also checked for validity a
   part at a time, because one pass over a whole document repeats every over-cap match in it once
   per outcome: 2,000 over-cap keys took 10.7 s in one pass and 0.10 s a member at a time. When
-  every regex compiles for the linear-time `regex` crate, no match can run past the cap, so a
-  valid document is found in one pass first: 7% quicker on a valid 17 MB object. A schema that
-  cannot be split still takes the long way ([SECURITY.md](../SECURITY.md#known-limits)).
+  every regex compiles for the linear-time `regex` crate, no match can run past the cap. So jsonvet
+  first checks in one pass whether the document is valid: 7% quicker on a valid 17 MB object. A
+  schema that cannot be split still takes the long way ([SECURITY.md](../SECURITY.md#known-limits)).
 
 ## Configuration
 

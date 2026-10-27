@@ -10,11 +10,11 @@ crafted file that does any of these as a security bug:
 
 That holds for every file jsonvet reads: the files it checks, a config file (`jsonvet.toml`,
 `pyproject.toml`), an ignore file (`.gitignore`, `.ignore`) and a schema named by `--schema`, a
-config file or a file's `$schema`. A schema path from a `$schema`, or from a config file the
-search finds rather than one named by `--config`, must stay inside the project, and no error
-from such a schema, whether it cannot be used or a value fails it, quotes anything from it
-([0012](docs/decisions/0012-schema-paths-stay-in-the-project.md)). A way to read or show a file
-outside the project through one is a security bug too.
+config file or a file's `$schema`. A schema path from a `$schema` must stay inside the project,
+and so must one from a config file the search finds. A config file named by `--config` is the
+exception. No error from such a schema quotes anything from it, whether the schema cannot be used
+or a value fails it ([0012](docs/decisions/0012-schema-paths-stay-in-the-project.md)). A way to
+read or show a file outside the project through one is a security bug too.
 
 [docs/assurance-case.md](docs/assurance-case.md) argues, claim by claim, how jsonvet meets
 these requirements.
@@ -27,14 +27,14 @@ from strangers before CI runs them.
 
 - jsonschema collects every error of one validation call before jsonvet sees any. So a schema
   that puts an `anyOf` around `additionalProperties` can still take gigabytes on a document with
-  many failing values. Each takes about 420 bytes
-  ([usage.md](docs/usage.md#json-schema-limits)), on top of the file's own values, which the Memory
-  bullet there sizes. Closing it needs a way in jsonschema to stop early.
+  many failing values. Each error takes about 420 bytes, on top of the file's own values. The
+  Memory bullet in [usage.md](docs/usage.md#json-schema-limits) sizes both. Closing it needs a way
+  in jsonschema to stop early.
 - A pattern too costly to match, under an `allOf`, is much cheaper than before but not free.
-  5,000 such strings took 26.3 s on 0.59 and take 0.05 s now, and one beside 100,000 strings that
-  fail the pattern went from over 120 s to 2.55 s. But one beside 1,600,000 failing strings (a
-  9.6 MB file) took 62 s and 7.5 GB, against 6.3 s and 1.35 GB for the same strings without it:
-  about 10 times the time and 5.6 times the memory, growing faster than the input.
+  5,000 such strings took 26.3 s with jsonschema 0.59 and take 0.05 s now. One beside 100,000
+  strings that fail the pattern went from over 120 s to 2.55 s. But one beside 1,600,000 failing
+  strings (a 9.6 MB file) took 62 s and 7.5 GB, against 6.3 s and 1.35 GB for the same strings
+  without it: about 10 times the time and 5.6 times the memory, growing faster than the input.
 
 Output grows linearly with the input, but can be many times its size. The worst case I could
 build is a JSON5 file of 200,000 duplicate keys of 4 bytes each, under a path cut at 256 bytes.

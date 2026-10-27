@@ -52,16 +52,18 @@ Each problem is one line: `file:line:col: severity[rule] message`. When stdout i
 a last line counts them, such as `3 errors in 2 of 5 files`. Piped or redirected output has no
 such line.
 
-On a terminal, each problem shows instead as a code frame: the message, then its line of the file
-with the problem marked under it, and the related place, such as a duplicate key's first copy,
-marked too. Frames are in color unless `NO_COLOR` is set or you pass `--color never`. Pass
-`--color always`, or set `FORCE_COLOR`, for color when output goes to a pipe or a file: each
-problem stays one line, with its severity and rule in color.
-`NO_COLOR` wins over `FORCE_COLOR`, and `--color always` or `--color never` wins over both.
+On a terminal, each problem shows as a code frame instead: the message, then its line of the
+file with the problem marked under it. The related place, such as a duplicate key's first copy,
+is marked too. In a frame, characters that would act on the terminal or hide text show as `�`.
+
 pre-commit runs its hooks under a terminal when its color is on, which is the default from a
-terminal, so a commit made there shows frames. CI, pre-commit.ci and pipes keep one line per
+terminal. So a commit made there shows frames. CI, pre-commit.ci and pipes keep one line per
 problem, and `| cat` forces lines.
-In a frame, characters that would act on the terminal or hide text show as `�`.
+
+Frames are in color unless `NO_COLOR` is set or you pass `--color never`. For color when output
+goes to a pipe or a file, pass `--color always` or set `FORCE_COLOR`. Each problem then stays one
+line, with its severity and rule in color. `NO_COLOR` wins over `FORCE_COLOR`, and
+`--color always` or `--color never` wins over both.
 
 - Lines and columns count from 1. Columns count Unicode code points, and a byte order mark is
   column 1.
@@ -281,13 +283,14 @@ exclude = ["node_modules", "tests/fixtures/*"]
 ```
 
 `schemas` checks the files a glob matches against a JSON Schema on disk, as `--schema` does. Both
-the glob and the schema path are relative to the config file's directory, and the last matching
+the glob and the schema path are relative to the config file's folder, and the last matching
 entry wins. `--schema` replaces them all. A schema in this list that jsonvet cannot read or use is
-a usage error (exit 2), as with `--schema`, even when no checked file matches its glob. In a
-config file the search finds, the schema must be inside the project (see
-[JSON Schema limits](#json-schema-limits)); one named by `--config FILE` may name a schema
-anywhere. In the user's own config file, the glob is relative to the working directory, as its
-other globs are, and the schema path to the config file's folder; that schema may be anywhere:
+a usage error (exit 2), as with `--schema`, even when no checked file matches its glob.
+
+In a config file the search finds, the schema must be inside the project (see
+[JSON Schema limits](#json-schema-limits)). A config file named by `--config FILE` may name a
+schema anywhere. So may the user's own config file. There, the glob is relative to the working
+directory, as its other globs are, and the schema path is relative to the config file's folder:
 
 ```toml
 schemas = [{ files = "config/*.json5", schema = "schemas/server.schema.json" }]
@@ -407,14 +410,14 @@ one exists is in [design.md](design.md#--schema).
   is the nearest folder above the file with a `.git`, or without one the working directory, or the
   file's own folder for a file outside the working directory. An absolute path, a Windows drive or
   network path such as `\\host\share`, a `..` that climbs out, or a symlink or symlinked folder
-  that leads out is refused, whether or not the file exists. For a `$schema` that is a schema
-  error at its value; in a config file, a usage error at the entry. Such a schema's errors quote
-  nothing from it, since the file may not be yours to show. One that cannot be used names its line
-  and column. A value that fails it names the keyword and, where jsonvet can tell, the keyword's
-  line and column, as in `value fails "enum" (the schema s.json:3:11)`. That hides `const` and
-  `enum` values, patterns, the property names `required` and `dependentRequired` ask for, the
-  limits of `minimum`, `maxLength` and the like, and the schema under `not`. The checked file's
-  own keys and values, type names such as `"integer"` and format names may still show.
+  that leads out is refused, whether or not the file exists. For a `$schema`, that is a schema
+  error at its value. For a config file entry, it is a usage error at the entry. Such a schema's
+  errors quote nothing from it, since the file may not be yours to show. One that cannot be used
+  names its line and column. A value that fails it names the keyword and, where jsonvet can tell,
+  the keyword's line and column, as in `value fails "enum" (the schema s.json:3:11)`. That hides
+  `const` and `enum` values, patterns, the property names `required` and `dependentRequired` ask
+  for, the limits of `minimum`, `maxLength` and the like, and the schema under `not`. The checked
+  file's own keys and values, type names such as `"integer"` and format names may still show.
   `--schema`, `--config FILE` and the user's own config file may name a schema anywhere, and their
   errors quote it.
 - **Severity.** Schema errors are always errors, in text, annotations, SARIF and JSON. `--error`,
@@ -451,10 +454,10 @@ one exists is in [design.md](design.md#--schema).
   took 1.4 GB, against 0.52 GB when they pass), and more when it holds part of the schema: an
   `anyOf` error holds every branch's errors.
 - **Regexes.** A pattern with a back-reference or lookaround may backtrack 5,000 times per string.
-  A key or string that needs more, where the pattern applies and whether it matches would change
-  the result, is an error at that key or string: the pattern could not be checked. When the
-  document also has an error that holds either way, only that error is reported, and the key or
-  string shows up once it is fixed.
+  A key or string that needs more is an error at that key or string, when the pattern applies
+  there and the result depends on whether it matches: the pattern could not be checked. When the
+  document also has an error that holds either way, only that error is reported. The key or
+  string shows up once that error is fixed.
 - **The schema file.** It may be in any dialect. Its `$schema` picks the draft, from draft 4 to
   2020-12. A `$ref` must point inside the file: jsonvet fetches nothing, from the network or from
   disk. A schema jsonvet cannot read or use is a usage error (exit 2). That covers:

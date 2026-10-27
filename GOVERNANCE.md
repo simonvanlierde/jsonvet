@@ -32,8 +32,8 @@ can change the repository and the packages.
 
 ## If the maintainer is unavailable
 
-A named person can take over the GitHub repository, and the recovery details for PyPI, crates.io
-and Zenodo are in an emergency-access vault.
+A named person can take over the GitHub repository. The recovery details for PyPI, crates.io and
+Zenodo are in an emergency-access vault.
 
 The code, the release history and the docs are public under the MIT license, so anyone can fork the
 project. Installed copies, the pre-commit hook and the GitHub Action keep working without upkeep,

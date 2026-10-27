@@ -27,16 +27,19 @@ diff and pin check, and the tests with doctests. The page diff fails while `READ
 - `hook`, `action` and `packaging`, which build the wheels and run the hook and the Action as
   users do.
 
-Other workflows run besides `ci.yml`. On a pull request, `semver.yml` runs `cargo semver-checks`,
-`fuzz.yml` fuzzes each target for 30 seconds, and `coverage.yml` reports coverage to Codecov. Every
-week, `fuzz.yml` and `mutants.yml` run in full. Every Monday, `advisories.yml` runs
-`cargo deny check advisories`, so a new RustSec advisory against `Cargo.lock` fails a run without
-waiting for a pull request. `scorecard.yml` rates the repository for the OpenSSF Scorecard badge.
-`codspeed.yml` runs the divan benchmarks on every pull request and push to main, and CodSpeed
-comments with the change against main. `pages.yml` builds the browser playground
-(`crates/jsonvet-wasm` and `playground/`) on a pull request that touches it, and deploys it to
-GitHub Pages from main. `just playground` builds it and serves it at
-<http://127.0.0.1:8000>.
+Other workflows run besides `ci.yml`:
+
+- On a pull request, `semver.yml` runs `cargo semver-checks`, `fuzz.yml` fuzzes each target for 30
+  seconds, and `coverage.yml` reports coverage to Codecov.
+- Every week, `fuzz.yml` and `mutants.yml` run in full.
+- Every Monday, `advisories.yml` runs `cargo deny check advisories`. So a new RustSec advisory
+  against `Cargo.lock` fails a run without waiting for a pull request.
+- `scorecard.yml` rates the repository for the OpenSSF Scorecard badge.
+- `codspeed.yml` runs the divan benchmarks on every pull request and push to main (see
+  **CodSpeed** under [Tests](#tests)).
+- `pages.yml` builds the browser playground (`crates/jsonvet-wasm` and `playground/`) on a pull
+  request that touches it, and deploys it to GitHub Pages from main. `just playground` builds it
+  and serves it at <http://127.0.0.1:8000>.
 
 User-facing docs live in three places: the README for getting started, `docs/usage.md` for the
 reference, and `docs/design.md` for the design as it is now. The choices behind it, with their
@@ -175,11 +178,11 @@ git tag -s vX.Y.Z -m vX.Y.Z               # signed with your git signing key
 git verify-tag vX.Y.Z && git push origin vX.Y.Z
 ```
 
-The tag is signed so GitHub shows it as verified and anyone can check it with `git verify-tag`;
-a tag that GitHub or `gh release create` makes is unsigned.
-The "Publishing jsonvet, jsonvet-cli, jsonvet-wasm" line cargo-release prints publishes nothing.
+The tag is signed, so GitHub shows it as verified and anyone can check it with `git verify-tag`.
+A tag that GitHub or `gh release create` makes is unsigned. cargo-release prints a "Publishing
+jsonvet, jsonvet-cli, jsonvet-wasm" line, but it publishes nothing.
 `uv run scripts/check-versions.py` fails when any place disagrees, or when the CHANGELOG has no
-heading for the version. Renovate owns the dependency pins, so do not bump those by hand.
+heading for the version.
 
 Do not create the GitHub release by hand. The tag runs `release.yml`. It checks the tag against
 the versions and builds the wheels, the binary archives and the SBOM, attests them, and drafts the
@@ -206,7 +209,7 @@ that can would give CI write access to the workflows.
 Every commit in a pull request carries a `Signed-off-by:` line, which says you wrote the change
 or have the right to submit it under the MIT license: the
 [Developer Certificate of Origin 1.1](https://developercertificate.org/). `git commit -s` adds
-it; `git rebase --signoff upstream/main` (the branch you started from) adds it to commits you
+it. `git rebase --signoff upstream/main` (the branch you started from) adds it to commits you
 already made. The `DCO sign-off` check fails any pull request with a commit that lacks it, the
 maintainer's and Renovate's included. Renovate adds the line itself.
 

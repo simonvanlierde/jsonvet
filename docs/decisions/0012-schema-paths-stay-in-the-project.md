@@ -27,17 +27,20 @@ A schema path from a config file the search finds or a file's `$schema` must sta
 file's own project: the folder where the config search for that file stops, as in 0009. That is the
 nearest folder above the file with a `.git`, or without one the working directory, or the file's own
 folder for a file outside the working directory. So a file in another repository, such as
-`jsonvet ../other/x.json`, takes schemas from that repository, not the one jsonvet runs in. A path
-with a root or a Windows prefix (`/x`, `//x`, `C:\x`, `\\host\share`) is refused before anything
-touches the disk. Then the path is made canonical, so a `..` or a symlink that leads out is refused
-too. For a file that does not exist, its deepest existing part is made canonical, following any
-dangling symlink on the way, and the rest added by name: a path that would lead out is refused
-whether or not anything is there, so nothing outside can be probed. A refused `$schema` is a schema
-error at its value; a refused config entry is a usage error at the entry. An error in such a schema
-names its line and column, never its text. `--schema`, `--config FILE` and the user's own config
-file are the choice of the person running jsonvet, so they may name any file, with schema paths
-relative to the config file, and their errors quote it. Schemas are cached by canonical path, so
-every spelling of one is read once.
+`jsonvet ../other/x.json`, takes schemas from that repository, not the one jsonvet runs in.
+
+jsonvet refuses a path with a root or a Windows prefix (`/x`, `//x`, `C:\x`, `\\host\share`)
+before it touches the disk. Then it makes the path canonical, so it also refuses a `..` or a
+symlink that leads out. For a file that does not exist, it makes the deepest existing part
+canonical, following any dangling symlink on the way, and adds the rest by name. So a path that
+would lead out is refused whether or not anything is there, and nothing outside can be probed.
+
+A refused `$schema` is a schema error at its value. A refused config entry is a usage error at the
+entry. An error in such a schema names its line and column, never its text.
+
+`--schema`, `--config FILE` and the user's own config file are the choice of the person running
+jsonvet. So they may name any file, with schema paths relative to the config file, and their
+errors quote it. Schemas are cached by canonical path, so every spelling of one is read once.
 
 ## Consequences
 

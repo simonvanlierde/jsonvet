@@ -190,11 +190,11 @@ schemas = [{ files = "config/server.json5", schema = "schemas/server.schema.json
 { $schema: "../schemas/server.schema.json", port: 8080 }
 ```
 
-A schema path in the config file is relative to the config file's folder, and a `$schema` path to
-the file's own folder. Either must stay inside the project: a path that starts with `/` or climbs
-out with `..` is a schema error, even if nothing is there. A `$schema` URL, or a path inside the
-project to a file that does not exist, means no schema check for that file. `--schema` overrides
-both.
+A schema path in the config file is relative to the config file's folder. A `$schema` path is
+relative to the file's own folder. Both must stay inside the project: a path that starts with `/`,
+or climbs out with `..`, is a schema error even if nothing is there. A `$schema` URL means no schema
+check for that file, and so does a path inside the project to a file that does not exist.
+`--schema` overrides both.
 
 Schema errors are always errors. jsonvet never fetches a schema from the network or another file,
 so every `$ref` must point inside the schema file. The other limits are in the
@@ -241,9 +241,9 @@ are now checked as JSONC, and `.hujson` and `.jwcc` files as JWCC. To keep the o
 
 ## How it is tested
 
-jsonvet runs the json5-tests suite, edge-case snapshots, property tests, fuzzing, mutation testing,
-a comparison with check-json5 1.4.1 and `--schema` on 12 SchemaStore schemas and their test files,
-on Linux, macOS and Windows. A
+The tests run on Linux, macOS and Windows: the json5-tests suite, edge-case snapshots, property
+tests, fuzzing, mutation testing, a comparison with check-json5 1.4.1, and `--schema` on 12
+SchemaStore schemas with their test files. A
 [conformance matrix](https://github.com/simonvanlierde/jsonvet/blob/main/docs/conformance.md)
 runs the same files against 18 other parsers in four languages:
 

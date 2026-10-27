@@ -4,12 +4,16 @@ This page argues why jsonvet meets its security requirements, and names the code
 workflow behind each claim. [SECURITY.md](../SECURITY.md) holds the requirements, the known limits
 and how to report a problem; the design itself is in [design.md](design.md).
 
-The requirements, from SECURITY.md: a crafted file must not crash or hang jsonvet, or make it use
-far more time or memory than its size explains; no output line may carry text that drives a
-terminal or passes for a GitHub workflow command; a schema path a project picks must not read or
-show a file outside the project; and the GitHub Action must not read or write outside the files it
-was given. The two open cases in SECURITY.md's "Known limits" are exceptions to the first
-requirement, and this page does not claim them.
+The requirements, from SECURITY.md:
+
+1. A crafted file must not crash or hang jsonvet, or make it use far more time or memory than its
+   size explains.
+2. No output line may carry text that drives a terminal or passes for a GitHub workflow command.
+3. A schema path a project picks must not read or show a file outside the project.
+4. The GitHub Action must not read or write outside the files it was given.
+
+The two open cases in SECURITY.md's "Known limits" are exceptions to the first requirement, and
+this page does not claim them.
 
 ## Threat model
 
@@ -42,9 +46,9 @@ Actions is reported upstream (SECURITY.md, "Scope").
 
 ## Secure design principles
 
-- **Fail-safe defaults.** A file jsonvet cannot read fails the run (`unreadable`), whatever the options. A schema path that
-  leaves the project is an error even if nothing is there. The Action stops if a wheel's
-  attestation fails, and only an explicit `verify: false` skips the check.
+- **Fail-safe defaults.** A file jsonvet cannot read fails the run (`unreadable`), whatever the
+  options. A schema path that leaves the project is an error even if nothing is there. The Action
+  stops if a wheel's attestation fails, and only an explicit `verify: false` skips the check.
 - **Least privilege.** The library has no file or network access; the CLI reads only what it is
   given or finds by the config search, and never writes. Workflows start from `contents: read`,
   and only the jobs that attest or publish get `id-token: write`, besides the CodSpeed and

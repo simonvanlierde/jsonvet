@@ -64,8 +64,8 @@ reported to the community leaders responsible for enforcement through a private
 which only the maintainer and repository administrators can read. All
 complaints will be reviewed and investigated promptly and fairly.
 
-Today that is one person, the maintainer. To report the maintainer, use
-GitHub's
+Today the community leaders are one person, the maintainer. To report the
+maintainer, use GitHub's
 [report abuse](https://docs.github.com/en/communities/maintaining-your-safety-on-github/reporting-abuse-or-spam)
 route instead.
 
