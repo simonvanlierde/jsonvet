@@ -861,6 +861,7 @@ impl<'a> Parser<'a, '_> {
                 }
                 // Outside JSON5 only: string_stops lets JSON5 pass control characters.
                 0..0x20 => {
+                    debug_assert!(!self.json5);
                     return Err(self.fail(SyntaxKind::ControlCharacter {
                         found: char::from(b),
                     }));
