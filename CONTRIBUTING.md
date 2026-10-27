@@ -213,4 +213,4 @@ maintainer's and Renovate's included. Renovate adds the line itself.
 ## Who maintains this
 
 [GOVERNANCE.md](GOVERNANCE.md) names the maintainer, who can publish each package, and what
-happens if the maintainer stops. [ROADMAP.md](ROADMAP.md) says what is planned.
+happens if the maintainer is unavailable. [ROADMAP.md](ROADMAP.md) says what is planned.

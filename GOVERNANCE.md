@@ -30,11 +30,14 @@ can change the repository and the packages.
 - Release tags are signed with the maintainer's key ([CONTRIBUTING.md](CONTRIBUTING.md#releasing)).
 - Renovate opens the dependency pull requests.
 
-## If the maintainer stops
+## If the maintainer is unavailable
 
-No second maintainer is named yet, and no one else can merge, release or publish. If the
-maintainer stops, the README says so and the repository is archived. Anyone may fork it under the
-MIT license.
+A named person can take over the GitHub repository, and the recovery details for PyPI, crates.io
+and Zenodo are in an emergency-access vault.
+
+The code, the release history and the docs are public under the MIT license, so anyone can fork the
+project. Installed copies, the pre-commit hook and the GitHub Action keep working without upkeep,
+because each release is pinned on PyPI and crates.io.
 
 ## Changes to this page
 
