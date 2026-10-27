@@ -50,6 +50,8 @@ mod tests {
         assert_eq!(distance("", "abc"), 3);
         assert_eq!(distance("kitten", "sitting"), 3);
         assert_eq!(distance("jsonc", "json"), 1);
+        assert_eq!(distance("xjson", "json"), 1);
+        assert_eq!(distance("abc", ""), 3);
         assert_eq!(distance("jsno", "json"), 2);
         assert_eq!(distance("日本", "日"), 1);
     }

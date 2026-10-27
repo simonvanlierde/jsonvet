@@ -1008,6 +1008,51 @@ mod tests {
     }
 
     #[test]
+    fn the_summary_names_errors_and_warnings_together() {
+        let counts = |errors, warnings| super::Counts {
+            errors,
+            warnings,
+            files: 1,
+        };
+        assert_eq!(
+            counts(1, 1).summary(2),
+            "1 error and 1 warning in 1 of 2 files"
+        );
+        assert_eq!(counts(0, 2).summary(1), "2 warnings in 1 of 1 file");
+    }
+
+    #[test]
+    fn a_line_separator_ends_a_frame_line_only_in_a_json5_file() {
+        let dir = std::env::temp_dir().join(format!("jsonvet-u2028-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a temp dir");
+        let frame = |name: &str| {
+            let file = dir.join(name);
+            std::fs::write(&file, "{\"a\": \"x\u{2028}y\", \"a\": 2}\n").expect("write");
+            let mut out = Vec::new();
+            let args = ["--no-config".into(), file.into_os_string()];
+            let terminal = super::Terminal {
+                tty: true,
+                color: Some(false),
+            };
+            super::run_with(args, false, terminal, &mut out).expect("a check");
+            String::from_utf8(out).expect("UTF-8")
+        };
+        let five = frame("a.json5");
+        // Both the duplicate and the first copy, whose line ends at the separator.
+        assert!(five.contains("\n2 | y\", \"a\": 2}\n"), "{five}");
+        assert!(five.contains("\n1 | {\"a\": \"x\n"), "{five}");
+        let other = frame("a.jsonc");
+        // The frame shows U+2028 as a replacement character, on the one line.
+        assert!(
+            other
+                .lines()
+                .any(|l| l.starts_with("1 | {") && l.ends_with("y\", \"a\": 2}")),
+            "{other}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn a_panic_on_the_big_stack_carries_on_in_the_caller() {
         static RUNS: AtomicUsize = AtomicUsize::new(0);
         let panic = std::panic::catch_unwind(|| {
