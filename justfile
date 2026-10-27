@@ -77,9 +77,9 @@ mutants:
     cargo mutants --workspace --no-shuffle
 
 # Time jsonvet against check-json5 1.4.1 (needs hyperfine).
-bench:
+bench *ARGS:
     cargo build --release -p jsonvet-cli
-    uv run scripts/bench.py --jsonvet {{ target }}/release/jsonvet
+    uv run scripts/bench.py --jsonvet {{ target }}/release/jsonvet {{ ARGS }}
 
 # Build the playground as pages.yml does, then serve it at http://127.0.0.1:8000. Needs the
 # wasm32 target and wasm-bindgen-cli at the version in Cargo.lock; the deploy also runs wasm-opt.

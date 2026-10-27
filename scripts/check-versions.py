@@ -8,6 +8,9 @@ in the hook placeholder (setup.py), the check-json5 compatibility package's vers
 (compat/check-json5/pyproject.toml), the `rev:` in the README's hook example and a heading in the
 CHANGELOG must name the same release, or a hook install would pull another version than the tag.
 
+The speed table in docs/design.md, which `scripts/bench.py --write` fills in, must name the
+release's minor version (`jsonvet 3.2` for 3.2.x), so each minor release measures again.
+
 The minimum supported Rust has three places too: `rust-version` in Cargo.toml, the toolchain of
 ci.yml's msrv job and `cargo +X` in the justfile's msrv recipe.
 
@@ -66,12 +69,16 @@ def main() -> int:
     }
     for where, version in msrvs.items():
         print(f"{where:16} {version}")
+    minor = ".".join(cargo.split("-")[0].split(".")[:2])
+    speed = first(r"<!-- speed:start -->.*?\| jsonvet (\S+) +\|", "docs/design.md")
+    print(f"{'design.md speed':16} {speed}")
     if (
         len(pins) != PINS
         or len(revs) != 1
         or len(set(found.values())) != 1
         or not has_heading
         or len(set(msrvs.values())) != 1
+        or speed != minor
     ):
         print("versions differ", file=sys.stderr)
         return 1

@@ -52,7 +52,7 @@ repos:
             name: release version agrees everywhere
             entry: uv run scripts/check-versions.py
             language: system
-            files: ^(Cargo\.toml|setup\.py|README\.md|CHANGELOG\.md|compat/check-json5/pyproject\.toml|crates/jsonvet-cli/Cargo\.toml|justfile|\.github/workflows/ci\.yml|scripts/(check-versions|bench)\.py)$
+            files: ^(Cargo\.toml|setup\.py|README\.md|CHANGELOG\.md|docs/design\.md|compat/check-json5/pyproject\.toml|crates/jsonvet-cli/Cargo\.toml|justfile|\.github/workflows/ci\.yml|scripts/(check-versions|bench)\.py)$
             pass_filenames: false
           - id: cargo-clippy
             name: cargo clippy

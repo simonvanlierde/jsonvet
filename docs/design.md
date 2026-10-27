@@ -56,6 +56,7 @@ are intended, besides the line ends and paths above:
 
 ## Speed
 
+<!-- speed:start -->
 Median of 40 runs from `uv run scripts/bench.py`, on 12 cores of a Ryzen 7 H 255 under Linux
 (2026-10-21). Both tools give the same verdict in every case:
 
@@ -66,6 +67,7 @@ Median of 40 runs from `uv run scripts/bench.py`, on 12 cores of a Ryzen 7 H 255
 | 2.7 MB JSON, duplicate key |            323 ms |     11.9 ms |      27x |
 | 120 KB JSONC               |             21 ms |      1.9 ms |      11x |
 | 1.8 MB JSON5               |         11,755 ms |      8.4 ms |   1,407x |
+<!-- speed:end -->
 
 1.4 sent strict JSON and JSONC to Python's C parser, so those were already fast, and everything
 else through pure Python. jsonvet reads each file once with one parser, and checks files on every

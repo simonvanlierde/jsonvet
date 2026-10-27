@@ -3,9 +3,10 @@
 # The tag goes on the squash-merged commit on main afterwards, and release.yml publishes the crates
 # by trusted publishing, so this tags, pushes and publishes nothing.
 #
-# cargo-release cannot add a sign-off, so the commit-msg hook refuses its commit. Run it as
-# `SKIP=dco-signoff cargo release X.Y.Z --execute`, then `git commit --amend -s --no-edit`: the
-# release PR needs the sign-off like any other.
+# cargo-release cannot add a sign-off, so the commit-msg hook refuses its commit, and a new minor
+# version fails check-versions until the speed table is measured again. Run it as
+# `SKIP=dco-signoff,check-versions cargo release X.Y.Z --execute`, then
+# `git commit --amend -s --no-edit`: the release PR needs the sign-off like any other.
 allow-branch = ["*", "!main", "!HEAD"]
 shared-version = true
 consolidate-commits = true
