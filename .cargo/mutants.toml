@@ -55,10 +55,10 @@ exclude_re = [
   "lib.rs:.* replace / with (%|\\*) in run_with",
   # A related mark at the problem's own byte starts the excerpt at the same offset either way.
   "frame.rs:\\d+:39: replace < with <= in render",
-  # `place` runs at every character boundary, so a later call sets the mark's start right; only
-  # a mark inside a multi-byte character, which jsonvet never makes, could differ. By line, as
-  # the same test for the mark's end shares the column.
-  "frame.rs:197:49: replace && with \\|\\| in Excerpt::snippet",
+  # `place` runs at every character boundary, so a later call sets each end of a mark right;
+  # only a mark inside a multi-byte character, which jsonvet never makes, could differ. By line,
+  # as the two tests share the column.
+  "frame.rs:(197|200):49: replace && with \\|\\| in Excerpt::snippet",
   # Extra places only for keys whose errors never look a place up: only the keywords in QUOTED
   # give errors that do.
   "schema/mod.rs:.* replace && with \\|\\| in quoted",
