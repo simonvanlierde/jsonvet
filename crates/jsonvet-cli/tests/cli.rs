@@ -30,6 +30,12 @@ fn workdir(files: &[(&str, &str)]) -> PathBuf {
     dir
 }
 
+/// Fail if a run that started at `start` took 10 s or more. This only guards against a hang,
+/// with room for a debug build on a slow runner; tests/scaling.rs checks how fast runs are.
+fn no_hang(start: std::time::Instant) {
+    assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
+}
+
 /// Run jsonvet in `dir`; return its exit code and standard output.
 fn jsonvet(dir: &Path, args: &[&str]) -> (i32, String) {
     let (code, out, _) = jsonvet_stderr(dir, args);
@@ -2191,7 +2197,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         for schema in ["local.json", "by-id.json"] {
             let start = std::time::Instant::now();
             let (code, out, err) = jsonvet_stderr(&dir, &["--schema", schema, "ok.json"]);
-            assert!(start.elapsed().as_secs() < 5, "took {:?}", start.elapsed());
+            no_hang(start);
             assert_eq!((code, out.as_str()), (2, ""), "{schema}");
             // `$defs` and `d0` are levels 2 and 3, so the `$ref` in `d125` leads to level 129.
             assert_eq!(
@@ -2222,11 +2228,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         let dir = workdir(&[("ok.json", "{}"), ("fan.json", &schema)]);
         let start = std::time::Instant::now();
         let (code, out, err) = jsonvet_stderr(&dir, &["--schema", "fan.json", "ok.json"]);
-        assert!(
-            start.elapsed().as_secs_f64() < 1.0,
-            "took {:?}",
-            start.elapsed()
-        );
+        no_hang(start);
         assert_eq!((code, out.as_str()), (2, ""));
         assert!(
             err.ends_with(
@@ -2299,7 +2301,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         let dir = workdir(&[("schema.json", RECURSIVE), ("deep.json", &text)]);
         let start = std::time::Instant::now();
         let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "schema.json", "deep.json"]);
-        assert!(start.elapsed().as_secs() < 5, "took {:?}", start.elapsed());
+        no_hang(start);
         assert_eq!(code, 1);
         let column = text.len() - 512;
         assert!(
@@ -2351,7 +2353,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         ]);
         let start = std::time::Instant::now();
         let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "schema.json", "r.json"]);
-        assert!(start.elapsed().as_secs() < 5, "took {:?}", start.elapsed());
+        no_hang(start);
         assert_eq!(code, 1);
         // At most 100 errors per document, then a count of the rest.
         assert_eq!(out.lines().count(), 101);
@@ -2394,11 +2396,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         for schema in ["slow.json", "names.json"] {
             let start = std::time::Instant::now();
             let (code, out, _) = jsonvet_stderr(&dir, &["--schema", schema, "k.json"]);
-            assert!(
-                start.elapsed().as_secs_f64() < 1.0,
-                "took {:?}",
-                start.elapsed()
-            );
+            no_hang(start);
             assert_eq!(code, 1, "{schema}");
             assert_eq!(
                 out,
@@ -2609,7 +2607,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         ]);
         let start = std::time::Instant::now();
         let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "schema.json", "k.json"]);
-        assert!(start.elapsed().as_secs() < 2, "took {:?}", start.elapsed());
+        no_hang(start);
         assert_eq!((code, out.as_str()), (0, ""));
     }
 
