@@ -2,8 +2,8 @@
 # The corpus files keep their bytes exactly: missing final newlines, CRs, trailing spaces. So do
 # the SchemaStore files, as copied.
 exclude: ^(tests/corpus|tests/schemastore|conformance/extra)/
-# `just setup` installs both stages.
-default_install_hook_types: [pre-commit, pre-push]
+# `just setup` installs all three stages.
+default_install_hook_types: [pre-commit, pre-push, commit-msg]
 default_stages: [pre-commit]
 repos:
     - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -35,6 +35,13 @@ repos:
     # they run at push, not at commit.
     - repo: local
       hooks:
+          # DCO: dco.yml fails a pull request whose commits lack a sign-off, so refuse it here.
+          - id: dco-signoff
+            name: commit message has a Signed-off-by line (use git commit -s)
+            entry: '^Signed-off-by: '
+            language: pygrep
+            args: [--negate]
+            stages: [commit-msg]
           - id: cargo-fmt
             name: cargo fmt
             entry: cargo fmt --all --check
