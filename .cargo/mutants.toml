@@ -61,6 +61,9 @@ exclude_re = [
   # Speed only: a part with a syntax error is then checked against the schema too, and
   # join_lines' verdict drops those errors.
   "jsonvet/src/lib.rs:\\d+:9: replace Lines::syntax_error -> bool with false",
+  # Speed only: the playground counts UTF-16 units from the start again, which gives the same
+  # index, more often.
+  "jsonvet-wasm/src/lib.rs:\\d+:19: replace < with (==|>|<=) in check",
   # Any other false schema is reported at its own value, which the comparison after the guard
   # turns away.
   "schema/mod.rs:.* replace match guard error .* with true in unexpected",

@@ -1379,7 +1379,46 @@ fn push_wtf8(buffer: &mut Vec<u8>, code_point: u32) {
 
 #[cfg(test)]
 mod tests {
-    use super::{plain_bytes, plain_run, string_stops};
+    use std::hash::RandomState;
+
+    use super::{Key, Keys, LINEAR_KEYS, plain_bytes, plain_run, short_hash, spread, string_stops};
+
+    // A hash that lost its spread still finds every duplicate, only in quadratic time, which a
+    // test cannot time reliably. These pin the spread itself.
+
+    #[test]
+    fn spread_puts_the_hash_in_both_halves() {
+        assert_eq!(spread(0x1234_5678), 0x1234_5678_1234_5678);
+    }
+
+    #[test]
+    fn short_hash_tells_keys_apart() {
+        let state = RandomState::new();
+        let hashes: std::collections::HashSet<u32> = (0..1000)
+            .map(|i| short_hash(&state, format!("k{i}").as_bytes()))
+            .collect();
+        // This allows two collisions; even one comes about once in 10,000 runs.
+        assert!(hashes.len() >= 998, "{}", hashes.len());
+    }
+
+    #[test]
+    fn keys_index_only_an_object_past_the_linear_limit() {
+        let mut keys = Keys::default();
+        let key = |i: usize| Key::from(format!("k{i}").into_bytes());
+        for i in 0..LINEAR_KEYS {
+            assert_eq!(keys.first_or_insert(&key(i), i), None);
+        }
+        assert_eq!(keys.index.len(), 0);
+        for i in LINEAR_KEYS..2 * LINEAR_KEYS {
+            assert_eq!(keys.first_or_insert(&key(i), i), None);
+        }
+        assert_eq!(keys.index.len(), 2 * LINEAR_KEYS);
+        assert_eq!(keys.first_or_insert(&key(3), 99), Some(3));
+        assert_eq!(
+            keys.first_or_insert(&key(LINEAR_KEYS + 3), 99),
+            Some(LINEAR_KEYS + 3)
+        );
+    }
 
     #[test]
     fn a_plain_run_stops_at_the_block_holding_any_byte_that_needs_a_decision() {
