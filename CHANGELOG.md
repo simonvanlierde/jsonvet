@@ -61,9 +61,11 @@ Most users need no change. Check these if they apply to you:
 - `--schema` takes less memory on large files. jsonvet used to keep every value the parser read
   until the whole file was folded into values. Now it folds them as it reads, and checks each
   document as soon as it is complete. On a 12 MB file of small records, peak memory went from
-  378 MB to 266 MB. A JSON Lines file of 1 MB or more is checked in parts, as before. A file with
-  schema errors is read a second time to place them, which costs about 2% more time there. The
-  output is the same.
+  378 MB to 266 MB. A JSON Lines file of 1 MB or more, checked in parts on several cores, now
+  folds each part as it reads too: 36 MB of small records takes 38 MB instead of 342 MB, 80 MB of
+  nested records 80 MB instead of 563 MB, and 36 MB where every line fails 0.56 GB instead of
+  1.67 GB, in no more time. A file with schema errors is read a second time to place them, which
+  costs about 2% more time there. The output is the same.
 - Release tags are signed with the maintainer's key, from this release on. `git verify-tag v3.2.0`
   checks one, and GitHub shows it as verified.
 

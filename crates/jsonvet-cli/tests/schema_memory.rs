@@ -1,6 +1,6 @@
 //! The heap `--schema` takes at its peak on a generated 10 MB file, counted by a global allocator
-//! in its own test binary. nextest runs each test in a process of its own, so no other test
-//! allocates while one counts.
+//! in its own test binary. nextest runs each test in a process of its own, and a lock keeps
+//! `cargo test`'s threads from counting at once, so no other test allocates while one counts.
 
 #![allow(
     clippy::expect_used,
@@ -11,6 +11,7 @@ use std::ffi::OsString;
 use std::fmt::Write;
 use std::fs;
 use std::path::Path;
+use std::sync::Mutex;
 
 use jsonvet_cli::Terminal;
 use peak_alloc::PeakAlloc;
@@ -27,25 +28,38 @@ const FILE_BYTES: usize = 10 << 20;
 /// takes 18, the file's text and its values.
 const MAX_BYTES_PER_BYTE: usize = 24;
 
-/// The peak heap of one `--schema` run against `schema` on a generated 10 MB array, beyond what
-/// was in use before it, with its exit code and output.
-fn peak(name: &str, schema: &str) -> (usize, Result<u8, String>, String) {
+/// The same for a JSON Lines file, split across threads, each line folded as it is read. Each part
+/// keeping its events took 17 bytes per byte; folding them as they come takes 1, the file's text.
+const MAX_JSON_LINES_BYTES_PER_BYTE: usize = 4;
+
+/// Held while a run counts, so runs on other threads do not add to its peak.
+static COUNTING: Mutex<()> = Mutex::new(());
+
+/// The peak heap of one `--schema` run against `schema` on a generated 10 MB array, or JSON Lines
+/// file with `lines`, beyond what was in use before it, with its exit code and output.
+fn peak(name: &str, schema: &str, lines: bool) -> (usize, Result<u8, String>, String) {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("schema-memory-{name}"));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join(".git")).expect("create the directory");
     // Rows as the CodSpeed cases write them: small records of numbers, strings and arrays.
-    let mut text = String::from("[");
+    let (open, between, close) = if lines {
+        ("", "\n", "\n")
+    } else {
+        ("[", ", ", "]")
+    };
+    let mut text = String::from(open);
     let mut i = 0;
     while text.len() < FILE_BYTES {
         if i > 0 {
-            text.push_str(", ");
+            text.push_str(between);
         }
         write!(text, "{{\"x\": {i}, \"y\": [{i}, \"s\"], \"t\": \"text\"}}")
             .expect("write to a string");
         i += 1;
     }
-    text.push(']');
-    fs::write(dir.join("file.json"), &text).expect("write the file");
+    text.push_str(close);
+    let file = dir.join(if lines { "file.jsonl" } else { "file.json" });
+    fs::write(&file, &text).expect("write the file");
     drop(text);
     fs::write(dir.join("schema.json"), schema).expect("write the schema");
 
@@ -53,8 +67,11 @@ fn peak(name: &str, schema: &str) -> (usize, Result<u8, String>, String) {
         OsString::from("--no-config"),
         OsString::from("--schema"),
         OsString::from(dir.join("schema.json")),
-        OsString::from(dir.join("file.json")),
+        OsString::from(file),
     ];
+    let _counting = COUNTING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let before = ALLOCATOR.current_usage();
     ALLOCATOR.reset_peak_usage();
     let mut out = Vec::new();
@@ -68,9 +85,13 @@ fn peak(name: &str, schema: &str) -> (usize, Result<u8, String>, String) {
 }
 
 fn assert_under_bound(peak: usize) {
+    assert_under(peak, MAX_BYTES_PER_BYTE);
+}
+
+fn assert_under(peak: usize, per_byte: usize) {
     assert!(
-        peak <= MAX_BYTES_PER_BYTE * FILE_BYTES,
-        "peak heap {peak} bytes is over {MAX_BYTES_PER_BYTE} per byte of the {FILE_BYTES}-byte file"
+        peak <= per_byte * FILE_BYTES,
+        "peak heap {peak} bytes is over {per_byte} per byte of the {FILE_BYTES}-byte file"
     );
 }
 
@@ -80,7 +101,7 @@ fn assert_under_bound(peak: usize) {
 fn schema_memory_stays_under_its_bound_on_a_valid_10_mb_file() {
     let schema =
         r#"{"type": "array", "minItems": 1, "items": {"type": "object", "required": ["x"]}}"#;
-    let (peak, code, out) = peak("valid", schema);
+    let (peak, code, out) = peak("valid", schema, false);
     assert_eq!(code, Ok(0), "{out}");
     assert_under_bound(peak);
 }
@@ -89,8 +110,19 @@ fn schema_memory_stays_under_its_bound_on_a_valid_10_mb_file() {
 #[test]
 fn schema_memory_stays_under_its_bound_placing_an_error_in_a_10_mb_file() {
     let schema = r#"{"minItems": 1, "items": {"properties": {"x": {"not": {"const": 7}}}}}"#;
-    let (peak, code, out) = peak("error", schema);
+    let (peak, code, out) = peak("error", schema, false);
     assert_eq!(code, Ok(1), "{out}");
     assert!(out.contains("(at $[7].x)"), "{out}");
     assert_under_bound(peak);
+}
+
+/// A JSON Lines file this size is split across threads, one part per thread, and an error on
+/// line 8 sends its part back over its lines to place it.
+#[test]
+fn schema_memory_stays_under_its_bound_on_a_split_10_mb_json_lines_file() {
+    let schema = r#"{"type": "object", "properties": {"x": {"not": {"const": 7}}}}"#;
+    let (peak, code, out) = peak("lines", schema, true);
+    assert_eq!(code, Ok(1), "{out}");
+    assert!(out.contains(":8:7: error[schema]"), "{out}");
+    assert_under(peak, MAX_JSON_LINES_BYTES_PER_BYTE);
 }

@@ -101,7 +101,7 @@ escaped, and JSON Lines has no comments, so every raw newline ends a record. Eac
 offsets from the start of the file, problems stop at the first syntax error as in one pass, and
 the output is the same. Reading the file stays on one thread, so records that are mostly one
 long string gain little. With `--schema`, each part's lines are also checked against the schema
-in that part. Each line is a document of its own, and the error cap counts per document, so the
+in that part, each line as it is read, and the part is read again only to place its errors. Each line is a document of its own, and the error cap counts per document, so the
 parts' schema errors joined in order are the ones one pass finds.
 
 We adopt a speed-up only when it measures at least 5% faster end to end; see
@@ -200,8 +200,9 @@ timeout, so a file gets the same verdict on every machine; see
 - **Memory.** Folded values take 4 to 22 times the document's size, the most for many small
   records. Keeping every event as well took 5 to 33 times (peak RSS on 12 MB files). Documents are
   folded and checked one at a time, so a JSON Lines file holds one line's values at once: 80 MB of
-  nested records took 0.91 GB, against 3.4 GB when the whole file was folded first. A JSON Lines
-  file of 1 MB or more is split across threads, and each part still keeps its events. jsonschema
+  nested records took 80 MB, against 3.4 GB when the whole file was folded first. A JSON Lines
+  file of 1 MB or more is split across threads, and each part folds its lines as it reads them
+  too: when each part kept its events, those 80 MB took 0.56 GB. jsonschema
   collects every error before handing out the first, so a 10 MB array of 5,000,000 failing numbers
   took 2.0 GB, against 0.37 GB when it passes. So jsonvet splits two shapes of schema:
   - When nothing but `items` checks a top-level array's elements, and every `$ref` points into
