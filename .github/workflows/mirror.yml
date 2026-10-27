@@ -26,7 +26,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      # `+` on the tags: release.yml moves the major tag (v3) with each release.
+      # `+` on the tags: the maintainer moves the major tag (v3) by hand after a release (CONTRIBUTING.md).
       - env:
           GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
         run: |-

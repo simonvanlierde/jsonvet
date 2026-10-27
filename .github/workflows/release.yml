@@ -138,7 +138,8 @@ jobs:
           path: compat-dist/
 
   # Install each wheel a hosted runner can run from what the matrix built, and run it, before
-  # anything uploads. The musl and macOS x86-64 wheels are cross-built and published untested.
+  # anything uploads. The musl wheels run in smoke-musl; the aarch64 musl wheel is cross-built and
+  # published untested.
   smoke:
     needs: [wheels, build-sdists]
     strategy:
@@ -148,6 +149,8 @@ jobs:
           - {os: ubuntu-latest, wheel: wheels-ubuntu-latest-x86_64-auto}
           - {os: macos-latest, wheel: wheels-macos-latest-aarch64-apple-darwin-native}
           - {os: windows-latest, wheel: wheels-windows-latest-x86_64-pc-windows-msvc-native}
+          # An Intel runner, since the macOS x86-64 wheel is cross-built on Apple silicon.
+          - {os: macos-15-intel, wheel: wheels-macos-latest-x86_64-apple-darwin-native}
           - {os: ubuntu-24.04-arm, wheel: wheels-ubuntu-latest-aarch64-auto}
           - {os: windows-11-arm, wheel: wheels-windows-latest-aarch64-pc-windows-msvc-native}
     runs-on: ${{ matrix.os }}
@@ -171,6 +174,29 @@ jobs:
           enable-cache: false
       - shell: bash
         run: uv run scripts/smoke.py dist/*.whl compat-dist/*.whl
+
+  # The musllinux x86-64 wheel in Alpine, whose libc it is built for. Plain pip and sh: the image
+  # has no uv, and the wheel has no dependencies.
+  smoke-musl:
+    needs: wheels
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: wheels-ubuntu-latest-x86_64-musllinux_1_2
+          path: dist/
+      - run: |
+          docker run --rm -v "$PWD/dist:/dist:ro" \
+            python:3.13-alpine@sha256:8bcfa47b04b853a17aaf909362b847b2112fd6ec4105ea553ef9a43bafbb5916 \
+            sh -ec '
+              pip install --no-index --no-deps /dist/*.whl
+              jsonvet --version
+              echo "{\"a\": 1, \"a\": 2}" > /tmp/dup.json
+              # Exit 1 is a problem found, as scripts/smoke.py expects; 2 would be a broken binary.
+              jsonvet /tmp/dup.json && exit 1
+              test $? -eq 1
+            '
 
   # The GitHub release's files: the jsonvet binary for each target, unpacked from its wheel, and a
   # CycloneDX SBOM of jsonvet-cli's dependencies on every target. Built here, so the job that signs
@@ -214,7 +240,7 @@ jobs:
   # publishes it once PyPI and crates.io have the version. The notes are the version's CHANGELOG
   # section.
   github-release:
-    needs: [release-files, build-sdists, smoke]
+    needs: [release-files, build-sdists, smoke, smoke-musl]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -257,10 +283,15 @@ jobs:
           [[ "$TAG" == *-* ]] && prerelease=(--prerelease)
           # A draft can share its tag with another, so a rerun would add a second one, and a failed
           # upload leaves its draft behind. Replace a leftover draft; refuse a published release.
-          case $(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null) in
-            true) gh release delete "$TAG" --yes ;;
-            false) echo "$TAG is already released"; exit 1 ;;
-          esac
+          # Only "release not found" means there is none; any other failure stops the step.
+          if state=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>&1); then
+            case $state in
+              true) gh release delete "$TAG" --yes ;;
+              *) echo "$TAG is already released"; exit 1 ;;
+            esac
+          elif [[ "$state" != *"release not found"* ]]; then
+            echo "gh release view failed: $state"; exit 1
+          fi
           gh release create "$TAG" --draft --verify-tag --title "$TAG" --notes-file notes.md \
             "${prerelease[@]}" release/*
 
@@ -281,7 +312,9 @@ jobs:
           path: dist/
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
-          # A rerun after a partial upload skips the files PyPI already has.
+          # A rerun after a partial upload skips the files PyPI already has. That is only safe
+          # for "Re-run failed jobs": a rerun of the whole workflow rebuilds the wheels, and
+          # PyPI would keep the old ones beside the new GitHub release files.
           skip-existing: true
 
   # Uploaded last, so it never points at a jsonvet wheel that is not on PyPI yet.
