@@ -1995,6 +1995,24 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
     }
 
     #[test]
+    fn a_ref_outside_a_schema_named_by_the_file_is_not_quoted() {
+        let dir = workdir(&[
+            (
+                "remote.json",
+                r#"{"$ref": "https://topsecret.example/a.json"}"#,
+            ),
+            ("a.json", r#"{"$schema": "remote.json"}"#),
+        ]);
+        let (code, out) = jsonvet(&dir, &["a.json"]);
+        assert_eq!(code, 1, "{out}");
+        assert!(!out.contains("topsecret"), "{out}");
+        assert!(
+            out.contains("the schema remote.json has a `$ref` outside the file"),
+            "{out}"
+        );
+    }
+
+    #[test]
     fn a_schema_named_by_the_file_or_a_config_quotes_nothing_from_it_in_its_errors() {
         let secret = r#"{
   "enum": ["SECRET-ENUM-VALUE"],
@@ -2078,6 +2096,25 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
             "{out}"
         );
         let (code, out) = jsonvet(&dir, &["b.json"]);
+        assert_eq!(code, 1, "{out}");
+        assert!(
+            out.contains("value fails \"maxProperties\" (the schema ./s.json:4:20) (at $)"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn a_quiet_schema_error_under_the_roots_own_id_points_at_the_root() {
+        let schema = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ex.com/root",
+  "maxProperties": 1
+}"#;
+        let dir = workdir(&[
+            ("s.json", schema),
+            ("a.json", r#"{"$schema":"./s.json","a":1}"#),
+        ]);
+        let (code, out) = jsonvet(&dir, &["a.json"]);
         assert_eq!(code, 1, "{out}");
         assert!(
             out.contains("value fails \"maxProperties\" (the schema ./s.json:4:20) (at $)"),

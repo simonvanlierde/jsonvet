@@ -719,10 +719,13 @@ mod tests {
         let base = std::path::Path::new(".");
         let root = std::fs::canonicalize(base).expect("the working directory");
         let root = root.as_path();
+        // Opening a path through a file fails with an error of its own, not "not found", so this
+        // one shows whether the path was opened.
+        let through_a_file = root.join("Cargo.toml").join("s.json");
+        let through_a_file = through_a_file.to_str().expect("a UTF-8 path");
         let mut paths = vec![
             "/etc/passwd",
-            // A file used as a folder: opening it would fail with another error than "missing".
-            "/etc/passwd/s.json",
+            through_a_file,
             "//host/share/s.json",
             "C:\\s.json",
             "C:/s.json",
