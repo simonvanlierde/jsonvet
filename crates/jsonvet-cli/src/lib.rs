@@ -1142,6 +1142,60 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// A JSON Lines file and a `--schema` error get the same code frames on a terminal as any
+    /// other problem, at the line they are on.
+    #[test]
+    fn json_lines_and_schema_errors_get_code_frames_on_a_terminal() {
+        let dir = std::env::temp_dir().join(format!("jsonvet-frames-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a temp dir");
+        let lines = dir.join("l.jsonl");
+        let schema = dir.join("s.json");
+        let data = dir.join("d.json");
+        std::fs::write(&lines, "{\"a\": 1}\n{\"a\": True}\n").expect("write");
+        std::fs::write(&schema, r#"{"properties": {"a": {"type": "string"}}}"#).expect("write");
+        std::fs::write(&data, "{\n  \"a\": 1\n}\n").expect("write");
+        let run = |args: &[&std::ffi::OsStr]| {
+            let args = ["--no-config".into()]
+                .into_iter()
+                .chain(args.iter().map(|a| (*a).to_owned()));
+            let terminal = super::Terminal {
+                tty: true,
+                color: Some(false),
+            };
+            let mut out = Vec::new();
+            let code = super::run_with(args, false, terminal, &mut out).expect("a check");
+            let out = String::from_utf8(out).expect("UTF-8");
+            (
+                code,
+                out.replace(
+                    &format!("{}{}", dir.display(), std::path::MAIN_SEPARATOR),
+                    "",
+                ),
+            )
+        };
+        assert_eq!(
+            run(&[lines.as_os_str()]),
+            (
+                1,
+                "error[syntax]: expected a value, found `True`; did you mean `true`?\n \
+                 --> l.jsonl:2:7\n  |\n2 | {\"a\": True}\n  |       ^^^^\n\n\
+                 1 error in 1 of 1 file\n"
+                    .to_owned()
+            )
+        );
+        assert_eq!(
+            run(&["--schema".as_ref(), schema.as_os_str(), data.as_os_str()]),
+            (
+                1,
+                "error[schema]: 1 is not of type \"string\" (at $.a)\n \
+                 --> d.json:2:8\n  |\n2 |   \"a\": 1\n  |        ^\n\n\
+                 1 error in 1 of 1 file\n"
+                    .to_owned()
+            )
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn a_panic_on_the_big_stack_carries_on_in_the_caller() {
         static RUNS: AtomicUsize = AtomicUsize::new(0);
