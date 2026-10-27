@@ -44,9 +44,9 @@ Most users need no change. Check these if they apply to you:
 - With `FORCE_COLOR` set, as many Node CI setups do, piped line output now carries color codes
   around the severity and the rule. `--color never` gives plain lines.
 - `--schema` checks a JSON Lines file of 1 MB or more on several cores, one part of its lines on
-  each, and folds and checks one line at a time instead of the whole file at once. On 8 cores, a
-  102 MB file checks 2.2x faster and 80 MB of nested records 5.5x faster, with about a third of
-  the peak memory (median of 10). The output is unchanged.
+  each. It builds the values of one line at a time and checks that line, instead of the whole file
+  at once. On 8 cores, a 102 MB file checks 2.2x faster and 80 MB of nested records 5.5x faster,
+  with about a third of the peak memory (median of 10). The output is unchanged.
 - `--schema` uses jsonschema 0.60.1. It shares the values of an `enum` or `const` between errors
   instead of copying them. A schema with an `anyOf` around `additionalProperties` and a
   200,000-value `enum` took 6.3 GB and 2.7 s on 1,000 failing keys, and now takes 40 MB and 0.03 s.
@@ -59,13 +59,13 @@ Most users need no change. Check these if they apply to you:
   pretty-printed records (median of 30), and 10 to 25% on files full of escapes or of JSON5
   strings with tabs. The problems reported are unchanged.
 - `--schema` takes less memory on large files. jsonvet used to keep every value the parser read
-  until the whole file was folded into values. Now it folds them as it reads, and checks each
+  until it had built the values for the whole file. Now it builds them as it reads, and checks each
   document as soon as it is complete. On a 12 MB file of small records, peak memory went from
-  378 MB to 266 MB. A JSON Lines file of 1 MB or more, checked in parts on several cores, now
-  folds each part as it reads too: 36 MB of small records takes 38 MB instead of 342 MB, 80 MB of
-  nested records 80 MB instead of 563 MB, and 36 MB where every line fails 0.56 GB instead of
-  1.67 GB, in no more time. A file with schema errors is read a second time to place them, which
-  costs about 2% more time there. The output is the same.
+  378 MB to 266 MB. A JSON Lines file of 1 MB or more is checked in parts on several cores, and
+  each part now builds its values as it reads too. 36 MB of small records takes 38 MB instead of
+  342 MB, 80 MB of nested records takes 80 MB instead of 563 MB, and 36 MB where every line fails
+  takes 0.56 GB instead of 1.67 GB, in no more time. A file with schema errors is read a second
+  time to place them, which costs about 2% more time there. The output is the same.
 - Release tags are signed with the maintainer's key, from this release on. `git verify-tag v3.2.0`
   checks one, and GitHub shows it as verified.
 
@@ -78,10 +78,10 @@ Most users need no change. Check these if they apply to you:
 
 ### Security
 
-- `--schema` no longer takes tens of seconds on strings too costly for a pattern under an `allOf`:
-  5,000 such strings took 26.3 s and now take 0.05 s, and one beside 100,000 that fail the pattern
-  took over 120 s and now takes 2.55 s. A much larger file can still be slow: SECURITY.md has the
-  numbers.
+- `--schema` no longer takes tens of seconds on strings too costly for a pattern under an `allOf`.
+  5,000 such strings took 26.3 s and now take 0.05 s. One such string beside 100,000 that fail the
+  pattern took over 120 s and now takes 2.55 s. A much larger file can still be slow: SECURITY.md
+  has the numbers.
 
 ## [3.1.1] - 2026-10-21
 

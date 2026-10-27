@@ -20,8 +20,9 @@ diff and pin check, and the tests with doctests. The page diff fails while `READ
 
 `just check` leaves out these jobs in `ci.yml`:
 
-- `test` on the other two OSes, and on macOS `scripts/test-action.sh`, the Action script's tests
-  under bash 3.2. Run `bash scripts/test-action.sh` yourself when you change `scripts/action.sh`.
+- `test` on the other two OSes. On macOS it also runs `scripts/test-action.sh`, the Action
+  script's tests, under bash 3.2. Run `bash scripts/test-action.sh` yourself when you change
+  `scripts/action.sh`.
 - `msrv`, `scaling`, `bench` and `differential`. `just msrv`, `just scaling`, `just counts` and
   `just differential` run them locally.
 - `hook`, `action` and `packaging`, which build the wheels and run the hook and the Action as
@@ -105,8 +106,7 @@ tree, and CI builds and tests with `--locked`. Renovate bumps the pins on the sc
   minutes. It needs a nightly toolchain and cargo-fuzz. CI runs each target for 30 seconds on a
   pull request that touches the library or `fuzz/`, and for 20 minutes once a week. Coverage
   stops growing within about two hours per target. A new json5 version in `fuzz/` can need new
-  skips in `diff_json5`. Read its skip list before you call a divergence a
-  jsonvet bug.
+  skips in `diff_json5`. Read its skip list before you call a divergence a jsonvet bug.
 - **Mutation testing.** `just mutants` runs cargo-mutants over the crates in about 25 minutes, and
   `mutants.yml` runs it weekly. It fails when a mutant survives that `.cargo/mutants.toml` does
   not list. List one there only when it changes no behaviour, and say why.
@@ -121,31 +121,31 @@ tree, and CI builds and tests with `--locked`. Renovate bumps the pins on the sc
   `hyperfine -N -r 40` on the two binaries per case, both built the same way. A change that
   touches every file also gets timed on a 10,000-small-file walk: the 1,100-file config case runs
   in 4-7 ms, so 0.5 µs a file of overhead shows there as 10-25%.
-- **Instruction counts.** `just counts` runs `crates/jsonvet/benches/check.rs`, the parser, and
-  `crates/jsonvet-cli/benches/schema.rs`, whole `--schema` runs of the binary, under callgrind
-  (gungraun) and prints each case's change since the last run. Counts move by under 0.3% between
-  runs, because hash keys are random, so a smaller change is noise. On a pull request, CI counts
-  the base branch and then the pull request, and fails when a case rises by more than 1%. To
-  compare two commits locally, run `just counts --save-baseline=base` on one and
-  `just counts --baseline=base` on the other. In a Docker container, set
-  `GUNGRAUN_ALLOW_ASLR=yes`: the default seccomp profile refuses the `setarch -R` gungraun runs
-  valgrind under. `gungraun-runner` must be the gungraun version in `Cargo.lock`; on a mismatch
-  the benchmarks stop and name the `cargo install` command that fixes it.
+- **Instruction counts.** `just counts` runs two benchmarks under callgrind (gungraun):
+  `crates/jsonvet/benches/check.rs` for the parser, and `crates/jsonvet-cli/benches/schema.rs` for
+  whole `--schema` runs of the binary. It prints each case's change since the last run. Counts move
+  by under 0.3% between runs, because hash keys are random, so a smaller change is noise. On a pull
+  request, CI counts the base branch and then the pull request, and fails when a case rises by more
+  than 1%. To compare two commits locally, run `just counts --save-baseline=base` on one and
+  `just counts --baseline=base` on the other. In a Docker container, set `GUNGRAUN_ALLOW_ASLR=yes`:
+  the default seccomp profile refuses the `setarch -R` that gungraun runs valgrind under.
+  `gungraun-runner` must be the gungraun version in `Cargo.lock`. On a mismatch, the benchmarks stop
+  and name the `cargo install` command that fixes it.
 - **CodSpeed.** `crates/jsonvet/benches/codspeed.rs` holds divan benchmarks of the library:
   `check` in every dialect, `parse` with its events, the JSON Lines split, and locations.
   `crates/jsonvet-cli/benches/codspeed.rs` runs `--schema` in-process on the cases
   `benches/schema.rs` counts. `codspeed.yml` runs both under CodSpeed's CPU simulation and its
-  memory instrument (peak memory and allocations), which report each pull request's change
-  against main in a comment and a dashboard with flamegraphs. Nothing fails on them yet: the
-  `bench` job is the gate. Locally, `cargo bench -p jsonvet -p jsonvet-cli --bench codspeed`
-  times them with divan; `cargo codspeed build -m simulation,memory -p jsonvet -p jsonvet-cli
+  memory instrument (peak memory and allocations). Both report each pull request's change against
+  main, in a comment and on a dashboard with flamegraphs. Nothing fails on them yet: the `bench`
+  job is the gate. Locally, `cargo bench -p jsonvet -p jsonvet-cli --bench codspeed` times them
+  with divan. `cargo codspeed build -m simulation,memory -p jsonvet -p jsonvet-cli
   --bench codspeed` and `codspeed run -m simulation -- cargo codspeed run -p jsonvet -p
   jsonvet-cli` measure them as CI does.
 - **Scaling.** `just scaling` runs `crates/jsonvet-cli/tests/scaling.rs` under valgrind: each test
   counts the instructions on an input of size n and 10n and fails when the ratio reaches 15
   (linear gives about 10, quadratic about 100). It guards paths that were once quadratic: the
   location of many duplicate keys, `--schema` on many keys with lone surrogates, and json5's hex
-  numbers in the `diff_json5` fuzz target. Linux only; ignored by plain `cargo test`.
+  numbers in the `diff_json5` fuzz target. It runs on Linux only, and plain `cargo test` skips it.
 
 ## Releasing
 
@@ -185,9 +185,9 @@ jsonvet, jsonvet-cli, jsonvet-wasm" line, but it publishes nothing.
 heading for the version.
 
 Do not create the GitHub release by hand. The tag runs `release.yml`. It checks the tag against
-the versions and builds the wheels, the binary archives and the SBOM, attests them, and drafts the
-GitHub release with the archives attached and the version's CHANGELOG section as notes. Then it
-publishes the wheels to PyPI, the `check-json5` package, and the crates to crates.io, all by
+the versions. It builds the wheels, the binary archives and the SBOM, and attests them. It drafts
+the GitHub release, with the archives attached and the version's CHANGELOG section as notes. Then
+it publishes the wheels and the `check-json5` package to PyPI and the crates to crates.io, all by
 trusted publishing, and publishes the release last. Each publish job waits for an approval: the
 `pypi` environment twice (the wheels, then `check-json5`) and `crates-io` once. With immutable
 releases turned on in the repository settings, the release cannot take files after that. If a
@@ -195,7 +195,7 @@ publish job fails, rerun it: it skips the files PyPI already has and the crate v
 already has.
 
 A pre-release has a `-` in its tag (`v3.1.0-rc.1`). cargo-release bumps only the crates for one
-(`cargo release 3.2.0-rc.1 --execute`); edit the other places by hand, with the PEP 440 form
+(`cargo release 3.2.0-rc.1 --execute`). Edit the other places by hand, with the PEP 440 form
 (`3.2.0rc1`) in `setup.py` and the compatibility package.
 
 Once the release is published, move the major tag (`v3`), which `uses: simonvanlierde/jsonvet@v3`

@@ -23,9 +23,9 @@ events.jsonl:12:1: error[syntax] blank line; JSON Lines needs a value on every l
 text you paste as you type. Nothing to install, and the text stays on your machine.
 
 - **Six dialects, one parser.** Each file is checked in the dialect its extension implies.
-- **JSON Schema with positions.** `--schema`, a config file or a file's `$schema` gives the schema.
-  Each schema error points at its value's line and column, and a terminal shows it as a code
-  frame. It never fetches anything from the network.
+- **JSON Schema with positions.** The schema comes from `--schema`, a config file or a file's
+  `$schema`. Each schema error points at its value's line and column, and a terminal shows it as a
+  code frame. jsonvet never fetches anything from the network.
 - **Fits CI.** Use it as a pre-commit or prek hook, a GitHub Action, a command or a Rust library.
   It writes text, SARIF for GitHub code scanning, or JSON for scripts and editors.
 - **Fast.** It was check-json5, a Python hook, until 2.0 rewrote it in Rust. It is up to 1,407
@@ -85,9 +85,9 @@ the `jsonvet` binary for Linux (glibc and musl), macOS and Windows, on x86-64 an
 To check that a file came from this repository's release workflow, see
 [SECURITY.md](https://github.com/simonvanlierde/jsonvet/blob/main/SECURITY.md#verifying-a-release).
 
-A folder stands for the files under it with an extension or name from the dialect table below,
-skipping hidden files and what `.gitignore` names, as ripgrep does. A file you name is always
-checked. `-` reads standard input. `jsonvet --list-rules` lists the rules, `--explain RULE`
+A folder stands for the files under it with an extension or name from the dialect table below.
+Like ripgrep, jsonvet skips hidden files and the files `.gitignore` names. A file you name is
+always checked. `-` reads standard input. `jsonvet --list-rules` lists the rules, `--explain RULE`
 explains one, and `jsonvet --help` lists every option. The
 [reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md) has the details,
 the output formats and the exit status.
@@ -153,8 +153,8 @@ dialects = [
 exclude = ["node_modules", "tests/fixtures/*"]
 ```
 
-For each file, jsonvet uses the nearest one in the file's folder or a parent, up to the repository
-root, so each package in a monorepo can have its own. The nearest file replaces any further up;
+For each file, jsonvet uses the nearest config file in the file's folder or a parent, up to the
+repository root, so each package in a monorepo can have its own. It replaces any further up, and
 nothing is merged. With none, jsonvet uses your own `jsonvet/jsonvet.toml` in your config folder,
 such as `~/.config`, if you have one. Options on the command line win. The reference says
 [where jsonvet looks](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#configuration-file)
@@ -192,11 +192,10 @@ schemas = [{ files = "config/server.json5", schema = "schemas/server.schema.json
 
 A schema path in the config file is relative to the config file's folder. A `$schema` path is
 relative to the file's own folder. Both must stay inside the project: a path that starts with `/`,
-or climbs out with `..`, is refused even if nothing is there. For a `$schema` that is a schema
-error, and for a config file entry a usage error. A config file named with `--config` may name any
-schema. A `$schema` URL means no schema check for that file, and so does a path inside the project
-to a file that does not exist.
-`--schema` overrides both.
+or climbs out with `..`, is refused even if nothing is there. A refused `$schema` is a schema
+error, and a refused config file entry is a usage error. A config file named with `--config` may
+name any schema. A `$schema` URL means no schema check for that file, and so does a path inside
+the project to a file that does not exist. `--schema` overrides both.
 
 Schema errors are always errors. jsonvet never fetches a schema from the network or another file,
 so every `$ref` must point inside the schema file. The other limits are in the

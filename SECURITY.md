@@ -21,20 +21,21 @@ these requirements.
 
 ## Known limits
 
-Two cases are known and still open, both in a schema jsonvet cannot check a part at a time
-([design.md](docs/design.md#--schema)). Until they close, review schema changes in pull requests
-from strangers before CI runs them.
+Two cases are known and still open. Both need a schema that jsonvet cannot check one part at a
+time ([design.md](docs/design.md#--schema)). Until they close, review schema changes in pull
+requests from strangers before CI runs them.
 
 - jsonschema collects every error of one validation call before jsonvet sees any. So a schema
   that puts an `anyOf` around `additionalProperties` can still take gigabytes on a document with
   many failing values. Each error takes about 420 bytes, on top of the file's own values. The
   Memory bullet in [usage.md](docs/usage.md#json-schema-limits) sizes both. Closing it needs a way
   in jsonschema to stop early.
-- A pattern too costly to match, under an `allOf`, is much cheaper than before but not free.
-  5,000 such strings took 26.3 s with jsonschema 0.59 and take 0.05 s now. One beside 100,000
-  strings that fail the pattern went from over 120 s to 2.55 s. But one beside 1,600,000 failing
-  strings (a 9.6 MB file) took 62 s and 7.5 GB, against 6.3 s and 1.35 GB for the same strings
-  without it: about 10 times the time and 5.6 times the memory, growing faster than the input.
+- A string too costly to match against a pattern under an `allOf` is much cheaper than before,
+  but not free. 5,000 such strings took 26.3 s with jsonschema 0.59 and take 0.05 s now. One such
+  string beside 100,000 strings that fail the pattern went from over 120 s to 2.55 s. But one
+  beside 1,600,000 failing strings (a 9.6 MB file) took 62 s and 7.5 GB, against 6.3 s and 1.35 GB
+  for the same strings without it: about 10 times the time and 5.6 times the memory, growing
+  faster than the input.
 
 Output grows linearly with the input, but can be many times its size. The worst case I could
 build is a JSON5 file of 200,000 duplicate keys of 4 bytes each, under a path cut at 256 bytes.
@@ -78,7 +79,7 @@ Out of scope:
 - The open cases under "Known limits", which are already known. A new way to reach them, or a
   fix, is in scope: report it here.
 - A vulnerability in a tool jsonvet builds on or runs, such as jsonschema, a runner or GitHub
-  Actions. Report it upstream; a pin or setting jsonvet should change is in scope.
+  Actions. Report it upstream. A pin or setting that jsonvet should change is in scope.
 - A check that jsonvet reports wrongly, or a file it accepts or rejects against its dialect.
   Open an issue for those.
 
