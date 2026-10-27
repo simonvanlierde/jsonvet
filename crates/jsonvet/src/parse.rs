@@ -186,8 +186,8 @@ struct Keys<'a> {
     /// `(hash, position in list)` per key once the list grows past `LINEAR_KEYS`. With the hash
     /// at hand a resize never rehashes a key, and a lookup compares keys only when hashes match.
     index: HashTable<(u32, u32)>,
-    /// std's SipHash, keyed from the OS: without those keys a crafted file cannot make its keys
-    /// collide, so the index stays linear on untrusted input (SECURITY.md).
+    /// std's SipHash, with keys from the OS. A crafted file cannot make its keys collide without
+    /// knowing those keys, so the duplicate check stays linear on untrusted input (SECURITY.md).
     state: RandomState,
 }
 
@@ -195,7 +195,7 @@ impl<'a> Keys<'a> {
     /// The offset of `key`'s first appearance, or `None` after recording it at `at`.
     fn first_or_insert(&mut self, key: &Key<'a>, at: usize) -> Option<usize> {
         let list = &mut self.list;
-        // shortcut: past u32::MAX keys (a 128 GiB list) the check falls back to the linear scan.
+        // NOTE: past u32::MAX keys (a 128 GiB list) the check falls back to the linear scan.
         let position = u32::try_from(list.len())
             .ok()
             .filter(|_| list.len() > LINEAR_KEYS);
@@ -348,7 +348,7 @@ impl<'a> Parser<'a, '_> {
             return None;
         }
         let len = rest.iter().take(33).take_while(|b| part(b)).count();
-        // shortcut: a word over 32 bytes, or followed by a non-ASCII byte, shows as its first
+        // NOTE: a word over 32 bytes, or followed by a non-ASCII byte, shows as its first
         // letter only; show the whole word if users report long JSON5 identifiers shown that way.
         (len <= 32 && rest.get(len).is_none_or(u8::is_ascii)).then(|| &self.text[at..at + len])
     }

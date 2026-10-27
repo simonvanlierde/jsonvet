@@ -17,11 +17,10 @@ pub(crate) fn is_json5_space(c: char) -> bool {
 }
 
 /// Characters that reorder or hide text without showing themselves: Unicode's `Bidi_Control`
-/// set, the soft hyphen, the Mongolian
-/// vowel separator, the zero-width space, joiners and marks U+200B to U+200F, the line and
-/// paragraph separators, the word joiner and invisible operators U+2060 to U+2064, the byte
-/// order mark, and the tag characters U+E0000 to U+E007F. Paths and the command line's output
-/// show them as `\u` escapes.
+/// set, the soft hyphen, the Mongolian vowel separator, the zero-width space, joiners and marks
+/// U+200B to U+200F, the line and paragraph separators, the word joiner and invisible operators
+/// U+2060 to U+2064, the byte order mark, and the tag characters U+E0000 to U+E007F. Paths and
+/// the command line's output show them as `\u` escapes.
 ///
 /// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
 #[doc(hidden)]
