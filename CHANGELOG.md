@@ -64,6 +64,8 @@ Most users need no change. Check these if they apply to you:
   378 MB to 266 MB. A JSON Lines file of 1 MB or more is checked in parts, as before. A file with
   schema errors is read a second time to place them, which costs about 2% more time there. The
   output is the same.
+- Release tags are signed with the maintainer's key, from this release on. `git verify-tag v3.2.0`
+  checks one, and GitHub shows it as verified.
 
 ### Fixed
 

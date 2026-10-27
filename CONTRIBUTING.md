@@ -161,9 +161,12 @@ uv run scripts/check-versions.py
 git push -u origin release/X.Y.Z          # then open the pull request and squash-merge it
 git switch main && git pull --ff-only
 git log -1 --oneline                      # must be "chore: release X.Y.Z (#NN)"
-git tag vX.Y.Z && git push origin vX.Y.Z
+git tag -s vX.Y.Z -m vX.Y.Z               # signed with your git signing key
+git verify-tag vX.Y.Z && git push origin vX.Y.Z
 ```
 
+The tag is signed so GitHub shows it as verified and anyone can check it with `git verify-tag`;
+a tag that GitHub or `gh release create` makes is unsigned.
 The "Publishing jsonvet, jsonvet-cli, jsonvet-wasm" line cargo-release prints publishes nothing.
 `uv run scripts/check-versions.py` fails when any place disagrees, or when the CHANGELOG has no
 heading for the version. Renovate owns the dependency pins, so do not bump those by hand.
