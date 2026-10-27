@@ -41,7 +41,7 @@ fn instructions(program: &Path, args: &[&str], dir: &Path) -> u64 {
         .current_dir(dir)
         .env_remove("GITHUB_ACTIONS")
         .output()
-        .expect("run valgrind");
+        .expect("valgrind on PATH: install it to run the scaling tests");
     let stderr = String::from_utf8_lossy(&out.stderr);
     // The summary line reads `==pid== I refs:  1,234,567`.
     let count = stderr
