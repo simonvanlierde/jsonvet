@@ -8,6 +8,8 @@
   // A compromised release is usually caught and yanked within a week.
   minimumReleaseAge: "7 days",
   internalChecksFilter: "strict",
+  // The dco workflow requires a DCO sign-off on every commit in a pull request.
+  commitBody: "Signed-off-by: {{{gitAuthor}}}",
   // The hook placeholder pins jsonvet's own version, which the release sets.
   ignorePaths: ["setup.py", "tests/**"],
   "pre-commit": { enabled: true },
