@@ -36,7 +36,7 @@ fn snapshot(cases: &[(Dialect, &str)]) -> String {
 
 #[test]
 fn syntax_in_every_dialect() {
-    use Dialect::{Json, Json5, Jsonc, Jwcc};
+    use Dialect::{Json, Json5, JsonLines, Jsonc, Jwcc};
     insta::assert_snapshot!(snapshot(&[
         // Empty documents, containers and trailing commas.
         (Json, ""),
@@ -44,6 +44,8 @@ fn syntax_in_every_dialect() {
         (Json, r#"{"a": 1}"#),
         (Json, "[1, 2,]"),
         (Jwcc, "[1, 2,]"),
+        // A JSON Lines file cannot switch to a dialect with trailing commas, so none is suggested.
+        (JsonLines, "[1, 2,]"),
         (Json, r#"{"a": 1,}"#),
         (Json, "[,]"),
         (Json5, "[,]"),
