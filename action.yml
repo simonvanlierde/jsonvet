@@ -29,16 +29,16 @@ inputs:
     description: >-
       The jsonvet version to install from PyPI: `X.Y.Z` (also a pre- or post-release such as
       `3.0.0rc1` or `3.0.0.post1`), `X.*`, `X.Y.*` or `latest`. By default, the version of the
-      action's tag: `v3` installs the newest 3.x, `v3.0.0` installs 3.0.0, and a commit SHA or
-      branch the release named in that commit's Cargo.toml.
+      action's tag: `v3` installs the newest 3.x, and `v3.0.0` installs 3.0.0. A commit SHA or
+      branch installs the release named in that commit's Cargo.toml.
     required: false
     default: ""
   verify:
     description: >-
-      Check the wheel's build provenance attestation with the GitHub CLI before installing it, so
-      it must come from jsonvet's release workflow. `false` skips the check, as GitHub Enterprise
-      Server needs. On a runner without `gh`, and for releases before 3.1.0, which have no
-      attestation, the wheel is installed unchecked with a notice.
+      Check the wheel's build provenance attestation with the GitHub CLI before installing it: the
+      wheel must come from jsonvet's release workflow. `false` skips the check, as GitHub
+      Enterprise Server needs. On a runner without `gh`, the wheel is installed unchecked with a
+      notice, and so is a release before 3.1.0, which has no attestation.
     required: false
     default: "true"
 

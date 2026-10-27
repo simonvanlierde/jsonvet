@@ -3,7 +3,7 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 type: software
 title: "jsonvet"
-abstract: "A linter for JSON, I-JSON, JSONC, JWCC (HuJSON), JSON5 and JSON Lines: syntax errors, duplicate keys, each dialect's rules and JSON Schema errors (from --schema, a config file or a file's own $schema), all with exact positions and, on a terminal, code frames (--color controls the color), plus SARIF output for GitHub code scanning and JSON output for scripts and editors. A playground runs it in the browser as WebAssembly. Ships as a pre-commit hook, PyPI wheels, Rust crates, release binaries and a GitHub Action. Includes a conformance matrix of JSON5, JSONC, JWCC and JSON Lines parsers."
+abstract: "A linter for JSON, I-JSON, JSONC, JWCC (HuJSON), JSON5 and JSON Lines. It reports syntax errors, duplicate keys, each dialect's rules and JSON Schema errors, all with exact positions. The schema comes from --schema, a config file or a file's own $schema. On a terminal, each problem shows as a code frame, and --color controls the color. It also writes SARIF for GitHub code scanning and JSON for scripts and editors. A playground runs it in the browser as WebAssembly. It ships as a pre-commit hook, PyPI wheels, Rust crates, release binaries and a GitHub Action. The repository includes a conformance matrix of JSON5, JSONC, JWCC and JSON Lines parsers."
 authors:
   - family-names: "van Lierde"
     given-names: "Simon"

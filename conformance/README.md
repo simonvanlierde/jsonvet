@@ -16,8 +16,8 @@ uv run conformance/report.py   # writes docs/conformance.md
 ```
 
 The first run pulls four images and builds the drivers into `conformance/.work/` (ignored by git).
-With the images present, a full run takes about 20 seconds, the builds included. `--work DIR` puts the build cache
-elsewhere, and `--only PARSER ...` reruns some parsers and keeps the other results.
+With the images present, a full run takes about 20 seconds, the builds included. `--work DIR` puts
+the build cache elsewhere, and `--only PARSER ...` reruns some parsers and keeps the other results.
 
 Go makes its module cache in `conformance/.work/go` read-only, and a worktree holds the
 json5-tests submodule, so `git worktree remove` fails on a worktree that ran this. Remove one
