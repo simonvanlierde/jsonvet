@@ -1,7 +1,8 @@
-//! How deep and how big a schema gets with its `$ref`s followed, as jsonschema follows them.
+//! How deep and how big a schema gets with its `$ref`s followed, as jsonschema follows them,
+//! and how many regexes it holds.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use jsonschema::{Draft, ReferencingError, Registry};
 use referencing::{Resolver, ResourceRef};
@@ -18,6 +19,17 @@ pub(super) const MAX_SCHEMA_DEPTH: usize = 128;
 /// one value, so `$ref`s that each point twice at the next schema, 24 levels deep, took 12.9 s
 /// and 11.4 GB.
 const MAX_SCHEMA_SIZE: usize = 5_000_000;
+
+/// How many bytes one regex may take compiled, for the `regex` crate's program and, again, for
+/// the cache it fills while matching. Its default of 10 MB let a 9.4 KB schema of 200 patterns
+/// such as `(?:[a-z]{1000}){100}N` take 11 s and 2.8 GB to compile. The largest regex on
+/// SchemaStore takes 0.7 MB.
+pub(super) const PATTERN_BYTES: usize = 2 << 20;
+
+/// How many distinct regexes a schema may hold, each up to [`PATTERN_BYTES`] compiled. The most
+/// on SchemaStore is 457, in one schema. 1,000 regexes of nearly 2 MB each, a 44 KB schema, took
+/// 7 s and 2.6 GB to compile.
+const MAX_PATTERNS: usize = 1_000;
 
 /// The keys whose value points at another schema.
 const REF_KEYS: [&str; 3] = ["$ref", "$dynamicRef", "$recursiveRef"];
@@ -292,6 +304,54 @@ impl<'r> Reach<'r> {
     }
 }
 
+/// Where `schema` holds a regex past [`MAX_PATTERNS`] distinct ones, counting each `pattern` and
+/// `patternProperties` key anywhere in it, if it does.
+pub(super) fn patterns(schema: &Value) -> Result<(), Over> {
+    let mut path = Vec::new();
+    match past(schema, &mut path, &mut HashSet::new()) {
+        Some(key) => Err(Over {
+            path,
+            key,
+            problem: Problem::Patterns,
+        }),
+        None => Ok(()),
+    }
+}
+
+/// The key of the regex in `value` that takes `seen` past [`MAX_PATTERNS`], if one does, with
+/// `path` left at the object that holds it.
+fn past<'v>(
+    value: &'v Value,
+    path: &mut Vec<String>,
+    seen: &mut HashSet<&'v str>,
+) -> Option<String> {
+    for (key, member) in children(value) {
+        match (key.as_ref(), member) {
+            ("patternProperties", Value::Object(regexes)) => {
+                if let Some(regex) = regexes.keys().find(|regex| one_too_many(seen, regex)) {
+                    path.push(key.into_owned());
+                    return Some(regex.clone());
+                }
+            }
+            ("pattern", Value::String(regex)) if one_too_many(seen, regex) => {
+                return Some(key.into_owned());
+            }
+            _ => {}
+        }
+        path.push(key.into_owned());
+        if let Some(key) = past(member, path, seen) {
+            return Some(key);
+        }
+        path.pop();
+    }
+    None
+}
+
+/// Add `regex` to `seen`, and say whether it is one past [`MAX_PATTERNS`].
+fn one_too_many<'v>(seen: &mut HashSet<&'v str>, regex: &'v str) -> bool {
+    seen.insert(regex) && seen.len() > MAX_PATTERNS
+}
+
 /// How many values in `value` are neither objects nor arrays.
 fn scalars(value: &Value) -> usize {
     match value {
@@ -336,6 +396,8 @@ enum Problem {
     /// Too big once the schemas beside an `unevaluated*` keyword count twice.
     Twice,
     Unresolved(String),
+    /// Past [`MAX_PATTERNS`] distinct regexes.
+    Patterns,
 }
 
 /// Where a schema is turned away, and why: the path of an object and a key in it.
@@ -362,13 +424,21 @@ impl Over {
                  counting the schemas beside it twice, as jsonschema checks them again for it"
             ),
             Problem::Unresolved(error) => format!("this `{key}` cannot be resolved: {error}"),
+            Problem::Patterns => format!(
+                "this regex takes the schema past {MAX_PATTERNS} distinct regexes, each allowed \
+                 {} MB once compiled",
+                PATTERN_BYTES >> 20
+            ),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{DEFAULT_BASE, MAX_SCHEMA_SIZE, Measure, Over, Problem, Reach, Visit, registry};
+    use super::{
+        DEFAULT_BASE, MAX_PATTERNS, MAX_SCHEMA_SIZE, Measure, Over, Problem, Reach, Visit,
+        patterns, registry,
+    };
     use jsonschema::Draft;
     use serde_json::{Value, json};
 
@@ -581,5 +651,28 @@ mod tests {
             matches!(over.problem, Problem::Unresolved(_)) && over.path == ["properties", "a"]
         });
         assert!(unresolved);
+    }
+
+    #[test]
+    fn pattern_properties_keys_and_patterns_count_once_each() {
+        // `^a` is both a key and a `pattern`, and counts once.
+        let keys: serde_json::Map<String, Value> = (0..MAX_PATTERNS)
+            .map(|i| (format!("^k{i}"), json!({})))
+            .collect();
+        let schema = |extra: &str| json!({"patternProperties": keys, "properties": {"a": {"pattern": "^k1"}, "b": {"pattern": extra}}});
+        assert!(patterns(&schema("^k2")).is_ok());
+        let over = patterns(&schema("^new")).expect_err("one past the cap");
+        assert!(matches!(over.problem, Problem::Patterns));
+        assert_eq!(
+            (over.path.join("/"), over.key),
+            ("properties/b".to_owned(), "pattern".to_owned())
+        );
+        let mut keys = keys.clone();
+        keys.insert("^last".to_owned(), json!({}));
+        let over = patterns(&json!({"patternProperties": keys})).expect_err("past the cap");
+        assert_eq!(
+            (over.path, over.key),
+            (vec!["patternProperties".to_owned()], "^last".to_owned())
+        );
     }
 }

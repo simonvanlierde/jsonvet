@@ -10,6 +10,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap};
 use std::ops::Range;
 use std::path::Path;
+use std::sync::Arc;
 
 use jsonschema::error::ValidationErrorKind;
 use jsonschema::{PatternOptions, ReferencingError, ValidationError, ValidationOptions, Validator};
@@ -18,7 +19,7 @@ use serde_json::{Map, Value};
 
 use crate::settings::Settings;
 use fold::{Fold, documents};
-use limits::{MAX_SCHEMA_DEPTH, Reach, registry};
+use limits::{MAX_SCHEMA_DEPTH, PATTERN_BYTES, Reach, registry};
 use place::{Place, place, place_found, pointer_path, segments};
 
 /// How many schema errors one document reports, in the order jsonschema finds them; one more
@@ -84,12 +85,13 @@ pub(crate) struct Schema {
     members: Option<Split>,
     /// `{"pattern": p}` for each regex in the schema tried on keys: `patternProperties` and a
     /// `pattern` under `propertyNames`, to find the keys a regex error on an object is about.
-    key_patterns: Vec<(String, Validator)>,
+    /// Empty for a `linear` schema, which has no such errors.
+    key_patterns: Regexes,
     /// `{"pattern": p}` for each `pattern` in the schema, to name the one a regex error on a
-    /// string is about when its schema path does not.
-    string_patterns: Vec<(String, Validator)>,
-    /// Whether every regex in the schema compiles for the `regex` crate. fancy-regex hands such
-    /// a regex to it, which runs in linear time, so no match stops at [`BACKTRACK_LIMIT`].
+    /// string is about when its schema path does not. Empty for a `linear` schema.
+    string_patterns: Regexes,
+    /// Whether every regex the schema uses compiles for the `regex` crate, which runs in linear
+    /// time, so no match stops at [`BACKTRACK_LIMIT`]. Such a schema is built with it alone.
     linear: bool,
     /// For a schema the project picked, whose errors quote nothing from it (ADR 0012).
     quiet: Option<Quiet>,
@@ -330,6 +332,62 @@ fn costly(what: &str, regex: Option<&str>) -> String {
         "this {what} could not be checked against {pattern}: matching it takes more than \
          {BACKTRACK_LIMIT} backtracking steps"
     )
+}
+
+/// A validator for `schema`, offline, so a `$ref` to anything outside the schema file fails, with
+/// the options it was built with, and whether every regex it uses suits the `regex` crate. Each
+/// build compiles every regex it uses, so such a schema is built with that crate, which
+/// fancy-regex would hand them to anyway, rather than compiled a second time to find that out.
+fn build(
+    schema: &Value,
+) -> (
+    ValidationOptions<'static>,
+    Result<Validator, ValidationError<'_>>,
+    bool,
+) {
+    let linear = jsonschema::options().offline().with_pattern_options(
+        PatternOptions::regex()
+            .size_limit(PATTERN_BYTES)
+            .dfa_size_limit(PATTERN_BYTES),
+    );
+    if let Ok(validator) = linear.build(schema) {
+        return (linear, Ok(validator), true);
+    }
+    // fancy-regex backtracks for back-references and lookaround, and its default limit of a
+    // million lets one 30-byte string take 30 ms.
+    let fancy = jsonschema::options().offline().with_pattern_options(
+        PatternOptions::fancy_regex()
+            .backtrack_limit(BACKTRACK_LIMIT)
+            .size_limit(PATTERN_BYTES)
+            .dfa_size_limit(PATTERN_BYTES),
+    );
+    let built = fancy.build(schema);
+    (fancy, built, false)
+}
+
+/// Regexes by their text, each as the schema `{"pattern": p}`.
+type Regexes = Vec<(String, Arc<Validator>)>;
+
+/// `{"pattern": p}` under `options` for each regex in `schema` tried on keys, and for each tried
+/// on strings, as [`Schema`] keeps them. Each is compiled once, as some are tried on both. One
+/// jsonschema could not compile already failed the build of the whole schema.
+fn regexes<'v>(schema: &'v Value, options: &ValidationOptions) -> (Regexes, Regexes) {
+    let (mut keys, mut strings) = (BTreeSet::new(), BTreeSet::new());
+    patterns(schema, false, &mut keys, &mut strings);
+    let mut compiled: HashMap<&'v str, Option<Arc<Validator>>> = HashMap::new();
+    let mut compile = |regexes: BTreeSet<&'v str>| {
+        regexes
+            .into_iter()
+            .filter_map(|regex| {
+                let validator = compiled.entry(regex).or_insert_with(|| {
+                    let schema = serde_json::json!({ "pattern": regex });
+                    options.build(&schema).ok().map(Arc::new)
+                });
+                Some((regex.to_owned(), Arc::clone(validator.as_ref()?)))
+            })
+            .collect()
+    };
+    (compile(keys), compile(strings))
 }
 
 /// The regexes in `schema`: those tried on keys, and every `pattern`, tried on strings.
@@ -627,37 +685,19 @@ impl Schema {
             .map_err(|error| outside(&error).unwrap_or_else(|| at(events[0].offset, &error)))?;
         // jsonschema also validates recursively through each `$ref`, so a long chain of them
         // takes the stack or hours, however shallow the schema is.
-        let kept = Reach::new(schema).measure(&registry).map_err(|over| {
+        let refuse = |over: limits::Over| {
             let (offset, _) = place(events, vec![(over.path.clone(), vec![over.key.clone()])])[0];
             at(offset, &over.message())
-        })?;
-        // Offline: a `$ref` to anything outside the schema file fails here.
-        let options = jsonschema::options()
-            .offline()
-            // fancy-regex backtracks for back-references and lookaround, and its default limit
-            // of a million lets one 30-byte string take 30 ms.
-            .with_pattern_options(PatternOptions::fancy_regex().backtrack_limit(BACKTRACK_LIMIT));
-        let error = match options.build(schema) {
+        };
+        let kept = Reach::new(schema).measure(&registry).map_err(refuse)?;
+        limits::patterns(schema).map_err(refuse)?;
+        let (options, built, linear) = build(schema);
+        let error = match built {
             Ok(validator) => {
-                let (mut keys, mut strings) = (BTreeSet::new(), BTreeSet::new());
-                patterns(schema, false, &mut keys, &mut strings);
-                let regex = jsonschema::options()
-                    .offline()
-                    .with_pattern_options(PatternOptions::regex());
-                let linear = keys.iter().chain(&strings).all(|pattern| {
-                    regex
-                        .build(&serde_json::json!({ "pattern": pattern }))
-                        .is_ok()
-                });
-                // A regex jsonschema could not compile already failed the build above.
-                let compile = |regexes: BTreeSet<&str>| {
-                    regexes
-                        .into_iter()
-                        .filter_map(|regex| {
-                            let schema = serde_json::json!({ "pattern": regex });
-                            Some((regex.to_owned(), options.build(&schema).ok()?))
-                        })
-                        .collect()
+                let (key_patterns, string_patterns) = if linear {
+                    (Vec::new(), Vec::new())
+                } else {
+                    regexes(schema, &options)
                 };
                 return Ok(Schema {
                     compiled: Compiled {
@@ -667,8 +707,8 @@ impl Schema {
                     },
                     items: split(schema, kept, false, &options),
                     members: split(schema, kept, true, &options),
-                    key_patterns: compile(keys),
-                    string_patterns: compile(strings),
+                    key_patterns,
+                    string_patterns,
                     linear,
                     quiet: quiet.then(|| Quiet::new(&name, schema, events, &report)),
                 });
@@ -682,6 +722,14 @@ impl Schema {
             return Err(message);
         }
         let (offset, _) = place_found(events, &found(None, schema, &error, String::new))[0];
+        // A regex too large to compile is reported as no regex at all.
+        if matches!(error.kind(), ValidationErrorKind::Format { format } if format == "regex") {
+            let mb = PATTERN_BYTES >> 20;
+            return Err(at(
+                offset,
+                &format!("{error}, or it takes more than {mb} MB compiled"),
+            ));
+        }
         Err(at(offset, &error))
     }
 
@@ -824,7 +872,7 @@ impl Schema {
         let at = pattern_at(&compiled.schema, error.schema_path().as_str());
         // The pattern at the error's schema path, if it is one of `patterns`; else, as a path
         // relative to a subschema's own `$id` points elsewhere, the first that is costly too.
-        let named = |patterns: &[(String, Validator)], subject: &str| {
+        let named = |patterns: &[(String, Arc<Validator>)], subject: &str| {
             let subject = Value::String(subject.to_owned());
             let known = patterns.iter().any(|(regex, _)| Some(regex) == at.as_ref());
             patterns
@@ -875,6 +923,8 @@ impl Schema {
 /// members, and every `$ref` in it points into one of [`NOT_CHECKS`] at the root (`kept`), as
 /// those are kept in both parts. `None` also when either part fails to build: the whole schema
 /// is then checked in one pass.
+/// NOTE: each part compiles its regexes again, as jsonschema keeps compiled regexes per build;
+/// [`limits::patterns`] bounds what that costs.
 fn split(schema: &Value, kept: bool, members: bool, options: &ValidationOptions) -> Option<Split> {
     let all = schema.as_object()?;
     let (moved, also): (&[&str], &[&str]) = if members {

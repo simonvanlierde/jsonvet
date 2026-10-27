@@ -2240,6 +2240,51 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
     }
 
     #[test]
+    fn a_schema_whose_regexes_cost_too_much_to_compile_is_a_usage_error() {
+        // One regex of 100,000 letters takes about 7 MB compiled, and 200 such took 11 s and
+        // 2.8 GB before the cap.
+        let costly = r#"{"properties": {"a": {"pattern": "(?:[a-z]{1000}){100}N"}}}"#;
+        let many = |n: usize| {
+            let regexes: Vec<String> = (0..n)
+                .map(|i| format!("\"p{i}\": {{\"pattern\": \"^k{i}$\"}}"))
+                .collect();
+            format!("{{\"properties\": {{{}}}}}", regexes.join(", "))
+        };
+        let dir = workdir(&[
+            ("ok.json", "{}"),
+            ("costly.json", costly),
+            ("1000.json", &many(1000)),
+            ("1001.json", &many(1001)),
+        ]);
+        let start = std::time::Instant::now();
+        let (code, out, err) = jsonvet_stderr(&dir, &["--schema", "costly.json", "ok.json"]);
+        assert!(
+            start.elapsed().as_secs_f64() < 1.0,
+            "took {:?}",
+            start.elapsed()
+        );
+        assert_eq!((code, out.as_str()), (2, ""));
+        assert_eq!(
+            err,
+            "jsonvet: the schema costly.json:1:34: \"(?:[a-z]{1000}){100}N\" is not a \"regex\", \
+             or it takes more than 2 MB compiled\n"
+        );
+        let (code, out, _) = jsonvet_stderr(&dir, &["--schema", "1000.json", "ok.json"]);
+        assert_eq!((code, out.as_str()), (0, ""));
+        let (code, out, err) = jsonvet_stderr(&dir, &["--schema", "1001.json", "ok.json"]);
+        assert_eq!((code, out.as_str()), (2, ""));
+        // At the 1,001st regex, with members taken in key order: the `pattern` key in `p999`.
+        let column = many(1001).find("\"p999\"").expect("p999") + "\"p999\": {".len() + 1;
+        assert_eq!(
+            err,
+            format!(
+                "jsonvet: the schema 1001.json:1:{column}: this regex takes the schema past 1000 \
+                 distinct regexes, each allowed 2 MB once compiled\n"
+            )
+        );
+    }
+
+    #[test]
     fn schema_errors_in_a_large_file() {
         // 100,000 records, every 10,000th with a string port: about 3 MB.
         let mut text = String::from("[\n");
