@@ -1,13 +1,22 @@
-// Line ends as jsonvet counts them: JSON5 also ends a line at U+2028 and U+2029.
-export const lineEnd = (dialect) =>
-  dialect === "json5" ? /\r\n|[\r\n\u2028\u2029]/g : /\r\n|[\r\n]/g;
+// A textarea breaks a row at LF only, whatever the dialect: its value has no CR, and a browser does
+// not break at U+2028 or U+2029, which JSON5 counts as line ends. The gutter and the highlights
+// follow the rows, and the wasm gives each problem's UTF-16 index to find its row.
 
-// The UTF-16 index of a 1-based line and a column in code points.
-export function indexOf(text, line, column, dialect) {
-  const ends = lineEnd(dialect);
-  let start = 0;
-  for (let l = 1; l < line && ends.exec(text); l++) start = ends.lastIndex;
-  let i = start;
-  for (let c = 1; c < column && i < text.length; c++) i += text.codePointAt(i) > 0xffff ? 2 : 1;
-  return i;
+// The index where each row of `text` starts.
+export function rowStarts(text) {
+  const starts = [0];
+  for (let i = text.indexOf("\n"); i >= 0; i = text.indexOf("\n", i + 1)) starts.push(i + 1);
+  return starts;
+}
+
+// The 1-based row that holds `index`.
+export function rowOf(starts, index) {
+  let lo = 0;
+  let hi = starts.length;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (starts[mid] <= index) lo = mid;
+    else hi = mid;
+  }
+  return lo + 1;
 }
