@@ -3,9 +3,6 @@
 # The CLI's tests also catch mutants in the library.
 test_workspace = true
 
-# schema_memory.rs counts heap per process, so it needs nextest's process per test.
-test_tool = "nextest"
-
 # Mutants that change no behaviour, so no test can catch them (docs/design.md, "Mutations").
 # Matched by column, not line, so they survive edits elsewhere in the file. Any other mutant
 # that survives fails the weekly run.
