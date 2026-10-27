@@ -72,30 +72,22 @@ jobs:
           tar --extract --gzip --file binaryen.tar.gz --strip-components=1 "binaryen-${BINARYEN}/bin/wasm-opt"
           bin/wasm-opt -Oz --output playground/pkg/jsonvet_wasm_bg.wasm playground/pkg/jsonvet_wasm_bg.wasm
           rm -r binaryen.tar.gz bin
-      # Load the built module and check one text, which the build alone does not do. Then check the
-      # page keeps its CSP and loads its script from a file.
+      # Load the built module and compare check() with the Rust tests' strings, then check the page
+      # keeps its CSP and has no inline script or style.
       - name: Smoke test the wasm
+        run: node playground/smoke.mjs
+      # The page loads main.mjs, its styles and (through it) the wasm glue and the wasm with the
+      # commit in the URL, so a cached file from the last deploy never meets a new one.
+      - name: Stamp the commit on the page's files
+        env:
+          COMMIT: ${{ github.sha }}
         run: |
-          node --input-type=module <<'EOF'
-          import { readFileSync } from "node:fs";
-          import init, { check } from "./playground/pkg/jsonvet_wasm.js";
-          await init({ module_or_path: readFileSync("playground/pkg/jsonvet_wasm_bg.wasm") });
-          const problems = JSON.parse(check('{"a":1,"a":2}', "json5"));
-          if (problems.length !== 1 || problems[0].line !== 1) {
-            console.error(problems);
-            process.exit(1);
-          }
-          // The CSP allows no inline script, so a script left in the page would not run.
-          const page = readFileSync("playground/index.html", "utf8");
-          if (!/<meta http-equiv="Content-Security-Policy" content="[^"]*script-src 'self'/.test(page)) {
-            console.error("playground/index.html has no Content-Security-Policy meta tag");
-            process.exit(1);
-          }
-          if (/<script(?![^>]*\ssrc=)[^>]*>/.test(page)) {
-            console.error("playground/index.html has an inline script");
-            process.exit(1);
-          }
-          EOF
+          sed -i "s|\"main.mjs\"|\"main.mjs?v=${COMMIT}\"|; s|\"style.css\"|\"style.css?v=${COMMIT}\"|" playground/index.html
+          grep -q "main.mjs?v=${COMMIT}" playground/index.html
+          grep -q "style.css?v=${COMMIT}" playground/index.html
+      # Chrome is on the runner: load the stamped page from a local server and read its status.
+      - name: Load the page in Chrome
+        run: playground/browser-check.sh
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: playground

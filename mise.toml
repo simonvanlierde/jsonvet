@@ -6,6 +6,7 @@ just = "1"
 uv = "0.13.0"
 prek = "0.5.5"
 hyperfine = "1"
+node = "24" # the playground tests, and the smoke test of its wasm
 "aqua:nextest-rs/nextest/cargo-nextest" = "0.9.148"
 cargo-deny = "0.20.2"
 "aqua:mitsuhiko/insta" = "1.49.0" # cargo-insta, the version of the insta dev-dependency
