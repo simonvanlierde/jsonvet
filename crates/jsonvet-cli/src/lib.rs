@@ -42,7 +42,7 @@ const CHUNK_BYTES: usize = 64 << 20;
 
 /// How many bytes of memory a byte of file text takes with `--schema`, which holds the file's
 /// value one document at a time: 4 to 22 per byte of that document (docs/design.md, "Memory").
-/// I keep 20 from when it held every event too, as headroom.
+/// 20 is near the top of that range: only many small records take more.
 const SCHEMA_BYTES: usize = 20;
 
 /// From this size, a JSON Lines file is split at newlines and its parts checked on the cores
@@ -163,12 +163,12 @@ pub fn run_with(
     let mut counts = Counts::default();
     // Files are read and checked on every core, a chunk at a time, then printed here in the
     // order given. A chunk ends once its files hold CHUNK_BYTES, so memory stays near that. With
-    // a schema a file takes 20 times its size, so the chunk is cut from the sizes before any
-    // file is read: else every core takes a file at once. Without, sizing every file first made
-    // a walk of 10,000 files 7 ms slower.
-    // shortcut: each chunk waits for its slowest file before the next starts; hand files out
+    // a schema a file takes SCHEMA_BYTES times its size, so the chunk is cut from the sizes
+    // before any file is read: otherwise every core would start on a file at once. Without
+    // a schema the files are not sized first, which made a walk of 10,000 files 7 ms slower.
+    // NOTE: each chunk waits for its slowest file before the next starts; hand files out
     // one at a time across chunks if one big file among many small ones holds a run up.
-    // shortcut: a file's own `$schema` is found only once it is read, so such a file counts its
+    // NOTE: a file's own `$schema` is found only once it is read, so such a file counts its
     // size once; size every file if a run of large files with one runs out of memory.
     let mut rest = &files[..];
     let shares = schema_shares(&files, threads);
@@ -742,9 +742,9 @@ fn read_stdin() -> Result<String, String> {
 /// byte is not UTF-8: by its byte order mark, or without one by where the zero bytes of its first
 /// two characters fall, as RFC 4627 section 3 tells the encodings apart.
 fn decode(bytes: Vec<u8>) -> Result<String, String> {
-    // Without a mark, a match always failed as UTF-8 before: a zero byte is U+0000, and outside
-    // a string no dialect allows it. JSON5 does allow it raw inside one, so a first byte that
-    // opens a string is left alone.
+    // Without a mark, a text these patterns match would fail the check anyway: a zero byte is
+    // U+0000, and outside a string no dialect allows it. JSON5 does allow it raw inside one, so
+    // a first byte that opens a string is left alone.
     let opens_string = |b: u8| b == b'"' || b == b'\'';
     // UTF-32 LE first: its mark starts with UTF-16 LE's.
     let encoding = match *bytes.as_slice() {

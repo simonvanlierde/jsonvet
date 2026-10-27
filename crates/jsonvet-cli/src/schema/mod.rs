@@ -174,9 +174,8 @@ impl Quiet {
     }
 
     /// `error`'s message without text from the schema, unless its kind quotes none: the keyword
-    /// it fails, and where that is in the schema if known. For
-    /// the part of a split schema checked on each element or member, `moved` is where that part
-    /// came from.
+    /// it fails, and where that is in the schema if known. For the part of a split schema checked
+    /// on each element or member, `moved` is where that part came from.
     fn message(&self, error: &ValidationError<'_>, moved: Option<&str>) -> String {
         use ValidationErrorKind as K;
         match error.kind() {

@@ -176,9 +176,9 @@ impl Excerpt {
         }
     }
 
-    /// The excerpt as a snippet, with each mark annotated: the first as the
-    /// problem when `problem` is set, any other as context. Characters that would act on the terminal or hide text,
-    /// and the `[` of `##[`, which a GitHub runner reads as a command, show as U+FFFD.
+    /// The excerpt as a snippet, with each mark annotated: the first as the problem when
+    /// `problem` is set, any other as context. Characters that would act on the terminal or hide
+    /// text, and the `[` of `##[`, which a GitHub runner reads as a command, show as U+FFFD.
     fn snippet<'a>(
         &self,
         text: &str,

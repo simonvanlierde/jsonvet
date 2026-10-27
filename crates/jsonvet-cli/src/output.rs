@@ -23,9 +23,10 @@ pub(crate) enum Format {
 /// A file name or message with control characters made visible: a newline would start a line
 /// of its own, which GitHub Actions reads as a workflow command when it starts with `::`, and
 /// an escape character would reach the terminal. Bidi controls, which reorder how the rest of
-/// the line displays, and zero-width characters, which hide part of it, show the same way. CR and LF show as `\r` and `\n`, the rest as
-/// `\u001b`, as JSONPaths in messages show them. The runner also reads its older `##[command]`
-/// form anywhere in a line, so the `[` of `##[` shows as `\u005b`.
+/// the line displays, and zero-width characters, which hide part of it, are made visible too.
+/// CR and LF show as `\r` and `\n`, the others as `\uXXXX` escapes such as `\u001b`, as
+/// JSONPaths in messages show them. The runner also reads its older `##[command]` form anywhere
+/// in a line, so the `[` of `##[` shows as `\u005b`.
 pub(crate) fn printable(value: &str) -> String {
     let mut shown = String::with_capacity(value.len());
     for c in value.chars() {
