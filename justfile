@@ -28,7 +28,8 @@ test:
     cargo nextest run --workspace --locked
     cargo test --workspace --doc --locked
 
-# ci.yml `scaling`: once-quadratic paths stay linear, by instruction counts (needs valgrind, so Linux).
+# ci.yml `scaling`: code paths that could turn quadratic stay linear, by instruction counts
+# (needs valgrind, so Linux).
 scaling:
     cargo build --release --manifest-path fuzz/Cargo.toml --bin diff_json5
     JSONVET_DIFF_JSON5={{ absolute_path(env("CARGO_TARGET_DIR", "fuzz/target")) }}/release/diff_json5 \

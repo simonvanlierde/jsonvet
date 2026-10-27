@@ -45,9 +45,9 @@ jobs:
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: ${{ env.PINNED_UV }}
-      # The repo's Python (the hook placeholder and scripts/) and the workflows. The ruff and
-      # zizmor hooks from .pre-commit-config.yaml, so its revs are the one ruff and zizmor pins.
-      # Only these: the others guard commits or repeat the cargo steps above.
+      # The repo's Python (the hook placeholder and scripts/) and the workflows, through the ruff
+      # and zizmor hooks in .pre-commit-config.yaml, so its revs are the only ruff and zizmor pins.
+      # Only these: the other hooks guard commits or repeat the cargo steps above.
       - run: uvx prek@0.5.5 run ruff-check ruff-format zizmor --all-files --show-diff-on-failure
         # The token turns on zizmor's online audits, so a stale pin comment fails here too.
         env:
@@ -101,7 +101,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo check --workspace --lib --bins --locked
 
-  # Paths that were once quadratic stay linear, by valgrind's instruction counts at n and 10n:
+  # Code paths that could turn quadratic stay linear, by valgrind's instruction counts at n and 10n:
   # crates/jsonvet-cli/tests/scaling.rs. The diff_json5 fuzz target builds on stable without
   # cargo-fuzz, which is enough to time json5 in it.
   scaling:
@@ -195,8 +195,9 @@ jobs:
           uv run scripts/differential.py --cases 5000 --seed "$SEED"
 
   # The wheel, built the way the release does, and the hook as users install it, on every OS:
-  # pre-commit and prek install this repository, and its placeholder setup.py pins the jsonvet wheel. Until that version is on PyPI, the wheel built here stands in for it,
-  # through pip's and uv's find-links settings.
+  # pre-commit and prek install this repository, and its placeholder setup.py pins the jsonvet
+  # wheel. Until that version is on PyPI, the wheel built here stands in for it, through pip's and
+  # uv's find-links settings.
   hook:
     # The OS alone, without the container image: the ruleset requires `hook (ubuntu-latest)`.
     name: hook (${{ matrix.os }})
