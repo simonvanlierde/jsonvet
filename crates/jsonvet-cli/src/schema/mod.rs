@@ -11,7 +11,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap};
 use std::ops::Range;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use jsonschema::error::ValidationErrorKind;
 use jsonschema::{PatternOptions, ReferencingError, ValidationError, ValidationOptions, Validator};
@@ -360,41 +360,66 @@ fn build(
     if let Ok(validator) = linear.build(schema) {
         return (linear, Ok(validator), true);
     }
-    // fancy-regex backtracks for back-references and lookaround, and its default limit of a
-    // million lets one 30-byte string take 30 ms.
-    let fancy = jsonschema::options().offline().with_pattern_options(
-        PatternOptions::fancy_regex()
-            .backtrack_limit(BACKTRACK_LIMIT)
-            .size_limit(PATTERN_BYTES)
-            .dfa_size_limit(PATTERN_BYTES),
-    );
+    let fancy = fancy();
     let built = fancy.build(schema);
     (fancy, built, false)
 }
 
-/// Regexes by their text, each as the schema `{"pattern": p}`.
-type Regexes = Vec<(String, Arc<Validator>)>;
+/// The options for a schema with a regex the `regex` crate cannot compile. fancy-regex
+/// backtracks for back-references and lookaround, and its default limit of a million lets one
+/// 30-byte string take 30 ms.
+fn fancy() -> ValidationOptions<'static> {
+    jsonschema::options().offline().with_pattern_options(
+        PatternOptions::fancy_regex()
+            .backtrack_limit(BACKTRACK_LIMIT)
+            .size_limit(PATTERN_BYTES)
+            .dfa_size_limit(PATTERN_BYTES),
+    )
+}
 
-/// `{"pattern": p}` under `options` for each regex in `schema` tried on keys, and for each tried
-/// on strings, as [`Schema`] keeps them. Each is compiled once, as some are tried on both. One
-/// jsonschema could not compile already failed the build of the whole schema.
-fn regexes<'v>(schema: &'v Value, options: &ValidationOptions) -> (Regexes, Regexes) {
+/// A regex of a schema that is not `linear`, as the schema `{"pattern": p}`, compiled the first
+/// time a match past [`BACKTRACK_LIMIT`] needs it named. Compiled when the schema is, each would
+/// cost again what the schema's build already did, for nothing unless such a match comes.
+struct Regex {
+    text: String,
+    validator: OnceLock<Option<Validator>>,
+}
+
+impl Regex {
+    fn validator(&self) -> Option<&Validator> {
+        self.validator
+            .get_or_init(|| {
+                let schema = serde_json::json!({ "pattern": self.text });
+                fancy().build(&schema).ok()
+            })
+            .as_ref()
+    }
+}
+
+/// Regexes in order of their text.
+type Regexes = Vec<Arc<Regex>>;
+
+/// The regexes in `schema` tried on keys, and those tried on strings, as [`Schema`] keeps them.
+/// One tried on both is one [`Regex`], so it is compiled at most once.
+fn regexes<'v>(schema: &'v Value) -> (Regexes, Regexes) {
     let (mut keys, mut strings) = (BTreeSet::new(), BTreeSet::new());
     patterns(schema, false, &mut keys, &mut strings);
-    let mut compiled: HashMap<&'v str, Option<Arc<Validator>>> = HashMap::new();
-    let mut compile = |regexes: BTreeSet<&'v str>| {
+    let mut all: HashMap<&'v str, Arc<Regex>> = HashMap::new();
+    let mut each = |regexes: BTreeSet<&'v str>| {
         regexes
             .into_iter()
-            .filter_map(|regex| {
-                let validator = compiled.entry(regex).or_insert_with(|| {
-                    let schema = serde_json::json!({ "pattern": regex });
-                    options.build(&schema).ok().map(Arc::new)
+            .map(|regex| {
+                let shared = all.entry(regex).or_insert_with(|| {
+                    Arc::new(Regex {
+                        text: regex.to_owned(),
+                        validator: OnceLock::new(),
+                    })
                 });
-                Some((regex.to_owned(), Arc::clone(validator.as_ref()?)))
+                Arc::clone(shared)
             })
             .collect()
     };
-    (compile(keys), compile(strings))
+    (each(keys), each(strings))
 }
 
 /// The regexes in `schema`: those tried on keys, and every `pattern`, tried on strings.
@@ -716,7 +741,7 @@ impl Schema {
                 let (key_patterns, string_patterns) = if linear {
                     (Vec::new(), Vec::new())
                 } else {
-                    regexes(schema, &options)
+                    regexes(schema)
                 };
                 return Ok(Schema {
                     compiled: Compiled {
@@ -925,14 +950,20 @@ impl Schema {
         let at = pattern_at(&compiled.schema, error.schema_path().as_str());
         // The pattern at the error's schema path, if it is one of `patterns`; else, as a path
         // relative to a subschema's own `$id` points elsewhere, the first that is costly too.
-        let named = |patterns: &[(String, Arc<Validator>)], subject: &str| {
+        let named = |patterns: &[Arc<Regex>], subject: &str| {
             let subject = Value::String(subject.to_owned());
-            let known = patterns.iter().any(|(regex, _)| Some(regex) == at.as_ref());
+            let known = patterns
+                .iter()
+                .any(|regex| Some(&regex.text) == at.as_ref());
             patterns
                 .iter()
-                .filter(|(regex, _)| !known || Some(regex) == at.as_ref())
-                .find(|(_, regex)| regex.validate(&subject).is_err_and(|e| backtracked(&e)))
-                .map(|(regex, _)| regex.clone())
+                .filter(|regex| !known || Some(&regex.text) == at.as_ref())
+                .find(|regex| {
+                    regex
+                        .validator()
+                        .is_some_and(|v| v.validate(&subject).is_err_and(|e| backtracked(&e)))
+                })
+                .map(|regex| regex.text.clone())
         };
         // A quiet schema's regex is never named.
         let shown = |regex: Option<String>| regex.filter(|_| self.quiet.is_none());

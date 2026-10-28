@@ -215,3 +215,35 @@ fn files_with_a_local_dollar_schema_are_checked_as_few_at_a_time_as_with_schema(
         "local `$schema`s took {peak} bytes, `--schema` {with_schema}"
     );
 }
+
+/// A schema with a regex only fancy-regex compiles keeps its regexes compiled once, as one the
+/// `regex` crate compiles does: the copies that name a pattern in an error are compiled only
+/// when such an error comes. Compiled when the schema was, they took half as much again.
+#[test]
+fn a_regex_with_lookaround_compiles_the_schema_once() {
+    let schema = |first: &str| {
+        let regexes: Vec<String> = (0..100)
+            .map(|i| format!("\"{first}(?:[a-z]{{20}}){{100}}N{i}\": {{}}"))
+            .collect();
+        format!("{{\"patternProperties\": {{{}}}}}", regexes.join(", "))
+    };
+    let dir = folder("lookaround");
+    fs::write(dir.join("file.json"), "{}").expect("write the file");
+    let mut peaks = Vec::new();
+    for (name, first) in [("linear.json", ""), ("fancy.json", "(?=a)")] {
+        fs::write(dir.join(name), schema(first)).expect("write the schema");
+        let (peak, code, out) = run(&[
+            OsString::from("--no-config"),
+            OsString::from("--schema"),
+            OsString::from(dir.join(name)),
+            OsString::from(dir.join("file.json")),
+        ]);
+        assert_eq!(code, Ok(0), "{out}");
+        peaks.push(peak);
+    }
+    let (linear, fancy) = (peaks[0], peaks[1]);
+    assert!(
+        fancy <= linear + linear / 5,
+        "with lookaround {fancy} bytes, without {linear}"
+    );
+}
