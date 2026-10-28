@@ -5,11 +5,13 @@
 use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use jsonvet::{Dialect, Event, EventKind, Report, Rule};
 
 use super::Schema;
+use super::limits::{PATTERN_BYTES, RUN_PATTERNS};
 use crate::settings::{self, Settings};
 use crate::{check, output};
 
@@ -73,6 +75,11 @@ pub(crate) type Loaded = Result<Arc<Schema>, String>;
 #[derive(Default)]
 pub(crate) struct Schemas {
     loaded: Mutex<HashMap<(PathBuf, bool), Loaded>>,
+    /// The regexes of the schemas read, as [`RUN_PATTERNS`] counts them, also of those that
+    /// failed after they were counted. Changed only while `loaded` is held.
+    patterns: AtomicUsize,
+    /// Why the run stops: a schema took it past [`RUN_PATTERNS`].
+    over: OnceLock<String>,
     /// What each `$schema` path, from each folder of the files that hold one, leads to.
     own: Mutex<HashMap<(PathBuf, String), Own>>,
 }
@@ -83,12 +90,14 @@ type Own = Result<Option<Arc<Schema>>, String>;
 impl Schemas {
     /// The schema at `path`, from `load` the first time it is asked for with `quiet`. Every
     /// spelling of a path, such as `x/../s.json` for `s.json`, reads it once: else a file
-    /// could name one large schema many ways and have it read for each.
+    /// could name one large schema many ways and have it read for each. `load` hands the number
+    /// of regexes in the schema to its argument before it compiles any: one that takes the run
+    /// past [`RUN_PATTERNS`] is an error, and so is every schema after it.
     pub(crate) fn get(
         &self,
         path: &Path,
         quiet: bool,
-        load: impl FnOnce() -> Result<Schema, String>,
+        load: impl FnOnce(&dyn Fn(usize) -> Result<(), String>) -> Result<Schema, String>,
     ) -> Loaded {
         let key = std::fs::canonicalize(path)
             .or_else(|_| std::path::absolute(path))
@@ -100,8 +109,33 @@ impl Schemas {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         loaded
             .entry((key, quiet))
-            .or_insert_with(|| load().map(Arc::new))
+            .or_insert_with(|| {
+                let admit = |count: usize| {
+                    self.over()?;
+                    let patterns = self.patterns.load(Ordering::Relaxed) + count;
+                    if patterns > RUN_PATTERNS {
+                        let error = format!(
+                            "the schema {} takes the schemas this run reads past \
+                             {RUN_PATTERNS} regexes between them, each allowed {} MB once \
+                             compiled",
+                            path.display(),
+                            PATTERN_BYTES >> 20
+                        );
+                        return Err(self.over.get_or_init(|| error).clone());
+                    }
+                    self.patterns.store(patterns, Ordering::Relaxed);
+                    Ok(())
+                };
+                load(&admit).map(Arc::new)
+            })
             .clone()
+    }
+
+    /// Why the run must stop, once a schema read took it past [`RUN_PATTERNS`]: a usage error,
+    /// whichever file named the schema, so the verdict does not depend on which thread read it
+    /// first.
+    pub(crate) fn over(&self) -> Result<(), String> {
+        self.over.get().map_or(Ok(()), |error| Err(error.clone()))
     }
 
     /// What the `$schema` `path` in a file in `folder` leads to, from `find` the first time it
@@ -251,9 +285,9 @@ mod tests {
         std::fs::write(dir.join("s.json"), "{}").expect("written");
         let schemas = Schemas::default();
         let reads = AtomicUsize::new(0);
-        let read = || {
+        let read = |admit: &dyn Fn(usize) -> Result<(), String>| {
             reads.fetch_add(1, Ordering::Relaxed);
-            Schema::load(&dir.join("s.json"), &Settings::default(), false)
+            Schema::load(&dir.join("s.json"), &Settings::default(), false, admit)
         };
         for path in ["s.json", "x/../s.json", "x/../x/../s.json", "./s.json"] {
             assert!(schemas.get(&dir.join(path), true, read).is_ok(), "{path}");

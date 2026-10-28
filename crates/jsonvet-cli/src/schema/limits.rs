@@ -31,6 +31,13 @@ pub(super) const PATTERN_BYTES: usize = 2 << 20;
 /// 7 s and 2.6 GB to compile.
 const MAX_PATTERNS: usize = 1_000;
 
+/// How many regexes the schemas one run reads may hold between them, each schema's distinct
+/// ones counted on their own, as each schema compiles its own. Every schema stays in memory
+/// until the run ends, so three schemas of 1,000 near-cap regexes took 21 s and 7.9 GB. The
+/// 43 schemas on SchemaStore with the most regexes hold 994 between them, and all 1,008
+/// hold 2,015.
+pub(super) const RUN_PATTERNS: usize = 1_000;
+
 /// The keys whose value points at another schema.
 const REF_KEYS: [&str; 3] = ["$ref", "$dynamicRef", "$recursiveRef"];
 
@@ -304,17 +311,18 @@ impl<'r> Reach<'r> {
     }
 }
 
-/// Where `schema` holds a regex past [`MAX_PATTERNS`] distinct ones, counting each `pattern` and
-/// `patternProperties` key anywhere in it, if it does.
-pub(super) fn patterns(schema: &Value) -> Result<(), Over> {
+/// How many distinct regexes `schema` holds, counting each `pattern` and `patternProperties` key
+/// anywhere in it, or where it holds one past [`MAX_PATTERNS`].
+pub(super) fn patterns(schema: &Value) -> Result<usize, Over> {
     let mut path = Vec::new();
-    match past(schema, &mut path, &mut HashSet::new()) {
+    let mut seen = HashSet::new();
+    match past(schema, &mut path, &mut seen) {
         Some(key) => Err(Over {
             path,
             key,
             problem: Problem::Patterns,
         }),
-        None => Ok(()),
+        None => Ok(seen.len()),
     }
 }
 

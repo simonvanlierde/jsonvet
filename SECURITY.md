@@ -16,9 +16,9 @@ project picks, is a security bug too
 
 ## Known limits
 
-Two cases are known and still open. Both need a schema that jsonvet cannot check one part at a
-time ([design.md](docs/design.md#--schema)). Until they close, review schema changes in pull
-requests from strangers before CI runs them.
+Three cases are known and still open. Until they close, review schema changes in pull requests
+from strangers before CI runs them. The first two need a schema that jsonvet cannot check one part
+at a time ([design.md](docs/design.md#--schema)).
 
 - jsonschema collects every error of one validation call before jsonvet sees any. So a schema
   that puts an `anyOf` around `additionalProperties` can take gigabytes on a document with many
@@ -28,6 +28,11 @@ requests from strangers before CI runs them.
   that pattern, costs more than the input explains, and the cost grows faster than the input.
   One beside 1,600,000 failing strings (a 9.6 MB file) took 62 s and 7.5 GB, against 6.3 s and
   1.35 GB without it.
+- Compiling a schema's patterns is capped per pattern, per schema and per run
+  ([caps](docs/usage.md#json-schema-limits)), but what the caps allow is still far more than a
+  schema's size explains. 1,000 patterns just under 2 MB compiled, in a 32 KB schema, take 7 s and
+  2.7 GB, or 10 s with one lookahead among them. That is the most for one run, however many
+  schemas it reads.
 
 Output grows linearly with the input, but can be many times its size: up to 172 times in GitHub
 Actions, for a file of 200,000 duplicate keys of 4 bytes each. Duplicate-key reports stay

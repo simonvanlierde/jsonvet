@@ -2353,6 +2353,49 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
     }
 
     #[test]
+    fn schemas_whose_regexes_together_cost_too_much_are_a_usage_error() {
+        // Every schema read stays in memory, so three of 1,000 near-cap regexes took 7.9 GB.
+        let many = |name: &str| {
+            let regexes: Vec<String> = (0..400).map(|i| format!("\"^{name}{i}$\": {{}}")).collect();
+            format!("{{\"patternProperties\": {{{}}}}}", regexes.join(", "))
+        };
+        let dir = workdir(&[
+            ("a.json", &many("a")),
+            ("b.json", &many("b")),
+            ("c.json", &many("c")),
+            ("use-a.json", "{\"$schema\": \"a.json\"}"),
+            ("use-b.json", "{\"$schema\": \"b.json\"}"),
+            ("use-c.json", "{\"$schema\": \"c.json\"}"),
+        ]);
+        assert_eq!(
+            jsonvet(&dir, &["use-a.json", "use-b.json"]),
+            (0, String::new())
+        );
+        // Which schema goes past the limit depends on which file a thread reads first, so the
+        // run stops, whichever it was.
+        let (code, out, err) = jsonvet_stderr(&dir, &["use-a.json", "use-b.json", "use-c.json"]);
+        assert_eq!((code, out.as_str()), (2, ""), "{err}");
+        assert!(
+            err.ends_with(
+                ".json takes the schemas this run reads past 1000 regexes between them, each \
+                 allowed 2 MB once compiled\n"
+            ),
+            "{err}"
+        );
+        // So does a config file's.
+        fs::write(
+            dir.join("jsonvet.toml"),
+            "schemas = [\n  { files = \"a*.json\", schema = \"a.json\" },\n  \
+             { files = \"b*.json\", schema = \"b.json\" },\n  \
+             { files = \"c*.json\", schema = \"c.json\" },\n]\n",
+        )
+        .expect("write config");
+        let (code, out, err) = jsonvet_stderr(&dir, &["use-a.json"]);
+        assert_eq!((code, out.as_str()), (2, ""), "{err}");
+        assert!(err.starts_with("jsonvet: the schema c.json takes"), "{err}");
+    }
+
+    #[test]
     fn schema_errors_in_a_large_file() {
         // 100,000 records, every 10,000th with a string port: about 3 MB.
         let mut text = String::from("[\n");

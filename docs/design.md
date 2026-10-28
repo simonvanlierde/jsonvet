@@ -192,7 +192,16 @@ timeout, so a file gets the same verdict on every machine
   tries it on the object's keys to place an error at each one. A split schema is also checked for
   validity a part at a time, since one pass repeats every over-cap match once per outcome. When
   every regex compiles for the linear-time `regex` crate, no match can run past the cap, so
-  jsonvet first checks the whole document for validity in one pass.
+  jsonvet first checks the whole document for validity in one pass. The copy of each pattern that
+  names it in such an error is compiled only when the first one comes, since compiling them all
+  with the schema took half as much memory again.
+- **Regex compiling.** A pattern of a few bytes, such as `(?:[a-z]{1000}){100}`, can take
+  megabytes to compile, and every schema read stays in memory until the run ends. So both regex
+  engines get a 2 MB limit per pattern, and jsonvet counts the different patterns of each schema
+  before compiling any: at most 1,000 in one schema, and 1,000 across all the schemas a run reads.
+  Three schemas of 1,000 near-cap patterns, each named by a `$schema`, took 21 s and 7.9 GB before
+  the run cap. Which schema goes past it depends on which thread reads its file first, so it stops
+  the run with a usage error instead of failing one file.
 
 ## Configuration
 

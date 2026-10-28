@@ -674,8 +674,14 @@ impl Schema {
     /// Read and compile the schema at `path`, in its dialect under `settings`. Any problem
     /// with it is a usage error. A `quiet` one names only the place, never text from the
     /// schema, as for a symlinked config file: a pull request picks a `$schema` or config
-    /// schema, which could be a file that holds a secret (ADR 0012).
-    pub(crate) fn load(path: &Path, settings: &Settings, quiet: bool) -> Result<Schema, String> {
+    /// schema, which could be a file that holds a secret (ADR 0012). `admit` takes the number of
+    /// distinct regexes in it before any is compiled, and may refuse it.
+    pub(crate) fn load(
+        path: &Path,
+        settings: &Settings,
+        quiet: bool,
+        admit: impl FnOnce(usize) -> Result<(), String>,
+    ) -> Result<Schema, String> {
         let name = path.to_string_lossy();
         let text = crate::read_small(path, crate::MAX_SCHEMA_BYTES)
             .map_err(|e| format!("cannot read the schema {name}: {e}"))?;
@@ -734,7 +740,7 @@ impl Schema {
             at(offset, &over.message())
         };
         let kept = Reach::new(schema).measure(&registry).map_err(refuse)?;
-        limits::patterns(schema).map_err(refuse)?;
+        admit(limits::patterns(schema).map_err(refuse)?)?;
         let (options, built, linear) = build(schema);
         let error = match built {
             Ok(validator) => {

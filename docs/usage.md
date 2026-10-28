@@ -381,8 +381,11 @@ exists is in [design.md](design.md#--schema).
   A string or key that needs more, where the pattern decides the result, is an error saying the
   pattern could not be checked. A document that also has an error either way reports only that
   one. A schema with more than 1,000 different patterns, or a pattern that takes more than 2 MB
-  compiled, is a usage error (exit 2). The largest in SchemaStore takes 715 KB, and its schema has
-  457 patterns.
+  compiled, cannot be used. The schemas one run reads may also hold no more than 1,000 patterns
+  between them, each schema's different patterns counted on their own. The schema that goes past
+  that is a usage error (exit 2) wherever it was named, and the run stops. The largest pattern in
+  SchemaStore takes 715 KB, its schema has 457 patterns, and SchemaStore's 43 schemas with the
+  most patterns hold 994 between them.
 - **The schema file.** It may be in any dialect. Its `$schema` picks the draft, from draft 4 to
   2020-12. A schema jsonvet cannot read or use is a usage error (exit 2). That covers:
   - a `$ref` to another file, or to nothing in the file, even one nothing uses. A `$ref` resolves

@@ -135,8 +135,8 @@ pub fn run_with(
     let files = expand(args.files, &resolver, threads)?;
     let schemas = Schemas::default();
     let load = |path: &Path, quiet| {
-        schemas.get(path, quiet, || {
-            Schema::load(path, &*settings_for(path)?, quiet)
+        schemas.get(path, quiet, |admit| {
+            Schema::load(path, &*settings_for(path)?, quiet, admit)
         })
     };
     let root = |path: &Path| lock(&resolver).root(path);
@@ -199,6 +199,7 @@ pub fn run_with(
                 })
             },
         );
+        schemas.over().map_err(|e| output::printable(&e))?;
         let outcome =
             chunk
                 .iter()
@@ -701,7 +702,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("jsonvet-{test}-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("x")).expect("a temporary directory");
         std::fs::write(dir.join("s.json"), "{}").expect("written");
-        let schema = Schema::load(&dir.join("s.json"), &Settings::default(), false);
+        let schema = Schema::load(&dir.join("s.json"), &Settings::default(), false, |_| Ok(()));
         (dir, schema.expect("a schema"))
     }
 
@@ -788,7 +789,7 @@ mod tests {
         );
         std::fs::write(&path, schema).expect("written");
         let settings = Settings::default();
-        let schema = Schema::load(&path, &settings, false).expect("a schema");
+        let schema = Schema::load(&path, &settings, false, |_| Ok(())).expect("a schema");
         let _ = std::fs::remove_dir_all(&dir);
         for text in &texts {
             for schema in [None, Some(&schema)] {
