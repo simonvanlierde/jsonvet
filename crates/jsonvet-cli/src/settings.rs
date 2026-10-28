@@ -445,15 +445,13 @@ pub(crate) fn confined(path: &str, base: &Path, root: &Path) -> Result<bool, Str
     // Before the path is touched: on Windows, opening `\\host\share\s.json` connects to the host.
     // A drive or UNC path is refused on every OS, so a file gets the same verdict everywhere.
     let drive = matches!(path.as_bytes(), [letter, b':', ..] if letter.is_ascii_alphabetic());
-    if drive
-        || path.starts_with("\\\\")
-        || given.has_root()
-        || matches!(given.components().next(), Some(Component::Prefix(_)))
+    if drive || given.has_root() || matches!(given.components().next(), Some(Component::Prefix(_)))
     {
         return Err(outside());
     }
     // `\` separates folders only on Windows. Read as `/` too, a path that leads out there,
-    // such as `sub\..\..\x.json`, is refused on every OS.
+    // such as `sub\..\..\x.json`, is refused on every OS, and `\\host\share` is absolute
+    // before anything is opened.
     if path.contains('\\') && confined(&path.replace('\\', "/"), base, root).is_err() {
         return Err(outside());
     }
@@ -723,6 +721,8 @@ mod tests {
         let root = root.as_path();
         let mut paths = vec![
             "/etc/passwd",
+            // A file used as a folder: opening it would fail with another error than "missing".
+            "/etc/passwd/s.json",
             "//host/share/s.json",
             "C:\\s.json",
             "C:/s.json",
