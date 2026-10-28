@@ -3,14 +3,15 @@
 # ///
 """Time jsonvet against check-json5 1.4.1 and 1.0.1 with hyperfine, and print a Markdown table.
 
-Usage: uv run scripts/bench.py [--jsonvet PATH] [--runs N] [--old-runs N] [--write]
+Usage: uv run scripts/bench.py [--jsonvet PATH] [--runs N] [--ref-runs N] [--old-runs N] [--write]
 
-Each command runs without a shell (`hyperfine -N`) after a warm-up, 20 times by default, and the
-table shows the median. check-json5 1.0.1, the last release of the original hook, reads every
-file with the pure-Python json5 package and takes seconds a file, so it runs 3 times with no
-warm-up by default. `--write` also puts the table, with the machine and date, between the
-`speed` markers in docs/design.md; check-versions.py fails when that table names an older minor
-release than Cargo.toml.
+Each command runs without a shell (`hyperfine -N`) and the table shows the median. jsonvet runs
+20 times after a warm-up by default. check-json5 1.4.1 is far slower, so run-to-run noise moves
+its median less, and it runs 10 times; the JSON5 case alone takes seconds a run. check-json5
+1.0.1, the last release of the original hook, reads every file with the pure-Python json5
+package and takes seconds a file, so it runs 3 times with no warm-up by default. `--write` also
+puts the table, with the machine and date, between the `speed` markers in docs/design.md;
+check-versions.py fails when that table names an older minor release than Cargo.toml.
 
 Needs hyperfine and a release build (`cargo build --release -p jsonvet-cli`). Each check-json5 is
 installed into its own virtual environment and run from there, so uvx's start-up is not timed.
@@ -103,13 +104,13 @@ def machine() -> str:
     return f"{os.cpu_count()} cores of a {model} under {platform.system()}"
 
 
-def write(table: list[str], runs: int, old_runs: int) -> None:
+def write(table: list[str], runs: int, ref_runs: int, old_runs: int) -> None:
     """Replace the text between the speed markers in docs/design.md."""
     text = DESIGN.read_text()
     start, end = text.index(MARKERS[0]) + len(MARKERS[0]), text.index(MARKERS[1])
     intro = (
-        f"Median of {runs} runs from `uv run scripts/bench.py`, on {machine()} "
-        f"({dt.datetime.now(dt.UTC).date().isoformat()}), and of {old_runs} for 1.0.1. "
+        f"Median of {runs} runs of jsonvet from `uv run scripts/bench.py`, on {machine()} "
+        f"({dt.datetime.now(dt.UTC).date().isoformat()}), of {ref_runs} for 1.4.1 and of {old_runs} for 1.0.1. "
         "Every tool gives the same verdict in every case:"
     )
     DESIGN.write_text(text[:start] + "\n".join([textwrap.fill(intro, 100), "", *table]) + "\n" + text[end:])
@@ -120,6 +121,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--jsonvet", type=Path, default=ROOT / "target" / "release" / "jsonvet")
     parser.add_argument("--runs", type=int, default=20)
+    parser.add_argument("--ref-runs", type=int, default=10, help="runs of check-json5 1.4.1")
     parser.add_argument("--old-runs", type=int, default=3, help="runs of check-json5 1.0.1")
     parser.add_argument("--write", action="store_true", help="put the table in docs/design.md")
     args = parser.parse_args()
@@ -156,7 +158,11 @@ def main() -> int:
                 print(f"{name}: the tools disagree", file=sys.stderr)
                 return 1
             listed = " ".join(case)
-            times = median(["1.4.1", "jsonvet"], listed, args.runs, 2) | median(["1.0.1"], listed, args.old_runs, 0)
+            times = (
+                median(["jsonvet"], listed, args.runs, 2)
+                | median(["1.4.1"], listed, args.ref_runs, 2)
+                | median(["1.0.1"], listed, args.old_runs, 0)
+            )
             old, ref, new = times["1.0.1"], times["1.4.1"], times["jsonvet"]
             rows.append(
                 [
@@ -171,7 +177,7 @@ def main() -> int:
     table = aligned(rows)
     print("\n".join(table))
     if args.write:
-        write(table, args.runs, args.old_runs)
+        write(table, args.runs, args.ref_runs, args.old_runs)
     return 0
 
 
