@@ -11,7 +11,7 @@
 [![PyPI](https://img.shields.io/pypi/v/jsonvet)](https://pypi.org/project/jsonvet/)
 [![crates.io](https://img.shields.io/crates/v/jsonvet)](https://crates.io/crates/jsonvet)
 [![Marketplace](https://img.shields.io/badge/marketplace-jsonvet-blue?logo=github)](https://github.com/marketplace/actions/jsonvet)
-[![Website](https://img.shields.io/badge/website-online-blue)](https://simonvanlierde.github.io/jsonvet/)
+[![Playground](https://img.shields.io/badge/playground-try_it-blue)](https://simonvanlierde.github.io/jsonvet/)
 [![Pages](https://github.com/simonvanlierde/jsonvet/actions/workflows/pages.yml/badge.svg)](https://github.com/simonvanlierde/jsonvet/actions/workflows/pages.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/simonvanlierde/jsonvet/blob/main/LICENSE)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23461825.svg)](https://doi.org/10.5281/zenodo.23461825)
