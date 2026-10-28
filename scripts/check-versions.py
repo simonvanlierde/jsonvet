@@ -9,7 +9,9 @@ in the hook placeholder (setup.py), the check-json5 compatibility package's vers
 CHANGELOG must name the same release, or a hook install would pull another version than the tag.
 
 The speed table in docs/design.md, which `scripts/bench.py --write` fills in, must name the
-release's minor version (`jsonvet 3.2` for 3.2.x), so each minor release measures again.
+release's minor version (`jsonvet 3.2` for 3.2.x), so each minor release measures again. The
+README's "up to N times faster than check-json5 1.4.1" must name the table's largest speed-up over
+1.4.1, since the README is also the crate's page on crates.io.
 
 The minimum supported Rust has three places too: `rust-version` in Cargo.toml, the toolchain of
 ci.yml's msrv job and `cargo +X` in the justfile's msrv recipe.
@@ -72,6 +74,11 @@ def main() -> int:
     minor = ".".join(cargo.split("-")[0].split(".")[:2])
     speed = first(r"<!-- speed:start -->.*?\| jsonvet (\S+) +\|", "docs/design.md")
     print(f"{'design.md speed':16} {speed}")
+    table = first(r"<!-- speed:start -->(.*?)<!-- speed:end -->", "docs/design.md") or ""
+    rows = [row.split("|") for row in table.splitlines() if row.startswith("|")][2:]
+    largest = max((row[5].strip() for row in rows), key=lambda up: int(up.rstrip("x").replace(",", "")), default=None)
+    claim = first(r"up to ([\d,]+)\s+times faster than check-json5 1\.4\.1", "README.md")
+    print(f"{'README speed-up':16} {claim}x, table {largest}")
     if (
         len(pins) != PINS
         or len(revs) != 1
@@ -79,6 +86,7 @@ def main() -> int:
         or not has_heading
         or len(set(msrvs.values())) != 1
         or speed != minor
+        or f"{claim}x" != largest
     ):
         print("versions differ", file=sys.stderr)
         return 1

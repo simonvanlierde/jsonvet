@@ -149,7 +149,7 @@ cargo release X.Y.Z                       # dry run: shows every change
 SKIP=dco-signoff,check-versions cargo release X.Y.Z --execute   # commits "chore: release X.Y.Z"
 git commit --amend -s --no-edit           # cargo-release cannot sign off
 just bench --runs 40 --write              # a new minor only, on a quiet machine
-git commit -s -m "docs: speed figures for X.Y" -- docs/design.md
+git commit -s -m "docs: speed figures for X.Y" -- docs/design.md README.md
 just matrix                               # records the new version in the matrix
 git commit -s -m "docs: re-run the conformance matrix for X.Y.Z" -- docs/conformance.md README.md conformance/results
 uv run scripts/check-versions.py

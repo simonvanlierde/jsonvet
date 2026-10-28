@@ -27,7 +27,7 @@ text you paste as you type. Nothing to install, and the text stays on your machi
   jsonvet never fetches anything from the network.
 - **Fits CI.** A pre-commit or prek hook, a GitHub Action, a command or a Rust library, with text,
   SARIF or JSON output.
-- **Fast.** It was check-json5, a Python hook, until 2.0 rewrote it in Rust. It is up to 1,407
+- **Fast.** It was check-json5, a Python hook, until 2.0 rewrote it in Rust. It is up to 1,395
   times faster than check-json5 1.4.1
   ([figures](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#speed)).
 

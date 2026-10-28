@@ -33,6 +33,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DESIGN = ROOT / "docs" / "design.md"
+README = ROOT / "README.md"
 # 1.0.1 by its commit, the v1.0.1 tag: a tag can be moved.
 REFERENCES = {
     "1.4.1": "check-json5==1.4.1",
@@ -104,8 +105,8 @@ def machine() -> str:
     return f"{os.cpu_count()} cores of a {model} under {platform.system()}"
 
 
-def write(table: list[str], runs: int, ref_runs: int, old_runs: int) -> None:
-    """Replace the text between the speed markers in docs/design.md."""
+def write(table: list[str], runs: int, ref_runs: int, old_runs: int, largest: str) -> None:
+    """Replace the text between the speed markers in docs/design.md, and the README's top speed-up."""
     text = DESIGN.read_text()
     start, end = text.index(MARKERS[0]) + len(MARKERS[0]), text.index(MARKERS[1])
     intro = (
@@ -114,6 +115,8 @@ def write(table: list[str], runs: int, ref_runs: int, old_runs: int) -> None:
         "Every tool gives the same verdict in every case:"
     )
     DESIGN.write_text(text[:start] + "\n".join([textwrap.fill(intro, 100), "", *table]) + "\n" + text[end:])
+    claim = r"(up to )[\d,]+(\s+times faster than check-json5 1\.4\.1)"
+    README.write_text(re.sub(claim, rf"\g<1>{largest}\g<2>", README.read_text(), count=1))
 
 
 def main() -> int:
@@ -152,6 +155,7 @@ def main() -> int:
 
         header = ["Case", "check-json5 1.0.1", "check-json5 1.4.1", f"jsonvet {release}", "Speed-up over 1.4.1"]
         rows = [[*header, "over 1.0.1"]]
+        ups = []  # speed-ups over 1.4.1, for the README
         for name, case in fixtures(files):
             exits = {verdict(tool, case, files) for tool in tools.values()}
             if len(exits) != 1:
@@ -164,6 +168,7 @@ def main() -> int:
                 | median(["1.0.1"], listed, args.old_runs, 0)
             )
             old, ref, new = times["1.0.1"], times["1.4.1"], times["jsonvet"]
+            ups.append(ref / new)
             rows.append(
                 [
                     name,
@@ -177,7 +182,7 @@ def main() -> int:
     table = aligned(rows)
     print("\n".join(table))
     if args.write:
-        write(table, args.runs, args.ref_runs, args.old_runs)
+        write(table, args.runs, args.ref_runs, args.old_runs, f"{max(ups):,.0f}")
     return 0
 
 
