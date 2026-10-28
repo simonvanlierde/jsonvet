@@ -85,11 +85,16 @@ pub(crate) struct Schema {
     /// For a schema whose elements only `items` checks: the schema without `items`, checked
     /// once on the whole array, and `items` alone, checked on each element. jsonschema collects
     /// every error before handing out the first, so a 10 MB array failing everywhere took 2.0 GB
-    /// in one pass; one element at a time, it holds at most one element's errors.
-    items: Option<Split>,
+    /// in one pass; one element at a time, it holds at most one element's errors. Built the
+    /// first time a document needs it, as its parts compile the schema's regexes again, so a
+    /// file whose documents all pass a `linear` schema never pays for that.
+    items: OnceLock<Option<Split>>,
     /// The same for an object whose members only `properties`, `patternProperties` and
     /// `additionalProperties` check, each member checked as an object of its own.
-    members: Option<Split>,
+    members: OnceLock<Option<Split>>,
+    /// Whether every `$ref` in the schema points into one of [`NOT_CHECKS`] at the root, as
+    /// [`split`] needs.
+    kept: bool,
     /// `{"pattern": p}` for each regex in the schema tried on keys: `patternProperties` and a
     /// `pattern` under `propertyNames`, to find the keys a regex error on an object is about.
     /// Empty for a `linear` schema, which has no such errors.
@@ -341,28 +346,27 @@ fn costly(what: &str, regex: Option<&str>) -> String {
     )
 }
 
-/// A validator for `schema`, offline, so a `$ref` to anything outside the schema file fails, with
-/// the options it was built with, and whether every regex it uses suits the `regex` crate. Each
-/// build compiles every regex it uses, so such a schema is built with that crate, which
-/// fancy-regex would hand them to anyway, rather than compiled a second time to find that out.
-fn build(
-    schema: &Value,
-) -> (
-    ValidationOptions<'static>,
-    Result<Validator, ValidationError<'_>>,
-    bool,
-) {
-    let linear = jsonschema::options().offline().with_pattern_options(
+/// A validator for `schema`, offline, so a `$ref` to anything outside the schema file fails, and
+/// whether every regex it uses suits the `regex` crate. Each build compiles every regex it uses,
+/// so such a schema is built with that crate, which fancy-regex would hand them to anyway, rather
+/// than compiled a second time to find that out.
+fn build(schema: &Value) -> (Result<Validator, ValidationError<'_>>, bool) {
+    if let Ok(validator) = options(true).build(schema) {
+        return (Ok(validator), true);
+    }
+    (options(false).build(schema), false)
+}
+
+/// The options a schema is built with: for the `regex` crate if it is `linear`, else [`fancy`].
+fn options(linear: bool) -> ValidationOptions<'static> {
+    if !linear {
+        return fancy();
+    }
+    jsonschema::options().offline().with_pattern_options(
         PatternOptions::regex()
             .size_limit(PATTERN_BYTES)
             .dfa_size_limit(PATTERN_BYTES),
-    );
-    if let Ok(validator) = linear.build(schema) {
-        return (linear, Ok(validator), true);
-    }
-    let fancy = fancy();
-    let built = fancy.build(schema);
-    (fancy, built, false)
+    )
 }
 
 /// The options for a schema with a regex the `regex` crate cannot compile. fancy-regex
@@ -741,7 +745,7 @@ impl Schema {
         };
         let kept = Reach::new(schema).measure(&registry).map_err(refuse)?;
         admit(limits::patterns(schema).map_err(refuse)?)?;
-        let (options, built, linear) = build(schema);
+        let (built, linear) = build(schema);
         let error = match built {
             Ok(validator) => {
                 let (key_patterns, string_patterns) = if linear {
@@ -755,8 +759,9 @@ impl Schema {
                         schema: schema.clone(),
                         moved: None,
                     },
-                    items: split(schema, kept, false, &options),
-                    members: split(schema, kept, true, &options),
+                    items: OnceLock::new(),
+                    members: OnceLock::new(),
+                    kept,
                     key_patterns,
                     string_patterns,
                     linear,
@@ -886,8 +891,13 @@ impl Schema {
         // A split schema is also checked for validity a part at a time: jsonschema checks a
         // value again for each outcome of a regex match it cannot finish, so one pass over a
         // whole document repeats every costly match in it, past the error cap.
-        match (value, &self.items, &self.members) {
-            (Value::Array(items), Some(Split { whole, each }), _) => {
+        let parts = match value {
+            Value::Array(_) => self.split(false),
+            Value::Object(_) => self.split(true),
+            _ => None,
+        };
+        match (value, parts) {
+            (Value::Array(items), Some(Split { whole, each })) => {
                 // jsonschema checks `contains` after `items`, and the rest before.
                 let mut after = Vec::new();
                 for error in whole.errors(value) {
@@ -910,7 +920,7 @@ impl Schema {
                 }
                 errors.add(after);
             }
-            (Value::Object(members), _, Some(Split { whole, each })) => {
+            (Value::Object(members), Some(Split { whole, each })) => {
                 for error in whole.errors(value) {
                     if !errors.add(self.found(whole, None, value, &error)) {
                         return errors;
@@ -934,6 +944,18 @@ impl Schema {
             }
         }
         errors
+    }
+
+    /// The schema split for arrays, or with `members` for objects, if it can be, built on first
+    /// need. Threads checking parts of one file at once share it, and build it at most once.
+    fn split(&self, members: bool) -> Option<&Split> {
+        let parts = if members { &self.members } else { &self.items };
+        parts
+            .get_or_init(|| {
+                let options = options(self.linear);
+                split(&self.compiled.schema, self.kept, members, &options)
+            })
+            .as_ref()
     }
 
     /// [`found`], except for a regex match past [`BACKTRACK_LIMIT`] that decides the result,
@@ -1013,8 +1035,9 @@ impl Schema {
 /// members, and every `$ref` in it points into one of [`NOT_CHECKS`] at the root (`kept`), as
 /// those are kept in both parts. `None` also when either part fails to build: the whole schema
 /// is then checked in one pass.
-/// NOTE: each part compiles its regexes again, as jsonschema keeps compiled regexes per build;
-/// [`limits::patterns`] bounds what that costs.
+/// NOTE: each part compiles its regexes again, as jsonschema keeps compiled regexes per build, so
+/// [`Schema::split`] calls this only once a document needs it; [`limits::patterns`] bounds what
+/// that costs.
 fn split(schema: &Value, kept: bool, members: bool, options: &ValidationOptions) -> Option<Split> {
     let all = schema.as_object()?;
     let (moved, also): (&[&str], &[&str]) = if members {
@@ -1115,6 +1138,7 @@ mod tests {
     use jsonvet::{Config, Dialect};
     use proptest::prelude::*;
     use serde_json::{Value, json};
+    use std::sync::OnceLock;
 
     use super::fold::tests::any_json;
 
@@ -1213,6 +1237,8 @@ mod tests {
     /// `text`'s schema errors under `schema`, checked in one pass and, if it can be, split.
     fn one_pass_and_split(schema: &Value, text: &str) -> (Errors, Option<Errors>) {
         let options = jsonschema::options();
+        let registry = registry(schema).expect("a registry");
+        let kept = Reach::new(schema).measure(&registry).is_ok_and(|kept| kept);
         let checked = |items, members| {
             let schema = Schema {
                 compiled: Compiled {
@@ -1220,8 +1246,9 @@ mod tests {
                     schema: schema.clone(),
                     moved: None,
                 },
-                items,
-                members,
+                items: OnceLock::from(items),
+                members: OnceLock::from(members),
+                kept,
                 key_patterns: Vec::new(),
                 string_patterns: Vec::new(),
                 linear: true,
@@ -1229,8 +1256,6 @@ mod tests {
             };
             schema.check(text, &Config::new(Dialect::Json)).1
         };
-        let registry = registry(schema).expect("a registry");
-        let kept = Reach::new(schema).measure(&registry).is_ok_and(|kept| kept);
         let items = split(schema, kept, false, &options);
         let members = split(schema, kept, true, &options);
         let split = (items.is_some() || members.is_some()).then(|| checked(items, members));

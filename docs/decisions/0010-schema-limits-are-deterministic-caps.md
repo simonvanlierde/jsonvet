@@ -51,6 +51,8 @@ between them, since each stays in memory until the run ends. SchemaStore's large
 715 KB, its most in one schema is 457, and its 43 schemas with the most hold 994 between them. At
 the caps a run takes about 7 s and 2.7 GB. Which schema goes past the run cap depends on which
 thread reads its file first, so going past it stops the run with exit 2, whichever file named it.
+Since a split schema's parts are built only once a document fails, a run at the caps whose files
+pass takes 3.5 s and 1.4 GB.
 
 ## Confirmation
 

@@ -202,7 +202,10 @@ timeout, so a file gets the same verdict on every machine
   before compiling any: at most 1,000 in one schema, and 1,000 across all the schemas a run reads.
   Three schemas of 1,000 near-cap patterns, each named by a `$schema`, took 21 s and 7.9 GB before
   the run cap. Which schema goes past it depends on which thread reads its file first, so it stops
-  the run with a usage error instead of failing one file.
+  the run with a usage error instead of failing one file. The parts of a split schema compile its
+  patterns again, so they are built the first time a document fails the one-pass check, once for
+  all threads. A schema with a back-reference or lookaround skips that check, so it needs them for
+  its first array or object.
 
 ## Configuration
 

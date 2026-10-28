@@ -30,9 +30,10 @@ at a time ([design.md](docs/design.md#--schema)).
   1.35 GB without it.
 - Compiling a schema's patterns is capped per pattern, per schema and per run
   ([caps](docs/usage.md#json-schema-limits)), but what the caps allow is still far more than a
-  schema's size explains. 1,000 patterns just under 2 MB compiled, in a 32 KB schema, take 7 s and
-  2.7 GB, or 10 s with one lookahead among them. That is the most for one run, however many
-  schemas it reads.
+  schema's size explains. 1,000 patterns just under 2 MB compiled, in a 32 KB schema, take 3.5 s
+  and 1.4 GB on a file that passes. A failing document, or one lookahead among the patterns, makes
+  jsonvet compile them a second time to check it a member at a time: 7.5 s and 2.7 GB, or 11 s
+  with the lookahead. That is the most for one run, however many schemas it reads.
 
 Output grows linearly with the input, but can be many times its size: up to 172 times in GitHub
 Actions, for a file of 200,000 duplicate keys of 4 bytes each. Duplicate-key reports stay
