@@ -8,6 +8,8 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-10-28
+
 Most users need no change. Check these if they apply to you:
 
 1. If a file has a top-level `$schema` that is a path, jsonvet now checks the file against that
@@ -564,7 +566,8 @@ hook's output, or imports `pre_commit_hooks.check_json5`, needs a change (see Ch
 
 - Renamed from `pre-commit-check-json5` to `check-json5`.
 
-[Unreleased]: https://github.com/simonvanlierde/jsonvet/compare/v3.1.1...HEAD
+[Unreleased]: https://github.com/simonvanlierde/jsonvet/compare/v3.2.0...HEAD
+[3.2.0]: https://github.com/simonvanlierde/jsonvet/compare/v3.1.1...v3.2.0
 [3.1.1]: https://github.com/simonvanlierde/jsonvet/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/simonvanlierde/jsonvet/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/simonvanlierde/jsonvet/compare/v2.0.0...v3.0.0

@@ -34,7 +34,7 @@ pkg-url = "{ repo }/releases/download/v{ version }/jsonvet-{ target }.zip"
 pkg-fmt = "zip"
 
 [dependencies]
-jsonvet = { path = "../jsonvet", version = "=3.1.1" }
+jsonvet = { path = "../jsonvet", version = "=3.2.0" }
 # No default features: they fetch remote `$ref`s over HTTP and read them from disk.
 jsonschema = { version = "0.60.1", default-features = false }
 lexopt = "0.3.2"

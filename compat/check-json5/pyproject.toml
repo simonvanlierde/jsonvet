@@ -5,12 +5,12 @@ build-backend = "uv_build"
 
 [project]
 name = "check-json5"
-version = "3.1.1"
+version = "3.2.0"
 description = "Renamed to jsonvet: installing check-json5 installs jsonvet."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
-dependencies = ["jsonvet==3.1.1"]
+dependencies = ["jsonvet==3.2.0"]
 
 [project.urls]
 Source = "https://github.com/simonvanlierde/jsonvet"
