@@ -130,12 +130,13 @@ licence and has no RustSec advisory or unmaintained notice. Renovate bumps the p
 
 Messages people read live in two tables of ids and English text: `MESSAGES` in
 `crates/jsonvet/src/messages.rs` for problem messages, and `ENGLISH` in
-`crates/jsonvet-cli/src/messages.rs` for help, rule explanations and the related-place words,
-plus `rule.<id>.description` for each rule. To add a language, write
-`crates/jsonvet-cli/locales/<locale>.toml` with a `"id" = "text"` line for each id you translate,
-keeping every `{name}` in it, and add the file to `LOCALES` in the same `messages.rs`. jsonvet
-picks it from `LC_ALL`, `LC_MESSAGES` or `LANG`, and shows English for any id it leaves out.
-`--format json` and SARIF stay English
+`crates/jsonvet-cli/src/messages.rs` for everything else the command says, plus
+`rule.<id>.description` for each rule. To add a language, write
+`crates/jsonvet-cli/locales/<locale>.toml`, such as `de.toml` or `pt_BR.toml`, with a
+`"id" = "text"` line for each id you translate, keeping every `{name}` in it. A count has two ids,
+such as `summary.files.one` for 1 and `summary.files.other` for any other number. `build.rs` bundles
+every file there, so nothing else changes. jsonvet picks it from `LC_ALL`, `LC_MESSAGES` or `LANG`,
+and shows English for any id it leaves out. `--format json` and SARIF stay English
 ([0013](docs/decisions/0013-messages-in-a-plain-catalog.md)). A new message gets an id in one of
 the tables, never a string in the code.
 

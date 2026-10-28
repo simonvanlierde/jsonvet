@@ -14,6 +14,16 @@
 /// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
 #[doc(hidden)]
 pub fn did_you_mean<'a>(given: &str, candidates: impl IntoIterator<Item = &'a str>) -> String {
+    closest(given, candidates)
+        .map(|c| format!(" (did you mean `{c}`?)"))
+        .unwrap_or_default()
+}
+
+/// The candidate [`did_you_mean`] names, if any.
+///
+/// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
+#[doc(hidden)]
+pub fn closest<'a>(given: &str, candidates: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
     let given = given.to_ascii_lowercase();
     let limit = 2.min(given.chars().count().saturating_sub(1));
     candidates
@@ -21,8 +31,7 @@ pub fn did_you_mean<'a>(given: &str, candidates: impl IntoIterator<Item = &'a st
         .map(|c| (distance(&given, &c.to_ascii_lowercase()), c))
         .filter(|&(d, _)| d <= limit)
         .min_by_key(|&(d, _)| d)
-        .map(|(_, c)| format!(" (did you mean `{c}`?)"))
-        .unwrap_or_default()
+        .map(|(_, c)| c)
 }
 
 /// The Levenshtein distance between `a` and `b`, in characters.

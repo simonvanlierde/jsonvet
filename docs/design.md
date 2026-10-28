@@ -242,7 +242,7 @@ The public API is `check`, `Config`, `Dialect`, `UnknownDialect`, `Rule`, `Sever
 Each type is `#[non_exhaustive]` or has private fields, so a new variant or field is not a breaking
 change. The `#[doc(hidden)]` items are public for jsonvet-cli only, and can change in any release:
 `parse`, `parse_with`, `parse_lines`, `join_lines`, `line_parts`, `Lines`, `Event`, `EventKind`,
-`json_path`, `PathStep`, `key_text`, `did_you_mean` and `is_hidden`.
+`json_path`, `PathStep`, `key_text`, `did_you_mean`, `closest`, `fill` and `is_hidden`.
 
 The text is `&str`, so every offset falls on a character boundary. `check` never panics and has no
 error mode: the problems in the file are its output. A `Report` is `Send` but not `Sync`, because

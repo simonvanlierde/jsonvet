@@ -9,6 +9,7 @@ use referencing::{Resolver, ResourceRef};
 use serde_json::Value;
 
 use super::{NOT_CHECKS, children};
+use crate::messages;
 
 /// How deep a schema may nest, counting each local `$ref` followed as one more level; real
 /// schemas stay well under it.
@@ -418,24 +419,17 @@ pub(super) struct Over {
 impl Over {
     pub(super) fn message(&self) -> String {
         let key = &self.key;
+        let fill = |id, limit: &usize| messages::fill(id, &[("key", key), ("limit", limit)]);
         match &self.problem {
-            Problem::Deep => format!(
-                "this `{key}` leads more than {MAX_SCHEMA_DEPTH} levels deep, counting each \
-                 `$ref` followed as a level"
-            ),
-            Problem::Big => format!(
-                "this `{key}` takes the schema past {MAX_SCHEMA_SIZE} objects and arrays, \
-                 counting what each `$ref` points at every time it is followed"
-            ),
-            Problem::Twice => format!(
-                "this `{key}` takes the schema past {MAX_SCHEMA_SIZE} objects and arrays, \
-                 counting the schemas beside it twice, as jsonschema checks them again for it"
-            ),
-            Problem::Unresolved(error) => format!("this `{key}` cannot be resolved: {error}"),
-            Problem::Patterns => format!(
-                "this regex takes the schema past {MAX_PATTERNS} distinct regexes, each allowed \
-                 {} MB once compiled",
-                PATTERN_BYTES >> 20
+            Problem::Deep => fill("schema.too-deep", &MAX_SCHEMA_DEPTH),
+            Problem::Big => fill("schema.too-big", &MAX_SCHEMA_SIZE),
+            Problem::Twice => fill("schema.too-big-twice", &MAX_SCHEMA_SIZE),
+            Problem::Unresolved(error) => {
+                messages::fill("schema.unresolved", &[("key", key), ("error", error)])
+            }
+            Problem::Patterns => messages::fill(
+                "schema.too-many-patterns",
+                &[("limit", &MAX_PATTERNS), ("mb", &(PATTERN_BYTES >> 20))],
             ),
         }
     }

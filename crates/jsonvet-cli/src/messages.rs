@@ -7,12 +7,15 @@
 
 use std::collections::HashMap;
 use std::ffi::OsString;
+use std::fmt::Display;
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use jsonvet::Rule;
 
-/// The bundled translations: a locale name such as `de` or `pt_BR`, and its file.
-const LOCALES: &[(&str, &str)] = &[];
+/// The bundled translations: a locale name such as `de` or `pt_BR`, and its file. `build.rs`
+/// lists every `locales/*.toml`.
+const LOCALES: &[(&str, &str)] = include!(concat!(env!("OUT_DIR"), "/locales.rs"));
 
 /// The command's own messages, by id, in English.
 const ENGLISH: &[(&str, &str)] = &[
@@ -23,6 +26,201 @@ const ENGLISH: &[(&str, &str)] = &[
     ("related.first-copy", "first copy"),
     ("related.opened-here", "opened here"),
     ("related.starts-here", "starts here"),
+    ("hint.did-you-mean", " (did you mean `{name}`?)"),
+    ("error.usage", "{error}\n\nRun `jsonvet --help` for usage."),
+    (
+        "error.format",
+        "--format takes text, sarif or json, not `{value}`{hint}",
+    ),
+    (
+        "error.color",
+        "--color takes auto, always or never, not `{value}`{hint}",
+    ),
+    (
+        "error.max-warnings",
+        "--max-warnings takes a number, not `{value}`",
+    ),
+    (
+        "error.stdin-twice",
+        "`-` (standard input) can be given only once",
+    ),
+    ("error.unknown-option", "unknown option `{option}`"),
+    ("error.not-utf8", "not valid UTF-8: {value}"),
+    (
+        "error.unknown-dialect",
+        "unknown dialect `{name}`{hint}; expected one of {names}, or auto",
+    ),
+    (
+        "error.unknown-severity",
+        "unknown severity `{name}`{hint}; expected error, warning or ignore",
+    ),
+    (
+        "error.unknown-rule",
+        "unknown rule `{id}`{hint}; expected one of {ids}",
+    ),
+    ("error.unknown-rule-close", "unknown rule `{id}`{hint}"),
+    (
+        "error.schema-rule",
+        "the `schema` rule is always an error and cannot be set",
+    ),
+    (
+        "error.working-dir",
+        "cannot read the working directory: {error}",
+    ),
+    ("error.write", "cannot write output: {error}"),
+    ("error.walk", "cannot walk: {error}"),
+    ("read.not-regular", "not a regular file"),
+    ("read.missing", "no such file"),
+    ("read.error", "cannot read: {error}"),
+    ("read.encoding", "file is {encoding}; jsonvet reads UTF-8"),
+    ("read.not-utf8", "not valid UTF-8 (byte {byte})"),
+    ("read.too-large", "larger than {mb} MB"),
+    (
+        "config.symlink",
+        "invalid setting, not shown because the file is a symlink",
+    ),
+    ("config.tool-not-table", "`tool.jsonvet` must be a table"),
+    ("config.no-tool-table", "no [tool.jsonvet] table"),
+    ("config.rule-not-string", "`rules.{id}` must be a string"),
+    (
+        "config.exclude-type",
+        "`exclude` must be an array of strings",
+    ),
+    (
+        "config.schemas-type",
+        "`schemas` must be an array of tables",
+    ),
+    ("config.rules-type", "`rules` must be a table"),
+    (
+        "config.dialects-type",
+        "`dialects` must be an array of tables",
+    ),
+    (
+        "config.unknown-key",
+        "unknown key `{key}`{hint}; expected rules, dialects, exclude or schemas",
+    ),
+    ("config.entry-type", "each `{array}` entry must be a table"),
+    (
+        "config.entry-unknown-key",
+        "unknown key `{key}`{hint} in a `{array}` entry; expected {first} and {second}",
+    ),
+    (
+        "config.entry-needs",
+        "each `{array}` entry needs a `{key}` string",
+    ),
+    ("summary.files.one", "{count} file"),
+    ("summary.files.other", "{count} files"),
+    ("summary.errors.one", "{count} error"),
+    ("summary.errors.other", "{count} errors"),
+    ("summary.warnings.one", "{count} warning"),
+    ("summary.warnings.other", "{count} warnings"),
+    ("summary.none", "no problems in {files}"),
+    ("summary.both", "{errors} and {warnings}"),
+    ("summary.some", "{problems} in {failed} of {files}"),
+    (
+        "output.frames-stopped",
+        "{count} problems shown with their lines; the rest show one line each, which is much \
+         faster",
+    ),
+    (
+        "explain",
+        "{id}: {description}\n\nDefault: {default}.\n\n{explanation}\n\nMore: {uri}",
+    ),
+    ("defaults.in", "{severity} in {dialects}"),
+    ("defaults.and", " and "),
+    ("defaults.off-otherwise", "off otherwise"),
+    (
+        "schema.outside",
+        "the schema {path} is outside the project, so it is not read",
+    ),
+    (
+        "schema.unreadable",
+        "cannot read the schema {path}: {error}",
+    ),
+    (
+        "schema.unusable",
+        "the schema {path}:{line}:{column} cannot be used",
+    ),
+    (
+        "schema.problem",
+        "the schema {path}:{line}:{column}: {problem}",
+    ),
+    ("schema.one-value", "the schema {path} must hold one value"),
+    (
+        "schema.ref-outside",
+        "the schema {path} has a `$ref` outside the file; jsonvet fetches no schemas",
+    ),
+    (
+        "schema.ref-outside-to",
+        "the schema {path} has a `$ref` to {uri}, outside the file; jsonvet fetches no schemas",
+    ),
+    (
+        "schema.regex-too-big",
+        "{error}, or it takes more than {mb} MB compiled",
+    ),
+    (
+        "schema.too-deep",
+        "this `{key}` leads more than {limit} levels deep, counting each `$ref` followed as a \
+         level",
+    ),
+    (
+        "schema.too-big",
+        "this `{key}` takes the schema past {limit} objects and arrays, counting what each \
+         `$ref` points at every time it is followed",
+    ),
+    (
+        "schema.too-big-twice",
+        "this `{key}` takes the schema past {limit} objects and arrays, counting the schemas \
+         beside it twice, as jsonschema checks them again for it",
+    ),
+    (
+        "schema.unresolved",
+        "this `{key}` cannot be resolved: {error}",
+    ),
+    (
+        "schema.too-many-patterns",
+        "this regex takes the schema past {limit} distinct regexes, each allowed {mb} MB once \
+         compiled",
+    ),
+    (
+        "schema.run-patterns",
+        "the schema {path} takes the schemas this run reads past {limit} regexes between them, \
+         each allowed {mb} MB once compiled",
+    ),
+    (
+        "schema.value-fails",
+        "value fails \"{keyword}\" (the schema {path})",
+    ),
+    (
+        "schema.value-fails-at",
+        "value fails \"{keyword}\" (the schema {path}:{line}:{column})",
+    ),
+    ("schema.custom-keyword", "a custom keyword"),
+    (
+        "schema.costly",
+        "this {what} could not be checked against {pattern}: matching it takes more than \
+         {limit} backtracking steps",
+    ),
+    ("schema.costly.key", "key"),
+    ("schema.costly.string", "string"),
+    ("schema.costly.value", "value"),
+    ("schema.a-pattern", "a pattern"),
+    ("schema.the-pattern", "the pattern \"{regex}\""),
+    (
+        "schema.not-a-number",
+        "NaN, Infinity and numbers beyond a double's range have no JSON Schema value",
+    ),
+    (
+        "schema.same-keys",
+        "this key and an earlier one in the object are the same once lone surrogates become \
+         U+FFFD",
+    ),
+    (
+        "schema.unchecked",
+        "{reason}, so this document is not checked against the schema",
+    ),
+    ("schema.found-at", "{message} (at {at})"),
+    ("schema.more", "... and more schema errors in this document"),
     (
         "rule.schema.description",
         "a value the file's JSON Schema rejects",
@@ -107,9 +305,46 @@ pub(crate) fn text(id: &str) -> &'static str {
     translate(id).unwrap_or_else(|| english(id))
 }
 
+/// A message's text, in the chosen language, with each `{name}` that `values` names filled in.
+pub(crate) fn fill(id: &str, values: &[(&str, &dyn Display)]) -> String {
+    let mut message = String::new();
+    // NOTE: writing to a String cannot fail.
+    let _ = jsonvet::fill(&mut message, text(id), values);
+    message
+}
+
+/// `count` and what it counts, by the `one` form of `id` for 1 and the `other` form otherwise,
+/// such as `summary.files`: `1 file`, `2 files`.
+pub(crate) fn count(id: &str, count: usize) -> String {
+    let form = if count == 1 { "one" } else { "other" };
+    fill(&format!("{id}.{form}"), &[("count", &count)])
+}
+
+/// ` (did you mean `NAME`?)` for the candidate closest to `given`, or nothing.
+pub(crate) fn did_you_mean<'a>(
+    given: &str,
+    candidates: impl IntoIterator<Item = &'a str>,
+) -> String {
+    jsonvet::closest(given, candidates)
+        .map(|name| fill("hint.did-you-mean", &[("name", &name)]))
+        .unwrap_or_default()
+}
+
+/// Set while a run writes SARIF or JSON: its messages end up in the document, which tools read,
+/// so every message stays English.
+static ENGLISH_ONLY: AtomicBool = AtomicBool::new(false);
+
+/// Keep every message English from now on, or not.
+pub(crate) fn english_only(english: bool) {
+    ENGLISH_ONLY.store(english, Ordering::Relaxed);
+}
+
 /// A message's translated text, or `None` to keep the English.
 pub(crate) fn translate(id: &str) -> Option<&'static str> {
     static CHOSEN: OnceLock<Catalog> = OnceLock::new();
+    if ENGLISH_ONLY.load(Ordering::Relaxed) {
+        return None;
+    }
     let chosen = CHOSEN.get_or_init(|| {
         requested(|name| std::env::var_os(name))
             .map_or_else(Catalog::new, |locale| pick(LOCALES, &locale))
@@ -154,7 +389,7 @@ fn parse(file: &str) -> Result<Catalog, String> {
 mod tests {
     use std::ffi::OsString;
 
-    use super::{ENGLISH, LOCALES, english, parse, pick, requested};
+    use super::{ENGLISH, LOCALES, count, english, parse, pick, requested};
     use crate::rules::ids;
 
     /// Every id a translation may give: the command's own, the library's, and each rule's
@@ -175,6 +410,73 @@ mod tests {
         }
         assert!(ENGLISH.iter().all(|(_, text)| !text.is_empty()));
         assert!(jsonvet::MESSAGES.iter().all(|(_, text)| !text.is_empty()));
+        // The ids the code builds from a name.
+        for key in ["exclude", "schemas", "rules", "dialects"] {
+            assert!(!english(&format!("config.{key}-type")).is_empty(), "{key}");
+        }
+        for what in ["key", "string", "value"] {
+            assert!(
+                !english(&format!("schema.costly.{what}")).is_empty(),
+                "{what}"
+            );
+        }
+    }
+
+    /// Each id the code names in a string has English text, or `count`'s `one` and `other`
+    /// forms, so no message shows up empty.
+    #[test]
+    fn every_id_the_code_names_has_english_text() {
+        let sources = [
+            include_str!("args.rs"),
+            include_str!("lib.rs"),
+            include_str!("output.rs"),
+            include_str!("rules.rs"),
+            include_str!("settings.rs"),
+            include_str!("schema/fold.rs"),
+            include_str!("schema/limits.rs"),
+            include_str!("schema/mod.rs"),
+            include_str!("schema/select.rs"),
+        ];
+        let namespaces = [
+            "config.",
+            "defaults.",
+            "error.",
+            "explain",
+            "hint.",
+            "output.",
+            "read.",
+            "related.",
+            "schema.",
+            "summary.",
+        ];
+        let mut checked = 0;
+        for source in sources {
+            let code = source.split("#[cfg(test)]").next().unwrap_or(source);
+            for namespace in namespaces {
+                for (at, _) in code.match_indices(&format!("\"{namespace}")) {
+                    let id = code[at + 1..].split('"').next().unwrap_or_default();
+                    if id.contains('{') {
+                        continue;
+                    }
+                    let counted = ["one", "other"]
+                        .iter()
+                        .all(|form| !english(&format!("{id}.{form}")).is_empty());
+                    assert!(
+                        !english(id).is_empty() || counted,
+                        "`{id}` has no English text"
+                    );
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked > 80, "only {checked} ids found");
+    }
+
+    #[test]
+    fn a_count_takes_the_one_form_for_one_only() {
+        assert_eq!(count("summary.files", 0), "0 files");
+        assert_eq!(count("summary.files", 1), "1 file");
+        assert_eq!(count("summary.warnings", 2), "2 warnings");
     }
 
     #[test]

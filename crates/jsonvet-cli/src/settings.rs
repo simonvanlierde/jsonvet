@@ -13,6 +13,7 @@ use toml::de::{DeTable, DeValue};
 
 use crate::args::ConfigSource;
 use crate::glob::{self, Glob, Target};
+use crate::messages;
 use crate::output::printable;
 
 /// A dialect for files matching a pattern, or for every file when the pattern is `None`.
@@ -48,7 +49,21 @@ fn parse_dialect(name: &str) -> Result<Option<Dialect>, String> {
     }
     name.parse()
         .map(Some)
-        .map_err(|e: jsonvet::UnknownDialect| format!("{e}, or auto"))
+        .map_err(|_: jsonvet::UnknownDialect| {
+            let names: Vec<&str> = Dialect::ALL
+                .iter()
+                .map(|d| d.name())
+                .chain(Dialect::ALIASES.iter().map(|&(alias, _)| alias))
+                .collect();
+            messages::fill(
+                "error.unknown-dialect",
+                &[
+                    ("name", &name),
+                    ("hint", &messages::did_you_mean(name, names.iter().copied())),
+                    ("names", &names.join(", ")),
+                ],
+            )
+        })
 }
 
 pub(crate) fn parse_severity(name: &str) -> Result<Severity, String> {
@@ -56,9 +71,15 @@ pub(crate) fn parse_severity(name: &str) -> Result<Severity, String> {
         "error" => Ok(Severity::Error),
         "warning" | "warn" => Ok(Severity::Warning),
         "ignore" | "off" => Ok(Severity::Off),
-        _ => Err(format!(
-            "unknown severity `{name}`{}; expected error, warning or ignore",
-            jsonvet::did_you_mean(name, ["error", "warning", "warn", "ignore", "off"])
+        _ => Err(messages::fill(
+            "error.unknown-severity",
+            &[
+                ("name", &name),
+                (
+                    "hint",
+                    &messages::did_you_mean(name, ["error", "warning", "warn", "ignore", "off"]),
+                ),
+            ],
         )),
     }
 }
@@ -67,9 +88,19 @@ pub(crate) fn parse_severity(name: &str) -> Result<Severity, String> {
 /// cannot be turned down, so it gets its own message rather than "unknown rule".
 pub(crate) fn parse_rule(id: &str) -> Result<Rule, String> {
     if id == crate::sarif::SCHEMA {
-        return Err("the `schema` rule is always an error and cannot be set".to_owned());
+        return Err(messages::text("error.schema-rule").to_owned());
     }
-    id.parse().map_err(|e| format!("{e}"))
+    id.parse().map_err(|_: jsonvet::UnknownRule| {
+        let ids: Vec<&str> = Rule::ALL.iter().map(|r| r.id()).collect();
+        messages::fill(
+            "error.unknown-rule",
+            &[
+                ("id", &id),
+                ("hint", &messages::did_you_mean(id, ids.iter().copied())),
+                ("ids", &ids.join(", ")),
+            ],
+        )
+    })
 }
 
 /// Dialect patterns, rule severities and excluded paths, merged from every source in order.
@@ -222,7 +253,7 @@ fn cwd() -> Option<&'static PathBuf> {
 fn working_dir() -> Result<&'static PathBuf, &'static str> {
     static CWD: std::sync::OnceLock<Result<PathBuf, String>> = std::sync::OnceLock::new();
     CWD.get_or_init(|| {
-        std::env::current_dir().map_err(|e| format!("cannot read the working directory: {e}"))
+        std::env::current_dir().map_err(|e| messages::fill("error.working-dir", &[("error", &e)]))
     })
     .as_ref()
     .map_err(String::as_str)
@@ -440,7 +471,7 @@ fn lexical(path: &Path) -> PathBuf {
 /// root (ADR 0012). A pull request picks these paths, and an error in a schema would show what
 /// the file holds.
 pub(crate) fn confined(path: &str, base: &Path, root: &Path) -> Result<bool, String> {
-    let outside = || format!("the schema {path} is outside the project, so it is not read");
+    let outside = || messages::fill("schema.outside", &[("path", &path)]);
     let given = Path::new(path);
     // Before the path is touched: on Windows, opening `\\host\share\s.json` connects to the host.
     // A drive or UNC path is refused on every OS, so a file gets the same verdict everywhere.
@@ -466,7 +497,12 @@ pub(crate) fn confined(path: &str, base: &Path, root: &Path) -> Result<bool, Str
     let (exists, real) = match fs::canonicalize(&joined) {
         Ok(real) => (true, Some(real)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => (false, leads_to(joined)),
-        Err(e) => return Err(format!("cannot read the schema {path}: {e}")),
+        Err(e) => {
+            return Err(messages::fill(
+                "schema.unreadable",
+                &[("path", &path), ("error", &e)],
+            ));
+        }
     };
     match real {
         Some(real) if real.starts_with(root) => Ok(exists),
@@ -535,7 +571,7 @@ pub(crate) fn load(path: &Path, root: Option<&Path>) -> Result<Settings, String>
     // A symlink can lead to any file on the machine, such as a secret that a pull request links
     // to, so an error in one names the place only, never a key or value from it.
     let linked = fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink());
-    let hidden = "invalid setting, not shown because the file is a symlink";
+    let hidden = messages::text("config.symlink");
     // The same, with the line and column of the byte offset `at` after the name.
     let at = |at: usize, e: &dyn std::fmt::Display| {
         let before = &text[..at];
@@ -554,9 +590,14 @@ pub(crate) fn load(path: &Path, root: Option<&Path>) -> Result<Settings, String>
         {
             Some(file) => match file.get_ref() {
                 DeValue::Table(table) => table,
-                _ => return Err(at(file.span().start, &"`tool.jsonvet` must be a table")),
+                _ => {
+                    return Err(at(
+                        file.span().start,
+                        &messages::text("config.tool-not-table"),
+                    ));
+                }
             },
-            None => return Err(in_file(&"no [tool.jsonvet] table")),
+            None => return Err(in_file(&messages::text("config.no-tool-table"))),
         }
     } else {
         table
@@ -575,7 +616,7 @@ pub(crate) fn load(path: &Path, root: Option<&Path>) -> Result<Settings, String>
                     let severity = severity.get_ref().as_str().ok_or_else(|| {
                         at(
                             severity_at,
-                            &format!("`rules.{}` must be a string", id.get_ref()),
+                            &messages::fill("config.rule-not-string", &[("id", id.get_ref())]),
                         )
                     })?;
                     let severity = parse_severity(severity).map_err(|e| at(severity_at, &e))?;
@@ -592,10 +633,7 @@ pub(crate) fn load(path: &Path, root: Option<&Path>) -> Result<Settings, String>
             ("exclude", DeValue::Array(patterns)) => {
                 for pattern in patterns {
                     let text = pattern.get_ref().as_str().ok_or_else(|| {
-                        at(
-                            pattern.span().start,
-                            &"`exclude` must be an array of strings",
-                        )
+                        at(pattern.span().start, &messages::text("config.exclude-type"))
                     })?;
                     // Without a base there is nothing for the pattern to be relative to.
                     if let Some(base) = &base {
@@ -615,18 +653,15 @@ pub(crate) fn load(path: &Path, root: Option<&Path>) -> Result<Settings, String>
                     }
                 }
             }
-            ("exclude", _) => return Err(at(here, &"`exclude` must be an array of strings")),
-            ("schemas", _) => return Err(at(here, &"`schemas` must be an array of tables")),
-            ("rules", _) => return Err(at(here, &"`rules` must be a table")),
-            ("dialects", _) => return Err(at(here, &"`dialects` must be an array of tables")),
+            (key @ ("exclude" | "schemas" | "rules" | "dialects"), _) => {
+                return Err(at(here, &messages::text(&format!("config.{key}-type"))));
+            }
             (key_text, _) => {
                 let hint =
-                    jsonvet::did_you_mean(key_text, ["rules", "dialects", "exclude", "schemas"]);
+                    messages::did_you_mean(key_text, ["rules", "dialects", "exclude", "schemas"]);
                 return Err(at(
                     key.span().start,
-                    &format!(
-                        "unknown key `{key_text}`{hint}; expected rules, dialects, exclude or schemas"
-                    ),
+                    &messages::fill("config.unknown-key", &[("key", &key_text), ("hint", &hint)]),
                 ));
             }
         }
@@ -681,16 +716,25 @@ fn entry_strings<'e>(
 ) -> Result<[(usize, &'e str); 2], (usize, String)> {
     let start = entry.span().start;
     let DeValue::Table(table) = entry.get_ref() else {
-        return Err((start, format!("each `{array}` entry must be a table")));
+        return Err((
+            start,
+            messages::fill("config.entry-type", &[("array", &array)]),
+        ));
     };
     if let Some(key) = table.keys().find(|k| !keys.contains(&k.get_ref().as_ref())) {
         let name = key.get_ref();
-        let hint = jsonvet::did_you_mean(name, keys);
+        let hint = messages::did_you_mean(name, keys);
         return Err((
             key.span().start,
-            format!(
-                "unknown key `{name}`{hint} in a `{array}` entry; expected {} and {}",
-                keys[0], keys[1]
+            messages::fill(
+                "config.entry-unknown-key",
+                &[
+                    ("key", name),
+                    ("hint", &hint),
+                    ("array", &array),
+                    ("first", &keys[0]),
+                    ("second", &keys[1]),
+                ],
             ),
         ));
     }
@@ -702,7 +746,7 @@ fn entry_strings<'e>(
                 let offset = value.map_or(start, |v| v.span().start);
                 (
                     offset,
-                    format!("each `{array}` entry needs a `{key}` string"),
+                    messages::fill("config.entry-needs", &[("array", &array), ("key", &key)]),
                 )
             })
     };

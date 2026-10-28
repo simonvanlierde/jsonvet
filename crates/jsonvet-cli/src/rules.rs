@@ -53,9 +53,15 @@ pub(crate) fn defaults(id: &str) -> String {
         }
         if !dialects.is_empty() {
             parts.push(if severity == Severity::Off {
-                "off otherwise".to_owned()
+                messages::text("defaults.off-otherwise").to_owned()
             } else {
-                format!("{severity} in {}", dialects.join(" and "))
+                messages::fill(
+                    "defaults.in",
+                    &[
+                        ("severity", &severity),
+                        ("dialects", &dialects.join(messages::text("defaults.and"))),
+                    ],
+                )
             });
         }
     }
@@ -77,23 +83,36 @@ pub(crate) fn explain(id: &str) -> Result<String, String> {
     if !ids().any(|known| known == id) {
         return Err(unknown(id));
     }
-    Ok(format!(
-        "{id}: {}\n\nDefault: {}.\n\n{}\n\nMore: {}",
-        messages::text(&format!("rule.{id}.description")),
-        defaults(id),
-        messages::text(&format!("rule.{id}.explanation")),
-        help_uri(id)
+    Ok(messages::fill(
+        "explain",
+        &[
+            ("id", &id),
+            (
+                "description",
+                &messages::text(&format!("rule.{id}.description")),
+            ),
+            ("default", &defaults(id)),
+            (
+                "explanation",
+                &messages::text(&format!("rule.{id}.explanation")),
+            ),
+            ("uri", &help_uri(id)),
+        ],
     ))
 }
 
 /// The error for an unknown rule id, naming the closest one when it is a likely typo.
 pub(crate) fn unknown(id: &str) -> String {
-    match jsonvet::did_you_mean(id, ids()) {
-        hint if hint.is_empty() => format!(
-            "unknown rule `{id}`; expected one of {}",
-            ids().collect::<Vec<_>>().join(", ")
+    match messages::did_you_mean(id, ids()) {
+        hint if hint.is_empty() => messages::fill(
+            "error.unknown-rule",
+            &[
+                ("id", &id),
+                ("hint", &hint),
+                ("ids", &ids().collect::<Vec<_>>().join(", ")),
+            ],
         ),
-        hint => format!("unknown rule `{id}`{hint}"),
+        hint => messages::fill("error.unknown-rule-close", &[("id", &id), ("hint", &hint)]),
     }
 }
 

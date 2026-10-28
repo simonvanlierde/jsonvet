@@ -7,6 +7,8 @@ use std::ops::Range;
 use jsonvet::{Event, EventKind, key_text};
 use serde_json::{Map, Number, Value};
 
+use crate::messages;
+
 /// One document's values, and the range of the events they were folded from.
 pub(super) struct Document {
     pub(super) value: Value,
@@ -16,11 +18,6 @@ pub(super) struct Document {
     /// Why the values are not the text's, and where: the first such number or key.
     pub(super) unchecked: Option<(usize, &'static str)>,
 }
-
-const NOT_A_NUMBER: &str =
-    "NaN, Infinity and numbers beyond a double's range have no JSON Schema value";
-const SAME_KEYS: &str =
-    "this key and an earlier one in the object are the same once lone surrogates become U+FFFD";
 
 /// An open container while the events are folded into values, with an object's current key
 /// (as text, its offset, and as written if it holds U+FFFD) and each earlier key holding U+FFFD,
@@ -89,7 +86,8 @@ impl<'e> Fold<'e> {
             EventKind::Bool(b) => Value::Bool(*b),
             EventKind::String(s) => Value::String(s.to_string()),
             EventKind::Number(text) => number(text).unwrap_or_else(|| {
-                self.unchecked.get_or_insert((event.offset, NOT_A_NUMBER));
+                self.unchecked
+                    .get_or_insert((event.offset, messages::text("schema.not-a-number")));
                 Value::Null
             }),
             _ => return None,
@@ -111,7 +109,8 @@ impl<'e> Fold<'e> {
                 if key.contains('\u{FFFD}') {
                     match seen.get(&key) {
                         Some(earlier) if earlier != raw => {
-                            self.unchecked.get_or_insert((*offset, SAME_KEYS));
+                            self.unchecked
+                                .get_or_insert((*offset, messages::text("schema.same-keys")));
                         }
                         Some(_) => {}
                         None => {

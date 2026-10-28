@@ -13,7 +13,7 @@ use jsonvet::{Dialect, Event, EventKind, Report, Rule};
 use super::Schema;
 use super::limits::{PATTERN_BYTES, RUN_PATTERNS};
 use crate::settings::{self, Settings};
-use crate::{check, output};
+use crate::{check, messages, output};
 
 /// Whether the file of `job`, shown as `name`, with `text`, is checked against a schema: the one
 /// given, or one its own `$schema` may name.
@@ -114,12 +114,13 @@ impl Schemas {
                     self.over()?;
                     let patterns = self.patterns.load(Ordering::Relaxed) + count;
                     if patterns > RUN_PATTERNS {
-                        let error = format!(
-                            "the schema {} takes the schemas this run reads past \
-                             {RUN_PATTERNS} regexes between them, each allowed {} MB once \
-                             compiled",
-                            path.display(),
-                            PATTERN_BYTES >> 20
+                        let error = messages::fill(
+                            "schema.run-patterns",
+                            &[
+                                ("path", &path.display()),
+                                ("limit", &RUN_PATTERNS),
+                                ("mb", &(PATTERN_BYTES >> 20)),
+                            ],
                         );
                         return Err(self.over.get_or_init(|| error).clone());
                     }

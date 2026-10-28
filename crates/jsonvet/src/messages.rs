@@ -166,7 +166,10 @@ fn part_id(english: &str) -> Option<&'static str> {
 
 /// Write `template` with each `{name}` that `values` names replaced by its value. Any other `{`
 /// stays as it is, and a value is never searched for names itself.
-pub(crate) fn fill(
+///
+/// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
+#[doc(hidden)]
+pub fn fill(
     out: &mut dyn fmt::Write,
     template: &str,
     values: &[(&str, &dyn fmt::Display)],

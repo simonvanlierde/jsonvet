@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use lexopt::prelude::*;
 
+use crate::messages;
 use crate::output::Format;
 use crate::settings::{DialectPattern, Settings, parse_rule, parse_severity};
 
@@ -103,9 +104,10 @@ fn parse_format(name: &str) -> Result<Format, String> {
         "sarif" => Ok(Format::Sarif),
         "json" => Ok(Format::Json),
         _ => {
-            let hint = jsonvet::did_you_mean(name, ["text", "sarif", "json"]);
-            Err(format!(
-                "--format takes text, sarif or json, not `{name}`{hint}"
+            let hint = messages::did_you_mean(name, ["text", "sarif", "json"]);
+            Err(messages::fill(
+                "error.format",
+                &[("value", &name), ("hint", &hint)],
             ))
         }
     }
@@ -117,9 +119,10 @@ fn parse_color(when: &str) -> Result<Option<bool>, String> {
         "always" => Ok(Some(true)),
         "never" => Ok(Some(false)),
         _ => {
-            let hint = jsonvet::did_you_mean(when, ["auto", "always", "never"]);
-            Err(format!(
-                "--color takes auto, always or never, not `{when}`{hint}"
+            let hint = messages::did_you_mean(when, ["auto", "always", "never"]);
+            Err(messages::fill(
+                "error.color",
+                &[("value", &when), ("hint", &hint)],
             ))
         }
     }
@@ -173,7 +176,7 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
                 let n = value(&mut parser)?;
                 max_warnings = Some(
                     n.parse()
-                        .map_err(|_| format!("--max-warnings takes a number, not `{n}`"))?,
+                        .map_err(|_| messages::fill("error.max-warnings", &[("value", &n)]))?,
                 );
             }
             Long("format") => format = parse_format(&value(&mut parser)?)?,
@@ -215,7 +218,7 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
         }
     }
     if files.iter().filter(|file| *file == STDIN).count() > 1 {
-        return Err("`-` (standard input) can be given only once".to_owned());
+        return Err(messages::text("error.stdin-twice").to_owned());
     }
     if files.is_empty() && stdin_filename.is_some() {
         files.push(STDIN.into());
@@ -245,7 +248,10 @@ fn on_disk(file: OsString) -> Result<OsString, String> {
     if exists(&file) {
         Ok(file)
     } else {
-        Err(format!("unknown option `{}`", file.to_string_lossy()))
+        Err(messages::fill(
+            "error.unknown-option",
+            &[("option", &file.to_string_lossy())],
+        ))
     }
 }
 
@@ -254,7 +260,7 @@ fn value(parser: &mut lexopt::Parser) -> Result<String, String> {
         .value()
         .map_err(|e| e.to_string())?
         .into_string()
-        .map_err(|v| format!("not valid UTF-8: {}", v.to_string_lossy()))
+        .map_err(|v| messages::fill("error.not-utf8", &[("value", &v.to_string_lossy())]))
 }
 
 /// The rest of the current argument after an unknown option: the remaining letters of

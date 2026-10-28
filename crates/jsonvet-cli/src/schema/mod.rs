@@ -18,6 +18,7 @@ use jsonschema::{PatternOptions, ReferencingError, ValidationError, ValidationOp
 use jsonvet::{Config, Dialect, Event, Report, Rule, Severity};
 use serde_json::{Map, Value};
 
+use crate::messages;
 use crate::settings::Settings;
 use fold::{Fold, documents};
 use limits::{MAX_SCHEMA_DEPTH, PATTERN_BYTES, Reach, registry};
@@ -227,7 +228,7 @@ impl Quiet {
         }
         // A custom keyword's name is the schema's own; jsonvet adds none.
         let keyword = match error.kind() {
-            K::Custom { .. } => "a custom keyword",
+            K::Custom { .. } => messages::text("schema.custom-keyword"),
             kind => kind.keyword(),
         };
         let path = error.schema_path().as_str();
@@ -240,10 +241,19 @@ impl Quiet {
             .absolute_keyword_location()
             .is_none_or(|uri| uri.as_str().split('#').next() == self.base.as_deref());
         match self.places.get(path.as_ref()).filter(|_| at_root) {
-            Some((line, column)) => {
-                format!("value fails \"{keyword}\" (the schema {name}:{line}:{column})")
-            }
-            None => format!("value fails \"{keyword}\" (the schema {name})"),
+            Some((line, column)) => messages::fill(
+                "schema.value-fails-at",
+                &[
+                    ("keyword", &keyword),
+                    ("path", name),
+                    ("line", line),
+                    ("column", column),
+                ],
+            ),
+            None => messages::fill(
+                "schema.value-fails",
+                &[("keyword", &keyword), ("path", name)],
+            ),
         }
     }
 }
@@ -332,12 +342,16 @@ fn pattern_at(schema: &Value, schema_path: &str) -> Option<String> {
 /// `regex` if known.
 fn costly(what: &str, regex: Option<&str>) -> String {
     let pattern = regex.map_or_else(
-        || "a pattern".to_owned(),
-        |r| format!("the pattern \"{r}\""),
+        || messages::text("schema.a-pattern").to_owned(),
+        |r| messages::fill("schema.the-pattern", &[("regex", &r)]),
     );
-    format!(
-        "this {what} could not be checked against {pattern}: matching it takes more than \
-         {BACKTRACK_LIMIT} backtracking steps"
+    messages::fill(
+        "schema.costly",
+        &[
+            ("what", &messages::text(&format!("schema.costly.{what}"))),
+            ("pattern", &pattern),
+            ("limit", &BACKTRACK_LIMIT),
+        ],
     )
 }
 
@@ -638,7 +652,7 @@ impl<'e> Checking<'_, 'e> {
                 Checked::Unchecked(offset, reason) => {
                     errors.push((
                         offset,
-                        format!("{reason}, so this document is not checked against the schema"),
+                        messages::fill("schema.unchecked", &[("reason", &reason)]),
                         false,
                     ));
                     continue;
@@ -652,18 +666,18 @@ impl<'e> Checking<'_, 'e> {
                 .into_iter()
                 .zip(spots)
                 .map(|(found, (offset, at))| {
-                    (offset, cut(format!("{} (at {at})", found.message)), false)
+                    let message = messages::fill(
+                        "schema.found-at",
+                        &[("message", &found.message), ("at", &at)],
+                    );
+                    (offset, cut(message), false)
                 })
                 .collect();
             // Stable, so errors at one value keep the schema's order.
             placed.sort_by_key(|(offset, ..)| *offset);
             errors.append(&mut placed);
             if found.more {
-                errors.push((
-                    offset,
-                    "... and more schema errors in this document".to_owned(),
-                    true,
-                ));
+                errors.push((offset, messages::text("schema.more").to_owned(), true));
             }
         }
         errors
@@ -684,7 +698,7 @@ impl Schema {
     ) -> Result<Schema, String> {
         let name = path.to_string_lossy();
         let text = crate::read_small(path, crate::MAX_SCHEMA_BYTES)
-            .map_err(|e| format!("cannot read the schema {name}: {e}"))?;
+            .map_err(|e| messages::fill("schema.unreadable", &[("path", &name), ("error", &e)]))?;
         // jsonschema compiles a schema recursively: a deep one can take gigabytes or the stack.
         let mut config = settings.config_for(&name);
         // A schema is one value, so a JSON Lines dialect set for the documents does not apply.
@@ -697,22 +711,30 @@ impl Schema {
         let (report, events) = jsonvet::parse(&text, &config);
         let at = |offset, problem: &dyn std::fmt::Display| {
             let at = report.location(offset);
+            let place: [(&str, &dyn std::fmt::Display); 3] =
+                [("path", &name), ("line", &at.line), ("column", &at.column)];
             if quiet {
-                return format!("the schema {name}:{}:{} cannot be used", at.line, at.column);
+                return messages::fill("schema.unusable", &place);
             }
-            format!("the schema {name}:{}:{}: {problem}", at.line, at.column)
+            messages::fill(
+                "schema.problem",
+                &[place[0], place[1], place[2], ("problem", problem)],
+            )
         };
         if let Some(problem) = report
             .problems()
             .iter()
             .find(|p| p.severity() == Severity::Error)
         {
-            return Err(at(problem.offset(), problem));
+            return Err(at(
+                problem.offset(),
+                &problem.message_with(messages::translate),
+            ));
         }
         let events = events.unwrap_or_default();
         let mut documents: Vec<_> = documents(&events).collect();
         if documents.len() != 1 {
-            return Err(format!("the schema {name} must hold one value"));
+            return Err(messages::fill("schema.one-value", &[("path", &name)]));
         }
         let document = documents.swap_remove(0);
         let events = &events[document.events.clone()];
@@ -721,12 +743,12 @@ impl Schema {
         }
         let schema = &document.value;
         let outside = |error: &ReferencingError| match error {
-            ReferencingError::Unretrievable { .. } if quiet => Some(format!(
-                "the schema {name} has a `$ref` outside the file; jsonvet fetches no schemas"
-            )),
-            ReferencingError::Unretrievable { uri, .. } => Some(format!(
-                "the schema {name} has a `$ref` to {uri}, outside the file; jsonvet fetches no \
-                 schemas"
+            ReferencingError::Unretrievable { .. } if quiet => {
+                Some(messages::fill("schema.ref-outside", &[("path", &name)]))
+            }
+            ReferencingError::Unretrievable { uri, .. } => Some(messages::fill(
+                "schema.ref-outside-to",
+                &[("path", &name), ("uri", uri)],
             )),
             _ => None,
         };
@@ -777,7 +799,7 @@ impl Schema {
             let mb = PATTERN_BYTES >> 20;
             return Err(at(
                 offset,
-                &format!("{error}, or it takes more than {mb} MB compiled"),
+                &messages::fill("schema.regex-too-big", &[("error", &error), ("mb", &mb)]),
             ));
         }
         Err(at(offset, &error))

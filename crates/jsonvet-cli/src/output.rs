@@ -152,19 +152,7 @@ impl<W: Write> Printer<W> {
         problem: &Problem,
     ) -> io::Result<()> {
         let (offset, end) = (problem.offset(), problem.end());
-        // Text is for people, so it is translated; SARIF and JSON stay English for the tools
-        // that read them.
-        let human = matches!(self.sink, Sink::Text { .. });
-        let say = if human {
-            messages::text
-        } else {
-            messages::english
-        };
-        let mut message = if human {
-            problem.message_with(messages::translate)
-        } else {
-            problem.to_string()
-        };
+        let mut message = problem.message_with(messages::translate);
         let title = message.len();
         // The related place, named in the message and marked in a frame, SARIF and JSON.
         let related = problem.related().map(|related| {
@@ -174,7 +162,7 @@ impl<W: Write> Printer<W> {
                 // NOTE: `RelatedKind` is non-exhaustive; `Start` is the only other kind so far.
                 _ => ("related.started-at", "related.starts-here"),
             };
-            let (what, label) = (say(what), say(label));
+            let (what, label) = (messages::text(what), messages::text(label));
             let at = report.location(related.offset);
             let _ = write!(message, " ({what} {}:{})", at.line, at.column);
             Mark {
@@ -303,11 +291,9 @@ impl<W: Write> Printer<W> {
             } => {
                 if frames.is_some() && *framed == MAX_FRAMES {
                     *frames = None;
-                    writeln!(
-                        self.out,
-                        "jsonvet: {MAX_FRAMES} problems shown with their lines; the rest show \
-                         one line each, which is much faster\n"
-                    )?;
+                    let stopped =
+                        messages::fill("output.frames-stopped", &[("count", &MAX_FRAMES)]);
+                    writeln!(self.out, "jsonvet: {stopped}\n")?;
                 }
                 *framed += 1;
                 (*annotate, frames.as_ref(), *color)
