@@ -171,7 +171,8 @@ timeout, so a file gets the same verdict on every machine
   schema each byte counts 20 times, and the chunk is cut from the files' sizes before any is read,
   so a file of 3.2 MB or more is checked on its own. Otherwise every core can take a large file at
   once: twelve 10 MB files took 3.4 GB instead of 0.30 GB. A file's own `$schema` is known only
-  once the file is read, so such a file counts once.
+  once the file is read. It then counts the same, and the texts other threads read in the meantime
+  wait for the next chunk.
 - **Errors.** A jsonschema error can hold far more than its message: an `anyOf` error holds every
   branch's errors. jsonvet keeps each error's message and path and drops the rest, and stops
   asking after 100. What one jsonschema call collects is still all in memory at once
