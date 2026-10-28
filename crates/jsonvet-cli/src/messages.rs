@@ -398,6 +398,11 @@ pub(crate) fn translate(id: &str) -> Option<&'static str> {
     chosen()?.get(id).map(String::as_str)
 }
 
+/// A problem's message in the chosen language.
+pub(crate) fn problem(problem: &jsonvet::Problem) -> String {
+    problem.message_with(translate)
+}
+
 /// The locale the environment asks for messages in: `LC_ALL`, then `LC_MESSAGES`, then `LANG`,
 /// whichever is set first to something other than empty, as POSIX orders them.
 fn requested(var: impl Fn(&str) -> Option<OsString>) -> Option<String> {

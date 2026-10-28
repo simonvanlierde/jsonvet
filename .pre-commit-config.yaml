@@ -17,6 +17,12 @@ repos:
           - id: trailing-whitespace
             args: ["--markdown-linebreak-ext", "md"]
 
+    # The released hook on our own JSON; the top-level exclude skips corpora that fail on purpose.
+    - repo: https://github.com/simonvanlierde/jsonvet
+      rev: 022d320d5b971eccb28cfa6ce205152cbb382e53 # frozen: v3.2.0
+      hooks:
+          - id: jsonvet
+
     - repo: https://github.com/astral-sh/ruff-pre-commit
       rev: v0.17.0
       hooks:

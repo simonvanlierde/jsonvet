@@ -161,7 +161,7 @@ impl<W: Write> Printer<W> {
         problem: &Problem,
     ) -> io::Result<()> {
         let (offset, end) = (problem.offset(), problem.end());
-        let mut message = problem.message_with(messages::translate);
+        let mut message = messages::problem(problem);
         let title = message.len();
         // The related place, named in the message and marked in a frame, SARIF and JSON.
         let related = problem.related().map(|related| {

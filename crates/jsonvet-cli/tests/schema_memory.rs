@@ -226,7 +226,9 @@ fn files_with_a_local_dollar_schema_are_checked_as_few_at_a_time_as_with_schema(
 
 /// A schema with a regex only fancy-regex compiles keeps its regexes compiled once, as one the
 /// `regex` crate compiles does: the copies that name a pattern in an error are compiled only
-/// when such an error comes. Compiled when the schema was, they took half as much again.
+/// when such an error comes. Compiled when the schema was, they took half as much again. The
+/// document fails `required`, so both schemas build the parts they are split into, which a
+/// schema with lookaround needs for every object.
 #[test]
 fn a_regex_with_lookaround_compiles_the_schema_once() {
     let _counting = counting();
@@ -234,7 +236,10 @@ fn a_regex_with_lookaround_compiles_the_schema_once() {
         let regexes: Vec<String> = (0..100)
             .map(|i| format!("\"{first}(?:[a-z]{{20}}){{100}}N{i}\": {{}}"))
             .collect();
-        format!("{{\"patternProperties\": {{{}}}}}", regexes.join(", "))
+        format!(
+            "{{\"required\": [\"a\"], \"patternProperties\": {{{}}}}}",
+            regexes.join(", ")
+        )
     };
     let dir = folder("lookaround");
     fs::write(dir.join("file.json"), "{}").expect("write the file");
@@ -247,12 +252,47 @@ fn a_regex_with_lookaround_compiles_the_schema_once() {
             OsString::from(dir.join(name)),
             OsString::from(dir.join("file.json")),
         ]);
-        assert_eq!(code, Ok(0), "{out}");
+        assert_eq!(code, Ok(1), "{out}");
         peaks.push(peak);
     }
     let (linear, fancy) = (peaks[0], peaks[1]);
     assert!(
         fancy <= linear + linear / 5,
         "with lookaround {fancy} bytes, without {linear}"
+    );
+}
+
+/// A JSON Lines file whose lines all pass compiles its schema's regexes once. The parts a schema
+/// is split into, to check a failing document a member at a time, compile them again, so they
+/// are built only once a document fails. Built with the schema, they took as much again.
+#[test]
+fn json_lines_that_all_pass_compile_the_schema_once() {
+    let _counting = counting();
+    let regexes: Vec<String> = (0..100)
+        .map(|i| format!("\"(?:[a-z]{{20}}){{100}}N{i}\": {{}}"))
+        .collect();
+    let schema = format!(
+        "{{\"properties\": {{\"x\": {{\"type\": \"integer\"}}}}, \"patternProperties\": {{{}}}}}",
+        regexes.join(", ")
+    );
+    let dir = folder("lines-pass");
+    fs::write(dir.join("schema.json"), schema).expect("write the schema");
+    fs::write(dir.join("pass.jsonl"), "{\"x\": 1}\n{\"x\": 2}\n").expect("write the file");
+    fs::write(dir.join("fail.jsonl"), "{\"x\": 1}\n{\"x\": \"s\"}\n").expect("write the file");
+    let mut peaks = Vec::new();
+    for (name, exit) in [("pass.jsonl", 0), ("fail.jsonl", 1)] {
+        let (peak, code, out) = run(&[
+            OsString::from("--no-config"),
+            OsString::from("--schema"),
+            OsString::from(dir.join("schema.json")),
+            OsString::from(dir.join(name)),
+        ]);
+        assert_eq!(code, Ok(exit), "{out}");
+        peaks.push(peak);
+    }
+    let (pass, fail) = (peaks[0], peaks[1]);
+    assert!(
+        pass + pass / 2 <= fail,
+        "lines that all pass took {pass} bytes, a failing line {fail}"
     );
 }

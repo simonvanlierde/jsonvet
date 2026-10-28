@@ -19,6 +19,14 @@ version for a new option or output, the patch version for a fix.
   jsonschema's validation messages, TOML syntax errors, argument errors and operating system
   errors. A new language is one file: CONTRIBUTING.md says how to add it.
 
+### Changed
+
+- `--schema` compiles a schema's patterns once, not twice, when every document passes. A schema
+  that jsonvet checks one member or element at a time used to build that second copy up front; it
+  is now built when the first document fails. At the pattern caps, a run whose files pass takes
+  3.5 s and 1.4 GB instead of 7.2 s and 2.7 GB. A failing document, or a pattern with a lookahead
+  or back-reference, still takes about 2.7 GB.
+
 ## [3.2.0] - 2026-10-28
 
 Most users need no change. Check these if they apply to you:
