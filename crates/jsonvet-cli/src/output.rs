@@ -92,7 +92,7 @@ pub(crate) struct Printer<W: Write> {
     out: W,
     sink: Sink,
     /// The words for each related place, looked up once rather than for every problem: how the
-    /// message names it, and the frame's label for it.
+    /// message names it, with its `{line}` and `{column}`, and the frame's label for it.
     related: [(&'static str, &'static str); 3],
 }
 
@@ -161,7 +161,7 @@ impl<W: Write> Printer<W> {
         problem: &Problem,
     ) -> io::Result<()> {
         let (offset, end) = (problem.offset(), problem.end());
-        let mut message = messages::problem(problem);
+        let mut message = problem.message_with(messages::translate);
         let title = message.len();
         // The related place, named in the message and marked in a frame, SARIF and JSON.
         let related = problem.related().map(|related| {
@@ -172,7 +172,13 @@ impl<W: Write> Printer<W> {
                 _ => self.related[2],
             };
             let at = report.location(related.offset);
-            let _ = write!(message, " ({what} {}:{})", at.line, at.column);
+            message.push_str(" (");
+            let _ = jsonvet::fill(
+                &mut message,
+                what,
+                &[("line", &at.line), ("column", &at.column)],
+            );
+            message.push(')');
             Mark {
                 at,
                 span: frame::one_char(report, related.offset),

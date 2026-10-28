@@ -60,7 +60,7 @@ fn parse_dialect(name: &str) -> Result<Option<Dialect>, String> {
                 &[
                     ("name", &name),
                     ("hint", &messages::did_you_mean(name, names.iter().copied())),
-                    ("names", &names.join(", ")),
+                    ("names", &names.join(messages::text("list.separator"))),
                 ],
             )
         })
@@ -97,7 +97,7 @@ pub(crate) fn parse_rule(id: &str) -> Result<Rule, String> {
             &[
                 ("id", &id),
                 ("hint", &messages::did_you_mean(id, ids.iter().copied())),
-                ("ids", &ids.join(", ")),
+                ("ids", &ids.join(messages::text("list.separator"))),
             ],
         )
     })

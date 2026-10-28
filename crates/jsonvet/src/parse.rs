@@ -9,6 +9,10 @@ use hashbrown::HashTable;
 use hashbrown::hash_table::Entry;
 
 use crate::event::{Event, EventKind};
+use crate::messages::{
+    COMMENTS_NOT_ALLOWED, Message, NAN_AND_INFINITY_NOT_ALLOWED, NUMBER_FORM_NOT_ALLOWED,
+    SINGLE_QUOTES_NOT_ALLOWED, UNQUOTED_KEYS_NOT_ALLOWED,
+};
 use crate::path::{self, Segment};
 use crate::problem::{Detail, SyntaxError, SyntaxKind};
 use crate::unicode::{
@@ -381,7 +385,7 @@ impl<'a> Parser<'a, '_> {
     /// the scanning loops they are called from, which they otherwise slowed by 1.4 to 3.2% in
     /// instructions on clean files.
     #[cold]
-    fn not_allowed(&self, at: usize, what: &'static str, hint: bool) -> Fail {
+    fn not_allowed(&self, at: usize, what: Message, hint: bool) -> Fail {
         Fail::at(
             at,
             SyntaxKind::NotAllowed {
@@ -397,7 +401,7 @@ impl<'a> Parser<'a, '_> {
     #[cold]
     fn single_quoted(&mut self, at: usize) -> Fail {
         let hint = self.json5_reads(at, |p| p.string(b'\'', false).map(|_| true));
-        self.not_allowed(at, "single-quoted strings are", hint)
+        self.not_allowed(at, SINGLE_QUOTES_NOT_ALLOWED, hint)
     }
 
     /// Whether JSON5 reads the token at `at`: `scan` runs from there with JSON5's rules and
@@ -425,7 +429,7 @@ impl<'a> Parser<'a, '_> {
     /// reads the number whole: not `0x`, `+x` or `5.e`, and not `NaNx` or `0x1g`, where the
     /// token runs on into a word.
     #[cold]
-    fn json5_number(&mut self, start: usize, what: &'static str) -> Fail {
+    fn json5_number(&mut self, start: usize, what: Message) -> Fail {
         let hint = self.json5_reads(start, |p| {
             p.number()?;
             let c = p.char_at(p.pos);
@@ -442,7 +446,7 @@ impl<'a> Parser<'a, '_> {
         let hint = !self.json_lines
             && (self.bytes[self.pos + 1] == b'/'
                 || memchr::memmem::find(&self.bytes[self.pos + 2..], b"*/").is_some());
-        self.not_allowed(self.pos, "comments are", hint)
+        self.not_allowed(self.pos, COMMENTS_NOT_ALLOWED, hint)
     }
 
     fn emit(&mut self, offset: usize, kind: EventKind<'a>) {
@@ -728,7 +732,7 @@ impl<'a> Parser<'a, '_> {
             Some(_) if self.identifier_start(start) => {
                 if !self.json5 {
                     let hint = self.json5_reads(start, |p| p.identifier().map(|_| true));
-                    return Err(self.not_allowed(start, "unquoted keys are", hint));
+                    return Err(self.not_allowed(start, UNQUOTED_KEYS_NOT_ALLOWED, hint));
                 }
                 self.identifier().map(Some)
             }
@@ -1007,7 +1011,7 @@ impl<'a> Parser<'a, '_> {
         let start = self.pos;
         match self.peek() {
             Some(b'+') if !self.json5 => {
-                return Err(self.json5_number(start, "this number form is"));
+                return Err(self.json5_number(start, NUMBER_FORM_NOT_ALLOWED));
             }
             Some(b'+' | b'-') => self.pos += 1,
             _ => {}
@@ -1025,7 +1029,7 @@ impl<'a> Parser<'a, '_> {
     /// The rest of a JSON5 hex number such as `-0x1F`, from its `0x`. `start` is at the sign.
     fn hex_number(&mut self, start: usize) -> Result<(), Fail> {
         if !self.json5 {
-            return Err(self.json5_number(start, "this number form is"));
+            return Err(self.json5_number(start, NUMBER_FORM_NOT_ALLOWED));
         }
         self.pos += 2;
         let hex_start = self.pos;
@@ -1059,7 +1063,7 @@ impl<'a> Parser<'a, '_> {
             }
             if !self.json5 && int_digits != fraction_digits {
                 // Only JSON5 allows a point with digits on one side alone, as in `.5` and `5.`.
-                return Err(self.json5_number(start, "this number form is"));
+                return Err(self.json5_number(start, NUMBER_FORM_NOT_ALLOWED));
             }
             self.pos += 1;
             self.skip_digits();
@@ -1093,7 +1097,7 @@ impl<'a> Parser<'a, '_> {
         if !self.json5 {
             return Err(
                 if self.text[self.pos..].starts_with(word.trim_matches('`')) {
-                    self.json5_number(start, "NaN and Infinity are")
+                    self.json5_number(start, NAN_AND_INFINITY_NOT_ALLOWED)
                 } else {
                     self.unexpected(self.after_sign(start))
                 },

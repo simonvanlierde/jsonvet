@@ -5,7 +5,7 @@ use std::fmt;
 
 /// A message: its id, then its English text. `{name}` in the text is a value the message fills
 /// in, such as `{path}`.
-type Message = (&'static str, &'static str);
+pub(crate) type Message = (&'static str, &'static str);
 
 pub(crate) const DUPLICATE_KEY: Message = ("duplicate-key", "duplicate key {path}");
 pub(crate) const NUMBER_OVERFLOWS: Message =
@@ -48,7 +48,26 @@ pub(crate) const UNEXPECTED_WORD: Message = (
 pub(crate) const DID_YOU_MEAN: Message = ("syntax.did-you-mean", "; did you mean `{literal}`?");
 pub(crate) const LEADING_ZERO: Message = ("syntax.leading-zero", "leading zeros are not allowed");
 pub(crate) const UNEXPECTED: Message = ("syntax.unexpected", "expected {expected}, found {found}");
-pub(crate) const NOT_ALLOWED: Message = ("syntax.not-allowed", "{what} not allowed in {dialect}");
+pub(crate) const COMMENTS_NOT_ALLOWED: Message = (
+    "not-allowed.comments",
+    "comments are not allowed in {dialect}",
+);
+pub(crate) const SINGLE_QUOTES_NOT_ALLOWED: Message = (
+    "not-allowed.single-quoted-strings",
+    "single-quoted strings are not allowed in {dialect}",
+);
+pub(crate) const UNQUOTED_KEYS_NOT_ALLOWED: Message = (
+    "not-allowed.unquoted-keys",
+    "unquoted keys are not allowed in {dialect}",
+);
+pub(crate) const NUMBER_FORM_NOT_ALLOWED: Message = (
+    "not-allowed.number-form",
+    "this number form is not allowed in {dialect}",
+);
+pub(crate) const NAN_AND_INFINITY_NOT_ALLOWED: Message = (
+    "not-allowed.nan-and-infinity",
+    "NaN and Infinity are not allowed in {dialect}",
+);
 pub(crate) const DIALECT_ALLOWS: Message = (
     "syntax.dialect-allows",
     "; the {dialect} dialect allows this",
@@ -86,6 +105,10 @@ pub(crate) const TOO_DEEP: Message = ("syntax.too-deep", "nested deeper than {li
 
 /// Every problem message and every part of one, by id, with its English text. A translation
 /// gives its own text for any of these ids.
+///
+/// Public for jsonvet-cli only and outside the semver contract: ids, `{name}`s and text can
+/// change in any release.
+#[doc(hidden)]
 pub const MESSAGES: &[(&str, &str)] = &[
     DUPLICATE_KEY,
     NUMBER_OVERFLOWS,
@@ -102,7 +125,11 @@ pub const MESSAGES: &[(&str, &str)] = &[
     DID_YOU_MEAN,
     LEADING_ZERO,
     UNEXPECTED,
-    NOT_ALLOWED,
+    COMMENTS_NOT_ALLOWED,
+    SINGLE_QUOTES_NOT_ALLOWED,
+    UNQUOTED_KEYS_NOT_ALLOWED,
+    NUMBER_FORM_NOT_ALLOWED,
+    NAN_AND_INFINITY_NOT_ALLOWED,
     DIALECT_ALLOWS,
     TRAILING_COMMA,
     JWCC_AND_JSON5_ALLOW,
@@ -115,8 +142,8 @@ pub const MESSAGES: &[(&str, &str)] = &[
     UNTERMINATED_COMMENT,
     BLANK_LINE,
     TOO_DEEP,
-    // The parts the parser fills into `{expected}` and `{what}`. The parser carries their
-    // English text, so a translation finds them by it.
+    // The parts the parser fills into `{expected}`. The parser carries their English text, so
+    // a translation finds them by it.
     ("expected.a-value", "a value"),
     ("expected.a-key", "a key"),
     ("expected.colon", "`:`"),
@@ -131,14 +158,6 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ("expected.null", "`null`"),
     ("expected.infinity", "`Infinity`"),
     ("expected.nan", "`NaN`"),
-    ("not-allowed.comments", "comments are"),
-    (
-        "not-allowed.single-quoted-strings",
-        "single-quoted strings are",
-    ),
-    ("not-allowed.unquoted-keys", "unquoted keys are"),
-    ("not-allowed.number-form", "this number form is"),
-    ("not-allowed.nan-and-infinity", "NaN and Infinity are"),
 ];
 
 /// Looks a message's text up: a translation's, or the English one.
@@ -158,9 +177,7 @@ pub(crate) fn part<'t>(english: &'t str, translate: Translate<'_, 't>) -> &'t st
 fn part_id(english: &str) -> Option<&'static str> {
     MESSAGES
         .iter()
-        .find(|(id, text)| {
-            *text == english && (id.starts_with("expected.") || id.starts_with("not-allowed."))
-        })
+        .find(|(id, text)| *text == english && id.starts_with("expected."))
         .map(|(id, _)| *id)
 }
 
@@ -207,20 +224,13 @@ mod tests {
         assert!(MESSAGES.iter().all(|(_, english)| !english.is_empty()));
     }
 
-    /// Each string the parser passes as an `{expected}` or `{what}` part has an id, or a
-    /// translation could not reach it.
+    /// Each string the parser passes as an `{expected}` part has an id, or a translation could
+    /// not reach it.
     #[test]
     fn every_part_the_parser_names_has_an_id() {
         let source = include_str!("parse.rs");
         let code = source.split("#[cfg(test)]").next().unwrap_or(source);
-        let callers = [
-            "unexpected",
-            "not_allowed",
-            "json5_number",
-            "nan_or_infinity",
-            "literal(",
-            "structural",
-        ];
+        let callers = ["unexpected", "nan_or_infinity", "literal(", "structural"];
         let mut checked = 0;
         for line in code
             .lines()

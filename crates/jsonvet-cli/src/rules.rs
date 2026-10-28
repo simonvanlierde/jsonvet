@@ -65,7 +65,7 @@ pub(crate) fn defaults(id: &str) -> String {
             });
         }
     }
-    parts.join(", ")
+    parts.join(messages::text("list.separator"))
 }
 
 /// What `--list-rules` prints: each rule's id and default severity, then its description.
@@ -109,7 +109,12 @@ pub(crate) fn unknown(id: &str) -> String {
             &[
                 ("id", &id),
                 ("hint", &hint),
-                ("ids", &ids().collect::<Vec<_>>().join(", ")),
+                (
+                    "ids",
+                    &ids()
+                        .collect::<Vec<_>>()
+                        .join(messages::text("list.separator")),
+                ),
             ],
         ),
         hint => messages::fill("error.unknown-rule-close", &[("id", &id), ("hint", &hint)]),

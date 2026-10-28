@@ -1,5 +1,5 @@
 //! The text people read, by message id: the English text, and a translation the environment
-//! picks. SARIF and JSON output stay in English, so tools that read them keep working.
+//! picks. The SARIF and JSON documents stay in English, so tools that read them keep working.
 //!
 //! A translation is a TOML file of `"id" = "text"` lines, for any id in [`ENGLISH`] or in
 //! [`jsonvet::MESSAGES`], plus `rule.<id>.description` for each rule. An id it leaves out keeps
@@ -9,7 +9,6 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fmt::Display;
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use jsonvet::Rule;
 
@@ -20,9 +19,9 @@ const LOCALES: &[(&str, &str)] = include!(concat!(env!("OUT_DIR"), "/locales.rs"
 /// The command's own messages, by id, in English.
 const ENGLISH: &[(&str, &str)] = &[
     ("help", crate::args::HELP),
-    ("related.first-at", "first at"),
-    ("related.opened-at", "opened at"),
-    ("related.started-at", "started at"),
+    ("related.first-at", "first at {line}:{column}"),
+    ("related.opened-at", "opened at {line}:{column}"),
+    ("related.started-at", "started at {line}:{column}"),
     ("related.first-copy", "first copy"),
     ("related.opened-here", "opened here"),
     ("related.starts-here", "starts here"),
@@ -128,6 +127,7 @@ const ENGLISH: &[(&str, &str)] = &[
     ),
     ("defaults.in", "{severity} in {dialects}"),
     ("defaults.and", " and "),
+    ("list.separator", ", "),
     ("defaults.off-otherwise", "off otherwise"),
     (
         "schema.outside",
@@ -197,13 +197,20 @@ const ENGLISH: &[(&str, &str)] = &[
     ),
     ("schema.custom-keyword", "a custom keyword"),
     (
-        "schema.costly",
-        "this {what} could not be checked against {pattern}: matching it takes more than \
+        "schema.costly.key",
+        "this key could not be checked against {pattern}: matching it takes more than {limit} \
+         backtracking steps",
+    ),
+    (
+        "schema.costly.string",
+        "this string could not be checked against {pattern}: matching it takes more than \
          {limit} backtracking steps",
     ),
-    ("schema.costly.key", "key"),
-    ("schema.costly.string", "string"),
-    ("schema.costly.value", "value"),
+    (
+        "schema.costly.value",
+        "this value could not be checked against {pattern}: matching it takes more than \
+         {limit} backtracking steps",
+    ),
     ("schema.a-pattern", "a pattern"),
     ("schema.the-pattern", "the pattern \"{regex}\""),
     (
@@ -332,44 +339,63 @@ pub(crate) fn did_you_mean<'a>(
 
 /// Set while a run writes SARIF or JSON: its messages end up in the document, which tools read,
 /// so every message stays English.
-static ENGLISH_ONLY: AtomicBool = AtomicBool::new(false);
+#[cfg(not(test))]
+static ENGLISH_ONLY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(test)]
+thread_local! {
+    // Per thread in tests, so tests running side by side in one process keep their own. Worker
+    // threads see neither, so only what a run writes on its own thread is translated.
+    static ENGLISH_ONLY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// The translation a test puts in place of the environment's.
+    static TEST_CATALOG: std::cell::Cell<Option<&'static Catalog>> =
+        const { std::cell::Cell::new(None) };
+}
 
 /// Keep every message English from now on, or not.
 pub(crate) fn english_only(english: bool) {
-    ENGLISH_ONLY.store(english, Ordering::Relaxed);
+    #[cfg(not(test))]
+    ENGLISH_ONLY.store(english, std::sync::atomic::Ordering::Relaxed);
+    #[cfg(test)]
+    ENGLISH_ONLY.set(english);
 }
 
-/// The translation in use: empty while every message stays English.
-fn chosen() -> &'static Catalog {
-    static NONE: OnceLock<Catalog> = OnceLock::new();
-    static CHOSEN: OnceLock<Catalog> = OnceLock::new();
-    if ENGLISH_ONLY.load(Ordering::Relaxed) {
-        return NONE.get_or_init(Catalog::new);
+/// The translation in use: `None` while every message stays English.
+fn chosen() -> Option<&'static Catalog> {
+    static CHOSEN: OnceLock<Option<Catalog>> = OnceLock::new();
+    #[cfg(not(test))]
+    if ENGLISH_ONLY.load(std::sync::atomic::Ordering::Relaxed) {
+        return None;
     }
-    CHOSEN.get_or_init(|| {
-        requested(|name| std::env::var_os(name))
-            .map_or_else(Catalog::new, |locale| pick(LOCALES, &locale))
-    })
+    #[cfg(test)]
+    if ENGLISH_ONLY.get() {
+        return None;
+    }
+    #[cfg(test)]
+    if let Some(catalog) = TEST_CATALOG.get() {
+        return Some(catalog);
+    }
+    CHOSEN
+        .get_or_init(|| select(LOCALES, |name| std::env::var_os(name)))
+        .as_ref()
+}
+
+/// Use the translation `file` on this thread, in place of the environment's.
+#[cfg(test)]
+pub(crate) fn use_translation(file: &str) {
+    let catalog = parse(file).expect("a translation that parses");
+    TEST_CATALOG.set(Some(Box::leak(Box::new(catalog))));
+}
+
+/// The translation in `locales` that the environment `var` reads asks for, if there is one.
+fn select(locales: &[(&str, &str)], var: impl Fn(&str) -> Option<OsString>) -> Option<Catalog> {
+    let catalog = pick(locales, &requested(var)?);
+    (!catalog.is_empty()).then_some(catalog)
 }
 
 /// A message's translated text, or `None` to keep the English.
 pub(crate) fn translate(id: &str) -> Option<&'static str> {
-    let chosen = chosen();
-    // Without a translation, skip hashing the id.
-    if chosen.is_empty() {
-        return None;
-    }
-    chosen.get(id).map(String::as_str)
-}
-
-/// A problem's message in the chosen language. English skips the templates, which cost about
-/// 300 instructions a problem.
-pub(crate) fn problem(problem: &jsonvet::Problem) -> String {
-    if chosen().is_empty() {
-        problem.to_string()
-    } else {
-        problem.message_with(translate)
-    }
+    chosen()?.get(id).map(String::as_str)
 }
 
 /// The locale the environment asks for messages in: `LC_ALL`, then `LC_MESSAGES`, then `LANG`,
@@ -407,15 +433,64 @@ fn parse(file: &str) -> Result<Catalog, String> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::ffi::OsString;
 
-    use super::{ENGLISH, LOCALES, count, english, parse, pick, requested};
+    use super::{ENGLISH, LOCALES, count, english, parse, pick, requested, select};
     use crate::rules::ids;
 
-    /// Every id a translation may give: the command's own, the library's, and each rule's
-    /// description and explanation.
-    fn known(id: &str) -> bool {
-        !english(id).is_empty() || jsonvet::MESSAGES.iter().any(|(known, _)| *known == id)
+    /// The English text of any id a translation may give: the command's own, the library's,
+    /// and each rule's description and explanation.
+    fn english_of(id: &str) -> Option<&'static str> {
+        Some(english(id))
+            .filter(|text| !text.is_empty())
+            .or_else(|| {
+                jsonvet::MESSAGES
+                    .iter()
+                    .find(|(known, _)| *known == id)
+                    .map(|(_, text)| *text)
+            })
+    }
+
+    /// The `{name}`s a text fills in.
+    fn placeholders(text: &str) -> BTreeSet<&str> {
+        text.split('{')
+            .skip(1)
+            .filter_map(|rest| rest.split_once('}'))
+            .map(|(name, _)| name)
+            .filter(|name| {
+                !name.is_empty() && name.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')
+            })
+            .collect()
+    }
+
+    /// What is wrong with a translation file: a parse error, an unknown id, or a text that
+    /// names other `{name}`s than its English one. A `.one` form may leave out `{count}`, as
+    /// in German `eine Datei`.
+    fn mistakes(file: &str) -> Vec<String> {
+        let catalog = match parse(file) {
+            Ok(catalog) => catalog,
+            Err(error) => return vec![error],
+        };
+        let mut found = Vec::new();
+        for (id, text) in &catalog {
+            let Some(english) = english_of(id) else {
+                found.push(format!("unknown id `{id}`"));
+                continue;
+            };
+            let mut wanted = placeholders(english);
+            let given = placeholders(text);
+            if id.rsplit_once('.').is_some_and(|(_, form)| form == "one")
+                && !given.contains("count")
+            {
+                wanted.remove("count");
+            }
+            if given != wanted {
+                found.push(format!("`{id}` fills in {given:?}, not {wanted:?}"));
+            }
+        }
+        found.sort();
+        found
     }
 
     #[test]
@@ -463,6 +538,7 @@ mod tests {
             "error.",
             "explain",
             "hint.",
+            "list.",
             "output.",
             "read.",
             "related.",
@@ -500,13 +576,37 @@ mod tests {
     }
 
     #[test]
-    fn every_bundled_translation_parses_and_uses_known_ids() {
+    fn every_bundled_translation_parses_and_fills_in_what_english_does() {
         for (locale, file) in LOCALES {
-            let catalog = parse(file).unwrap_or_else(|e| panic!("{locale}: {e}"));
-            for id in catalog.keys() {
-                assert!(known(id), "{locale}: unknown id `{id}`");
-            }
+            assert_eq!(
+                mistakes(file),
+                Vec::<String>::new(),
+                "locales/{locale}.toml"
+            );
         }
+    }
+
+    #[test]
+    fn a_broken_translation_is_found() {
+        let good = "\"duplicate-key\" = \"doppelter Schlüssel {path}\"\n\
+                    \"summary.files.one\" = \"eine Datei\"\n\
+                    \"related.first-at\" = \"zuerst bei {line}:{column}\"\n";
+        assert_eq!(mistakes(good), Vec::<String>::new());
+        assert_eq!(mistakes("\"nope\" = \"x\""), ["unknown id `nope`"]);
+        assert_eq!(
+            mistakes("\"duplicate-key\" = \"doppelt {pth}\""),
+            ["`duplicate-key` fills in {\"pth\"}, not {\"path\"}"]
+        );
+        assert_eq!(
+            mistakes("\"duplicate-key\" = \"doppelt\""),
+            ["`duplicate-key` fills in {}, not {\"path\"}"]
+        );
+        assert_eq!(mistakes("\"help\" = 1"), ["`help` is not a string"]);
+        // An id with dots and no quotes is a TOML table, not a string.
+        assert_eq!(
+            mistakes("rule.syntax.explanation = \"x\""),
+            ["`rule` is not a string"]
+        );
     }
 
     #[test]
@@ -549,6 +649,21 @@ mod tests {
                 report.problems()[0].message_with(|id| catalog.get(id).map(String::as_str));
             assert_eq!(message, "doppelter Schlüssel $.a");
         }
+    }
+
+    #[test]
+    fn a_regional_translation_comes_before_its_language() {
+        let locales = [
+            ("pt", "\"help\" = \"pt\""),
+            ("pt_BR", "\"help\" = \"pt_BR\""),
+        ];
+        let help = |locale: &'static str| {
+            let env = move |name: &str| (name == "LANG").then(|| OsString::from(locale));
+            select(&locales, env).and_then(|catalog| catalog.get("help").cloned())
+        };
+        assert_eq!(help("pt_BR.UTF-8").as_deref(), Some("pt_BR"));
+        assert_eq!(help("pt_PT").as_deref(), Some("pt"));
+        assert_eq!(help("C.UTF-8"), None);
     }
 
     #[test]

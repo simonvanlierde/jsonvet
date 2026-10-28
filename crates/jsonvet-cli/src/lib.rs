@@ -974,6 +974,35 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// Text output takes a translation; SARIF and JSON stay English with one in place.
+    #[test]
+    fn a_translation_reaches_text_output_only() {
+        let dir = std::env::temp_dir().join(format!("jsonvet-locale-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a temp dir");
+        let dup = dir.join("dup.json");
+        std::fs::write(&dup, "{\"a\": 1, \"a\": 2}").expect("write");
+        crate::messages::use_translation(
+            "\"duplicate-key\" = \"XX {path}\"\n\"related.first-at\" = \"XX {line}:{column}\"\n",
+        );
+        let run = |format: &str| {
+            let args = ["--no-config", "--format", format]
+                .map(std::ffi::OsString::from)
+                .into_iter()
+                .chain([dup.clone().into_os_string()]);
+            let mut out = Vec::new();
+            super::run_with(args, false, super::Terminal::default(), &mut out).expect("a check");
+            String::from_utf8(out).expect("UTF-8")
+        };
+        let text = run("text");
+        assert!(text.contains("XX $.a (XX 1:2)"), "{text}");
+        for format in ["json", "sarif"] {
+            let out = run(format);
+            assert!(out.contains("duplicate key $.a (first at 1:2)"), "{out}");
+            assert!(!out.contains("XX"), "{out}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// A JSON Lines file and a `--schema` error get the same code frames on a terminal as any
     /// other problem, at the line they are on.
     #[test]

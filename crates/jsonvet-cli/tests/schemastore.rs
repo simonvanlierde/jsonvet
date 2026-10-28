@@ -54,6 +54,9 @@ fn schemastore() {
                     .env_remove("GITHUB_ACTIONS")
                     .env_remove("NO_COLOR")
                     .env_remove("FORCE_COLOR")
+                    .env_remove("LC_ALL")
+                    .env_remove("LC_MESSAGES")
+                    .env_remove("LANG")
                     .output()
                     .expect("run jsonvet");
                 let code = run.status.code().expect("an exit code");

@@ -346,12 +346,8 @@ fn costly(what: &str, regex: Option<&str>) -> String {
         |r| messages::fill("schema.the-pattern", &[("regex", &r)]),
     );
     messages::fill(
-        "schema.costly",
-        &[
-            ("what", &messages::text(&format!("schema.costly.{what}"))),
-            ("pattern", &pattern),
-            ("limit", &BACKTRACK_LIMIT),
-        ],
+        &format!("schema.costly.{what}"),
+        &[("pattern", &pattern), ("limit", &BACKTRACK_LIMIT)],
     )
 }
 
@@ -726,7 +722,10 @@ impl Schema {
             .iter()
             .find(|p| p.severity() == Severity::Error)
         {
-            return Err(at(problem.offset(), &messages::problem(problem)));
+            return Err(at(
+                problem.offset(),
+                &problem.message_with(messages::translate),
+            ));
         }
         let events = events.unwrap_or_default();
         let mut documents: Vec<_> = documents(&events).collect();

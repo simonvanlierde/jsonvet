@@ -36,11 +36,19 @@ fn no_hang(start: std::time::Instant) {
     assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
 }
 
-/// A command for `bin` without the caller's `NO_COLOR`, `FORCE_COLOR` and `GITHUB_ACTIONS`,
-/// which change how its output looks. A test that wants one sets it again.
+/// A command for `bin` without the caller's `NO_COLOR`, `FORCE_COLOR`, `GITHUB_ACTIONS` and
+/// locale, which change how its output looks and what language it is in. A test that wants one
+/// sets it again.
 fn command(bin: &str) -> Command {
     let mut command = Command::new(bin);
-    for var in ["NO_COLOR", "FORCE_COLOR", "GITHUB_ACTIONS"] {
+    for var in [
+        "NO_COLOR",
+        "FORCE_COLOR",
+        "GITHUB_ACTIONS",
+        "LC_ALL",
+        "LC_MESSAGES",
+        "LANG",
+    ] {
         command.env_remove(var);
     }
     command
