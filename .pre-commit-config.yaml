@@ -42,11 +42,11 @@ repos:
     - repo: local
       hooks:
           # DCO: dco.yml fails a pull request whose commits lack a sign-off, so refuse it here.
+          # Merge commits are skipped, as dco.yml skips them.
           - id: dco-signoff
             name: commit message has a Signed-off-by line (use git commit -s)
-            entry: '^Signed-off-by: '
-            language: pygrep
-            args: [--negate]
+            entry: sh -c 'test -f "$(git rev-parse --git-path MERGE_HEAD)" || grep -q "^Signed-off-by:" "$1"' --
+            language: system
             stages: [commit-msg]
           - id: cargo-fmt
             name: cargo fmt
