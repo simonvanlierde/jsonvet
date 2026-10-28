@@ -58,15 +58,15 @@ are intended, besides the line ends and paths above:
 
 <!-- speed:start -->
 Median of 40 runs from `uv run scripts/bench.py`, on 12 cores of a Ryzen 7 H 255 under Linux
-(2026-10-21). Both tools give the same verdict in every case:
+(2026-10-28), and of 3 for 1.0.1. Every tool gives the same verdict in every case:
 
-| Case                       | check-json5 1.4.1 | jsonvet 3.1 | Speed-up |
-| -------------------------- | ----------------: | ----------: | -------: |
-| 1,100 config files         |             39 ms |      4.1 ms |       9x |
-| 2.7 MB JSON                |             40 ms |      9.3 ms |       4x |
-| 2.7 MB JSON, duplicate key |            323 ms |     11.9 ms |      27x |
-| 120 KB JSONC               |             21 ms |      1.9 ms |      11x |
-| 1.8 MB JSON5               |         11,755 ms |      8.4 ms |   1,407x |
+| Case                       | check-json5 1.0.1 | check-json5 1.4.1 | jsonvet 3.2 | Speed-up over 1.4.1 | over 1.0.1 |
+| -------------------------- | ----------------: | ----------------: | ----------: | ------------------: | ---------: |
+| 1,100 config files         |          1,828 ms |             40 ms |      4.3 ms |                  9x |       423x |
+| 2.7 MB JSON                |         10,076 ms |             41 ms |      9.2 ms |                  4x |     1,095x |
+| 2.7 MB JSON, duplicate key |         10,071 ms |            322 ms |     11.8 ms |                 27x |       851x |
+| 120 KB JSONC               |            498 ms |             20 ms |      2.2 ms |                  9x |       231x |
+| 1.8 MB JSON5               |         11,407 ms |         11,541 ms |      8.3 ms |              1,395x |     1,379x |
 <!-- speed:end -->
 
 1.4 sent strict JSON and JSONC to Python's C parser, so those were already fast, and everything
