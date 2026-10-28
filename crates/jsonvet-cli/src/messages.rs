@@ -8,7 +8,6 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fmt::Display;
-use std::sync::OnceLock;
 
 use jsonvet::Rule;
 
@@ -345,7 +344,8 @@ static ENGLISH_ONLY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBo
 #[cfg(test)]
 thread_local! {
     // Per thread in tests, so tests running side by side in one process keep their own. Worker
-    // threads see neither, so only what a run writes on its own thread is translated.
+    // threads see neither, so they stay English and only what a run writes on its own thread is
+    // translated.
     static ENGLISH_ONLY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// The translation a test puts in place of the environment's.
     static TEST_CATALOG: std::cell::Cell<Option<&'static Catalog>> =
@@ -362,7 +362,6 @@ pub(crate) fn english_only(english: bool) {
 
 /// The translation in use: `None` while every message stays English.
 fn chosen() -> Option<&'static Catalog> {
-    static CHOSEN: OnceLock<Option<Catalog>> = OnceLock::new();
     #[cfg(not(test))]
     if ENGLISH_ONLY.load(std::sync::atomic::Ordering::Relaxed) {
         return None;
@@ -371,13 +370,16 @@ fn chosen() -> Option<&'static Catalog> {
     if ENGLISH_ONLY.get() {
         return None;
     }
+    // Tests never read the environment, so a developer's own locale cannot change their output.
     #[cfg(test)]
-    if let Some(catalog) = TEST_CATALOG.get() {
-        return Some(catalog);
+    return TEST_CATALOG.get();
+    #[cfg(not(test))]
+    {
+        static CHOSEN: std::sync::OnceLock<Option<Catalog>> = std::sync::OnceLock::new();
+        CHOSEN
+            .get_or_init(|| select(LOCALES, |name| std::env::var_os(name)))
+            .as_ref()
     }
-    CHOSEN
-        .get_or_init(|| select(LOCALES, |name| std::env::var_os(name)))
-        .as_ref()
 }
 
 /// Use the translation `file` on this thread, in place of the environment's.
