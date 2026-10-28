@@ -339,7 +339,8 @@ exists is in [design.md](design.md#--schema).
   be inside the checked file's own project: the folder where the [config
   search](#configuration-file) stops. A path that is absolute, has a drive or network prefix such as
   `C:\x` or `\\host\share`, climbs out with `..`, or leads out through a symlink is refused, on
-  every OS and whether or not the file exists. For a `$schema`, that is a schema error at its value.
+  every OS and whether or not the file exists. Here `\` separates folders on every OS, so
+  `sub\..\..\x.json` is refused on Linux and macOS too. For a `$schema`, that is a schema error at its value.
   For a config file entry, it is a usage error at the entry.
 
   Errors from such a schema quote nothing from it, since the file may not be yours to show. They

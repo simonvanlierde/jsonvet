@@ -452,6 +452,11 @@ pub(crate) fn confined(path: &str, base: &Path, root: &Path) -> Result<bool, Str
     {
         return Err(outside());
     }
+    // `\` separates folders only on Windows. Read as `/` too, a path that leads out there,
+    // such as `sub\..\..\x.json`, is refused on every OS.
+    if path.contains('\\') && confined(&path.replace('\\', "/"), base, root).is_err() {
+        return Err(outside());
+    }
     let base = if base.as_os_str().is_empty() {
         Path::new(".")
     } else {

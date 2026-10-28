@@ -1876,15 +1876,13 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
             cases.push(("through-dir.json", "out-dir/missing.json".to_owned()));
             cases.push(("through-dead-dir.json", "dead-dir/s.json".to_owned()));
         }
-        // Backslashes separate folders only on Windows; elsewhere each of these is one file
-        // name, inside the project and missing. As written in JSON, where a backslash is doubled.
-        if cfg!(windows) {
-            cases.push(("back.json", format!(r"..\\{folder}.outside\\secret.json")));
-            cases.push((
-                "back-sub.json",
-                format!(r"sub\\..\\..\\{folder}.outside\\x.json"),
-            ));
-        }
+        // Backslashes separate folders only on Windows, but a path that leads out there is
+        // refused on every OS. As written in JSON, where a backslash is doubled.
+        cases.push(("back.json", format!(r"..\\{folder}.outside\\secret.json")));
+        cases.push((
+            "back-sub.json",
+            format!(r"sub\\..\\..\\{folder}.outside\\x.json"),
+        ));
         for (file, schema) in &cases {
             fs::write(dir.join(file), format!("{{\"$schema\": \"{schema}\"}}"))
                 .expect("write file");
