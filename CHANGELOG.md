@@ -18,8 +18,11 @@ Most users need no change. Check these if they apply to you:
    soon as 3.2.0 is on PyPI. pre-commit users get it when they bump `rev`.
 2. If a script reads piped text output while `FORCE_COLOR` is set to anything but `0` or `false`,
    the lines now carry color codes. Pass `--color never` to get plain lines.
-3. If a `--schema` has more than 1,000 different patterns, or a pattern that takes more than 2 MB
-   compiled, jsonvet now refuses it (exit 2). SchemaStore's largest needs 715 KB and 457 patterns.
+3. If a schema has more than 1,000 different patterns, or a pattern that takes more than 2 MB
+   compiled, jsonvet now refuses it (exit 2). So does a run whose schemas hold more than 1,000
+   patterns between them, counting `--schema`, the config file's `schemas` and each `$schema`.
+   SchemaStore's largest schema needs 715 KB and 457 patterns, and its 43 with the most patterns
+   hold 994 together.
 
 ### Added
 
@@ -81,8 +84,10 @@ Most users need no change. Check these if they apply to you:
 ### Security
 
 - Compiling a schema's patterns had no limit, so a 9 KB `--schema` of 200 costly patterns took
-  12 s and 2.8 GB before checking anything. Each pattern may now take 2 MB compiled, and a schema
-  may hold 1,000 different patterns (see the upgrade step above).
+  12 s and 2.8 GB before checking anything. Each pattern may now take 2 MB compiled, and a run's
+  schemas may hold 1,000 different patterns between them (see the upgrade step above). A schema
+  with a lookahead or back-reference no longer compiles its patterns twice. At the caps a run can
+  still take about 2.7 GB and 10 s: SECURITY.md lists that as a known limit.
 
 ## [3.1.1] - 2026-10-21
 
