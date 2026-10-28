@@ -2,8 +2,13 @@ name: ci
 
 # No push trigger: main only advances through a pull request, so a push run repeats the check
 # that already passed on the pull request's head.
+# The weekly run exists for the caches: a pull request restores them but never saves one (an
+# entry saved on a PR is visible to that PR alone and crowds out the rest), so the run on main
+# is what writes the entries every pull request starts from. It also keeps the workflow enabled.
 on:
   pull_request:
+  schedule:
+    - cron: "23 5 * * 1" # Mondays, 05:23 UTC
   workflow_dispatch:
 
 permissions:
@@ -33,6 +38,8 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.event_name != 'pull_request' }}
       - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-deny@0.20.2
@@ -45,6 +52,7 @@ jobs:
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: ${{ env.PINNED_UV }}
+          save-cache: ${{ github.event_name != 'pull_request' }}
       # The repo's Python (the hook placeholder and scripts/) and the workflows, through the ruff
       # and zizmor hooks in .pre-commit-config.yaml, so its revs are the only ruff and zizmor pins.
       # Only these: the other hooks guard commits or repeat the cargo steps above.
@@ -75,6 +83,8 @@ jobs:
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.event_name != 'pull_request' }}
       - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-nextest@0.9.148
@@ -102,6 +112,8 @@ jobs:
         with:
           toolchain: "1.88"
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.event_name != 'pull_request' }}
       - run: cargo check --workspace --lib --bins --locked
 
   # Code paths that could turn quadratic stay linear, by valgrind's instruction counts at n and 10n:
@@ -118,6 +130,8 @@ jobs:
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.event_name != 'pull_request' }}
       - run: sudo apt-get update && sudo apt-get install -y valgrind
       - run: cargo build --release --manifest-path fuzz/Cargo.toml --bin diff_json5
       - run: cargo test --release --locked -p jsonvet-cli --test scaling -- --ignored
@@ -142,6 +156,8 @@ jobs:
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.event_name != 'pull_request' }}
       # Valgrind, and gungraun-runner at the gungraun version in Cargo.lock.
       - uses: gungraun/setup-gungraun@62591572561bb2f4ed2ae300b8a8bea99ea8ddaf # v1.1.3
       - name: Count the base branch
@@ -185,9 +201,12 @@ jobs:
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.event_name != 'pull_request' }}
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: ${{ env.PINNED_UV }}
+          save-cache: ${{ github.event_name != 'pull_request' }}
       - run: cargo build --release --locked -p jsonvet-cli
       # A new sample each run; rerun a failure locally with the seed printed here.
       - name: Compare on 5,000 cases
@@ -235,6 +254,7 @@ jobs:
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: ${{ env.PINNED_UV }}
+          save-cache: ${{ github.event_name != 'pull_request' }}
       - name: Install the hook and run it
         shell: bash
         env:
@@ -354,6 +374,8 @@ jobs:
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.event_name != 'pull_request' }}
       - uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           maturin-version: v1.15.0
@@ -363,6 +385,7 @@ jobs:
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: ${{ env.PINNED_UV }}
+          save-cache: ${{ github.event_name != 'pull_request' }}
       - name: Install the sdist and the check-json5 package, and run them
         run: |
           uv build --out-dir compat-dist compat/check-json5

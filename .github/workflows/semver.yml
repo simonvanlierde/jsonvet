@@ -6,6 +6,9 @@ name: semver
 on:
   pull_request:
     paths: ["crates/jsonvet/**", Cargo.toml, Cargo.lock]
+  # Weekly, so main holds the cache a pull request restores (a pull request saves none).
+  schedule:
+    - cron: "29 5 * * 1" # Mondays, 05:29 UTC
   workflow_dispatch:
 
 permissions:
@@ -31,6 +34,8 @@ jobs:
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.event_name != 'pull_request' }}
       - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-semver-checks@0.51.0
