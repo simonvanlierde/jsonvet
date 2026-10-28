@@ -339,17 +339,37 @@ pub(crate) fn english_only(english: bool) {
     ENGLISH_ONLY.store(english, Ordering::Relaxed);
 }
 
-/// A message's translated text, or `None` to keep the English.
-pub(crate) fn translate(id: &str) -> Option<&'static str> {
+/// The translation in use: empty while every message stays English.
+fn chosen() -> &'static Catalog {
+    static NONE: OnceLock<Catalog> = OnceLock::new();
     static CHOSEN: OnceLock<Catalog> = OnceLock::new();
     if ENGLISH_ONLY.load(Ordering::Relaxed) {
-        return None;
+        return NONE.get_or_init(Catalog::new);
     }
-    let chosen = CHOSEN.get_or_init(|| {
+    CHOSEN.get_or_init(|| {
         requested(|name| std::env::var_os(name))
             .map_or_else(Catalog::new, |locale| pick(LOCALES, &locale))
-    });
+    })
+}
+
+/// A message's translated text, or `None` to keep the English.
+pub(crate) fn translate(id: &str) -> Option<&'static str> {
+    let chosen = chosen();
+    // Without a translation, skip hashing the id.
+    if chosen.is_empty() {
+        return None;
+    }
     chosen.get(id).map(String::as_str)
+}
+
+/// A problem's message in the chosen language. English skips the templates, which cost about
+/// 300 instructions a problem.
+pub(crate) fn problem(problem: &jsonvet::Problem) -> String {
+    if chosen().is_empty() {
+        problem.to_string()
+    } else {
+        problem.message_with(translate)
+    }
 }
 
 /// The locale the environment asks for messages in: `LC_ALL`, then `LC_MESSAGES`, then `LANG`,

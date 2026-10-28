@@ -91,6 +91,9 @@ struct Place<'t> {
 pub(crate) struct Printer<W: Write> {
     out: W,
     sink: Sink,
+    /// The words for each related place, looked up once rather than for every problem: how the
+    /// message names it, and the frame's label for it.
+    related: [(&'static str, &'static str); 3],
 }
 
 /// How many code frames one run draws before the rest of its problems show as lines. A frame
@@ -141,7 +144,13 @@ impl<W: Write> Printer<W> {
             },
             Format::Json => Sink::Json { started: false },
         };
-        Printer { out, sink }
+        let words = |what, label| (messages::text(what), messages::text(label));
+        let related = [
+            words("related.first-at", "related.first-copy"),
+            words("related.opened-at", "related.opened-here"),
+            words("related.started-at", "related.starts-here"),
+        ];
+        Printer { out, sink, related }
     }
 
     /// A problem in a file's contents.
@@ -152,17 +161,16 @@ impl<W: Write> Printer<W> {
         problem: &Problem,
     ) -> io::Result<()> {
         let (offset, end) = (problem.offset(), problem.end());
-        let mut message = problem.message_with(messages::translate);
+        let mut message = messages::problem(problem);
         let title = message.len();
         // The related place, named in the message and marked in a frame, SARIF and JSON.
         let related = problem.related().map(|related| {
             let (what, label) = match related.kind {
-                RelatedKind::FirstOccurrence => ("related.first-at", "related.first-copy"),
-                RelatedKind::Opened => ("related.opened-at", "related.opened-here"),
+                RelatedKind::FirstOccurrence => self.related[0],
+                RelatedKind::Opened => self.related[1],
                 // NOTE: `RelatedKind` is non-exhaustive; `Start` is the only other kind so far.
-                _ => ("related.started-at", "related.starts-here"),
+                _ => self.related[2],
             };
-            let (what, label) = (messages::text(what), messages::text(label));
             let at = report.location(related.offset);
             let _ = write!(message, " ({what} {}:{})", at.line, at.column);
             Mark {

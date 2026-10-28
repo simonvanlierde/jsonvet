@@ -146,7 +146,7 @@ pub enum RelatedKind {
 /// The message, without its position or rule id, in English.
 impl fmt::Display for Problem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.detail.write(f, &|_| None)
+        self.detail.fmt(f)
     }
 }
 
@@ -198,6 +198,30 @@ impl Detail {
             }
             Detail::ByteOrderMark => out.write_str(t(BYTE_ORDER_MARK)),
             Detail::MissingFinalNewline => out.write_str(t(MISSING_FINAL_NEWLINE)),
+        }
+    }
+}
+
+// NOTE: English is written directly, not through `messages::fill`: problems print one message
+// each, and the templates cost about 300 instructions more per message. tests/messages.rs checks
+// that both give the same text.
+impl fmt::Display for Detail {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Detail::Syntax(s) => s.fmt(f),
+            Detail::DuplicateKey { path, .. } => write!(f, "duplicate key {path}"),
+            Detail::InvalidNumber { overflows: true } => f.write_str("number overflows a double"),
+            Detail::InvalidNumber { overflows: false } => {
+                f.write_str("integer beyond ±(2^53 − 1) cannot be represented exactly")
+            }
+            Detail::InvalidCodePoint { code_point } if is_surrogate(*code_point) => {
+                write!(f, "lone surrogate U+{code_point:04X}")
+            }
+            Detail::InvalidCodePoint { code_point } => {
+                write!(f, "noncharacter U+{code_point:04X}")
+            }
+            Detail::ByteOrderMark => f.write_str("byte order mark at the start of the file"),
+            Detail::MissingFinalNewline => f.write_str("no newline at the end of the file"),
         }
     }
 }
@@ -379,6 +403,84 @@ impl SyntaxError {
             SyntaxKind::UnterminatedComment => out.write_str(t(UNTERMINATED_COMMENT)),
             SyntaxKind::BlankLine => out.write_str(t(BLANK_LINE)),
             SyntaxKind::TooDeep { limit } => fill(out, t(TOO_DEEP), &[("limit", limit)]),
+        }
+    }
+}
+
+impl fmt::Display for SyntaxError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.kind {
+            SyntaxKind::UnexpectedEnd { expected } => {
+                write!(f, "expected {expected}, found the end of the file")
+            }
+            SyntaxKind::UnexpectedLineEnd { expected } => {
+                write!(f, "expected {expected}, found the end of the line")
+            }
+            SyntaxKind::Unclosed { open, expected } => {
+                write!(
+                    f,
+                    "unclosed `{open}`: expected {expected}, found the end of the file"
+                )
+            }
+            SyntaxKind::MissingComma => f.write_str("missing `,`"),
+            SyntaxKind::UnexpectedWord { word, expected } => {
+                write!(f, "expected {expected}, found `{word}`")?;
+                // Only where a value goes: after `{"a"`, `True` is no typo for `true`.
+                match literal_for(word).filter(|_| *expected == "a value") {
+                    Some(literal) => write!(f, "; did you mean `{literal}`?"),
+                    None => Ok(()),
+                }
+            }
+            SyntaxKind::LeadingZero => f.write_str("leading zeros are not allowed"),
+            SyntaxKind::Unexpected { found, expected } => {
+                write!(f, "expected {expected}, found {}", Shown(*found))
+            }
+            SyntaxKind::NotAllowed {
+                what,
+                dialect,
+                hint,
+            } => {
+                write!(f, "{what} not allowed in {dialect}")?;
+                // Comments need only JSONC; everything else NotAllowed covers is JSON5's.
+                let allows = if *what == "comments are" {
+                    "jsonc"
+                } else {
+                    "json5"
+                };
+                if *hint {
+                    write!(f, "; the {allows} dialect allows this")?;
+                }
+                Ok(())
+            }
+            SyntaxKind::TrailingComma { close, dialect } => {
+                write!(
+                    f,
+                    "trailing comma before `{close}` is not allowed in {dialect}"
+                )?;
+                match dialect {
+                    Dialect::JsonLines => Ok(()),
+                    _ => f.write_str("; the jwcc and json5 dialects allow this"),
+                }
+            }
+            SyntaxKind::UnterminatedString => f.write_str("unterminated string"),
+            SyntaxKind::LineBreakInString => f.write_str("line break inside a string"),
+            SyntaxKind::ControlCharacter { found } => {
+                write!(
+                    f,
+                    "control character {} inside a string must be escaped",
+                    Shown(*found)
+                )
+            }
+            SyntaxKind::InvalidEscape { found } => {
+                write!(f, "invalid escape `\\{}`", found.escape_debug())
+            }
+            SyntaxKind::InvalidUnicodeEscape => f.write_str("`\\u` needs four hex digits"),
+            SyntaxKind::InvalidHexEscape => f.write_str("`\\x` needs two hex digits"),
+            SyntaxKind::UnterminatedComment => f.write_str("unterminated block comment"),
+            SyntaxKind::BlankLine => {
+                f.write_str("blank line; JSON Lines needs a value on every line")
+            }
+            SyntaxKind::TooDeep { limit } => write!(f, "nested deeper than {limit} levels"),
         }
     }
 }

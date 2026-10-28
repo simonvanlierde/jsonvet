@@ -47,13 +47,21 @@ have: that is the point to adopt Fluent or a similar library. Text from other cr
 they write it: jsonschema's validation messages, TOML syntax errors, operating system errors and
 lexopt's argument errors. So does SARIF's own text, which only a SARIF run shows.
 
+A problem's English text is written twice: by `Display`, directly, and as a template in
+`MESSAGES`. Filling the template cost about 300 instructions a problem, 3.3% more on a file with
+200,000 duplicate keys (callgrind, 2026-10-28), so English skips it and a test keeps the two
+equal.
+
 ## Confirmation
 
 `every_message_has_one_id_and_english_text` and `every_part_the_parser_names_has_an_id` in
-`crates/jsonvet/src/messages.rs`; `every_message_id_has_english_text`, `every_id_the_code_names_has_english_text`,
-`a_count_takes_the_one_form_for_one_only`, `every_bundled_translation_parses_and_uses_known_ids`,
+`crates/jsonvet/src/messages.rs`; `english_display_and_the_templates_say_the_same` in
+`crates/jsonvet/tests/messages.rs`; `every_message_id_has_english_text`,
+`every_id_the_code_names_has_english_text`, `a_count_takes_the_one_form_for_one_only`,
+`every_bundled_translation_parses_and_uses_known_ids`,
 `a_translation_overrides_the_english_and_leaves_the_rest` and `an_unknown_locale_keeps_english`
-in `crates/jsonvet-cli/src/messages.rs`. The existing snapshot tests keep the English output.
+in `crates/jsonvet-cli/src/messages.rs`. The existing snapshot tests keep the English output, and
+CI's `bench` job its cost.
 
 ## Revisit if
 

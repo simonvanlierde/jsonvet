@@ -726,10 +726,7 @@ impl Schema {
             .iter()
             .find(|p| p.severity() == Severity::Error)
         {
-            return Err(at(
-                problem.offset(),
-                &problem.message_with(messages::translate),
-            ));
+            return Err(at(problem.offset(), &messages::problem(problem)));
         }
         let events = events.unwrap_or_default();
         let mut documents: Vec<_> = documents(&events).collect();
