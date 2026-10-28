@@ -4,7 +4,7 @@
 
 How 27 parser runs treat the same files in JSON5, JSONC, JWCC (HuJSON), JSON
 Lines and strict JSON. Each dialect's table lists the parsers that claim that dialect.
-Run on 2026-10-21; a full run took 14 s. How it works and how to
+Run on 2026-10-28; a full run took 14 s. How it works and how to
 rerun it: [conformance/README.md](../conformance/README.md).
 
 Cells: ✓ the parser agrees with the expected verdict, ✗ it disagrees, 💥 it crashed or
@@ -645,11 +645,11 @@ allowed. A dash means the parser rejects the file's syntax, so the test says not
 | `rs-json5` | rust | json5 | 1.3.2 |
 | `rs-serde-json5` | rust | serde_json5 | 0.2.1 |
 | `rs-jsonc-parser` | rust | jsonc-parser | 0.34.0 |
-| `jsonvet-json` | jsonvet | jsonvet | 3.1.1 (34521c5) |
-| `jsonvet-json5` | jsonvet | jsonvet | 3.1.1 (34521c5) |
-| `jsonvet-jsonc` | jsonvet | jsonvet | 3.1.1 (34521c5) |
-| `jsonvet-jwcc` | jsonvet | jsonvet | 3.1.1 (34521c5) |
-| `jsonvet-jsonl` | jsonvet | jsonvet | 3.1.1 (34521c5) |
-| `jsonvet-dupes` | jsonvet | jsonvet | 3.1.1 (34521c5) |
+| `jsonvet-json` | jsonvet | jsonvet | 3.2.0 (70d8bc5) |
+| `jsonvet-json5` | jsonvet | jsonvet | 3.2.0 (70d8bc5) |
+| `jsonvet-jsonc` | jsonvet | jsonvet | 3.2.0 (70d8bc5) |
+| `jsonvet-jwcc` | jsonvet | jsonvet | 3.2.0 (70d8bc5) |
+| `jsonvet-jsonl` | jsonvet | jsonvet | 3.2.0 (70d8bc5) |
+| `jsonvet-dupes` | jsonvet | jsonvet | 3.2.0 (70d8bc5) |
 
-Images: `node:26-slim@sha256:e556a144463cc8dc53afe8de6d2fa0db5c132fd39ffa232c17641bd40df2bf11`, `python:3.14-slim@sha256:fbecd461fc72d21b2143c6eaba25143738079154a6d0ea3da3aec724f50eed4a`, `golang:1.27@sha256:f24164268fc1e741bbdc0066dbadcf1c8426c5a8489f0729c02c3905a53032fd`, `rust:1@sha256:767c71592f7d1f3f242292000f8efd4e67b6732363da176772f4d220332e264f`. Runtimes: node v26.12.0; python 3.14.8; go go1.27.3; rust 1.99.1; jsonvet 3.1.1 (34521c5).
+Images: `node:26-slim@sha256:e556a144463cc8dc53afe8de6d2fa0db5c132fd39ffa232c17641bd40df2bf11`, `python:3.14-slim@sha256:fbecd461fc72d21b2143c6eaba25143738079154a6d0ea3da3aec724f50eed4a`, `golang:1.27@sha256:f24164268fc1e741bbdc0066dbadcf1c8426c5a8489f0729c02c3905a53032fd`, `rust:1@sha256:767c71592f7d1f3f242292000f8efd4e67b6732363da176772f4d220332e264f`. Runtimes: node v26.12.0; python 3.14.8; go go1.27.3; rust 1.99.1; jsonvet 3.2.0 (70d8bc5).
