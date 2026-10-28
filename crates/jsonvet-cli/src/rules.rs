@@ -4,6 +4,7 @@ use std::fmt::Write as _;
 
 use jsonvet::{Dialect, Rule, Severity};
 
+use crate::messages;
 use crate::sarif::{SCHEMA, UNREADABLE};
 
 /// Where each rule's section is: `docs/usage.md#<id>` on GitHub.
@@ -20,66 +21,15 @@ pub(crate) fn ids() -> impl Iterator<Item = &'static str> {
         .chain([UNREADABLE, SCHEMA])
 }
 
-/// A rule's one-line description.
+/// A rule's one-line description, in English.
 pub(crate) fn description(id: &str) -> &'static str {
-    match id {
-        SCHEMA => "a value the file's JSON Schema rejects",
-        UNREADABLE => {
-            "a file that does not exist, is not a regular file, could not be read, or is not UTF-8"
-        }
-        _ => id.parse().map_or("", Rule::description),
-    }
+    messages::english(&format!("rule.{id}.description"))
 }
 
-/// Why a rule matters, with a bad and a good example. docs/usage.md has the same text.
+/// Why a rule matters, with a bad and a good example, in English. docs/usage.md has the same
+/// text.
 pub(crate) fn explanation(id: &str) -> &'static str {
-    match id {
-        "syntax" => {
-            "The file is not valid in its dialect: a missing or extra comma, a comment in strict \
-             JSON, an unclosed string. jsonvet reports the first one and stops there, since what \
-             follows cannot be read reliably.\n\n  Bad (json):  {\"a\": 1,}\n  Good (json): {\"a\": 1}"
-        }
-        "duplicate-key" => {
-            "Most parsers keep the last copy of a repeated key and drop the others without a \
-             word, so a value is lost; RFC 8259 leaves the result undefined. The message gives \
-             the key's JSONPath and where its first copy is.\n\n  Bad:  {\"port\": 80, \"port\": \
-             8080}\n  Good: {\"port\": 8080}"
-        }
-        "invalid-number" => {
-            "I-JSON (RFC 7493) asks for numbers a double can hold, and for integers within \
-             2^53 - 1 either side of zero, so that every parser reads them the same. jsonvet \
-             reports an overflow, and an integer written as digits alone past that limit.\n\n  \
-             Bad (i-json):  {\"id\": 9007199254740993}\n  Good (i-json): {\"id\": \
-             \"9007199254740993\"}"
-        }
-        "invalid-code-point" => {
-            "I-JSON (RFC 7493) forbids lone surrogates and noncharacters in strings: many \
-             decoders reject them or replace them with U+FFFD.\n\n  Bad (i-json):  {\"a\": \
-             \"\\ud800\"}\n  Good (i-json): {\"a\": \"\\ud83d\\ude00\"}"
-        }
-        "byte-order-mark" => {
-            "RFC 8259 says JSON text must not start with a byte order mark (U+FEFF), and many \
-             parsers fail on one. Save the file as UTF-8 without a BOM.\n\n  Bad:  \
-             <U+FEFF>{\"a\": 1}\n  Good: {\"a\": 1}"
-        }
-        "missing-final-newline" => {
-            "JSON Lines ends every record with a newline. Without one, the next record appended \
-             joins the last line and breaks it.\n\n  Bad (jsonl):  {\"a\": 1}<end of file>\n  \
-             Good (jsonl): {\"a\": 1}<newline>"
-        }
-        SCHEMA => {
-            "A value the file's JSON Schema rejects, such as a missing required key or a string \
-             where the schema wants a number. The schema comes from --schema, the config file's \
-             schemas or a local $schema in the file. Always an error: --error, --warn, --ignore \
-             and settings files do not take this rule."
-        }
-        UNREADABLE => {
-            "jsonvet could not check the file at all: it does not exist, is a device, FIFO or \
-             socket, could not be read, or is not UTF-8. It always fails the run, and no option \
-             changes that."
-        }
-        _ => "",
-    }
+    messages::english(&format!("rule.{id}.explanation"))
 }
 
 /// A rule's default severity in each dialect, such as `error in jsonl, warning in json and
@@ -116,7 +66,8 @@ pub(crate) fn defaults(id: &str) -> String {
 pub(crate) fn list() -> String {
     let mut text = String::new();
     for id in ids() {
-        let _ = writeln!(text, "{id} ({})\n    {}", defaults(id), description(id));
+        let description = messages::text(&format!("rule.{id}.description"));
+        let _ = writeln!(text, "{id} ({})\n    {description}", defaults(id));
     }
     text.trim_end().to_owned()
 }
@@ -128,9 +79,9 @@ pub(crate) fn explain(id: &str) -> Result<String, String> {
     }
     Ok(format!(
         "{id}: {}\n\nDefault: {}.\n\n{}\n\nMore: {}",
-        description(id),
+        messages::text(&format!("rule.{id}.description")),
         defaults(id),
-        explanation(id),
+        messages::text(&format!("rule.{id}.explanation")),
         help_uri(id)
     ))
 }

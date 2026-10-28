@@ -29,6 +29,7 @@
 
 mod dialect;
 mod event;
+mod messages;
 mod parse;
 mod path;
 mod problem;
@@ -39,6 +40,7 @@ mod unicode;
 
 pub use dialect::{Dialect, UnknownDialect};
 pub use event::{Event, EventKind};
+pub use messages::MESSAGES;
 pub use path::{PathStep, json_path, key_text};
 pub use problem::{Problem, Related, RelatedKind};
 pub use report::{Location, Report};

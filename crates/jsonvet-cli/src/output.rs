@@ -10,7 +10,7 @@ use annotate_snippets::renderer::Style;
 use jsonvet::{Location, Problem, RelatedKind, Report, Severity, is_hidden};
 
 use crate::frame::{self, Mark, STYLED};
-use crate::{json, sarif};
+use crate::{json, messages, sarif};
 
 /// The output format, from `--format`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -152,16 +152,29 @@ impl<W: Write> Printer<W> {
         problem: &Problem,
     ) -> io::Result<()> {
         let (offset, end) = (problem.offset(), problem.end());
-        let mut message = problem.to_string();
+        // Text is for people, so it is translated; SARIF and JSON stay English for the tools
+        // that read them.
+        let human = matches!(self.sink, Sink::Text { .. });
+        let say = if human {
+            messages::text
+        } else {
+            messages::english
+        };
+        let mut message = if human {
+            problem.message_with(messages::translate)
+        } else {
+            problem.to_string()
+        };
         let title = message.len();
         // The related place, named in the message and marked in a frame, SARIF and JSON.
         let related = problem.related().map(|related| {
             let (what, label) = match related.kind {
-                RelatedKind::FirstOccurrence => ("first at", "first copy"),
-                RelatedKind::Opened => ("opened at", "opened here"),
+                RelatedKind::FirstOccurrence => ("related.first-at", "related.first-copy"),
+                RelatedKind::Opened => ("related.opened-at", "related.opened-here"),
                 // NOTE: `RelatedKind` is non-exhaustive; `Start` is the only other kind so far.
-                _ => ("started at", "starts here"),
+                _ => ("related.started-at", "related.starts-here"),
             };
+            let (what, label) = (say(what), say(label));
             let at = report.location(related.offset);
             let _ = write!(message, " ({what} {}:{})", at.line, at.column);
             Mark {

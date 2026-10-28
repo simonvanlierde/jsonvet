@@ -87,9 +87,9 @@ licence and has no RustSec advisory or unmaintained notice. Renovate bumps the p
 - **File lists.** A new default extension or file name in the library (`Dialect::EXTENSIONS`,
   `Dialect::FILE_NAMES`) goes into both hooks in `.pre-commit-hooks.yaml`, `scripts/action.sh`,
   and the README's file list and dialect table, or `crates/jsonvet-cli/tests/file_lists.rs` fails.
-- **New rules and dialects.** A rule goes in `Rule::ALL` (`crates/jsonvet/src/rule.rs`), with an
-  explanation in `crates/jsonvet-cli/src/rules.rs` and the same words in a `### <id>` section of
-  `docs/usage.md`, or `every_rule_has_help_that_its_docs_section_holds` fails. The `--help` text
+- **New rules and dialects.** A rule goes in `Rule::ALL` (`crates/jsonvet/src/rule.rs`), with a
+  `rule.<id>.explanation` in `crates/jsonvet-cli/src/messages.rs` and the same words in a
+  `### <id>` section of `docs/usage.md`, or `every_rule_has_help_that_its_docs_section_holds` fails. The `--help` text
   must name it, or `help_names_every_rule_and_dialect` fails. A dialect goes in `Dialect::ALL`
   (`crates/jsonvet/src/dialect.rs`) and the `--help` text. Add either to the README's table.
 - **Conformance matrix.** `just matrix` runs one set of inputs through 18 other parsers in docker
@@ -125,6 +125,19 @@ licence and has no RustSec advisory or unmaintained notice. Renovate bumps the p
   `diff_json5` target, and a walk with many `exclude` and `dialects` patterns. Two fail unless the
   count stays within twice: schema errors past the first 100, and keys too costly for a pattern
   past the first 100.
+
+## Translations
+
+Messages people read live in two tables of ids and English text: `MESSAGES` in
+`crates/jsonvet/src/messages.rs` for problem messages, and `ENGLISH` in
+`crates/jsonvet-cli/src/messages.rs` for help, rule explanations and the related-place words,
+plus `rule.<id>.description` for each rule. To add a language, write
+`crates/jsonvet-cli/locales/<locale>.toml` with a `"id" = "text"` line for each id you translate,
+keeping every `{name}` in it, and add the file to `LOCALES` in the same `messages.rs`. jsonvet
+picks it from `LC_ALL`, `LC_MESSAGES` or `LANG`, and shows English for any id it leaves out.
+`--format json` and SARIF stay English
+([0013](docs/decisions/0013-messages-in-a-plain-catalog.md)). A new message gets an id in one of
+the tables, never a string in the code.
 
 ## Releasing
 

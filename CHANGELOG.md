@@ -8,6 +8,16 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
+### Added
+
+- jsonvet's messages can now be translated. Problem messages, `--help`, `--list-rules` and
+  `--explain` come from a table of messages, and jsonvet picks a translation from `LC_ALL`,
+  `LC_MESSAGES` or `LANG`. English is the only language so far, and it stays the fallback for
+  anything a translation leaves out. `--format json` and SARIF output stay in English, so tools
+  that read them see no change. CONTRIBUTING.md says how to add a language.
+- The library has `Problem::message_with`, which shows a problem's message with your own text for
+  each id in `jsonvet::MESSAGES`.
+
 ## [3.2.0] - 2026-10-28
 
 Most users need no change. Check these if they apply to you:

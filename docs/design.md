@@ -122,7 +122,9 @@ break the line or drive a terminal:
   `##` prints as `\u005b`. So no line passes for a GitHub workflow command, old (`##[command]`)
   or new (`::command`).
 
-SARIF and JSON strings escape the same characters the same way. An annotation's `file=` value is
+Text output, code frames and annotations can be translated, and SARIF and JSON stay English
+([0013](decisions/0013-messages-in-a-plain-catalog.md)). SARIF and JSON strings escape the same
+characters the same way. An annotation's `file=` value is
 the escaped name, then percent-encoded as GitHub requires.
 
 A code frame also prints a line of the file. There, each of those characters prints as U+FFFD
@@ -235,7 +237,8 @@ fuzz/  tests/  scripts/
 ### The library interface
 
 The public API is `check`, `Config`, `Dialect`, `UnknownDialect`, `Rule`, `Severity`, `UnknownRule`,
-`Location`, `Report`, `Problem`, `Related` and `RelatedKind` ([docs.rs](https://docs.rs/jsonvet)).
+`Location`, `Report`, `Problem`, `Related`, `RelatedKind` and `MESSAGES`
+([docs.rs](https://docs.rs/jsonvet)).
 Each type is `#[non_exhaustive]` or has private fields, so a new variant or field is not a breaking
 change. The `#[doc(hidden)]` items are public for jsonvet-cli only, and can change in any release:
 `parse`, `parse_with`, `parse_lines`, `join_lines`, `line_parts`, `Lines`, `Event`, `EventKind`,

@@ -14,6 +14,7 @@ mod args;
 mod frame;
 mod glob;
 mod json;
+mod messages;
 mod output;
 mod rules;
 mod sarif;
@@ -123,7 +124,7 @@ pub fn run_with(
             output::printable(&e)
         )
     })? {
-        Command::Help => return print(out, args::HELP),
+        Command::Help => return print(out, messages::text("help")),
         Command::Version => return print(out, concat!("jsonvet ", env!("CARGO_PKG_VERSION"))),
         Command::ListRules => return print(out, &rules::list()),
         Command::Explain(text) => return print(out, &text),
