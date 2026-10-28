@@ -11,14 +11,13 @@ version for a new option or output, the patch version for a fix.
 ### Added
 
 - jsonvet's messages can now be translated. Problem messages, `--help`, `--list-rules`,
-  `--explain`, usage and config errors, the reasons a file cannot be read, schema errors and the
-  summary come from a table of messages, and jsonvet picks a translation from `LC_ALL`,
-  `LC_MESSAGES` or `LANG`. English is the only language so far, and it stays the fallback for
-  anything a translation leaves out. A run with `--format json` or `--format sarif` stays in
-  English, so tools that read its output see no change. A new language is one file:
-  CONTRIBUTING.md says how to add it.
-- The library has `Problem::message_with`, which shows a problem's message with your own text for
-  each id in `jsonvet::MESSAGES`.
+  `--explain`, usage and config errors, the reasons a file cannot be read, the schema errors
+  jsonvet writes and the summary come from a table of messages, and jsonvet picks a translation
+  from `LC_ALL`, `LC_MESSAGES` or `LANG`. English is the only language so far, and it stays the
+  fallback for anything a translation leaves out. The JSON and SARIF documents stay in English,
+  so tools that read them see no change. Text from other crates stays as they write it:
+  jsonschema's validation messages, TOML syntax errors, argument errors and operating system
+  errors. A new language is one file: CONTRIBUTING.md says how to add it.
 
 ## [3.2.0] - 2026-10-28
 

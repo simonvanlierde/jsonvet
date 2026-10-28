@@ -58,6 +58,12 @@ Frames are in color unless `NO_COLOR` is set or you pass `--color never`. `--col
 `FORCE_COLOR` also color the severity and rule of piped lines. `FORCE_COLOR=0` or `false` turns
 color off, even on a terminal. `NO_COLOR` wins over `FORCE_COLOR`, and `--color` wins over both.
 
+Text output is in the language `LC_ALL`, `LC_MESSAGES` or `LANG` asks for, the first one set, when
+jsonvet has a translation for it, and in English otherwise. English is the only language so far.
+`LANGUAGE` and the Windows language setting are not read. `LC_ALL=C` gives English, and so do
+`--format json` and `--format sarif`, whose documents never change with the locale. Rule ids,
+severities, JSONPaths and exit codes are never translated.
+
 - Lines and columns count from 1, and columns count Unicode code points. A byte order mark is
   column 1.
 - A duplicate key gets its JSONPath and the position of the first copy: `$` is the root,
@@ -312,7 +318,7 @@ jsonvet --format json config.json5 | jq -r '.diagnostics[] | "\(.file):\(.line) 
   | `file`     | the file name as given, or the `--stdin-filename`; bytes that are not UTF-8 show as U+FFFD |
   | `rule`     | the rule id, such as `duplicate-key`, or `schema` or `unreadable`                 |
   | `severity` | `error` or `warning`                                                              |
-  | `message`  | the message as text output prints it, with its `(first at 2:3)` part              |
+  | `message`  | the message as text output prints it in English, with its `(first at 2:3)` part   |
   | `line`     | the line, from 1; `null` for a file jsonvet could not read                        |
   | `column`   | the column, from 1, in code points as in text output; `null` with no line         |
   | `offset`   | the byte offset in the file, from 0; `null` with no line                          |

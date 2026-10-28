@@ -89,9 +89,10 @@ licence and has no RustSec advisory or unmaintained notice. Renovate bumps the p
   and the README's file list and dialect table, or `crates/jsonvet-cli/tests/file_lists.rs` fails.
 - **New rules and dialects.** A rule goes in `Rule::ALL` (`crates/jsonvet/src/rule.rs`), with a
   `rule.<id>.explanation` in `crates/jsonvet-cli/src/messages.rs` and the same words in a
-  `### <id>` section of `docs/usage.md`, or `every_rule_has_help_that_its_docs_section_holds` fails. The `--help` text
-  must name it, or `help_names_every_rule_and_dialect` fails. A dialect goes in `Dialect::ALL`
-  (`crates/jsonvet/src/dialect.rs`) and the `--help` text. Add either to the README's table.
+  `### <id>` section of `docs/usage.md`, or `every_rule_has_help_that_its_docs_section_holds`
+  fails. The `--help` text must name it, or `help_names_every_rule_and_dialect` fails. A dialect
+  goes in `Dialect::ALL` (`crates/jsonvet/src/dialect.rs`) and the `--help` text. Add either to
+  the README's table.
 - **Conformance matrix.** `just matrix` runs one set of inputs through 18 other parsers in docker
   containers, then renders `docs/conformance.md` and the README block. Commit
   `conformance/results/` and both rendered files. CI fails when the report is stale, or when
@@ -134,11 +135,25 @@ Messages people read live in two tables of ids and English text: `MESSAGES` in
 `rule.<id>.description` for each rule. To add a language, write
 `crates/jsonvet-cli/locales/<locale>.toml`, such as `de.toml` or `pt_BR.toml`, with a
 `"id" = "text"` line for each id you translate, keeping every `{name}` in it. A count has two ids,
-such as `summary.files.one` for 1 and `summary.files.other` for any other number. `build.rs` bundles
-every file there, so nothing else changes. jsonvet picks it from `LC_ALL`, `LC_MESSAGES` or `LANG`,
-and shows English for any id it leaves out. `--format json` and SARIF stay English
-([0013](docs/decisions/0013-messages-in-a-plain-catalog.md)). A new message gets an id in one of
-the tables, never a string in the code.
+such as `summary.files.one` for 1 and `summary.files.other` for any other number; the `.one` text
+may leave out `{count}`. `build.rs` bundles every file there, so nothing else changes.
+
+- **Format.** Each text is a TOML string: `\n` is a line break, `\"` a quote, and `"""` starts
+  a text over several lines. Quote every id: `rule.syntax.explanation = "..."` without quotes is
+  a TOML table, and the file is not used. `#` starts a comment. `help` is the whole `--help`
+  text, layout included.
+- **Check.** `cargo nextest run -p jsonvet-cli messages` fails on a file that does not parse, an
+  unknown id, or a text with other `{name}`s than its English one. At run time a broken file
+  gives English, with no warning.
+- **Try it.** `LC_ALL=de cargo run -q -p jsonvet-cli -- file.json` shows the text output in German.
+  jsonvet reads `LC_ALL`, then `LC_MESSAGES`, then `LANG`, and `pt_BR.UTF-8` takes `pt_BR.toml`,
+  else `pt.toml`. It does not read `LANGUAGE` or the Windows language setting.
+- **What stays English.** The JSON and SARIF documents, rule ids, severities, JSONPaths and exit
+  codes, and the text of other crates: jsonschema's validation messages, TOML syntax errors,
+  argument errors and operating system errors
+  ([0013](docs/decisions/0013-messages-in-a-plain-catalog.md)).
+
+A new message gets an id in one of the tables, never a string in the code.
 
 ## Releasing
 

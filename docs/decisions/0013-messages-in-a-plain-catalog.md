@@ -25,43 +25,49 @@ WebAssembly in the playground, with no files or environment to read.
 ## Decision
 
 A plain catalog. The library keeps its messages in `jsonvet::MESSAGES` and renders them with
-`Problem::message_with`, which takes the translated text by id; it reads no file or environment,
-and `Display` stays English. The command keeps its own messages in
-`crates/jsonvet-cli/src/messages.rs`: help, `--explain` and `--list-rules`, usage and config
+`Problem::message_with`, which takes the translated text by id; it reads no file or environment, and
+`Display` fills the same templates in English. Both are `#[doc(hidden)]`, for jsonvet-cli only, so
+ids and `{name}`s can change while no one else translates them. The command keeps its own messages
+in `crates/jsonvet-cli/src/messages.rs`: help, `--explain` and `--list-rules`, usage and config
 errors, the reasons a file cannot be read, schema errors jsonvet writes, and the summary. Its
 `build.rs` bundles each `locales/*.toml` with `include_str!`, using only the standard library, and
-jsonvet picks one from `LC_ALL`, then `LC_MESSAGES`, then `LANG`: `pt_BR.UTF-8` takes `pt_BR`,
-else `pt`. An id a translation leaves out, or a locale with no translation, gives English.
+jsonvet picks one from `LC_ALL`, then `LC_MESSAGES`, then `LANG`: `pt_BR.UTF-8` takes `pt_BR`, else
+`pt`. An id a translation leaves out, or a locale with no translation, gives English.
 
-A run with `--format json` or `--format sarif` keeps every message English, so the documents
-tools read never change with the machine's locale. Rule ids, JSONPaths and exit codes are never
-translated.
+A run with `--format json` or `--format sarif` keeps every message in its document English, so
+the documents tools read never change with the machine's locale. A usage error found before the
+format is known, on standard error, can still be translated. Rule ids, severities, JSONPaths and
+exit codes are never translated.
 
 ## Consequences
 
-A translation is one file in `crates/jsonvet-cli/locales/`. The parts a message fills in, such
-as `a value` in `expected a value`, are separate ids, so a language whose word order differs may
-read less well. Two plural forms fit English and most western European languages. Languages with
-more, such as Polish, Russian or Arabic, need CLDR plural rules, which this catalog does not
-have: that is the point to adopt Fluent or a similar library. Text from other crates stays as
-they write it: jsonschema's validation messages, TOML syntax errors, operating system errors and
-lexopt's argument errors. So does SARIF's own text, which only a SARIF run shows.
+A translation is one file in `crates/jsonvet-cli/locales/`. Each message is a whole sentence, with
+the place of every value in it, except two kinds of part: what a syntax error expected, such as `a
+value` in `expected a value`, and the hints added at the end, such as "; did you mean `true`?".
+These are separate ids, so a language whose word order differs may read less well. Two plural forms,
+with 0 taking the `.other` form, fit English, German, Dutch, Spanish and Italian. French and
+Portuguese use the `.one` form for 0, so they would print `0 fichiers` for `0 fichier`; Polish,
+Russian or Arabic need more forms. Those need CLDR plural rules, which this catalog does not have: that is the point
+to adopt Fluent or a similar library. Text from other crates stays as they write it: jsonschema's
+validation messages, TOML syntax errors, operating system errors and lexopt's argument errors. So
+does SARIF's own text, which only a SARIF run shows.
 
-A problem's English text is written twice: by `Display`, directly, and as a template in
-`MESSAGES`. Filling the template cost about 300 instructions a problem, 3.3% more on a file with
-200,000 duplicate keys (callgrind, 2026-10-28), so English skips it and a test keeps the two
-equal.
+English goes through the same templates. On a file of 200,000 duplicate keys, nothing but
+problems, that made printing them 5% slower (112 to 117 ms, `hyperfine -N -r 30`, 2026-10-28); a
+file with a few problems does not notice. One copy of the English text is worth that.
 
 ## Confirmation
 
+`cargo nextest run -p jsonvet -p jsonvet-cli messages` runs
 `every_message_has_one_id_and_english_text` and `every_part_the_parser_names_has_an_id` in
-`crates/jsonvet/src/messages.rs`; `english_display_and_the_templates_say_the_same` in
-`crates/jsonvet/tests/messages.rs`; `every_message_id_has_english_text`,
+`crates/jsonvet/src/messages.rs`, and `every_message_id_has_english_text`,
 `every_id_the_code_names_has_english_text`, `a_count_takes_the_one_form_for_one_only`,
-`every_bundled_translation_parses_and_uses_known_ids`,
-`a_translation_overrides_the_english_and_leaves_the_rest` and `an_unknown_locale_keeps_english`
-in `crates/jsonvet-cli/src/messages.rs`. The existing snapshot tests keep the English output, and
-CI's `bench` job its cost.
+`every_bundled_translation_parses_and_fills_in_what_english_does`, `a_broken_translation_is_found`,
+`a_regional_translation_comes_before_its_language`,
+`a_translation_overrides_the_english_and_leaves_the_rest` and `an_unknown_locale_keeps_english` in
+`crates/jsonvet-cli/src/messages.rs`. `a_translation_reaches_text_output_only` in
+`crates/jsonvet-cli/src/lib.rs` runs the command with a translation in place. The existing
+snapshot tests keep the English output, with the locale removed from their environment.
 
 ## Revisit if
 

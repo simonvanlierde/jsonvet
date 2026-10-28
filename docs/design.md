@@ -122,7 +122,8 @@ break the line or drive a terminal:
   `##` prints as `\u005b`. So no line passes for a GitHub workflow command, old (`##[command]`)
   or new (`::command`).
 
-Text output, code frames and annotations can be translated, and SARIF and JSON stay English
+Text output, code frames and annotations can be translated, and the SARIF and JSON documents stay
+English
 ([0013](decisions/0013-messages-in-a-plain-catalog.md)). SARIF and JSON strings escape the same
 characters the same way. An annotation's `file=` value is
 the escaped name, then percent-encoded as GitHub requires.
@@ -237,12 +238,12 @@ fuzz/  tests/  scripts/
 ### The library interface
 
 The public API is `check`, `Config`, `Dialect`, `UnknownDialect`, `Rule`, `Severity`, `UnknownRule`,
-`Location`, `Report`, `Problem`, `Related`, `RelatedKind` and `MESSAGES`
-([docs.rs](https://docs.rs/jsonvet)).
+`Location`, `Report`, `Problem`, `Related` and `RelatedKind` ([docs.rs](https://docs.rs/jsonvet)).
 Each type is `#[non_exhaustive]` or has private fields, so a new variant or field is not a breaking
 change. The `#[doc(hidden)]` items are public for jsonvet-cli only, and can change in any release:
 `parse`, `parse_with`, `parse_lines`, `join_lines`, `line_parts`, `Lines`, `Event`, `EventKind`,
-`json_path`, `PathStep`, `key_text`, `did_you_mean`, `closest`, `fill` and `is_hidden`.
+`json_path`, `PathStep`, `key_text`, `did_you_mean`, `closest`, `MESSAGES`, `fill`,
+`Problem::message_with` and `is_hidden`.
 
 The text is `&str`, so every offset falls on a character boundary. `check` never panics and has no
 error mode: the problems in the file are its output. A `Report` is `Send` but not `Sync`, because
