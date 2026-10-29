@@ -228,6 +228,7 @@ pub fn run_with(
         }
         _ => {}
     }
+    schemas.note_missing();
     let too_many_warnings = args.max_warnings.is_some_and(|max| counts.warnings > max);
     Ok(u8::from(counts.errors > 0 || too_many_warnings))
 }

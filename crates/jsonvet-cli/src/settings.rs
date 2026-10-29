@@ -451,16 +451,22 @@ fn user_config() -> Option<PathBuf> {
     path.is_file().then_some(path)
 }
 
-/// The absolute `path` with `..` folded away by name, as the globs fold it, so the search climbs
-/// the folders as written: from `a/../b` it goes to the parent of `b`, not to `a`. `components`
-/// already drops each `.` after the first part.
-fn lexical(path: &Path) -> PathBuf {
+/// `path` with `..` folded away by name, as the globs fold it, so the search climbs the folders
+/// as written: from `a/../b` it goes to the parent of `b`, not to `a`. A relative path keeps the
+/// `..` that lead above where it starts. `components` already drops each `.` after the first part.
+pub(crate) fn lexical(path: &Path) -> PathBuf {
     let mut folded = PathBuf::new();
     for part in path.components() {
-        if part == Component::ParentDir {
-            folded.pop();
-        } else {
+        if part != Component::ParentDir {
             folded.push(part);
+            continue;
+        }
+        match folded.components().next_back() {
+            Some(Component::Normal(_)) => {
+                folded.pop();
+            }
+            Some(Component::RootDir | Component::Prefix(_)) => {}
+            _ => folded.push(part),
         }
     }
     folded
@@ -755,8 +761,26 @@ fn entry_strings<'e>(
 
 #[cfg(test)]
 mod tests {
-    use super::{Glob, Resolver, Settings, absolute, confined};
+    use super::{Glob, Resolver, Settings, absolute, confined, lexical};
     use crate::args::ConfigSource;
+
+    #[test]
+    fn lexical_folds_dot_dot_by_name_and_keeps_it_above_a_relative_start() {
+        let sep = std::path::MAIN_SEPARATOR;
+        for (path, folded) in [
+            ("a/../s.json", "s.json".to_owned()),
+            ("a/b/../../c/s.json", format!("c{sep}s.json")),
+            ("../a/../s.json", format!("..{sep}s.json")),
+            ("./a/../../s.json", format!(".{sep}..{sep}s.json")),
+        ] {
+            assert_eq!(lexical(path.as_ref()).to_string_lossy(), folded, "{path}");
+        }
+        #[cfg(unix)]
+        assert_eq!(
+            lexical("/../a/../s.json".as_ref()).to_string_lossy(),
+            "/s.json"
+        );
+    }
 
     #[test]
     fn a_schema_path_with_a_root_drive_or_prefix_is_refused_before_it_is_opened() {

@@ -1515,9 +1515,15 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
             ),
         ]);
         // A file's own `$schema` that does not exist is skipped, like a URL: tools put one in
-        // `./node_modules/...` and CI may not have installed it.
-        let (code, out, err) = jsonvet_stderr(&dir, &["gone.json", "ok.json"]);
+        // `./node_modules/...` and CI may not have installed it. A note on stderr says so, once
+        // per missing schema however many files name it, and the exit code stays.
+        let (code, out, err) = jsonvet_stderr(&dir, &["gone.json", "ok.json", "gone.json"]);
         assert_eq!((code, out.as_str()), (0, ""), "{err}");
+        assert_eq!(
+            err,
+            "jsonvet: note: the schema missing.json that a `$schema` names does not exist, so the \
+             files that name it are checked without it\n"
+        );
         // One that exists but cannot be used is an error in that file, which names the place
         // and quotes nothing from it.
         let (code, out, err) = jsonvet_stderr(&dir, &["gone.json", "uses-broken.json", "ok.json"]);

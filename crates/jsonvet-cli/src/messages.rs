@@ -133,6 +133,11 @@ const ENGLISH: &[(&str, &str)] = &[
         "the schema {path} is outside the project, so it is not read",
     ),
     (
+        "schema.missing",
+        "note: the schema {path} that a `$schema` names does not exist, so the files that name \
+         it are checked without it",
+    ),
+    (
         "schema.unreadable",
         "cannot read the schema {path}: {error}",
     ),

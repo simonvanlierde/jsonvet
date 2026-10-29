@@ -21,6 +21,9 @@ version for a new option or output, the patch version for a fix.
 
 ### Changed
 
+- A file whose `$schema` names a path that does not exist is still checked without a schema, but
+  jsonvet now says so: one note on stderr per missing schema, such as one under a `node_modules`
+  that was never installed. The exit code is unchanged.
 - `--format sarif` writes each result as it is found instead of holding them all until the
   end, so a run at the 25,000-result cap peaks at 7.4 MB instead of 39.4 MB. The `invocations`
   member, which counts results past the cap, now comes after `results` in the run.

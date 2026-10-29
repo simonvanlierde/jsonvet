@@ -2,7 +2,7 @@
 //! `--schema` gives, else the one a config file names, else the one a file's own `$schema`
 //! names (ADR 0012).
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -82,6 +82,9 @@ pub(crate) struct Schemas {
     over: OnceLock<String>,
     /// What each `$schema` path, from each folder of the files that hold one, leads to.
     own: Mutex<HashMap<(PathBuf, String), Own>>,
+    /// The `$schema` paths that lead to no file, each joined to the folder of a file naming it
+    /// and folded by name, so `a/../s.json` and `b/../s.json` are one.
+    missing: Mutex<BTreeSet<PathBuf>>,
 }
 
 /// The schema a file's own `$schema` names: none if it is not there, or why it cannot be used.
@@ -162,6 +165,19 @@ impl Schemas {
             .insert(key, own.clone());
         own
     }
+
+    /// Say on stderr which schemas were skipped: one note for each `$schema` path that led to
+    /// no file, sorted by path. Not a problem, so the exit code stays.
+    pub(crate) fn note_missing(&self) {
+        let missing = self
+            .missing
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for path in missing.iter() {
+            let note = messages::fill("schema.missing", &[("path", &path.to_string_lossy())]);
+            eprintln!("jsonvet: {}", output::printable(&note));
+        }
+    }
 }
 
 /// The local schema path a file's `$schema` names, and the offset of its value, found as the
@@ -236,8 +252,9 @@ fn is_url(text: &str) -> bool {
 /// Check a file's text with no schema given for it, which [`with_schema`] says may name one in its
 /// own `$schema`, against that schema if any, relative to the file's folder, through `load`. The schema must be inside the file's own
 /// project, as `root` gives it, and its errors quote nothing from it (ADR 0012). One that does not
-/// exist is skipped; one outside the project or that cannot be used is an error at the `$schema`
-/// value. JSON Lines holds many documents, so no one `$schema` applies.
+/// exist is skipped, and noted by [`Schemas::note_missing`]; one outside the project or that
+/// cannot be used is an error at the `$schema` value. JSON Lines holds many documents, so no one
+/// `$schema` applies.
 pub(crate) fn check_own_schema<'t>(
     name: &str,
     text: &'t str,
@@ -261,6 +278,11 @@ pub(crate) fn check_own_schema<'t>(
         // A schema that is not there is skipped like a URL: tools name one under
         // `node_modules` that a CI run may not have installed.
         if !settings::confined(&path, folder, &root(Path::new(name)))? {
+            schemas
+                .missing
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(settings::lexical(&folder.join(&path)));
             return Ok(None);
         }
         load(&folder.join(&path), true).map(Some)

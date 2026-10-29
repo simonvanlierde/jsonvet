@@ -338,7 +338,9 @@ exists is in [design.md](design.md#--schema).
   last matching `schemas` entry in its config file. Without one, a file whose top-level object has
   a `$schema` path, not a URL, is checked against that file, relative to the file's folder. A
   fragment, as in `s.json#`, is dropped. A `$schema` URL, a `$schema` in JSON Lines, and a
-  `$schema` path to a missing file are skipped. A `$schema` file that exists but cannot be read or
+  `$schema` path to a missing file are skipped. For a missing file, a note on stderr names the
+  path once, however many files name it, and the exit code is unchanged: a schema under
+  `node_modules` may not be installed in CI. A `$schema` file that exists but cannot be read or
   used is a schema error at the `$schema` value. A schema named by `--schema` or a config file
   that is missing or cannot be used is a usage error (exit 2).
 - **Inside the project.** A schema named by a `$schema`, or by a config file the search finds, must
