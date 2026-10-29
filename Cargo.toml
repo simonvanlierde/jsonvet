@@ -45,6 +45,13 @@ strip = true
 debug = true
 strip = false
 
+# `just profile` and `just counters`: release code with line tables, so samply and perf name
+# source lines. Frame pointers come from RUSTFLAGS in those recipes, as a profile cannot set them.
+[profile.profiling]
+inherits = "release"
+debug = "line-tables-only"
+strip = false
+
 # The playground's .wasm (crates/jsonvet-wasm): built for size, and leaves the release profile as
 # it is. Debug info only: wasm-bindgen reads its own custom sections, which a full strip removes.
 [profile.wasm]

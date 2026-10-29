@@ -18,6 +18,7 @@ Some checks need tools that `mise.toml` does not install:
 | Tool | For |
 | --- | --- |
 | valgrind and gungraun-runner | `just counts` and `just scaling` (Linux only) |
+| samply, perf | `just profile` and `just counters` (perf: Linux only) |
 | wasm-bindgen-cli and wasm-opt | `just playground` |
 | docker | `just matrix` |
 | cargo-release | releasing |
@@ -107,7 +108,7 @@ licence and has no RustSec advisory or unmaintained notice. Renovate bumps the p
 - **Differential.** `just differential` compares jsonvet with check-json5 1.4.1 on generated
   files. CI runs 5,000 cases with a new seed each run.
 - **Speed claims.** Measure with `just bench` on a quiet machine, and report the median. To
-  compare two builds, write the fixtures with `bench.fixtures(dir)` and run `hyperfine -N -r 40`
+  compare two builds, write the fixtures with `just profile-files` and run `hyperfine -N -r 40`
   on both. Time a change that touches every file on the 10,000-small-file walk too.
 - **Instruction counts.** `just counts` counts the instructions of the parser
   (`crates/jsonvet/benches/check.rs`) and of whole `--schema` runs
@@ -119,6 +120,13 @@ licence and has no RustSec advisory or unmaintained notice. Renovate bumps the p
 - **CodSpeed.** CodSpeed comments each pull request's change in time, peak memory and
   allocations on the divan benchmarks in each crate's `benches/codspeed.rs`. Nothing fails on it:
   the `bench` job is the gate.
+- **Profiling.** `just profile-files` writes the bench files and two large documents (88.5 MB
+  pretty, 38.7 MB minified) to `target/profile-files`. `just profile FILE` records call stacks with
+  samply, `just counters FILE` reads the CPU's counters with `perf stat` (instructions per cycle,
+  branch and cache misses) on one CPU, and `just threads` times the small files on 1 to 8 CPUs.
+  All three use the `profiling` build: release code with line tables and frame pointers. The
+  counters need perf access to the hardware, which CI runners and most containers lack, so they
+  guide a change; `just counts` still decides it.
 - **Scaling.** `just scaling` runs `crates/jsonvet-cli/tests/scaling.rs` under valgrind, on
   Linux only. Each test counts the instructions on an input of size n and 10n. Most fail when the
   ratio reaches 15 (linear gives about 10): duplicate keys on many lines and on one long line,

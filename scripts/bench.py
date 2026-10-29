@@ -4,6 +4,7 @@
 """Time jsonvet against check-json5 1.4.1 and 1.0.1 with hyperfine, and print a Markdown table.
 
 Usage: uv run scripts/bench.py [--jsonvet PATH] [--runs N] [--ref-runs N] [--old-runs N] [--write]
+       uv run scripts/bench.py --files DIR
 
 Each command runs without a shell (`hyperfine -N`) and the table shows the median. jsonvet runs
 20 times after a warm-up by default. check-json5 1.4.1 is far slower, so run-to-run noise moves
@@ -17,6 +18,9 @@ Needs hyperfine and a release build (`cargo build --release -p jsonvet-cli`). Ea
 installed into its own virtual environment and run from there, so uvx's start-up is not timed.
 1.0.1 was never on PyPI, so it comes from the commit its v1.0.1 tag names.
 Every case passes in both tools, apart from the `dup` files, which hold a duplicate key.
+
+`--files DIR` only writes the files, plus two large ones for `just profile` and `just counters`,
+and times nothing.
 """
 
 import argparse
@@ -77,6 +81,14 @@ def fixtures(out: Path) -> list[tuple[str, list[str]]]:
     ]
 
 
+def profile_files(out: Path) -> list[str]:
+    """Write doc(600000) pretty (88.5 MB) and minified (38.7 MB), the scanner profile's inputs."""
+    big = doc(600_000)
+    (out / "doc-pretty.json").write_text(json.dumps(big, indent=2))
+    (out / "doc-min.json").write_text(json.dumps(big, separators=(",", ":")))
+    return ["doc-pretty.json", "doc-min.json"]
+
+
 def aligned(rows: list[list[str]]) -> list[str]:
     """Markdown table lines with padded columns, the first left-aligned and the rest right-aligned."""
     widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
@@ -127,7 +139,13 @@ def main() -> int:
     parser.add_argument("--ref-runs", type=int, default=10, help="runs of check-json5 1.4.1")
     parser.add_argument("--old-runs", type=int, default=3, help="runs of check-json5 1.0.1")
     parser.add_argument("--write", action="store_true", help="put the table in docs/design.md")
+    parser.add_argument("--files", type=Path, help="write the files here for profiling, and time nothing")
     args = parser.parse_args()
+    if args.files:
+        args.files.mkdir(parents=True, exist_ok=True)
+        fixtures(args.files)
+        print(f"{args.files}: {', '.join(profile_files(args.files))} and the timed cases")
+        return 0
     jsonvet = args.jsonvet.resolve()
     release = subprocess.run([jsonvet, "--version"], check=True, capture_output=True, text=True).stdout.split()[-1]  # noqa: S603
     release = ".".join(release.split(".")[:2])

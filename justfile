@@ -4,6 +4,9 @@
 # Where cargo puts its output, for the recipes that run the release binary.
 target := env("CARGO_TARGET_DIR", "target")
 
+# The CPU `just counters` pins to, such as `just core=2 counters FILE`. Pick a P-core on a hybrid CPU.
+core := "0"
+
 default:
     @just --list
 
@@ -83,6 +86,35 @@ mutants:
 bench *ARGS:
     cargo build --release -p jsonvet-cli
     uv run scripts/bench.py --jsonvet {{ target }}/release/jsonvet {{ ARGS }}
+
+# Write bench.py's files and two large inputs (doc-pretty.json, 88.5 MB; doc-min.json, 38.7 MB)
+# into DIR, for the three profiling recipes below.
+profile-files DIR=(target / "profile-files"):
+    uv run scripts/bench.py --files {{ DIR }}
+
+# Release code with line tables and frame pointers, in target/profiling.
+[private]
+profiling-build:
+    RUSTFLAGS="-C force-frame-pointers=yes" cargo build --locked --profile profiling -p jsonvet-cli
+
+# Where `jsonvet FILES` spends its time, recorded by samply into target/profile.json.gz. Open it
+# with `samply load`, or at profiler.firefox.com on another machine. Linux needs
+# perf_event_paranoid at 1 or lower.
+profile +FILES: profiling-build
+    @command -v samply >/dev/null || { echo "needs samply: https://github.com/mstange/samply" >&2; exit 1; }
+    samply record --save-only -o {{ target }}/profile.json.gz {{ target }}/profiling/jsonvet {{ FILES }}
+
+# Hardware counters for `jsonvet FILES` on one CPU (`core`), mean of 10 runs: instructions per
+# cycle, branch misses and cache misses. Linux perf only, so not in CI, where `just counts` gates.
+counters +FILES: profiling-build
+    @command -v perf >/dev/null || { echo "needs Linux perf (linux-tools)" >&2; exit 1; }
+    taskset -c {{ core }} perf stat -r 10 -e '{instructions,cycles}' -e '{branches,branch-misses}' \
+        -e '{cache-references,cache-misses}' {{ target }}/profiling/jsonvet {{ FILES }}
+
+# How the 1,000 small files from `just profile-files` scale over more CPUs: one hyperfine run per
+# CPU list in CPUS, pinned with taskset.
+threads DIR=(target / "profile-files") CPUS="0,0-1,0-3,0-7": profiling-build
+    hyperfine --warmup 3 -L cpus {{ CPUS }} 'taskset -c {cpus} {{ target }}/profiling/jsonvet {{ DIR }}/s*.json'
 
 # Build the playground as pages.yml does, then serve it at http://127.0.0.1:8000. Needs the
 # wasm32 target and wasm-bindgen-cli at the version in Cargo.lock; the deploy also runs wasm-opt.
