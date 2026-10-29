@@ -21,6 +21,9 @@ version for a new option or output, the patch version for a fix.
 
 ### Changed
 
+- `--format sarif` writes each result as it is found instead of holding them all until the
+  end, so a run at the 25,000-result cap peaks at 7.4 MB instead of 39.4 MB. The `invocations`
+  member, which counts results past the cap, now comes after `results` in the run.
 - `--schema` compiles a schema's patterns once, not twice, when every document passes. A schema
   that jsonvet checks one member or element at a time used to build that second copy up front; it
   is now built when the first document fails. At the pattern caps, a run whose files pass takes

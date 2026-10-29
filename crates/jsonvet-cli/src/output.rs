@@ -113,12 +113,9 @@ enum Sink {
         framed: usize,
         color: bool,
     },
-    /// The results, held until `finish` writes the document, and how many past
-    /// [`sarif::MAX_RESULTS`] were counted but not kept.
-    Sarif {
-        results: Vec<String>,
-        dropped: usize,
-    },
+    /// How many results were written as they came, and how many past [`sarif::MAX_RESULTS`]
+    /// were counted but not written.
+    Sarif { written: usize, dropped: usize },
     /// Whether the document has started.
     Json { started: bool },
 }
@@ -139,7 +136,7 @@ impl<W: Write> Printer<W> {
                 color: look.color,
             },
             Format::Sarif => Sink::Sarif {
-                results: Vec::new(),
+                written: 0,
                 dropped: 0,
             },
             Format::Json => Sink::Json { started: false },
@@ -281,17 +278,22 @@ impl<W: Write> Printer<W> {
                 );
                 return self.out.write_all(diagnostic.as_bytes());
             }
-            Sink::Sarif { results, dropped } => {
-                if results.len() < sarif::MAX_RESULTS {
+            Sink::Sarif { written, dropped } => {
+                if *written < sarif::MAX_RESULTS {
+                    if *written == 0 {
+                        self.out.write_all(sarif::start().as_bytes())?;
+                    } else {
+                        self.out.write_all(b",")?;
+                    }
+                    *written += 1;
                     // GitHub code scanning needs a line in every result.
                     let at = at.unwrap_or(Location::START);
                     // A point problem, such as a missing `,`, has no end: GitHub leaves `endColumn` out for
                     // it, and so does SARIF.
                     let end = place.and_then(|p| p.end);
                     let related = related.and_then(|r| Some((r.at, r.label?)));
-                    results.push(sarif::result(
-                        file, rule, severity, message, at, end, related,
-                    ));
+                    let result = sarif::result(file, rule, severity, message, at, end, related);
+                    self.out.write_all(result.as_bytes())?;
                 } else {
                     *dropped += 1;
                 }
@@ -384,18 +386,21 @@ impl<W: Write> Printer<W> {
         Ok(())
     }
 
-    /// Write what was held back until every file was checked: the SARIF document, or the end
-    /// of the JSON one.
+    /// Write what can only come once every file was checked: the end of the SARIF or JSON
+    /// document, with SARIF's count of results past the cap.
     pub(crate) fn finish(&mut self) -> io::Result<()> {
         match &self.sink {
             Sink::Text { .. } => {}
             Sink::Json { started: true } => writeln!(self.out, "\n]}}")?,
             Sink::Json { started: false } => writeln!(self.out, "{}]}}", json::start())?,
-            Sink::Sarif { results, dropped } => {
+            Sink::Sarif { written, dropped } => {
                 if *dropped > 0 {
                     eprintln!("jsonvet: {}", sarif::dropped_message(*dropped));
                 }
-                writeln!(self.out, "{}", sarif::document(results, *dropped))?;
+                if *written == 0 {
+                    self.out.write_all(sarif::start().as_bytes())?;
+                }
+                writeln!(self.out, "{}", sarif::end(*dropped))?;
             }
         }
         self.out.flush()

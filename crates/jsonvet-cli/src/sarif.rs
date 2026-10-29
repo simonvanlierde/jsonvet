@@ -66,9 +66,8 @@ pub(crate) fn level(severity: Severity) -> &'static str {
     }
 }
 
-/// The whole document: one run holding the results, and a notification counting the `dropped`
-/// ones past [`MAX_RESULTS`].
-pub(crate) fn document(results: &[String], dropped: usize) -> String {
+/// What comes before the first result: the document, its one run and the rules.
+pub(crate) fn start() -> String {
     // GitHub code scanning shows `help` and links `helpUri` on each alert.
     let rules: Vec<String> = rules::ids()
         .map(|id| {
@@ -82,14 +81,6 @@ pub(crate) fn document(results: &[String], dropped: usize) -> String {
             )
         })
         .collect();
-    let invocations = if dropped == 0 {
-        String::new()
-    } else {
-        format!(
-            r#""invocations":[{{"executionSuccessful":true,"toolExecutionNotifications":[{{"level":"warning","message":{{"text":{}}}}}]}}],"#,
-            string(&dropped_message(dropped))
-        )
-    };
     format!(
         concat!(
             r#"{{"$schema":"https://json.schemastore.org/sarif-2.1.0.json","version":"2.1.0","#,
@@ -101,12 +92,22 @@ pub(crate) fn document(results: &[String], dropped: usize) -> String {
             r#""originalUriBaseIds":{{"%SRCROOT%":{{"description":{{"text":"#,
             r#""the working directory jsonvet ran in"}}}}}},"#,
             // jsonvet counts columns in code points; SARIF's default is UTF-16 code units.
-            r#""columnKind":"unicodeCodePoints",{}"results":[{}]}}]}}"#
+            r#""columnKind":"unicodeCodePoints","results":["#
         ),
         env!("CARGO_PKG_VERSION"),
         rules.join(","),
-        invocations,
-        results.join(",")
+    )
+}
+
+/// What comes after the last result: a notification counting the `dropped` ones past
+/// [`MAX_RESULTS`], and the closing brackets.
+pub(crate) fn end(dropped: usize) -> String {
+    if dropped == 0 {
+        return "]}]}".to_owned();
+    }
+    format!(
+        r#"],"invocations":[{{"executionSuccessful":true,"toolExecutionNotifications":[{{"level":"warning","message":{{"text":{}}}}}]}}]}}]}}"#,
+        string(&dropped_message(dropped))
     )
 }
 

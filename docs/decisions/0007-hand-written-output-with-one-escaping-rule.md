@@ -24,8 +24,8 @@ Write SARIF by hand (#38), and pass every string through the one escaping rule i
 ## Consequences
 
 One function to test for every output. SARIF keeps the first 25,000 results, since GitHub keeps
-only 5,000 of a run past that and rejects one past 1,000,000. SARIF results are held until the
-end; streaming waits for a memory complaint.
+only 5,000 of a run past that and rejects one past 1,000,000. SARIF results are written as they
+come, as JSON diagnostics are.
 
 ## Confirmation
 
