@@ -21,6 +21,7 @@ keywords:
   - "jsonc"
   - "json-lines"
   - "json-schema"
+  - "lint"
   - "linter"
   - "pre-commit"
   - "pre-commit-hook"
