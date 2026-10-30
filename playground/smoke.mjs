@@ -2,7 +2,7 @@
 // crates/jsonvet-wasm/src/lib.rs expect, then checks the page keeps its CSP.
 // Run from the repository root, after wasm-bindgen wrote playground/pkg.
 import { readFileSync } from "node:fs";
-import init, { check } from "./pkg/jsonvet_wasm.js";
+import init, { check, version } from "./pkg/jsonvet_wasm.js";
 
 await init({ module_or_path: readFileSync("playground/pkg/jsonvet_wasm_bg.wasm") });
 
@@ -11,15 +11,20 @@ const cases = [
   [
     '{"a": 1, "a": 2, "b": [1 2]}',
     "json",
-    '[{"line":1,"column":10,"index":9,"severity":"error","rule":"duplicate-key","message":"duplicate key $.a","path":"$.a"},{"line":1,"column":25,"index":24,"severity":"error","rule":"syntax","message":"missing `,`","path":null}]',
+    '[{"line":1,"column":10,"index":9,"severity":"error","rule":"duplicate-key","message":"duplicate key $.a","path":"$.a","related":[{"message":"first copy","line":1,"column":2,"offset":1,"index":1}]},{"line":1,"column":25,"index":24,"severity":"error","rule":"syntax","message":"missing `,`","path":null,"related":[]}]',
   ],
   [
     '{"a": 1,\u2028"a": 2}',
     "json5",
-    '[{"line":2,"column":1,"index":9,"severity":"error","rule":"duplicate-key","message":"duplicate key $.a","path":"$.a"}]',
+    '[{"line":2,"column":1,"index":9,"severity":"error","rule":"duplicate-key","message":"duplicate key $.a","path":"$.a","related":[{"message":"first copy","line":1,"column":2,"offset":1,"index":1}]}]',
   ],
 ];
 let failed = false;
+const crate = /^version = "([^"]+)"/m.exec(readFileSync("Cargo.toml", "utf8"))?.[1];
+if (version() !== crate) {
+  console.error(`version() is ${version()}, Cargo.toml says ${crate}`);
+  failed = true;
+}
 for (const [text, dialect, expected] of cases) {
   const got = check(text, dialect);
   if (got !== expected) {

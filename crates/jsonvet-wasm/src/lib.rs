@@ -2,14 +2,17 @@
 
 use std::fmt::Write;
 
-use jsonvet::{Config, Dialect};
+use jsonvet::{Config, Dialect, RelatedKind};
 use wasm_bindgen::prelude::wasm_bindgen;
 
 /// Check `text` in the dialect named `dialect` (a name or alias the CLI accepts, such as `json5`)
 /// and return its problems as a JSON array, in document order. Each problem is an object with
 /// `line` and `column` (1-based, columns in code points), `index` (where the problem starts, in
-/// UTF-16 units, which is how a browser indexes the text), `severity`, `rule`, `message`, and
-/// `path` (the JSONPath of a duplicate key, otherwise `null`). An unknown dialect is an error.
+/// UTF-16 units, which is how a browser indexes the text), `severity`, `rule`, `message`, `path`
+/// (the JSONPath of a duplicate key, otherwise `null`) and `related`: the other places the problem
+/// names, as in the CLI's `--format json`, each with `message` (`first copy`, `opened here` or
+/// `starts here`), `line`, `column`, `offset` (in bytes) and `index`. An unknown dialect is an
+/// error.
 ///
 /// # Errors
 ///
@@ -19,17 +22,11 @@ pub fn check(text: &str, dialect: &str) -> Result<String, String> {
     let dialect = dialect.parse::<Dialect>().map_err(|e| e.to_string())?;
     let report = jsonvet::check(text, &Config::new(dialect));
     let mut out = String::from("[");
-    // Problems come in document order, so count UTF-16 units forward from the last one.
-    let (mut byte, mut units) = (0, 0);
+    // Problems come in document order, and so, mostly, do their related places: each keeps its
+    // own cursor, so counting stays linear.
+    let (mut here, mut there) = (Utf16::default(), Utf16::default());
     for (i, problem) in report.problems().iter().enumerate() {
         let offset = problem.offset().min(text.len());
-        if offset < byte {
-            (byte, units) = (0, 0);
-        }
-        units += text
-            .get(byte..offset)
-            .map_or(0, |s| s.encode_utf16().count());
-        byte = offset;
         let at = report.location(offset);
         if i > 0 {
             out.push(',');
@@ -40,7 +37,7 @@ pub fn check(text: &str, dialect: &str) -> Result<String, String> {
             r#"{{"line":{},"column":{},"index":{},"severity":"{}","rule":"{}","message":"#,
             at.line,
             at.column,
-            units,
+            here.at(text, offset),
             problem.severity(),
             problem.rule()
         );
@@ -50,10 +47,59 @@ pub fn check(text: &str, dialect: &str) -> Result<String, String> {
             Some(path) => string(&mut out, path),
             None => out.push_str("null"),
         }
-        out.push('}');
+        out.push_str(r#","related":["#);
+        if let Some(related) = problem.related() {
+            let offset = related.offset.min(text.len());
+            let at = report.location(offset);
+            let label = match related.kind {
+                RelatedKind::FirstOccurrence => "first copy",
+                RelatedKind::Opened => "opened here",
+                // NOTE: `RelatedKind` is non-exhaustive; `Start` is the only other kind so far.
+                _ => "starts here",
+            };
+            let _ = write!(
+                out,
+                r#"{{"message":"{label}","line":{},"column":{},"offset":{offset},"index":{}}}"#,
+                at.line,
+                at.column,
+                there.at(text, offset)
+            );
+        }
+        out.push_str("]}");
     }
     out.push(']');
     Ok(out)
+}
+
+/// The jsonvet version this build is from, such as `3.2.0`.
+#[wasm_bindgen]
+#[must_use]
+pub fn version() -> String {
+    env!("CARGO_PKG_VERSION").to_owned()
+}
+
+/// A byte offset and the UTF-16 index it is at, moved forward or back from the last one asked for.
+#[derive(Default)]
+struct Utf16 {
+    byte: usize,
+    units: usize,
+}
+
+impl Utf16 {
+    /// The UTF-16 index of byte `offset`, a character boundary in `text`.
+    fn at(&mut self, text: &str, offset: usize) -> usize {
+        let count = |from, to| {
+            text.get(from..to)
+                .map_or(0, |s: &str| s.encode_utf16().count())
+        };
+        if offset >= self.byte {
+            self.units += count(self.byte, offset);
+        } else {
+            self.units -= count(offset, self.byte);
+        }
+        self.byte = offset;
+        self.units
+    }
 }
 
 /// Append `s` as a JSON string. Keys in a path can hold any character, quotes included.
@@ -79,7 +125,7 @@ mod tests {
     #[test]
     fn duplicate_key_in_json5() {
         let text = "{\n  // port\n  \"port\": 80,\n  \"port\": 8080,\n}\n";
-        let expected = r#"[{"line":4,"column":3,"index":28,"severity":"error","rule":"duplicate-key","message":"duplicate key $.port","path":"$.port"}]"#;
+        let expected = r#"[{"line":4,"column":3,"index":28,"severity":"error","rule":"duplicate-key","message":"duplicate key $.port","path":"$.port","related":[{"message":"first copy","line":3,"column":3,"offset":14,"index":14}]}]"#;
         assert_eq!(check(text, "json5").as_deref(), Ok(expected));
     }
 
@@ -139,18 +185,54 @@ mod tests {
     #[test]
     fn json5_counts_a_line_separator_as_a_line_end() {
         let out = check("{\"a\": 1,\u{2028}\"a\": 2}", "json5").unwrap_or_default();
-        let expected = r#"[{"line":2,"column":1,"index":9,"severity":"error","rule":"duplicate-key","message":"duplicate key $.a","path":"$.a"}]"#;
+        let expected = r#"[{"line":2,"column":1,"index":9,"severity":"error","rule":"duplicate-key","message":"duplicate key $.a","path":"$.a","related":[{"message":"first copy","line":1,"column":2,"offset":1,"index":1}]}]"#;
         assert_eq!(out, expected);
     }
 
     // The same texts and strings as playground/smoke.mjs, which checks the built wasm.
     #[test]
     fn the_playground_smoke_texts() {
-        let syntax = r#"[{"line":1,"column":10,"index":9,"severity":"error","rule":"duplicate-key","message":"duplicate key $.a","path":"$.a"},{"line":1,"column":25,"index":24,"severity":"error","rule":"syntax","message":"missing `,`","path":null}]"#;
+        let syntax = r#"[{"line":1,"column":10,"index":9,"severity":"error","rule":"duplicate-key","message":"duplicate key $.a","path":"$.a","related":[{"message":"first copy","line":1,"column":2,"offset":1,"index":1}]},{"line":1,"column":25,"index":24,"severity":"error","rule":"syntax","message":"missing `,`","path":null,"related":[]}]"#;
         assert_eq!(
             check("{\"a\": 1, \"a\": 2, \"b\": [1 2]}", "json").as_deref(),
             Ok(syntax)
         );
+    }
+
+    #[test]
+    fn related_places_count_utf16_units() {
+        // `😀` is two units and four bytes, so each first copy's index is two less than its
+        // offset. The second problem's first copy comes before the first one's: the count moves
+        // back.
+        let out =
+            check("[\"😀\", {\"a\": 1, \"b\": 1, \"b\": 2, \"a\": 2}]", "json").unwrap_or_default();
+        assert!(
+            out.contains(r#""related":[{"message":"first copy","line":1,"column":16,"offset":18,"index":16}]"#),
+            "{out}"
+        );
+        assert!(
+            out.contains(
+                r#""related":[{"message":"first copy","line":1,"column":8,"offset":10,"index":8}]"#
+            ),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn an_unclosed_bracket_names_where_it_opened() {
+        let out = check("{\"a\": [1,\n", "json").unwrap_or_default();
+        assert!(out.contains(r#""rule":"syntax""#), "{out}");
+        assert!(
+            out.contains(
+                r#""related":[{"message":"opened here","line":1,"column":7,"offset":6,"index":6}]"#
+            ),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn version_is_the_crates() {
+        assert_eq!(super::version(), env!("CARGO_PKG_VERSION"));
     }
 
     #[test]
