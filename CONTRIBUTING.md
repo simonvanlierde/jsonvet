@@ -126,7 +126,9 @@ licence and has no RustSec advisory or unmaintained notice. Renovate bumps the p
   serde-rs/json-benchmark. `just profile FILE` records call stacks with
   samply, `just counters FILE` reads the CPU's counters with `perf stat` (instructions per cycle,
   branch and cache misses) on one CPU, and `just threads` times the small files on 1 to 8 CPUs.
-  All three use the `profiling` build: release code with line tables and frame pointers. The
+  `just core=2 compare main` builds `main` in a temporary worktree and prints a table of
+  instructions on the 13 cases, `main` against your working tree; a change under 0.1% is noise.
+  All four use the `profiling` build: release code with line tables and frame pointers. The
   counters need perf access to the hardware, which CI runners and most containers lack, so they
   guide a change; `just counts` still decides it.
 - **Scaling.** `just scaling` runs `crates/jsonvet-cli/tests/scaling.rs` under valgrind, on
