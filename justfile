@@ -147,7 +147,7 @@ compare REF DIR=(target / "profile-files"): profiling-build
 # CPU list in CPUS, pinned with taskset. `s[0-9]` leaves out strings.json and strings-ascii.json,
 # two of the large cases.
 threads DIR=(target / "profile-files") CPUS="0,0-1,0-3,0-7": profiling-build
-    hyperfine --warmup 3 -L cpus {{ CPUS }} 'taskset -c {cpus} {{ target }}/profiling/jsonvet {{ DIR }}/s[0-9]*.json'
+    hyperfine --shell=bash --warmup 3 -L cpus {{ CPUS }} 'taskset -c {cpus} {{ target }}/profiling/jsonvet {{ DIR }}/s[0-9]*.json'
 
 # Build the playground as pages.yml does, then serve it at http://127.0.0.1:8000. Needs the
 # wasm32 target and wasm-bindgen-cli at the version in Cargo.lock; the deploy also runs wasm-opt.
