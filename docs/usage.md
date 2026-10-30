@@ -92,6 +92,11 @@ JSON and annotations, and exactly in SARIF.
 |    0 | no file has an error, or there were no files             |
 |    1 | a file has an error, or a file cannot be read            |
 |    2 | a usage error, such as an unknown option or a bad schema |
+|  101 | a bug in jsonvet: it panicked                            |
+
+On a panic, jsonvet prints the message and where it happened to standard error, with a link to
+the [issue tracker](https://github.com/simonvanlierde/jsonvet/issues), and exits 101. Output not
+yet written is lost, and the verdict for the files checked so far is not given.
 
 jsonvet reads regular files, and follows a symlink to one. A device, FIFO or socket prints
 `error: not a regular file`. When the output pipe closes early, as in `jsonvet … | head -1`,

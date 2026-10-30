@@ -47,6 +47,16 @@ const SPLIT_BYTES: usize = 1 << 20;
 
 /// Run the command with the process's arguments and environment, and return its exit code.
 pub fn run() -> ExitCode {
+    // The release profile aborts on a panic, which ends the process with a signal and no way to
+    // report it. A hook runs first, so a bug exits 101 with a pointer to the issue tracker.
+    std::panic::set_hook(Box::new(|info| {
+        eprintln!(
+            "jsonvet: internal error: {info}\n\nThis is a bug in jsonvet. Please report it at \
+             https://github.com/simonvanlierde/jsonvet/issues with the command you ran and, if \
+             you can share it, the file that caused it."
+        );
+        std::process::exit(101);
+    }));
     on_big_stack(run_here)
 }
 
@@ -63,6 +73,13 @@ fn on_big_stack<T: Send + 'static>(f: fn() -> T) -> T {
 }
 
 fn run_here() -> ExitCode {
+    // NOTE: a hidden trigger for tests/cli.rs, so the panic hook runs without a real bug. Debug
+    // builds only, so release binaries cannot be made to panic on purpose.
+    #[cfg(debug_assertions)]
+    assert!(
+        std::env::var_os("JSONVET_TEST_PANIC").is_none(),
+        "test panic"
+    );
     let annotate = std::env::var_os("GITHUB_ACTIONS").is_some_and(|v| v == "true");
     let stdout = io::stdout().lock();
     let set = |name| std::env::var_os(name).is_some_and(|v| !v.is_empty());

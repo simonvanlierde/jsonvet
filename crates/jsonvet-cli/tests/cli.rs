@@ -3948,3 +3948,21 @@ mod file_reads {
         let _ = fs::remove_dir_all(&dir);
     }
 }
+
+/// A panic prints its message and where to report it, and exits 101 as an unwinding panic does,
+/// rather than aborting with a signal as the release build's `panic = "abort"` would.
+#[test]
+fn a_panic_names_the_issue_tracker_and_exits_101() {
+    let out = command(env!("CARGO_BIN_EXE_jsonvet"))
+        .env("JSONVET_TEST_PANIC", "1")
+        .output()
+        .expect("run jsonvet");
+    let err = String::from_utf8(out.stderr).expect("UTF-8 errors");
+    assert_eq!(out.status.code(), Some(101));
+    assert_eq!(out.stdout, Vec::<u8>::new());
+    assert!(err.contains("test panic"), "{err}");
+    assert!(
+        err.contains("https://github.com/simonvanlierde/jsonvet/issues"),
+        "{err}"
+    );
+}
