@@ -10,6 +10,7 @@ version for a new option or output, the patch version for a fix.
 
 ### Added
 
+- The playground has a social card, so a link to it shows a preview of the page.
 - jsonvet's messages can now be translated. Problem messages, `--help`, `--list-rules`,
   `--explain`, usage and config errors, the reasons a file cannot be read, the schema errors
   jsonvet writes and the summary come from a table of messages, and jsonvet picks a translation
