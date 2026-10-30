@@ -56,7 +56,7 @@ button { font: inherit; color: inherit; }
 .slug b { font-weight: 700; }
 .speed { color: var(--ink); }
 .speed em { font-style: normal; color: var(--pen); font-variant-numeric: tabular-nums; }
-.speed .stale em { opacity: .55; }
+.speed .stale em { color: var(--faint); }
 .speed .link { color: var(--faint); }
 
 /* The proof stages: the six dialects, each with its verdict on the text. */
@@ -77,15 +77,16 @@ button { font: inherit; color: inherit; }
 .hint code { font-style: normal; white-space: nowrap; }
 
 /* The proof: the set text on the left, the margin with the corrections on the right. */
-/* A galley's measure: the text column stops near 70 characters and the margin takes the rest, so notes sit close to their lines. */
+/* A galley's measure: the text column stops near 60 characters and the margin takes the rest, so notes sit close to their lines. */
 .proof { position: relative; display: grid; grid-template-columns: minmax(0, 36rem) minmax(18.5rem, 1fr); margin-top: 18px; }
 .proof.listed { grid-template-columns: minmax(0, 1fr); }
 .editor { position: relative; display: flex; min-width: 0; height: 248px; border-right: 1px solid var(--rule); }
 .proof.listed .editor { border-right: 0; }
 .editor.drop { outline: 2px dashed var(--ink); outline-offset: 4px; }
 .gutter, .layer, textarea { margin: 0; font: var(--size)/var(--lh) var(--mono); white-space: pre; tab-size: 4; }
-.gutter { flex: none; padding: 8px 0; color: var(--dim); border-right: 1px solid transparent; text-align: right; font-variant-numeric: tabular-nums; overflow: hidden; user-select: none; }
-.editor:focus-within .gutter { border-right-color: var(--ink); }
+.gutter { flex: none; padding: 8px 0; color: var(--dim); text-align: right; font-variant-numeric: tabular-nums; overflow: hidden; user-select: none; }
+/* Inset, so the focus mark shows even when a big text hides the gutter, and the text never moves. */
+.editor:focus-within { box-shadow: inset 2px 0 var(--ink); }
 .gutter div { padding-inline: 0 14px; }
 /* A slot for a correction's number on every row, so the text never moves when one comes or goes. */
 .gutter div::before { content: ""; display: inline-block; width: 3.4ch; padding-right: .6ch; text-align: right; color: var(--pen); font-size: 11px; }
@@ -98,6 +99,7 @@ button { font: inherit; color: inherit; }
 .layer div { width: max-content; min-width: 100%; padding-inline: 6px 8px; }
 .layer div, .gutter div { min-height: var(--lh); }
 .layer div.active, .gutter div.active { background: var(--active); }
+.gutter div.active { color: var(--faint); }
 /* Proofreader's marks: a caret under the line where the token starts, the token struck out (or,
    where checking stopped, underlined), and the place a problem names, such as a first copy,
    ringed. */
@@ -133,7 +135,6 @@ textarea, textarea:focus-visible { padding: 8px 8px 8px 6px; border: 0; resize: 
 /* Too many corrections for the margin, or a narrow screen: a numbered list under the proof, keyed
    to the numbers in the gutter. */
 .proof.listed .margin { overflow: visible; background: none; border-top: 1px solid var(--rule); margin-top: 6px; }
-.proof.listed .sheet { transform: none; }
 .proof.listed .note.rel { display: none; }
 .proof.listed ol { padding-top: 6px; }
 .proof.listed li { position: relative; padding: 5px 0 5px 4.4ch; }

@@ -139,7 +139,8 @@ title block, dimension lines, crop marks or heavier strokes.
 System fonts only (the CSP allows only the page's own files). A serif stack for prose and the
 corrections, a mono stack for the text and every string the CLI prints.
 
-- **Prose** (serif 1rem): the stages' names, the verdict, "Use this check", tabs.
+- **Prose** (serif 1rem): the verdict, "Use this check", tabs; the stages' names a little smaller
+  (0.9375rem).
 - **Note** (italic serif 15px / 20px): margin corrections. Its line height equals the text's, so a
   note's first line sits on its row.
 - **Aside** (italic serif 0.9375rem): the dialect hint, the syntax-stop note, the keyboard hint,
@@ -156,8 +157,8 @@ Timings, positions and counts use tabular figures.
 - A centred column up to 1240px, side padding `clamp(16px, 4vw, 48px)`.
 - The slug line runs across the top, its two halves at either end over a dashed rule. They wrap
   to two lines on a phone.
-- The stages are one bordered row, each stage as wide as its name; three by two under 720px.
-- From 860px the proof is two columns: the text, and an 18.5rem margin on the faint grid. The
+- The stages are one bordered row, each stage at least 7.5rem wide; three by two under 720px.
+- From 860px the proof is two columns: the text, at most 36rem wide, and a margin of at least 18.5rem on the faint grid. The
   editor grows with the text (at least 8 rows, at most 70% of the window, then it scrolls inside)
   and with the notes, which keep their row or stack below the one above.
 - Past 30 corrections, when the stacked notes would run past the text, above 5,000 rows, or under
@@ -193,7 +194,7 @@ the dialect adds and which files the CLI checks in it.
 
 A textarea over two layers that never take input: the gutter (a fixed slot for a correction's
 number, then the line number, so the text never moves) and the mark layer (transparent text).
-Focus turns the gutter's edge into a 2px ink rule. A dragged file gets a dashed ink outline.
+Focus draws a 2px ink rule down the proof's left edge. A dragged file gets a dashed ink outline.
 
 #### Proofreader's marks
 
@@ -230,7 +231,7 @@ and a "Copy" text button. The snippets use the version from the wasm's `version(
 
 #### Colophon
 
-The privacy and JSON Schema sentence in small italic, then two mono lines: "jsonvet 3.2.0 · MIT
+The privacy and JSON Schema sentence in small italic, then two mono lines: "jsonvet <version> · MIT
 licence" and "Simon van Lierde · source on GitHub · docs · speed figures".
 
 ### Do's and Don'ts

@@ -7,7 +7,7 @@ const gutter = $("gutter");
 const layer = $("layer");
 const margin = $("margin");
 const sheet = $("sheet");
-const leaders = $("leaders");
+const paths = $("paths");
 const list = $("problems");
 const first = $("first");
 const stopped = $("stopped");
@@ -47,8 +47,8 @@ const MAX_ITEMS = 200;
 // Above this many rows the gutter and the marks are left out: they cost two DOM nodes a row on
 // every check.
 const MAX_ROWS = 5000;
-// Above this many characters a check waits for a pause in typing, and only the chosen dialect is
-// checked.
+// Above this many characters a check runs at most every 300 ms while typing, and only the chosen
+// dialect is checked.
 const BIG = 200_000;
 // Past this many notes, or when they would stack past the end of the text, the margin gives way to
 // a numbered list under the proof.
@@ -231,7 +231,7 @@ function note(p, n) {
   const num = el("span", "n", n);
   num.setAttribute("aria-hidden", "true");
   button.append(num, rich(el("span", "msg"), p.message, p.path));
-  button.setAttribute("aria-label", [`${p.line}:${p.column}`, p.severity, p.message, relText].filter(Boolean).join(", "));
+  button.setAttribute("aria-label", [`${p.line}:${p.column}`, p.severity, p.message.replaceAll("`", ""), relText].filter(Boolean).join(", "));
   const rows = related ? [p.row, related.row] : [p.row];
   button.addEventListener("click", () => goTo(p));
   button.addEventListener("pointerenter", () => light(rows, item, true));
@@ -412,22 +412,24 @@ function layout() {
 // at the text.
 function drawLeaders() {
   if (proof.classList.contains("listed") || big) {
-    leaders.replaceChildren();
+    paths.replaceChildren();
     return;
   }
   const box = proof.getBoundingClientRect();
   const ed = editor.getBoundingClientRect();
   const mx = margin.getBoundingClientRect().left - box.left;
-  const paths = [];
+  const lh = lineHeight();
+  const lines = [];
   for (const n of placed()) {
     const eol = layer.children[n.dataset.row - 1]?.querySelector(".eol");
     if (!eol) continue;
     const e = eol.getBoundingClientRect();
     const row = eol.parentElement.getBoundingClientRect();
-    const y = row.top + lineHeight() / 2;
+    const y = row.top + lh / 2;
     const r = n.getBoundingClientRect();
     // A note on its own row gets a straight line; one stacked lower gets a bend.
-    const ny = Math.abs(r.top + lineHeight() / 2 - y) < 6 ? y : r.top + lineHeight() / 2;
+    const ry = r.top + lh / 2;
+    const ny = Math.abs(ry - y) < 6 ? y : ry;
     // Rows and notes scrolled out of the proof get no line.
     if (y < ed.top || y > ed.bottom || ny < ed.top || ny > ed.bottom) continue;
     const x = Math.min(e.left - box.left + 4, ed.right - box.left - 24);
@@ -436,23 +438,9 @@ function drawLeaders() {
     path.setAttribute("d", `M${x},${y - box.top}H${mx - 10}L${mx + 2},${ny - box.top}H${r.left - box.left - 4}`);
     path.setAttribute("marker-start", "url(#arrow)");
     if (n === lit || n.contains(document.activeElement)) path.setAttribute("class", "lit");
-    paths.push(path);
+    lines.push(path);
   }
-  leaders.replaceChildren(arrowhead(), ...paths);
-}
-
-function arrowhead() {
-  const ns = "http://www.w3.org/2000/svg";
-  const defs = document.createElementNS(ns, "defs");
-  const marker = document.createElementNS(ns, "marker");
-  for (const [k, v] of Object.entries({ id: "arrow", viewBox: "0 0 8 6", refX: "1", refY: "3", markerWidth: "8", markerHeight: "6", orient: "auto", markerUnits: "userSpaceOnUse" })) {
-    marker.setAttribute(k, v);
-  }
-  const head = document.createElementNS(ns, "path");
-  head.setAttribute("d", "M0,3L8,0V6Z");
-  marker.append(head);
-  defs.append(marker);
-  return defs;
+  paths.replaceChildren(...lines);
 }
 
 function sync() {
@@ -495,7 +483,6 @@ function slug() {
 }
 
 function select(d, focus) {
-  if (!hints[d]) return;
   dialect = d;
   for (const r of radios) {
     const on = r.dataset.dialect === d;
@@ -530,7 +517,7 @@ function load(text, name, isGenerated) {
   input.scrollTop = input.scrollLeft = 0;
   source = name;
   generated = isGenerated;
-  edited = name !== SAMPLE_NAME;
+  edited = !(text === SAMPLE && dialect === "json5");
   slug();
   if (!edited) history.replaceState(null, "", location.pathname + location.search);
   run();
@@ -562,7 +549,7 @@ input.addEventListener("keydown", (e) => {
     ? current.findLast((q) => q.index < caret) ?? current.at(-1)
     : current.find((q) => q.index > caret) ?? current[0];
   goTo(p);
-  shareStatus.textContent = `${p.line}:${p.column} ${p.severity}: ${p.message}`;
+  shareStatus.textContent = `${p.line}:${p.column} ${p.severity}: ${p.message.replaceAll("`", "")}`;
 });
 wide.addEventListener("change", layout);
 let resizeFrame;
@@ -597,7 +584,7 @@ async function save() {
   clearTimeout(saveTimer);
   const text = input.value;
   const fragment = text.length > BIG ? "" : await encode(dialect, text);
-  if (input.value !== text) return false;
+  if (input.value !== text) return save();
   const fits = fragment && fragment.length <= MAX_LINK;
   history.replaceState(null, "", fits ? `#${fragment}` : location.pathname + location.search);
   return fits;
@@ -624,6 +611,7 @@ for (const button of document.querySelectorAll(".copy")) {
     } catch {
       button.textContent = "Copy failed";
     }
+    shareStatus.textContent = `${button.textContent}.`;
     setTimeout(() => (button.textContent = "Copy"), 1500);
   });
 }

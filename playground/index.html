@@ -18,7 +18,7 @@
 <meta property="og:image:alt" content="A JSON5 config set as a printer's proof by the jsonvet playground: the repeated port key is struck through in red, its first copy circled, and a note in the margin says duplicate key $.server.port. Above it, the six dialects each give their verdict.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#fbfaf5" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#171511" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#1b1915" media="(prefers-color-scheme: dark)">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -76,7 +76,7 @@
         <ol id="problems" role="list" aria-label="Problems"></ol>
       </div>
     </div>
-    <svg class="leaders" id="leaders" aria-hidden="true" focusable="false"></svg>
+    <svg class="leaders" aria-hidden="true" focusable="false"><defs><marker id="arrow" viewBox="0 0 8 6" refX="1" refY="3" markerWidth="8" markerHeight="6" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,3L8,0V6Z"/></marker></defs><g id="paths"></g></svg>
   </div>
   <div class="verdict">
     <p id="status" role="status">Loading…</p>
@@ -93,15 +93,15 @@
       <button type="button" role="tab" id="tab-cli" aria-selected="false" aria-controls="panel-cli" tabindex="-1">Command line</button>
     </div>
     <div class="panel" role="tabpanel" id="panel-hook" aria-labelledby="tab-hook">
-      <pre id="hook" tabindex="0" aria-label="Hook for .pre-commit-config.yaml"></pre>
+      <pre id="hook" role="group" tabindex="0" aria-label="Hook for .pre-commit-config.yaml"></pre>
       <button type="button" class="copy link" data-copy="hook" aria-describedby="tab-hook">Copy</button>
     </div>
     <div class="panel" role="tabpanel" id="panel-action" aria-labelledby="tab-action" hidden>
-      <pre id="action" tabindex="0" aria-label="Step for a GitHub workflow"></pre>
+      <pre id="action" role="group" tabindex="0" aria-label="Step for a GitHub workflow"></pre>
       <button type="button" class="copy link" data-copy="action" aria-describedby="tab-action">Copy</button>
     </div>
     <div class="panel" role="tabpanel" id="panel-cli" aria-labelledby="tab-cli" hidden>
-      <pre id="cli" tabindex="0" aria-label="Shell command"></pre>
+      <pre id="cli" role="group" tabindex="0" aria-label="Shell command"></pre>
       <button type="button" class="copy link" data-copy="cli" aria-describedby="tab-cli">Copy</button>
     </div>
     <p id="ci-note" class="aside"></p>

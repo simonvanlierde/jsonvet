@@ -58,7 +58,8 @@ jobs:
         with:
           tool: wasm-bindgen@${{ steps.bindgen.outputs.version }}
           fallback: none
-      # The page's line and column mapping, which has to match jsonvet's, and its share links.
+      # The page's helpers: line and column mapping, which has to match jsonvet's, share links, the
+      # proof layout and the made-up hosts file.
       - run: node --test playground/*.test.mjs
       - run: cargo build --locked -p jsonvet-wasm --target wasm32-unknown-unknown --profile wasm
       - run: >-
@@ -132,8 +133,11 @@ jobs:
           marker="<!-- playground-screenshots -->"
           body="${marker}
           **Playground screenshots** for ${SHA:0:7}, desktop and phone in light and dark: [download the zip](${URL}) (kept 14 days)."
-          id=$(gh api --paginate "repos/${REPO}/issues/${PR}/comments" \
-            --jq ".[] | select(.body | startswith(\"${marker}\")) | .id" | head -n 1)
+          # Only the bot's own comment: patching anyone else's fails. A failed lookup stops the step
+          # rather than posting a second comment.
+          ids=$(gh api --paginate "repos/${REPO}/issues/${PR}/comments" \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"${marker}\"))) | .id")
+          id=${ids%%$'\n'*}
           if [ -n "$id" ]; then
             gh api --method PATCH "repos/${REPO}/issues/comments/${id}" -f body="$body" >/dev/null
           else
