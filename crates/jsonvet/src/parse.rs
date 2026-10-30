@@ -1216,6 +1216,26 @@ impl<'a> Parser<'a, '_> {
         if self.peek().is_none_or(ends_trivia) {
             return Ok(());
         }
+        // The two common runs before a token are skipped here, as the call costs more than they
+        // do: one space, as after `:`, and a line break plus an indent of spaces.
+        if self.peek() == Some(b' ')
+            && self
+                .bytes
+                .get(self.pos + 1)
+                .is_some_and(|&b| ends_trivia(b))
+        {
+            self.pos += 1;
+            return Ok(());
+        }
+        if self.peek() == Some(b'\n') && !self.json_lines {
+            let rest = &self.bytes[self.pos + 1..];
+            if let Some(run) = rest.iter().position(|&b| b != b' ')
+                && ends_trivia(rest[run])
+            {
+                self.pos += 1 + run;
+                return Ok(());
+            }
+        }
         self.skip_trivia()
     }
 

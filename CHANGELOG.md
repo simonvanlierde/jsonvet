@@ -26,6 +26,9 @@ version for a new option or output, the patch version for a fix.
   typical JSON, JSONC and JSON5 files.
 - Each object and array costs less to open and close: 19% fewer instructions on deeply nested
   files, and 1-4% fewer on most others.
+- White space between tokens costs less: a single space, or a line break and an indent of spaces,
+  is skipped in place. Pretty-printed JSON takes 10-22% fewer instructions, JSONC and JSON5 about
+  10% fewer, and minified JSON about 1% more.
 - A file whose `$schema` names a path that does not exist is still checked without a schema, but
   jsonvet now says so: one note on stderr per missing schema, such as one under a `node_modules`
   that was never installed. The exit code is unchanged.
