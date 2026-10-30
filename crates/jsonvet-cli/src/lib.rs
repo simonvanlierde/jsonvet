@@ -110,6 +110,25 @@ fn run_here() -> ExitCode {
     }
 }
 
+/// The end of a run: the `line` of counts as text on a terminal (`text`), and as an annotation
+/// when `found` problems, then whatever the format closes with.
+fn print_summary(
+    printer: &mut Printer<impl Write>,
+    line: Option<&str>,
+    text: bool,
+    found: bool,
+) -> io::Result<()> {
+    if let Some(line) = line {
+        if text {
+            printer.text_line(line)?;
+        }
+        if found {
+            printer.summary_annotation(line)?;
+        }
+    }
+    printer.finish()
+}
+
 /// Where output goes, as far as text output's look depends on it. Public only for
 /// `benches/codspeed.rs`; not part of the crate's API.
 #[doc(hidden)]
@@ -187,10 +206,9 @@ pub fn run_with(
     let mut ahead = Vec::new();
     let written = loop {
         if rest.is_empty() {
-            let line = (summary && !files.is_empty()).then(|| counts.summary(files.len()));
-            break line
-                .map_or(Ok(()), |line| printer.text_line(&line))
-                .and_then(|()| printer.finish());
+            let line = (!files.is_empty()).then(|| counts.summary(files.len()));
+            let found = counts.errors + counts.warnings > 0;
+            break print_summary(&mut printer, line.as_deref(), summary, found);
         }
         let shares = shares.get(files.len() - rest.len()..);
         let with_schema = |job: &Job, text: &str| with_schema(job, &shown(&job.1), text);

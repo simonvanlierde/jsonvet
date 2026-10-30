@@ -152,12 +152,19 @@ fn github_annotations_follow_each_problem() {
         "bom.json:1:1: warning[byte-order-mark] byte order mark at the start of the file\n\
          ::warning file=bom.json,line=1,col=1,endColumn=1,title=jsonvet (byte-order-mark)::byte order mark at the start of the file\n\
          dup.json:1:8: error[duplicate-key] duplicate key $.a (first at 1:2)\n\
-         ::error file=dup.json,line=1,col=8,endColumn=10,title=jsonvet (duplicate-key)::duplicate key $.a (first at 1:2)\n"
+         ::error file=dup.json,line=1,col=8,endColumn=10,title=jsonvet (duplicate-key)::duplicate key $.a (first at 1:2)\n\
+         ::notice title=jsonvet::1 error and 1 warning in 2 of 2 files\n"
     );
     assert_eq!(
         run("false"),
         "bom.json:1:1: warning[byte-order-mark] byte order mark at the start of the file\n\
          dup.json:1:8: error[duplicate-key] duplicate key $.a (first at 1:2)\n"
+    );
+    // No problems, no summary notice.
+    fs::write(dir.join("ok.json"), "{}").expect("write");
+    assert_eq!(
+        run_jsonvet(&dir, &["ok.json"], true),
+        (0, String::new(), String::new())
     );
 }
 
@@ -196,7 +203,8 @@ fn each_output_path_escapes_names_and_messages() {
             true,
             format!(
                 "./::a\\n\\u001b[2J,.json:1:4: {end}\n\
-                 ::error file=%3A%3Aa\\n\\u001b[2J%2C.json,line=1,col=4,title=jsonvet (syntax)::unclosed `[`: expected a value, found the end of the file (opened at 1:1)\n"
+                 ::error file=%3A%3Aa\\n\\u001b[2J%2C.json,line=1,col=4,title=jsonvet (syntax)::unclosed `[`: expected a value, found the end of the file (opened at 1:1)\n\
+                 ::notice title=jsonvet::1 error in 1 of 1 file\n"
             ),
         ),
         // A message in an annotation.
@@ -204,7 +212,8 @@ fn each_output_path_escapes_names_and_messages() {
             "m.json",
             true,
             format!(
-                "{text}::error file=m.json,line=1,col=17,endColumn=26,title=jsonvet (duplicate-key)::{}\n",
+                "{text}::error file=m.json,line=1,col=17,endColumn=26,title=jsonvet (duplicate-key)::{}\n\
+                 ::notice title=jsonvet::1 error in 1 of 1 file\n",
                 message.replace('%', "%25")
             ),
         ),
@@ -214,7 +223,8 @@ fn each_output_path_escapes_names_and_messages() {
             "::gone\u{1b}[2J.json",
             true,
             "./::gone\\u001b[2J.json: error: no such file\n\
-             ::error file=%3A%3Agone\\u001b[2J.json,title=jsonvet::no such file\n"
+             ::error file=%3A%3Agone\\u001b[2J.json,title=jsonvet::no such file\n\
+             ::notice title=jsonvet::1 error in 1 of 1 file\n"
                 .to_owned(),
         ),
     ];

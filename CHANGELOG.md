@@ -10,6 +10,9 @@ version for a new option or output, the patch version for a fix.
 
 ### Added
 
+- In GitHub Actions, a run that finds problems ends with a notice annotation that counts them,
+  since GitHub shows only the first 10 annotations of a type for a step
+  ([output](docs/usage.md#output)).
 - A JSON Schema describes the `--format json` document, for editors and code generators
   ([JSON](docs/usage.md#json)).
 - A crash in jsonvet now prints its message with a link to the issue tracker and exits 101,

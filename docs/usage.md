@@ -77,7 +77,10 @@ severities, JSONPaths and exit codes are never translated.
   `comments are not allowed in json; the jsonc dialect allows this`.
 - A UTF-16 or UTF-32 file fails with `file is UTF-16 (LE); jsonvet reads UTF-8`. Any other file
   that is not UTF-8 fails with `not valid UTF-8 (byte N)`.
-- In GitHub Actions, each problem is also an annotation.
+- In GitHub Actions, each problem is also an annotation. GitHub shows only the first 10 of each
+  type for a step, so when a run finds problems, its last line is a `notice` annotation with the
+  summary, such as `3 errors and 1 warning in 2 of 5 files`. Notices have a limit of their own, so
+  this one always shows.
 
 jsonvet escapes control, bidirectional and invisible characters in file names and messages, so no
 output line can drive a terminal or pass for a GitHub workflow command
