@@ -90,6 +90,17 @@ jobs:
       # Chrome is on the runner: load the stamped page from a local server and read its status.
       - name: Load the page in Chrome
         run: playground/browser-check.sh
+      # A pull request keeps screenshots of its page, desktop and phone in light and dark, as an
+      # artifact on the run's summary page, since Pages cannot host a preview.
+      - name: Take screenshots of the page
+        if: github.event_name == 'pull_request'
+        run: playground/screenshots.sh "${RUNNER_TEMP}/screenshots"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: github.event_name == 'pull_request'
+        with:
+          name: playground-screenshots
+          path: ${{ runner.temp }}/screenshots
+          retention-days: 14
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: playground

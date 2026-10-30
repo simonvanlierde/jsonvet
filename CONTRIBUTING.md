@@ -48,7 +48,8 @@ Other workflows:
 - Every week: `fuzz.yml` and `mutants.yml` in full. Every Monday: `advisories.yml`, so a new
   RustSec advisory against `Cargo.lock` fails a run without waiting for a pull request.
 - `pages.yml` builds and tests the playground on a pull request that touches it, and deploys it
-  from main. `just playground` does the same build and tests, and serves it at
+  from main. On a pull request it also keeps screenshots of the page (`playground/screenshots.sh`:
+  desktop and phone, light and dark) as the `playground-screenshots` artifact for 14 days. `just playground` does the same build and tests, and serves it at
   <http://127.0.0.1:8000>.
 - `scorecard.yml` rates the repository for the OpenSSF Scorecard badge.
 
