@@ -7,3 +7,5 @@ error[syntax]: expected a value, found U+001B
   |
 1 | ["##�x�", �[2J�]
   |           ^
+  |
+  = help: https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#syntax

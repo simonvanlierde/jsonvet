@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/simonvanlierde/jsonvet/blob/main/docs/json-output.schema.json",
+  "title": "jsonvet --format json",
+  "description": "The document jsonvet prints for --format json. Fields not listed here may come in a later release without a new version: ignore them.",
+  "type": "object",
+  "required": ["version", "diagnostics"],
+  "properties": {
+    "version": {
+      "description": "The version of this layout.",
+      "const": 1
+    },
+    "diagnostics": {
+      "description": "One object per problem, in the order text output prints them.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/diagnostic" }
+    }
+  },
+  "$defs": {
+    "diagnostic": {
+      "type": "object",
+      "required": [
+        "file",
+        "rule",
+        "url",
+        "severity",
+        "message",
+        "line",
+        "column",
+        "offset",
+        "related"
+      ],
+      "properties": {
+        "file": {
+          "description": "The file name as given, or the --stdin-filename.",
+          "type": "string"
+        },
+        "rule": {
+          "description": "The rule id, such as duplicate-key, or schema or unreadable.",
+          "type": "string"
+        },
+        "url": {
+          "description": "A link to the rule's section in docs/usage.md.",
+          "type": "string",
+          "format": "uri"
+        },
+        "severity": { "enum": ["error", "warning"] },
+        "message": { "type": "string" },
+        "line": {
+          "description": "From 1; null for a file jsonvet could not read.",
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "column": {
+          "description": "From 1, in code points; null with no line.",
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "offset": {
+          "description": "The byte offset in the file, from 0; null with no line.",
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "related": {
+          "description": "Other places the problem names. Often empty.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/related" }
+        }
+      }
+    },
+    "related": {
+      "type": "object",
+      "required": ["message", "line", "column", "offset"],
+      "properties": {
+        "message": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "column": { "type": "integer", "minimum": 1 },
+        "offset": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

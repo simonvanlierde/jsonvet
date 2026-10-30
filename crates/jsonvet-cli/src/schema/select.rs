@@ -10,6 +10,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use jsonvet::{Dialect, Event, EventKind, Report, Rule};
 
+use memchr::memmem;
+
 use super::Schema;
 use super::limits::{PATTERN_BYTES, RUN_PATTERNS};
 use crate::settings::{self, Settings};
@@ -227,13 +229,24 @@ impl OwnSchema {
 
 /// Whether some `$schema` in `text` may hold a path rather than a URL, so the text is worth
 /// parsing into events: they take 10 times its memory and 2.5 times as long as a plain check,
-/// and most `$schema` values are URLs. Anything but `$schema`, a quote, `:` and a URL is a maybe.
+/// and most `$schema` values are URLs. Anything but `$schema`, a quote, `:` and a URL is a maybe,
+/// and so is any escape that can spell the key: `\u`, JSON5's `\x`, and a backslash that
+/// continues a JSON5 string over a line break.
 fn may_name_a_path(text: &str) -> bool {
-    text.match_indices("$schema").any(|(at, key)| {
-        let rest = text[at + key.len()..].trim_start_matches(['"', '\'']);
+    let bytes = text.as_bytes();
+    memmem::find_iter(bytes, b"$schema").any(|at| {
+        let rest = text[at + "$schema".len()..].trim_start_matches(['"', '\'']);
         rest.trim_start()
             .strip_prefix(':')
             .is_none_or(|value| !is_url(value.trim_start().trim_start_matches(['"', '\''])))
+    }) || memchr::memchr_iter(b'\\', bytes).any(|at| {
+        let next = &bytes[at + 1..];
+        next.starts_with(b"u")
+            || next.starts_with(b"x")
+            || next.starts_with(b"\n")
+            || next.starts_with(b"\r")
+            || next.starts_with("\u{2028}".as_bytes())
+            || next.starts_with("\u{2029}".as_bytes())
     })
 }
 
@@ -339,6 +352,11 @@ mod tests {
             (r#"{"$schema": 1}"#, true),
             (r#"{"a": "https://x", "$schema": "s.json"}"#, true),
             ("{\"$schema", true),
+            (r#"{"\u0024schema": "https://x"}"#, true),
+            (r#"{"\x24schema": "https://x"}"#, true),
+            ("{\"$sch\\\nema\": \"https://x\"}", true),
+            ("{\"$sch\\\u{2028}ema\": \"https://x\"}", true),
+            (r#"{"a\tb": "c:\\d", "$schema": "https://x"}"#, false),
         ] {
             assert_eq!(super::may_name_a_path(text), path, "{text}");
         }

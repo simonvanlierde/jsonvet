@@ -47,6 +47,16 @@ const SPLIT_BYTES: usize = 1 << 20;
 
 /// Run the command with the process's arguments and environment, and return its exit code.
 pub fn run() -> ExitCode {
+    // The release profile aborts on a panic, which ends the process with a signal and no way to
+    // report it. A hook runs first, so a bug exits 101 with a pointer to the issue tracker.
+    std::panic::set_hook(Box::new(|info| {
+        eprintln!(
+            "jsonvet: internal error: {info}\n\nThis is a bug in jsonvet. Please report it at \
+             https://github.com/simonvanlierde/jsonvet/issues with the command you ran and, if \
+             you can share it, the file that caused it."
+        );
+        std::process::exit(101);
+    }));
     on_big_stack(run_here)
 }
 
@@ -63,6 +73,13 @@ fn on_big_stack<T: Send + 'static>(f: fn() -> T) -> T {
 }
 
 fn run_here() -> ExitCode {
+    // NOTE: a hidden trigger for tests/cli.rs, so the panic hook runs without a real bug. Debug
+    // builds only, so release binaries cannot be made to panic on purpose.
+    #[cfg(debug_assertions)]
+    assert!(
+        std::env::var_os("JSONVET_TEST_PANIC").is_none(),
+        "test panic"
+    );
     let annotate = std::env::var_os("GITHUB_ACTIONS").is_some_and(|v| v == "true");
     let stdout = io::stdout().lock();
     let set = |name| std::env::var_os(name).is_some_and(|v| !v.is_empty());
@@ -91,6 +108,25 @@ fn run_here() -> ExitCode {
             ExitCode::from(2)
         }
     }
+}
+
+/// The end of a run: the `line` of counts as text on a terminal (`text`), and as an annotation
+/// when `found` problems, then whatever the format closes with.
+fn print_summary(
+    printer: &mut Printer<impl Write>,
+    line: Option<&str>,
+    text: bool,
+    found: bool,
+) -> io::Result<()> {
+    if let Some(line) = line {
+        if text {
+            printer.text_line(line)?;
+        }
+        if found {
+            printer.summary_annotation(line)?;
+        }
+    }
+    printer.finish()
 }
 
 /// Where output goes, as far as text output's look depends on it. Public only for
@@ -170,10 +206,9 @@ pub fn run_with(
     let mut ahead = Vec::new();
     let written = loop {
         if rest.is_empty() {
-            let line = (summary && !files.is_empty()).then(|| counts.summary(files.len()));
-            break line
-                .map_or(Ok(()), |line| printer.text_line(&line))
-                .and_then(|()| printer.finish());
+            let line = (!files.is_empty()).then(|| counts.summary(files.len()));
+            let found = counts.errors + counts.warnings > 0;
+            break print_summary(&mut printer, line.as_deref(), summary, found);
         }
         let shares = shares.get(files.len() - rest.len()..);
         let with_schema = |job: &Job, text: &str| with_schema(job, &shown(&job.1), text);
@@ -1040,7 +1075,7 @@ mod tests {
             (
                 1,
                 "error[syntax]: expected a value, found `True`; did you mean `true`?\n \
-                 --> l.jsonl:2:7\n  |\n2 | {\"a\": True}\n  |       ^^^^\n\n\
+                 --> l.jsonl:2:7\n  |\n2 | {\"a\": True}\n  |       ^^^^\n  |\n  = help: https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#syntax\n\n\
                  1 error in 1 of 1 file\n"
                     .to_owned()
             )
@@ -1050,7 +1085,7 @@ mod tests {
             (
                 1,
                 "error[schema]: 1 is not of type \"string\" (at $.a)\n \
-                 --> d.json:2:8\n  |\n2 |   \"a\": 1\n  |        ^\n\n\
+                 --> d.json:2:8\n  |\n2 |   \"a\": 1\n  |        ^\n  |\n  = help: https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#schema\n\n\
                  1 error in 1 of 1 file\n"
                     .to_owned()
             )

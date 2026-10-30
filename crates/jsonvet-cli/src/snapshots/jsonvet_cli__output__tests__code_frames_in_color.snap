@@ -12,12 +12,16 @@ expression: "out.replace('\\u{1b}', \"␛\")"
   ␛[1m␛[94m|␛[0m
 ␛[1m␛[94m2␛[0m ␛[1m␛[94m|␛[0m   "a": 1,
   ␛[1m␛[94m|␛[0m   ␛[1m␛[94m-␛[0m ␛[1m␛[94mfirst copy␛[0m
+  ␛[1m␛[94m|␛[0m
+  ␛[1m␛[94m= ␛[0m␛[1mhelp␛[0m: https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#duplicate-key
 
 ␛[1m␛[91merror[syntax]␛[0m␛[1m: expected a value, found `True`; did you mean `true`?␛[0m
  ␛[1m␛[94m--> ␛[0mopen.json:1:11
   ␛[1m␛[94m|␛[0m
 ␛[1m␛[94m1␛[0m ␛[1m␛[94m|␛[0m {"a": [1, True
   ␛[1m␛[94m|␛[0m           ␛[1m␛[91m^^^^␛[0m
+  ␛[1m␛[94m|␛[0m
+  ␛[1m␛[94m= ␛[0m␛[1mhelp␛[0m: https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#syntax
 
 ␛[1m␛[91merror␛[0m␛[1m: no such file␛[0m
 ␛[1m␛[94m--> ␛[0mgone.json
