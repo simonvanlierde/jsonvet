@@ -59,7 +59,7 @@ jobs:
           tool: wasm-bindgen@${{ steps.bindgen.outputs.version }}
           fallback: none
       # The page's line and column mapping, which has to match jsonvet's, and its share links.
-      - run: node --test playground/lines.test.mjs playground/share.test.mjs
+      - run: node --test playground/*.test.mjs
       - run: cargo build --locked -p jsonvet-wasm --target wasm32-unknown-unknown --profile wasm
       - run: >-
           wasm-bindgen --target web --no-typescript --out-dir playground/pkg

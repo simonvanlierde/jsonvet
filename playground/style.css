@@ -1,173 +1,195 @@
-/* A terminal tool's page: one quiet ground, hairline rules, square corners, mono for anything the
-   CLI prints, one accent for links, the caret and focus, and state colours only where a problem
-   is. DESIGN.md has the system. */
+/* A printer's galley proof: warm paper, near-black ink, one proofreader's red. The text is set with
+   line numbers, problems get proofreader's marks at the exact token, and the corrections sit in the
+   margin, joined to their rows by thin leader lines over a faint drafting grid. DESIGN.md has the
+   system. */
 :root {
-  --ground: #f7f8f8; --field: #fff; --ink: #15191b; --muted: #57636a; --rule: #dce1e3; --rule-strong: #b9c2c6;
-  --accent: #0b6575; --active: #d9ecf0; --hover: #edf1f2; --select: #bfe0e6;
-  --error: #b42318; --error-bg: #fce8e5; --warning: #8f5300; --warning-bg: #fcf0da; --ok: #1a7a3c;
-  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --paper: #fbfaf5; --ink: #1a1916; --faint: #6b675e; --dim: #77736a; --pen: #c0251b;
+  --rule: #dcd8cc; --rule-strong: #b7b2a4; --grid: #f0ede4; --tint: #f2efe5; --active: #f5e6d6;
+  --select: #f1d6c6; --ground: var(--paper);
+  --serif: Charter, "Bitstream Charter", "Sitka Text", Cambria, "Iowan Old Style", Georgia, serif;
+  --mono: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, "Liberation Mono", monospace;
   --size: 14px; --lh: 20px;
-  color-scheme: light dark;
+  color-scheme: light;
 }
+/* The same proof under a desk lamp: warm dark paper, a pool of light at the top, the same roles. */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --ground: #0e1214; --field: #13181b; --ink: #e3e8ea; --muted: #95a3a9; --rule: #252e32; --rule-strong: #3b484e;
-    --accent: #6cc6d6; --active: #173a42; --hover: #192226; --select: #1f5561;
-    --error: #ff8f85; --error-bg: #3a1714; --warning: #f2b54b; --warning-bg: #352509; --ok: #6fd391;
+  :root:not([data-theme="light"]) {
+    --paper: #1b1915; --ink: #ebe5d6; --faint: #a8a191; --dim: #8b8475; --pen: #ff8a73;
+    --rule: #3a362d; --rule-strong: #575146; --grid: #221f1a; --tint: #26231d; --active: #3a2a22;
+    --select: #5a3427; --ground: radial-gradient(120% 60% at 50% -12%, #27231b, var(--paper) 62%) var(--paper);
+    color-scheme: dark;
   }
 }
+:root[data-theme="dark"] {
+  --paper: #1b1915; --ink: #ebe5d6; --faint: #a8a191; --dim: #8b8475; --pen: #ff8a73;
+  --rule: #3a362d; --rule-strong: #575146; --grid: #221f1a; --tint: #26231d; --active: #3a2a22;
+  --select: #5a3427; --ground: radial-gradient(120% 60% at 50% -12%, #27231b, var(--paper) 62%) var(--paper);
+  color-scheme: dark;
+}
+@media (forced-colors: active) {
+  :root { --pen: Highlight; --ink: CanvasText; --faint: CanvasText; --dim: GrayText; --rule: GrayText; --active: Canvas; }
+}
 * { box-sizing: border-box; }
-::selection { background: var(--select); }
-body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.5 var(--sans); }
-a { color: var(--accent); text-underline-offset: .2em; text-decoration-thickness: 1px; }
-a:hover { text-decoration-thickness: 2px; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+::selection { background: var(--select); color: var(--ink); }
+body { margin: 0; min-height: 100dvh; display: flex; flex-direction: column; background: var(--ground); color: var(--ink); font: 16px/1.5 var(--serif); }
+main { flex: 1; }
+a { color: inherit; text-decoration: underline; text-decoration-color: var(--rule-strong); text-underline-offset: .22em; text-decoration-thickness: 1px; }
+a:hover { text-decoration-color: currentColor; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 code, kbd, pre { font-family: var(--mono); }
-.wrap { width: 100%; max-width: 1360px; margin-inline: auto; padding-inline: clamp(16px, 3vw, 32px); }
+code { font-size: .875em; }
+.wrap { width: 100%; max-width: 1240px; margin-inline: auto; padding-inline: clamp(16px, 4vw, 48px); }
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+[hidden] { display: none !important; }
 button { font: inherit; color: inherit; }
+/* A control that reads as part of the line it sits in. */
+.link { padding: 0; background: none; border: 0; color: inherit; cursor: pointer; text-decoration: underline; text-decoration-color: var(--rule-strong); text-underline-offset: .22em; text-decoration-thickness: 1px; }
+.link:hover:not(:disabled) { text-decoration-color: currentColor; }
+.link:disabled { cursor: default; text-decoration: none; }
 
-/* The header: one line on the page ground. */
-.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 16px; padding-block: 16px 4px; }
-h1 { margin: 0; font-size: 1rem; font-weight: 650; line-height: 1.4; white-space: nowrap; }
-.mark { margin-right: .3em; color: var(--accent); font: 700 1em var(--mono); letter-spacing: -.05em; }
-.tagline { flex: 1 1 16rem; margin: 0; color: var(--muted); font-size: .875rem; }
-.share { padding: 3px 10px; font-size: .875rem; font-weight: 600; color: var(--accent); background: none; border: 1px solid var(--rule-strong); border-radius: 0; cursor: pointer; }
-.share:hover:not(:disabled) { background: var(--hover); border-color: var(--accent); }
-.share:disabled { color: var(--muted); cursor: default; }
+/* The slug: the proof's job line, in small mono, parts set off by middle dots. */
+.slug, .colophon .slug-part { font: 12px/1.6 var(--mono); color: var(--faint); }
+.slug { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 24px; padding-block: 20px 9px; border-bottom: 1px dashed var(--rule-strong); }
+.slug-part { display: flex; flex-wrap: wrap; margin: 0; }
+.slug-part > :not([hidden]) ~ :not([hidden])::before { content: "·"; content: "·" / ""; margin-inline: .7ch; color: var(--dim); }
+.slug b, .slug #name, .slug #set { color: var(--ink); font-weight: 600; }
+.slug b { font-weight: 700; }
+.speed { color: var(--ink); }
+.speed em { font-style: normal; color: var(--pen); font-variant-numeric: tabular-nums; }
+.speed .stale em { opacity: .55; }
+.speed .link { color: var(--faint); }
 
-/* The dialect strip: each dialect with its verdict on the current text. */
-.dialects { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 6px 16px; padding-block: 14px 12px; }
-.label { color: var(--muted); font-size: .875rem; font-weight: 600; }
-#dialects { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); max-width: 52rem; border: 1px solid var(--rule-strong); background: var(--field); }
-#dialects button { display: flex; flex-direction: column; gap: 1px; min-height: 48px; padding: 6px 10px 7px; text-align: left; background: none; border: 0; border-left: 1px solid var(--rule); border-radius: 0; cursor: pointer; color: var(--muted); }
-#dialects button:first-child { border-left: 0; }
-#dialects button:hover { background: var(--hover); color: var(--ink); }
-#dialects button[aria-checked="true"] { color: var(--ink); box-shadow: inset 0 -3px var(--accent); background: var(--field); }
-#dialects button:focus-visible { outline-offset: -2px; }
-.name { font-size: .875rem; font-weight: 600; line-height: 1.3; white-space: nowrap; }
-#dialects button[aria-checked="true"] .name { font-weight: 700; }
-.v { display: flex; gap: 8px; min-height: 1.3em; font: .8125rem/1.3 var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.v .error { color: var(--error); }
-.v .warning { color: var(--warning); }
-.v .ok { color: var(--ok); }
-.v .none { color: var(--muted); }
-.hint { grid-column: 2; margin: 0; color: var(--muted); font-size: .875rem; line-height: 1.45; max-width: 52rem; }
-.hint code, #verdict code, #stopped code, .msg code, .keys kbd { font-size: .92em; white-space: nowrap; }
+/* The proof stages: the six dialects, each with its verdict on the text. */
+.stages-row { padding-block: 18px 0; }
+.stages { display: flex; border: 1px solid var(--rule); }
+.stages button { display: grid; align-content: start; gap: 1px; min-width: 7.5rem; min-height: 48px; padding: 6px 14px 7px 12px; text-align: left; background: none; border: 0; border-right: 1px solid var(--rule); border-radius: 0; cursor: pointer; color: var(--faint); }
+.stages button:hover { background: var(--tint); color: var(--ink); }
+.stages button[aria-checked="true"] { color: var(--ink); background: var(--tint); box-shadow: inset 0 -2px var(--ink); }
+.stages button:focus-visible { outline-offset: -3px; }
+.name { font-size: .9375rem; line-height: 1.3; white-space: nowrap; }
+.v { display: flex; gap: 7px; min-height: 1.3em; font: 11.5px/1.4 var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--pen); }
+.v .ok, .v .none { color: var(--faint); }
+/* Severity as a printed shape, so it does not hang on colour: a square for an error, a triangle for
+   a warning. */
+.shape::before { content: ""; display: inline-block; width: .55em; height: .55em; margin-right: .3em; background: currentColor; }
+.warning.shape::before { clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.hint { margin: 8px 0 0; max-width: 46rem; color: var(--faint); font-size: .9375rem; font-style: italic; line-height: 1.45; }
+.hint code { font-style: normal; white-space: nowrap; }
 
-/* Severity as a printed shape: a square for an error, a triangle for a warning, a dot for a pass. */
-.shape::before, #status::before { content: ""; display: inline-block; width: .6em; height: .6em; margin-right: .3em; background: currentColor; }
-.warning.shape::before, #status.warn::before { clip-path: polygon(50% 0, 100% 100%, 0 100%); }
-.ok.shape::before, #status.ok::before { border-radius: 50%; }
-#status:not(.ok, .warn, .bad)::before { display: none; }
-
-/* The text and the report. */
-.work { display: grid; gap: 0 28px; }
-.editor { position: relative; display: flex; height: 45vh; min-height: 240px; min-width: 0; background: var(--field); border: 1px solid var(--rule-strong); }
-.editor:focus-within { outline: 2px solid var(--accent); outline-offset: -1px; }
-.editor.drop { outline: 2px dashed var(--accent); outline-offset: -1px; }
+/* The proof: the set text on the left, the margin with the corrections on the right. */
+.proof { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 18.5rem; margin-top: 18px; }
+.proof.listed { grid-template-columns: minmax(0, 1fr); }
+.editor { position: relative; display: flex; min-width: 0; height: 248px; border-right: 1px solid var(--rule); }
+.proof.listed .editor { border-right: 0; }
+.editor.drop { outline: 2px dashed var(--ink); outline-offset: 4px; }
 .gutter, .layer, textarea { margin: 0; font: var(--size)/var(--lh) var(--mono); white-space: pre; tab-size: 4; }
-.gutter { flex: none; padding: 8px 0; color: var(--muted); border-right: 1px solid var(--rule); text-align: right; font-variant-numeric: tabular-nums; overflow: hidden; user-select: none; }
-.gutter div { padding-inline: 4px 10px; }
-/* A slot for the glyph on every row, so the text never moves when a mark comes or goes. */
-.gutter div::before { content: ""; display: inline-block; width: 1.4em; text-align: center; }
-.gutter .error::before { content: "\2716"; }
-.gutter .warning::before { content: "\25b2"; }
+.gutter { flex: none; padding: 8px 0; color: var(--dim); border-right: 1px solid transparent; text-align: right; font-variant-numeric: tabular-nums; overflow: hidden; user-select: none; }
+.editor:focus-within .gutter { border-right-color: var(--ink); }
+.gutter div { padding-inline: 0 14px; }
+/* A slot for a correction's number on every row, so the text never moves when one comes or goes. */
+.gutter div::before { content: ""; display: inline-block; width: 3.4ch; padding-right: .6ch; text-align: right; color: var(--pen); font-size: 11px; }
+.gutter div[data-n]::before { content: attr(data-n); }
 .text { position: relative; flex: 1; min-width: 0; }
 .layer, textarea { position: absolute; inset: 0; width: 100%; height: 100%; overflow: auto; }
 .layer { padding: 8px 0; color: transparent; pointer-events: none; overflow: hidden; forced-color-adjust: none; }
 /* Room for the textarea's scrollbar, so the layers scroll as far as it does. */
 .layer, .gutter { padding-bottom: 40px; }
-.layer div { width: max-content; min-width: 100%; padding-inline: 8px; }
+.layer div { width: max-content; min-width: 100%; padding-inline: 6px 8px; }
 .layer div, .gutter div { min-height: var(--lh); }
-.layer .error, .gutter .error { background: var(--error-bg); }
-.layer .warning, .gutter .warning { background: var(--warning-bg); }
-.gutter .error { color: var(--error); }
-.gutter .warning { color: var(--warning); }
 .layer div.active, .gutter div.active { background: var(--active); }
-/* The character a problem points at, underlined; the place it names, such as a first copy, boxed. */
-.layer mark { position: relative; color: transparent; background: none; box-shadow: inset 0 -3px var(--error); }
-.layer mark.warning { box-shadow: inset 0 -3px var(--warning); }
-.layer mark.rel { box-shadow: inset 0 0 0 1px var(--error); }
-.layer mark.rel.warning { box-shadow: inset 0 0 0 1px var(--warning); }
+/* Proofreader's marks: a caret under the line where the token starts, the token struck out (or,
+   where checking stopped, underlined), and the place a problem names, such as a first copy,
+   ringed. */
+.layer mark { position: relative; color: transparent; background: none; text-decoration-color: var(--pen); text-decoration-thickness: 1.5px; }
+.layer mark:not(.rel)::before { content: "‸"; position: absolute; left: -.42ch; top: .05em; color: var(--pen); font: 700 15px/1 var(--mono); }
+.layer mark.dele { text-decoration-line: line-through; }
+.layer mark.at { text-decoration-line: underline; text-underline-offset: 3px; }
+.layer mark.rel { border-radius: 45%; box-shadow: 0 0 0 1.5px var(--pen); }
 /* A byte order mark has no width: a bar stands in for it. */
-.layer mark.zero::after { content: ""; position: absolute; top: 1px; bottom: 1px; left: -1px; width: 3px; background: var(--error); }
-.layer mark.zero.warning::after { background: var(--warning); }
-textarea, textarea:focus-visible { padding: 8px; border: 0; resize: none; background: transparent; color: var(--ink); caret-color: var(--accent); outline: none; scrollbar-color: var(--rule-strong) transparent; }
+.layer mark.zero::after { content: ""; position: absolute; top: 2px; bottom: 2px; left: -1px; width: 3px; background: var(--pen); }
+textarea, textarea:focus-visible { padding: 8px 8px 8px 6px; border: 0; resize: none; background: transparent; color: var(--ink); caret-color: var(--pen); outline: none; scrollbar-color: var(--rule-strong) transparent; }
 
-.report { min-width: 0; padding-block: 18px 8px; }
-#status { margin: 0; font-size: 1.5rem; font-weight: 650; line-height: 1.2; letter-spacing: -.015em; color: var(--muted); font-variant-numeric: tabular-nums; }
-#status.ok { color: var(--ok); }
-#status.warn { color: var(--warning); }
-#status.bad { color: var(--error); }
-#status::before { width: .45em; height: .45em; vertical-align: .12em; margin-right: .35em; }
-#verdict, #stopped { margin: 4px 0 0; color: var(--muted); font-size: .9375rem; }
-#verdict:empty { display: none; }
-#stopped[hidden] { display: none; }
-ol { display: grid; grid-template-columns: auto auto 1fr; column-gap: 12px; margin: 16px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--rule); }
-ol:empty { display: none; }
-li { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; border-bottom: 1px solid var(--rule); }
-li > button { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; grid-row: 1; row-gap: 2px; padding: 9px 8px; }
-li > button:hover { background: var(--hover); }
-li > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--active); }
-li.lit > button { background: var(--active); }
-.at, .severity, .rule, .path, .rel-at { font-family: var(--mono); font-size: .8125rem; line-height: 1.6; }
-.at { grid-column: 1; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
-.severity { grid-column: 2; font-weight: 600; }
-.severity.error { color: var(--error); }
-.severity.warning { color: var(--warning); }
-/* The rule id is a link beside the button, on its first row. */
-.rule { grid-column: 3; grid-row: 1; align-self: start; justify-self: start; margin: 9px 8px 0 0; position: relative; overflow-wrap: anywhere; }
-.msg, .path, .rel-at { grid-column: 2 / -1; }
-.msg { font-size: .9375rem; line-height: 1.45; overflow-wrap: anywhere; }
-.msg code { padding: 0 3px; background: var(--hover); }
-.path, .rel-at { color: var(--muted); overflow-wrap: anywhere; }
-.more { grid-column: 1 / -1; padding: 9px 8px; color: var(--muted); font-size: .9375rem; }
-.keys { margin: 10px 0 0; color: var(--muted); font-size: .8125rem; }
-kbd { padding: 0 4px; border: 1px solid var(--rule-strong); border-bottom-width: 2px; background: var(--field); }
+/* The margin: a very faint drafting grid, and the corrections in italic red. */
+.margin { position: relative; overflow: hidden; background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size: 20px 20px; background-position: -1px -1px; }
+.sheet { position: relative; }
+.margin ol { margin: 0; padding: 0; list-style: none; }
+.note { color: var(--pen); font: italic 15px/var(--lh) var(--serif); }
+.proof:not(.listed) .note { position: absolute; left: 30px; right: 10px; padding: 0 4px; background: var(--paper); }
+.note button { all: unset; box-sizing: border-box; display: block; cursor: pointer; overflow-wrap: anywhere; }
+.note button:hover .msg { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: .2em; }
+.note button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.note .msg code { font-style: normal; font-size: .82em; }
+.note .n { display: none; }
+.meta { display: flex; flex-wrap: wrap; font: normal 11.5px/1.5 var(--mono); color: var(--faint); }
+.meta > * + *::before { content: "·"; content: "·" / ""; margin-inline: .6ch; color: var(--dim); }
+.meta .rule { color: var(--faint); }
+.meta .rule:hover { color: var(--ink); }
+.note.rel { pointer-events: none; }
+.leaders { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; fill: none; stroke: var(--pen); stroke-width: 1; stroke-opacity: .5; }
+.leaders path.lit { stroke-width: 1.5; stroke-opacity: 1; }
+.leaders marker path { fill: var(--pen); stroke: none; }
 
-/* What to add to a repository to run the same check. */
-.ci { margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--rule); }
-h2 { margin: 0 0 10px; font-size: .9375rem; font-weight: 650; }
-.snippet { margin-top: 10px; }
-.snippet-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-h3 { margin: 0; color: var(--muted); font-size: .8125rem; font-weight: 600; }
-.copy { padding: 0 8px; font-size: .8125rem; color: var(--accent); background: none; border: 0; cursor: pointer; text-decoration: underline; text-underline-offset: .2em; text-decoration-thickness: 1px; }
-.copy:hover { text-decoration-thickness: 2px; }
-pre { margin: 4px 0 0; padding: 10px 12px; overflow-x: auto; font-size: .8125rem; line-height: 1.5; background: var(--field); border: 1px solid var(--rule); scrollbar-color: var(--rule-strong) transparent; }
-pre:focus-visible { outline-offset: -2px; }
-.ci .hint { margin-top: 8px; font-size: .8125rem; }
+/* Too many corrections for the margin, or a narrow screen: a numbered list under the proof, keyed
+   to the numbers in the gutter. */
+.proof.listed .margin { overflow: visible; background: none; border-top: 1px solid var(--rule); margin-top: 6px; }
+.proof.listed .sheet { transform: none; }
+.proof.listed .note.rel { display: none; }
+.proof.listed ol { padding-top: 6px; }
+.proof.listed li { position: relative; padding: 5px 0 5px 4.4ch; }
+.proof.listed .note .n { display: block; position: absolute; left: 0; width: 3.4ch; font: normal 11.5px/var(--lh) var(--mono); text-align: right; font-variant-numeric: tabular-nums; }
+.more { padding: 5px 0 5px 4.4ch; color: var(--faint); font-style: italic; }
 
-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 24px; padding-block: 12px 16px; color: var(--muted); font-size: .8125rem; }
-footer p { margin: 0; }
-noscript p { max-width: 1360px; margin: 0 auto; padding: 16px; color: var(--error); }
+/* The verdict, one line under the proof. */
+.verdict { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 20px; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--rule); }
+#status { margin: 0; font-size: 1.0625rem; }
+#status b { color: var(--pen); font-weight: 700; }
+#status.ok b { color: var(--ink); }
+#status code { font-size: .82em; }
+.first { margin: 0; font: 12px/1.6 var(--mono); color: var(--faint); }
+.aside { margin: 6px 0 0; max-width: 46rem; color: var(--faint); font-size: .9375rem; font-style: italic; }
+.aside code, .aside kbd { font-style: normal; }
+kbd { padding: 0 4px; font-size: .8em; border: 1px solid var(--rule-strong); border-bottom-width: 2px; }
+#keys { margin-top: 10px; }
 
-@media (min-width: 1024px) {
-  .work { grid-template-columns: minmax(0, 1fr) minmax(21rem, 27rem); }
-  .report { overflow: auto; padding: 0 4px 8px 0; scrollbar-color: var(--rule-strong) transparent; }
-  .editor { height: auto; min-height: 0; }
-}
-/* Tall enough: the page fills the window and never scrolls; the text and the report scroll
-   inside it. */
-@media (min-width: 1024px) and (min-height: 600px) {
-  body { display: flex; flex-direction: column; height: 100dvh; }
-  main { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-  .work { flex: 1; min-height: 0; }
-}
-@media (max-width: 1023.98px) {
-  .work { gap: 0; }
-}
+/* Use this check: closed until asked for. */
+.use { margin-top: 22px; }
+.use summary { display: inline-block; cursor: pointer; color: var(--ink); font-size: 1rem; }
+.use summary::before { content: "▸"; content: "▸" / ""; display: inline-block; width: 1.1em; color: var(--faint); font-size: .9em; }
+.use[open] summary::before { content: "▾"; content: "▾" / ""; }
+.use summary::-webkit-details-marker { display: none; }
+.use summary:hover { text-decoration: underline; text-decoration-color: var(--rule-strong); text-underline-offset: .22em; }
+.tabs { display: flex; flex-wrap: wrap; gap: 0 22px; margin-top: 12px; border-bottom: 1px solid var(--rule); }
+.tabs button { padding: 4px 0 6px; background: none; border: 0; cursor: pointer; color: var(--faint); font-size: .9375rem; }
+.tabs button:hover { color: var(--ink); }
+.tabs button[aria-selected="true"] { color: var(--ink); box-shadow: inset 0 -2px var(--ink); }
+.tabs button:focus-visible { outline-offset: -1px; }
+.panel { display: flex; align-items: flex-start; gap: 14px; margin-top: 12px; max-width: 46rem; }
+.panel pre { flex: 1; min-width: 0; margin: 0; padding: 10px 12px; overflow-x: auto; font-size: 12.5px; line-height: 1.55; background: var(--tint); scrollbar-color: var(--rule-strong) transparent; }
+.panel .copy { font: 12px/1.6 var(--mono); color: var(--faint); }
+
+/* The colophon. */
+.colophon { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 24px; margin-top: 28px; padding-block: 10px 20px; border-top: 1px solid var(--rule); }
+.colophon p { margin: 0; }
+.colophon .quiet { flex-basis: 100%; margin-bottom: 4px; color: var(--faint); font-size: .875rem; font-style: italic; }
+.colophon a:hover { color: var(--ink); }
+noscript p { max-width: 1240px; margin: 0 auto; padding: 16px; color: var(--pen); }
+
 @media (max-width: 720px) {
-  .dialects { grid-template-columns: 1fr; }
-  .hint { grid-column: 1; }
-  #dialects { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  #dialects button:nth-child(3n + 1) { border-left: 0; }
-  #dialects button:nth-child(n + 4) { border-top: 1px solid var(--rule); }
+  .stages { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .stages button { min-width: 0; }
+  .stages button:nth-child(3n) { border-right: 0; }
+  .stages button:nth-child(n + 4) { border-top: 1px solid var(--rule); }
 }
 @media (max-width: 560px) {
   /* 16px, or iOS zooms in when the text area gets focus. */
   :root { --size: 16px; --lh: 22px; }
-  #status { font-size: 1.375rem; }
-  #dialects button { padding-inline: 8px; }
+  .stages button { padding-inline: 8px; }
+  .gutter div { padding-right: 8px; }
+  .gutter div::before { width: 2.6ch; }
+  .panel { flex-direction: column; gap: 4px; }
+}
+@media (forced-colors: active) {
+  .stages button[aria-checked="true"] { border-bottom: 2px solid CanvasText; }
+  .tabs button[aria-selected="true"] { border-bottom: 2px solid CanvasText; }
+  .margin .note { background: Canvas; }
 }

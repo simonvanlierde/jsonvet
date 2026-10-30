@@ -1,260 +1,245 @@
 ---
 name: jsonvet playground
-description: A terminal tool's page for the text you paste, checked by jsonvet in the browser.
+description: The text you paste, set as a printer's galley proof and corrected by jsonvet in the browser.
 colors:
-  ground: "#f7f8f8"
-  field: "#ffffff"
-  ink: "#15191b"
-  muted: "#57636a"
-  rule: "#dce1e3"
-  rule-strong: "#b9c2c6"
-  accent: "#0b6575"
-  active: "#d9ecf0"
-  hover: "#edf1f2"
-  select: "#bfe0e6"
-  error: "#b42318"
-  error-bg: "#fce8e5"
-  warning: "#8f5300"
-  warning-bg: "#fcf0da"
-  ok: "#1a7a3c"
-  dark-ground: "#0e1214"
-  dark-field: "#13181b"
-  dark-ink: "#e3e8ea"
-  dark-muted: "#95a3a9"
-  dark-rule: "#252e32"
-  dark-rule-strong: "#3b484e"
-  dark-accent: "#6cc6d6"
-  dark-active: "#173a42"
-  dark-hover: "#192226"
-  dark-error: "#ff8f85"
-  dark-error-bg: "#3a1714"
-  dark-warning: "#f2b54b"
-  dark-warning-bg: "#352509"
-  dark-ok: "#6fd391"
+  paper: "#fbfaf5"
+  ink: "#1a1916"
+  faint: "#6b675e"
+  dim: "#77736a"
+  pen: "#c0251b"
+  rule: "#dcd8cc"
+  rule-strong: "#b7b2a4"
+  grid: "#f0ede4"
+  tint: "#f2efe5"
+  active: "#f5e6d6"
+  select: "#f1d6c6"
+  dark-paper: "#1b1915"
+  dark-lamp: "#27231b"
+  dark-ink: "#ebe5d6"
+  dark-faint: "#a8a191"
+  dark-dim: "#8b8475"
+  dark-pen: "#ff8a73"
+  dark-rule: "#3a362d"
+  dark-rule-strong: "#575146"
+  dark-grid: "#221f1a"
+  dark-tint: "#26231d"
+  dark-active: "#3a2a22"
+  dark-select: "#5a3427"
 typography:
-  verdict:
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif"
-    fontSize: "1.5rem"
-    fontWeight: 650
-    lineHeight: 1.2
-    letterSpacing: "-0.015em"
-  title:
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif"
+  prose:
+    fontFamily: "Charter, Bitstream Charter, Sitka Text, Cambria, Iowan Old Style, Georgia, serif"
     fontSize: "1rem"
-    fontWeight: 650
-    lineHeight: 1.4
-  body:
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif"
-    fontSize: "0.9375rem"
+    lineHeight: 1.5
+  verdict:
+    fontFamily: "Charter, Bitstream Charter, Sitka Text, Cambria, Iowan Old Style, Georgia, serif"
+    fontSize: "1.0625rem"
     fontWeight: 400
-    lineHeight: 1.45
   note:
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif"
-    fontSize: "0.875rem"
-    lineHeight: 1.45
-  small:
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif"
-    fontSize: "0.8125rem"
-    lineHeight: 1.45
-  code:
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace"
+    fontFamily: "Charter, Bitstream Charter, Sitka Text, Cambria, Iowan Old Style, Georgia, serif"
+    fontSize: "15px"
+    fontStyle: "italic"
+    lineHeight: "20px"
+  aside:
+    fontFamily: "Charter, Bitstream Charter, Sitka Text, Cambria, Iowan Old Style, Georgia, serif"
+    fontSize: "0.9375rem"
+    fontStyle: "italic"
+  text:
+    fontFamily: "ui-monospace, Cascadia Code, Source Code Pro, Menlo, Consolas, Liberation Mono, monospace"
     fontSize: "14px"
     lineHeight: "20px"
-  code-narrow:
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace"
+  text-narrow:
+    fontFamily: "ui-monospace, Cascadia Code, Source Code Pro, Menlo, Consolas, Liberation Mono, monospace"
     fontSize: "16px"
     lineHeight: "22px"
-  cli:
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace"
-    fontSize: "0.8125rem"
+  slug:
+    fontFamily: "ui-monospace, Cascadia Code, Source Code Pro, Menlo, Consolas, Liberation Mono, monospace"
+    fontSize: "12px"
     lineHeight: 1.6
+  data:
+    fontFamily: "ui-monospace, Cascadia Code, Source Code Pro, Menlo, Consolas, Liberation Mono, monospace"
+    fontSize: "11.5px"
+    lineHeight: 1.5
 rounded:
   none: "0"
 spacing:
   xs: "4px"
-  sm: "8px"
-  md: "12px"
-  lg: "16px"
+  sm: "6px"
+  md: "10px"
+  lg: "18px"
   xl: "28px"
 components:
-  header:
-    backgroundColor: "{colors.ground}"
-    textColor: "{colors.ink}"
-    padding: "16px 0 4px"
-  dialect-option:
-    backgroundColor: "{colors.field}"
-    textColor: "{colors.muted}"
-    rounded: "{rounded.none}"
-    padding: "6px 10px 7px"
+  slug:
+    textColor: "{colors.faint}"
+    typography: "{typography.slug}"
+    padding: "20px 0 9px"
+  stage:
+    textColor: "{colors.faint}"
+    padding: "6px 14px 7px 12px"
     height: "48px"
-  dialect-option-selected:
-    backgroundColor: "{colors.field}"
+  stage-selected:
+    backgroundColor: "{colors.tint}"
     textColor: "{colors.ink}"
-  dialect-option-hover:
-    backgroundColor: "{colors.hover}"
+  proof-text:
+    backgroundColor: "{colors.paper}"
     textColor: "{colors.ink}"
-  editor:
-    backgroundColor: "{colors.field}"
-    textColor: "{colors.ink}"
-    typography: "{typography.code}"
-  problem:
-    textColor: "{colors.ink}"
-    padding: "9px 8px"
-  problem-hover:
-    backgroundColor: "{colors.hover}"
-  problem-focus:
-    backgroundColor: "{colors.active}"
+    typography: "{typography.text}"
+  margin-note:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.pen}"
+    typography: "{typography.note}"
   snippet:
-    backgroundColor: "{colors.field}"
+    backgroundColor: "{colors.tint}"
     textColor: "{colors.ink}"
-    typography: "{typography.cli}"
     padding: "10px 12px"
 ---
 
 ## Design System: jsonvet playground
 
 Product context is in [PRODUCT.md](PRODUCT.md). The tokens above are the light theme; the
-`dark-` entries replace their light namesakes under `prefers-color-scheme: dark`, in
-[style.css](style.css), which is the source of truth.
+`dark-` entries replace their light namesakes under `prefers-color-scheme: dark` (or
+`data-theme="dark"`), in [style.css](style.css), which is the source of truth.
 
 ### Overview
 
-The page looks like a good terminal tool: one quiet ground, hairline rules, square corners, and
-the text and the verdicts carry it. A thin header names the page on the ground itself. Below it,
-the dialect strip shows how each of the six dialects judges the current text, the editor holds the
-text, and the report beside it says what jsonvet says: the count, the CLI's exit code, each problem
-and how to run the same check in CI.
+The page is a printer's galley proof with a touch of engineering drawing. The text is set with
+line numbers on warm paper; every problem gets a proofreader's mark at the exact token, and the
+correction is written in the margin in italic red, joined to its line by a thin leader line with a
+small arrowhead. The only drawing touches are those leader lines and a very faint grid in the
+margin column. Nothing else decorates the page: no title block, no boxes, no shadows.
 
-It is an Operate surface. Character comes from precise details, not from fields of colour: mono for
-every string the CLI prints, printed severity shapes, the column marks in the text, and one accent.
+The register is Persuade with a working checker: the first screen shows what jsonvet says about a
+real config, how long it took in the visitor's browser, and how to start.
 
 ### Colors
 
-Restrained: neutrals do the work, one accent, and state colours only where a problem is.
+Warm paper, near-black ink, and one proofreader's red. Nothing else is coloured.
 
-- **Ground and field:** the page sits on the ground (`#f7f8f8`); the editor, the dialect strip and
-  the snippets are fields (`#ffffff`) inside a hairline. Nothing else has a fill.
-- **Ink, muted, rule, rule-strong:** text, secondary text, hairlines between parts, and the outline
-  of a control or a field. Muted text keeps 4.5:1 on the ground and on a field.
-- **Accent** (`#0b6575`, `#6cc6d6` in dark): links, the caret, focus rings, the `{}` mark, and the
-  bar under the selected dialect. Never a fill.
-- **Active** and **hover:** the rows a focused or hovered problem names, a focused problem, and the
-  hover ground of buttons.
-- **State:** error red, warning amber, ok green, each with a pale ground for row tints.
+- **Paper** (`#fbfaf5`): the whole page. **Ink** (`#1a1916`): text and the selected stage's bar.
+- **Faint** (`#6b675e`, 5.4:1 on paper): the slug, hints, notes under the verdict, meta lines.
+  **Dim**: line numbers and the middle dots between slug parts.
+- **Pen** (`#c0251b`, 6:1 on paper): proofreader's marks, margin notes, leader lines, the
+  timings, the correction count and the numbers in the gutter. Never a fill, never decoration.
+- **Rule** and **rule-strong:** hairlines between parts, link underlines. **Grid:** the margin's
+  20px drafting grid, barely there. **Tint:** the selected stage and the snippet ground.
+  **Active:** the rows a hovered or focused correction names.
+- **Dark, under a desk lamp:** the same roles on warm dark paper (`#1b1915`), with a soft pool of
+  light at the top of the page (`#27231b` fading into the paper). Every pair keeps AA.
+- **Forced colours:** pen becomes `Highlight`, ink `CanvasText`, rules `GrayText`.
 
 #### Named Rules
 
-**The State-Only Rule.** Red, amber and green mean error, warning and pass, nowhere else.
+**The One-Pen Rule.** Red marks a correction and only that: the mark, its note, its leader, its
+count. Severity is told by the word ("warning") and the strip's shapes, not by a second colour.
 
-**The One-Accent Rule.** The accent marks what you can act on or where you are. It is never
-decoration and never a background.
+**The Light-Drawing Rule.** The drawing world stops at the leader lines and the margin grid. No
+title block, dimension lines, crop marks or heavier strokes.
 
 ### Typography
 
-One system sans for the interface, one system mono for the text and for anything the CLI prints:
-positions, severities, rule ids, JSONPaths, options, file extensions, the snippets, and each
-backticked word in a message. No web fonts: the CSP allows only the page's own files.
+System fonts only (the CSP allows only the page's own files). A serif stack for prose and the
+corrections, a mono stack for the text and every string the CLI prints.
 
-#### Hierarchy
+- **Prose** (serif 1rem): the stages' names, the verdict, "Use this check", tabs.
+- **Note** (italic serif 15px / 20px): margin corrections. Its line height equals the text's, so a
+  note's first line sits on its row.
+- **Aside** (italic serif 0.9375rem): the dialect hint, the syntax-stop note, the keyboard hint,
+  the CI note.
+- **Text** (mono 14px / 20px; 16px / 22px under 560px so iOS does not zoom): the editor, gutter
+  and mark layer share it exactly, or the marks drift off their characters.
+- **Slug** (mono 12px): the job line and the colophon. **Data** (mono 11.5px): stage verdicts,
+  note meta lines, list numbers.
 
-- **Verdict** (1.5rem, 650): the count, such as "2 errors, 1 warning". The only large type.
-- **Title** (1rem, 650): the header's name. Small on purpose: the page is the tool, not a banner.
-- **Body** (0.9375rem / 1.45): problem messages, the CLI line, the syntax-stop note.
-- **Note** (0.875rem): the tagline, the dialect hint, dialect names.
-- **Small** (0.8125rem): the keyboard hint, CI headings and note, the footer.
-- **Code** (14px / 20px, 16px / 22px under 560px so iOS does not zoom): the editor, gutter and
-  overlay share it exactly, or the marks drift off their characters.
-- **CLI** (0.8125rem mono): positions, severities, rule ids and the strip's verdicts.
-
-Positions, counts and line numbers use tabular figures.
+Timings, positions and counts use tabular figures.
 
 ### Layout
 
-- A centred column up to 1360px, side padding `clamp(16px, 3vw, 32px)`.
-- The header is one line on wide screens: name, tagline, and "Copy link" on the right. It wraps on
-  a phone.
-- The dialect strip sits on a two-column grid, its "Dialect" label on the left and the hint under
-  the strip. Six equal cells from 720px, three by two below.
-- From 1024px the editor and the report sit side by side, the report 21 to 27rem and scrolling on
-  its own. When the window is also at least 600px tall, the body is a flex column of exactly the
-  window's height, so the page itself never scrolls; the editor and report take what is left after
-  the header, strip and footer.
-- Under 1024px the report stacks under a 45vh editor. Nothing is wider than the screen at 320px:
-  long lines scroll inside the editor and the snippets.
-- The problem list is one grid with shared columns (position, severity, rule), so they line up
-  across rows; the message, path and related place run under severity and rule.
+- A centred column up to 1240px, side padding `clamp(16px, 4vw, 48px)`.
+- The slug line runs across the top, its two halves at either end over a dashed rule. They wrap
+  to two lines on a phone.
+- The stages are one bordered row, each stage as wide as its name; three by two under 720px.
+- From 860px the proof is two columns: the text, and an 18.5rem margin on the faint grid. The
+  editor grows with the text (at least 8 rows, at most 70% of the window, then it scrolls inside)
+  and with the notes, which keep their row or stack below the one above.
+- Past 30 corrections, when the stacked notes would run past the text, above 5,000 rows, or under
+  860px, the margin gives way to a numbered list under the proof, keyed to red numbers in the
+  gutter.
+- The verdict line, the asides, the "Use this check" fold and the colophon follow in one column.
 
 ### Elevation & Depth
 
-Flat. No shadows. Parts are told apart by the ground, fields and one-pixel rules. The only inset
-strokes are the selected dialect's bar, the column marks and focus outlines.
-
-### Shapes
-
-Square corners everywhere. Severity marks are printed shapes in the state colour: a square for an
-error, a triangle for a warning, a dot (or a tick in the strip) for a pass. The gutter keeps a
-✖ or ▲ glyph on problem lines, so they show in forced-colors mode too.
+Flat paper. No shadows, no rounded corners. Parts are told apart by hairlines, the dashed slug
+rule and the margin's grid. The only inset strokes are the selected stage's and tab's 2px ink bar.
 
 ### Components
 
-#### Header
+#### Slug
 
-`{}` in mono in the accent, "jsonvet playground", the tagline in muted, and "Copy link": an outlined
-button that copies the share link and says "Copied" for a moment. A hidden live region announces
-the result.
+`jsonvet · proof of staging.json · set in JSON5 · 11 lines · copy link` on the left; `checked in
+0.08 ms · all six in 0.4 ms · try a 2.7 MB file · back to the sample` on the right. The proof's
+name is the sample's, a dropped file's, "hosts.json" with a note that it was made in the page, "a
+shared text" or "your text". "copy link" and the two links on the right are buttons styled as
+underlined text. The all-six timing dims while the other dialects wait for a pause in typing, and
+is hidden for a long text, which only the chosen dialect checks.
 
-#### Dialect strip
+#### Proof stages
 
 A radio group of six buttons (`role="radio"`), one tab stop, arrow keys and Home/End to move and
-choose. Each cell shows the dialect's name and its verdict on the current text in mono: a tick, or
-the error and warning counts with their shapes, then the first problem's position. The chosen
-dialect is checked at once; the other five after a 300ms pause in typing, and not at all past
-5,000 rows or 200,000 characters, where they say "not checked". The selected cell has ink text and
-a 3px accent bar at its foot. The hint under the strip says in plain words what the dialect adds
-and which files the CLI checks in it, with CLI strings in mono.
+choose. Each shows its name and, in red mono, its error and warning counts with a square or a
+triangle and the first problem's position; a tick when clean; "not checked" for a long text. The
+selected stage has the tint and a 2px ink bar at its foot. An italic hint under the row says what
+the dialect adds and which files the CLI checks in it.
 
-#### Editor
+#### Proof
 
-A textarea over two layers that never take input: the gutter (a fixed glyph slot, then the line
-number, so the text never shifts when a mark comes or goes) and the overlay (row tints and column
-marks, with transparent text). Focus draws a 2px accent outline round the field. A file dragged over
-the field gets a dashed accent outline; dropping it reads it in the page.
+A textarea over two layers that never take input: the gutter (a fixed slot for a correction's
+number, then the line number, so the text never moves) and the mark layer (transparent text).
+Focus turns the gutter's edge into a 2px ink rule. A dragged file gets a dashed ink outline.
 
-#### Column marks
+#### Proofreader's marks
 
-The signature. The character a problem points at gets a 3px underline in the state colour; the
-related place it names (a duplicate key's first copy, the bracket an unclosed value opened at)
-gets a 1px box in the same colour. A byte order mark, which has no width, gets a 3px bar. Hovering
-or focusing a problem lights both rows in the active colour.
+The signature. A caret `‸` under the line where the problem starts. A problem from any rule but
+`syntax` has its token struck through (dele); a syntax error has its token underlined, as the
+place checking stopped. The place a problem names (a duplicate key's first copy, the bracket an
+unclosed value opened at) is ringed. A byte order mark, which has no width, gets a 3px bar. The
+token is a quoted string, a run of word characters, or one character (`tokenEnd` in `proof.mjs`).
 
-#### Report
+#### Margin notes
 
-The verdict (`#status`, a live region: "1 error", "2 errors, 1 warning", "No problems"; the browser
-check reads it), the CLI's exit code, and, after a syntax error, a muted line saying checking stopped
-there. Then the problem list: each entry is a button that moves the caret to the problem, with the
-rule id as a link to its section in docs/usage.md beside it. A related place reads as the CLI
-writes it, "first at 6:5". Under the list, the F8 hint.
+Each correction is a list item: a button with the CLI's message in italic red (JSONPaths in mono)
+whose accessible name is its position, severity, message and related place, and a mono meta line
+with the position, "warning" when it is one, the rule id linked to its section in docs/usage.md,
+and "first at 6:5". A related place gets its own short note ("first copy 6:5"), hidden from screen
+readers. A thin red leader runs from the end of the row to the note, with an arrowhead at the
+text; a stacked note's leader bends at the margin's edge. Hovering or focusing a correction tints
+its rows and darkens its leader. In the list form, each note carries the number shown in the
+gutter.
 
-#### Run this in CI
+#### Verdict
 
-Two snippets, the pre-commit or prek hook and the GitHub Action, for the chosen dialect and the
-version of the build the page runs (`version()` from the wasm). For any dialect but JSON5 they add
-`--dialect DIALECT:*.json`. Each has a Copy text button; the snippet itself is a focusable,
-horizontally scrolling `pre`.
+One line: the count in bold red ("1 correction.", "2 corrections, 1 warning.", "1 warning.", or
+"No corrections." in ink), then what the CLI would exit with, as a live region; the first
+problem's `rule · line:col` on the right in mono. Italic asides follow: where checking stopped
+after a syntax error, why the marks are off for a big text, and the drop and F8 hint.
 
-#### Footer
+#### Use this check
 
-The privacy sentence and the CLI link on the left; "jsonvet · MIT licence · Simon van Lierde ·
-source" on the right. Small, muted, links in the accent.
+A `details` fold, closed by default, with a tab list (pre-commit or prek hook, GitHub Action,
+command line), arrow keys between tabs. Each panel holds a focusable, scrolling `pre` on the tint
+and a "Copy" text button. The snippets use the version from the wasm's `version()` and add
+`--dialect DIALECT:*.json` for any dialect but JSON5.
+
+#### Colophon
+
+The privacy and JSON Schema sentence in small italic, then two mono lines: "jsonvet 3.2.0 · MIT
+licence" and "Simon van Lierde · source on GitHub · docs · speed figures".
 
 ### Do's and Don'ts
 
-- Do keep the editor, gutter and overlay on one font size and line height.
-- Do keep every string the CLI prints in mono, and everything else in the sans.
-- Do mark state with a shape as well as a colour.
+- Do keep the editor, gutter and mark layer on one font size and line height.
+- Do keep every string the CLI prints in mono, and prose in the serif.
+- Do show measured timings only, and a bound ("under 0.1 ms") below the clock's step.
 - Do build message text as DOM nodes; never pass it through `innerHTML`.
 - Don't add inline style or script, external fonts or any other host: the CSP refuses them, and
-  `smoke.mjs` checks it.
-- Don't bring back a coloured band or any colour field: the ground and the hairlines are the frame.
-- Don't round corners or add shadows.
-- Don't use the accent or the state colours for decoration.
+  `smoke.mjs` checks it. Positions set from script go through the CSSOM.
+- Don't add a second accent, a title block, boxes round the proof, rounded corners or shadows.
+- Don't use the pen for anything that is not a correction.

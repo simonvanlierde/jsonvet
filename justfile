@@ -128,7 +128,7 @@ playground PORT="8000":
         echo "needs wasm-bindgen-cli $want: cargo install wasm-bindgen-cli --version $want --locked" >&2
         exit 1
     fi
-    node --test playground/lines.test.mjs playground/share.test.mjs
+    node --test playground/*.test.mjs
     cargo build --locked -p jsonvet-wasm --target wasm32-unknown-unknown --profile wasm
     wasm-bindgen --target web --no-typescript --out-dir playground/pkg \
         {{ target }}/wasm32-unknown-unknown/wasm/jsonvet_wasm.wasm

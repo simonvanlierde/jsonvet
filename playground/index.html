@@ -15,23 +15,34 @@
 <meta property="og:image" content="https://simonvanlierde.com/jsonvet/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="The jsonvet playground checking a JSON5 config with a comment and a trailing comma: the six dialects each show their verdict, and the list names a duplicate key at $.server.port with its first copy marked in the text.">
+<meta property="og:image:alt" content="A JSON5 config set as a printer's proof by the jsonvet playground: the repeated port key is struck through in red, its first copy circled, and a note in the margin says duplicate key $.server.port. Above it, the six dialects each give their verdict.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="theme-color" content="#f7f8f8" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0e1214" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfaf5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#171511" media="(prefers-color-scheme: dark)">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header class="wrap top">
-  <h1><span class="mark" aria-hidden="true">{}</span> jsonvet playground</h1>
-  <p class="tagline">Paste text, pick a dialect, see every problem as you type.</p>
-  <button type="button" id="share" class="share" disabled>Copy link</button>
+<header class="wrap slug">
+  <p class="slug-part">
+    <span><b>jsonvet</b></span>
+    <span>proof of <span id="name">staging.json</span><span id="made"></span></span>
+    <span>set in <span id="set">JSON5</span></span>
+    <span id="lines">11 lines</span>
+    <span><button type="button" id="share" class="link" disabled>copy link</button></span>
+  </p>
+  <p class="slug-part speed">
+    <span id="took" hidden>checked in <em id="t1"></em></span>
+    <span id="took-all" hidden>all six in <em id="t6"></em></span>
+    <span id="try-wrap"><button type="button" id="try" class="link" disabled>try a 2.7 MB file</button></span>
+    <span id="back-wrap" hidden><button type="button" id="back" class="link">back to the sample</button></span>
+  </p>
   <span id="share-status" class="vh" role="status"></span>
 </header>
 <main class="wrap">
-  <div class="dialects">
-    <span id="dialect-label" class="label">Dialect</span>
-    <div id="dialects" role="radiogroup" aria-labelledby="dialect-label" aria-describedby="dialect-hint">
+  <h1 class="vh">jsonvet playground</h1>
+  <div class="stages-row">
+    <span id="dialect-label" class="vh">Dialect</span>
+    <div id="dialects" class="stages" role="radiogroup" aria-labelledby="dialect-label" aria-describedby="dialect-hint">
       <button type="button" role="radio" aria-checked="false" tabindex="-1" data-dialect="json"><span class="name">JSON</span><span class="v"></span></button>
       <button type="button" role="radio" aria-checked="false" tabindex="-1" data-dialect="i-json"><span class="name">I-JSON</span><span class="v"></span></button>
       <button type="button" role="radio" aria-checked="false" tabindex="-1" data-dialect="jsonc"><span class="name">JSONC</span><span class="v"></span></button>
@@ -41,7 +52,7 @@
     </div>
     <p id="dialect-hint" class="hint"></p>
   </div>
-  <div class="work">
+  <div class="proof" id="proof">
     <div class="editor" id="editor">
       <div class="gutter" id="gutter" aria-hidden="true"></div>
       <div class="text">
@@ -60,30 +71,46 @@
 </textarea>
       </div>
     </div>
-    <section class="report" aria-labelledby="status">
-      <p id="status" role="status">Loading…</p>
-      <p id="verdict"></p>
-      <p id="stopped" hidden></p>
-      <ol id="problems" role="list" aria-label="Problems"></ol>
-      <p id="keys" class="keys"><kbd>F8</kbd> and <kbd>Shift</kbd>+<kbd>F8</kbd> in the text move to the next and previous problem.</p>
-      <section class="ci" aria-labelledby="ci-title">
-        <h2 id="ci-title">Run this in CI</h2>
-        <div class="snippet">
-          <div class="snippet-head"><h3 id="hook-title">pre-commit or prek hook</h3><button type="button" class="copy" data-copy="hook" aria-describedby="hook-title">Copy</button></div>
-          <pre id="hook" tabindex="0" aria-labelledby="hook-title"></pre>
-        </div>
-        <div class="snippet">
-          <div class="snippet-head"><h3 id="action-title">GitHub Action</h3><button type="button" class="copy" data-copy="action" aria-describedby="action-title">Copy</button></div>
-          <pre id="action" tabindex="0" aria-labelledby="action-title"></pre>
-        </div>
-        <p id="ci-note" class="hint"></p>
-      </section>
-    </section>
+    <div class="margin" id="margin">
+      <div class="sheet" id="sheet">
+        <ol id="problems" role="list" aria-label="Problems"></ol>
+      </div>
+    </div>
+    <svg class="leaders" id="leaders" aria-hidden="true" focusable="false"></svg>
   </div>
+  <div class="verdict">
+    <p id="status" role="status">Loading…</p>
+    <p id="first" class="first"></p>
+  </div>
+  <p id="stopped" class="aside" hidden></p>
+  <p id="big" class="aside" hidden></p>
+  <p id="keys" class="aside">Edit the text, paste your own or drop a file on it. <kbd>F8</kbd> and <kbd>Shift</kbd>+<kbd>F8</kbd> in the text move to the next and previous problem.</p>
+  <details class="use">
+    <summary>Use this check</summary>
+    <div class="tabs" role="tablist" aria-label="Where to run the check">
+      <button type="button" role="tab" id="tab-hook" aria-selected="true" aria-controls="panel-hook">pre-commit or prek hook</button>
+      <button type="button" role="tab" id="tab-action" aria-selected="false" aria-controls="panel-action" tabindex="-1">GitHub Action</button>
+      <button type="button" role="tab" id="tab-cli" aria-selected="false" aria-controls="panel-cli" tabindex="-1">Command line</button>
+    </div>
+    <div class="panel" role="tabpanel" id="panel-hook" aria-labelledby="tab-hook">
+      <pre id="hook" tabindex="0" aria-label="Hook for .pre-commit-config.yaml"></pre>
+      <button type="button" class="copy link" data-copy="hook" aria-describedby="tab-hook">Copy</button>
+    </div>
+    <div class="panel" role="tabpanel" id="panel-action" aria-labelledby="tab-action" hidden>
+      <pre id="action" tabindex="0" aria-label="Step for a GitHub workflow"></pre>
+      <button type="button" class="copy link" data-copy="action" aria-describedby="tab-action">Copy</button>
+    </div>
+    <div class="panel" role="tabpanel" id="panel-cli" aria-labelledby="tab-cli" hidden>
+      <pre id="cli" tabindex="0" aria-label="Shell command"></pre>
+      <button type="button" class="copy link" data-copy="cli" aria-describedby="tab-cli">Copy</button>
+    </div>
+    <p id="ci-note" class="aside"></p>
+  </details>
 </main>
-<footer class="wrap">
-  <p>Checks run in your browser: the text never leaves the page. JSON Schema checks are in the <a href="https://github.com/simonvanlierde/jsonvet#readme">command-line tool</a>.</p>
-  <p class="credits">jsonvet · <a href="https://github.com/simonvanlierde/jsonvet/blob/main/LICENSE">MIT licence</a> · <a href="https://github.com/simonvanlierde">Simon van Lierde</a> · <a href="https://github.com/simonvanlierde/jsonvet">source</a></p>
+<footer class="wrap colophon">
+  <p class="quiet">Checks run in your browser: the text never leaves the page. JSON Schema checks are in the <a href="https://github.com/simonvanlierde/jsonvet#readme">command-line tool</a>.</p>
+  <p class="slug-part"><span>jsonvet<span id="version"></span></span><span><a href="https://github.com/simonvanlierde/jsonvet/blob/main/LICENSE">MIT licence</a></span></p>
+  <p class="slug-part"><span><a href="https://github.com/simonvanlierde">Simon van Lierde</a></span><span><a href="https://github.com/simonvanlierde/jsonvet">source on GitHub</a></span><span><a href="https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md">docs</a></span><span><a href="https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#speed">speed figures</a></span></p>
 </footer>
 <noscript><p>The playground needs JavaScript and WebAssembly.</p></noscript>
 <script type="module" src="main.mjs"></script>

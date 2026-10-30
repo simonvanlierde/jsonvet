@@ -22,10 +22,11 @@ version for a new option or output, the patch version for a fix.
 
 ### Changed
 
-- The playground has a lighter layout that shows every dialect's verdict on the text at once,
-  marks both copies of a duplicate key (and the bracket an unclosed value opened at), and ends with
-  the hook and Action snippets for the chosen dialect. The address bar keeps the text as a share
-  link without sending it anywhere, and a file dropped on the text is read in the page.
+- The playground sets your text as a proof: each problem is marked at its token with the
+  correction in the margin, all six dialects give their verdict at once, and the page times each
+  check in your browser, with a 2.7 MB file to try. It keeps the text in a share link without
+  sending it anywhere, reads a dropped file in the page, and shows the hook, Action and command
+  for the chosen dialect.
 - Checking a file reads `true`, `false` and `null` with less work: 2-4% fewer instructions on
   typical JSON, JSONC and JSON5 files.
 - Each object and array costs less to open and close: 19% fewer instructions on deeply nested
