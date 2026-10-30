@@ -3,6 +3,9 @@ const input = $("input");
 const editor = $("editor");
 const proof = $("proof");
 const status = $("status");
+// The verdict for screen readers, a second after it last changed, so typing is not interrupted.
+const said = $("said");
+let sayTimer;
 const gutter = $("gutter");
 const layer = $("layer");
 const margin = $("margin");
@@ -13,12 +16,12 @@ const first = $("first");
 const stopped = $("stopped");
 const bigNote = $("big");
 const hint = $("dialect-hint");
-const strip = $("dialects");
+const stages = $("dialects");
 const share = $("share");
 const shareStatus = $("share-status");
 const tryBig = $("try");
 const back = $("back");
-const radios = [...strip.querySelectorAll('[role="radio"]')];
+const radios = [...stages.querySelectorAll('[role="radio"]')];
 const radio = (d) => radios.find((r) => r.dataset.dialect === d);
 const nameOf = (d) => radio(d).querySelector(".name").textContent;
 
@@ -122,7 +125,7 @@ function summary({ errors, warnings }) {
   return parts.join(", ") || "No problems";
 }
 
-// Shows a dialect's verdict in the strip: a tick, or its counts by severity and where the first
+// Shows a dialect's verdict in the stages: a tick, or its counts by severity and where the first
 // problem is. `null` means it was not checked.
 function mark(d, problems) {
   const r = radio(d);
@@ -158,13 +161,20 @@ function lines(element, texts, cols, numbers) {
       return div;
     }
     let last = 0;
+    let prev;
     for (const [offset, { severity, kind }] of [...at].sort((a, b) => a[0] - b[0])) {
-      if (offset < last) continue;
+      // A mark that starts inside the one before cuts that one short, so both show.
+      if (offset < last) {
+        prev.mark.textContent = t.slice(prev.offset, offset);
+        last = offset;
+      }
       // A problem at the end of a row marks the space after its last character.
       const end = offset < t.length ? tokenEnd(t, offset) : offset;
       const text = offset < t.length ? t.slice(offset, end) : " ";
       const cls = [severity, kind, text === "\uFEFF" && "zero"].filter(Boolean).join(" ");
-      div.append(t.slice(last, offset), el("mark", cls, text));
+      const mark = el("mark", cls, text);
+      div.append(t.slice(last, offset), mark);
+      prev = { mark, offset };
       last = end;
     }
     div.append(t.slice(last), el("span", "eol"));
@@ -189,6 +199,8 @@ function setStatus(strong, rest) {
   status.dataset.said = html;
   status.replaceChildren(el("b", "", strong));
   if (rest) status.append(" ", rich(document.createDocumentFragment(), rest));
+  clearTimeout(sayTimer);
+  sayTimer = setTimeout(() => (said.textContent = status.textContent), 1000);
 }
 
 // Puts the caret on a problem and scrolls its row into view, as the textarea may not.
@@ -211,14 +223,10 @@ function schedule() {
   if (!loaded || queued) return;
   queued = true;
   requestAnimationFrame(() => {
-    if (input.value.length > BIG) setTimeout(go, 300);
-    else go();
+    queued = false;
+    if (input.value.length > BIG) setTimeout(run, 300);
+    else run();
   });
-}
-
-function go() {
-  queued = false;
-  run();
 }
 
 // A problem's note: a button that moves the caret to it, and its position and rule id.
@@ -244,8 +252,9 @@ function note(p, n) {
   rule.title = `What ${p.rule} means`;
   meta.append(el("span", "", `${p.line}:${p.column}`));
   if (p.severity === "warning") meta.append(el("span", "", "warning"));
-  meta.append(el("span"));
-  meta.lastChild.append(rule);
+  const ruleItem = el("span");
+  ruleItem.append(rule);
+  meta.append(ruleItem);
   if (relText) meta.append(el("span", "", relText));
   item.append(button, meta);
   item.dataset.row = p.row;
@@ -295,7 +304,7 @@ function run() {
       const at = cols.get(row);
       const had = at.get(offset);
       // A problem's own place wins over a related one, and an error over a warning.
-      if (!had || (had.kind === "rel" && kind !== "rel") || (had.kind === kind && severity === "error")) at.set(offset, { severity, kind });
+      if (!had || (had.kind === "rel" && kind !== "rel") || (kind !== "rel" && had.severity !== "error" && severity === "error")) at.set(offset, { severity, kind });
     };
     shown.forEach((p, i) => {
       if (!numbers.has(p.row)) numbers.set(p.row, String(i + 1));
@@ -311,7 +320,7 @@ function run() {
   if (problems.length > MAX_ITEMS) items.push(el("li", "more", `and ${problems.length - MAX_ITEMS} more`));
   list.replaceChildren(...items);
   // One note for each related place, however many problems name it.
-  const rel = new Map(shown.flatMap((p) => p.related.slice(0, 1)).map((r) => [r.index, r]));
+  const rel = new Map(shown.flatMap((p) => p.related).map((r) => [r.index, r]));
   sheet.replaceChildren(list, ...[...rel.values()].map(relNote));
   verdict(problems);
   $("lines").textContent = plural(lineCount(starts, text.length), "line");
@@ -495,14 +504,14 @@ function select(d, focus) {
   schedule();
 }
 
-strip.addEventListener("click", (e) => {
+stages.addEventListener("click", (e) => {
   const r = e.target.closest('[role="radio"]');
   if (!r || r.dataset.dialect === dialect) return;
   edited = true;
   select(r.dataset.dialect);
 });
 // Arrow keys move through the dialects and choose one, as in a radio group.
-strip.addEventListener("keydown", (e) => {
+stages.addEventListener("keydown", (e) => {
   const i = radios.findIndex((r) => r.dataset.dialect === dialect);
   const to = { ArrowRight: i + 1, ArrowDown: i + 1, ArrowLeft: i - 1, ArrowUp: i - 1, Home: 0, End: radios.length - 1 }[e.key];
   if (to === undefined) return;
@@ -549,7 +558,8 @@ input.addEventListener("keydown", (e) => {
     ? current.findLast((q) => q.index < caret) ?? current.at(-1)
     : current.find((q) => q.index > caret) ?? current[0];
   goTo(p);
-  shareStatus.textContent = `${p.line}:${p.column} ${p.severity}: ${p.message.replaceAll("`", "")}`;
+  shareStatus.textContent = "";
+  requestAnimationFrame(() => (shareStatus.textContent = `${p.line}:${p.column} ${p.severity}: ${p.message.replaceAll("`", "")}`));
 });
 wide.addEventListener("change", layout);
 let resizeFrame;
@@ -638,7 +648,7 @@ tabs[0].parentElement.addEventListener("keydown", (e) => {
 
 async function open(hash) {
   const shared = hash ? await decode(hash) : null;
-  if (!shared) return false;
+  if (!shared || !hints[shared.dialect]) return false;
   input.value = shared.text;
   source = shared.text === SAMPLE ? SAMPLE_NAME : "a shared text";
   generated = false;

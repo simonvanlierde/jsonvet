@@ -1,7 +1,6 @@
 // A share link keeps the dialect and the text in the URL fragment, as `#dialect:data`, where data
 // is the text as UTF-8, deflated and in base64url. Browsers never send the fragment to a server.
 
-export const DIALECTS = ["json", "i-json", "jsonc", "jwcc", "json5", "jsonl"];
 // A link that inflates past this many bytes is refused, so a crafted one cannot hang the tab.
 const MAX_BYTES = 8 << 20;
 
@@ -35,10 +34,10 @@ export async function encode(dialect, text) {
 }
 
 // The dialect and text in `fragment` (with or without its `#`), or null when it holds no share
-// link this page made.
+// link. The caller checks the dialect is one it knows.
 export async function decode(fragment) {
   const match = /^#?([a-z0-9-]+):([A-Za-z0-9_-]+)$/.exec(fragment);
-  if (!match || !DIALECTS.includes(match[1])) return null;
+  if (!match) return null;
   try {
     const binary = atob(match[2].replaceAll("-", "+").replaceAll("_", "/"));
     const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));

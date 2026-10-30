@@ -114,22 +114,22 @@ real config, how long it took in the visitor's browser, and how to start.
 
 Warm paper, near-black ink, and one proofreader's red. Nothing else is coloured.
 
-- **Paper** (`#fbfaf5`): the whole page. **Ink** (`#1a1916`): text and the selected stage's bar.
-- **Faint** (`#6b675e`, 5.4:1 on paper): the slug, hints, notes under the verdict, meta lines.
+- **Paper**: the whole page. **Ink**: text and the selected stage's bar.
+- **Faint** (5.4:1 on paper): the slug, hints, notes under the verdict, meta lines.
   **Dim**: line numbers and the middle dots between slug parts.
-- **Pen** (`#c0251b`, 6:1 on paper): proofreader's marks, margin notes, leader lines, the
+- **Pen** (6:1 on paper): proofreader's marks, margin notes, leader lines, the
   timings, the correction count and the numbers in the gutter. Never a fill, never decoration.
 - **Rule** and **rule-strong:** hairlines between parts, link underlines. **Grid:** the margin's
   20px drafting grid, barely there. **Tint:** the selected stage and the snippet ground.
   **Active:** the rows a hovered or focused correction names.
-- **Dark, under a desk lamp:** the same roles on warm dark paper (`#1b1915`), with a soft pool of
-  light at the top of the page (`#27231b` fading into the paper). Every pair keeps AA.
+- **Dark, under a desk lamp:** the same roles on warm dark paper, with a soft pool of
+  light at the top of the page. Every pair keeps AA.
 - **Forced colours:** pen becomes `Highlight`, ink `CanvasText`, rules `GrayText`.
 
 #### Named Rules
 
 **The One-Pen Rule.** Red marks a correction and only that: the mark, its note, its leader, its
-count. Severity is told by the word ("warning") and the strip's shapes, not by a second colour.
+count. Severity is told by the word ("warning") and the stages' shapes, not by a second colour.
 
 **The Light-Drawing Rule.** The drawing world stops at the leader lines and the margin grid. No
 title block, dimension lines, crop marks or heavier strokes.
