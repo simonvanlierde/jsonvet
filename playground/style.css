@@ -77,7 +77,8 @@ button { font: inherit; color: inherit; }
 .hint code { font-style: normal; white-space: nowrap; }
 
 /* The proof: the set text on the left, the margin with the corrections on the right. */
-.proof { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 18.5rem; margin-top: 18px; }
+/* A galley's measure: the text column stops near 70 characters and the margin takes the rest, so notes sit close to their lines. */
+.proof { position: relative; display: grid; grid-template-columns: minmax(0, 36rem) minmax(18.5rem, 1fr); margin-top: 18px; }
 .proof.listed { grid-template-columns: minmax(0, 1fr); }
 .editor { position: relative; display: flex; min-width: 0; height: 248px; border-right: 1px solid var(--rule); }
 .proof.listed .editor { border-right: 0; }
@@ -125,7 +126,7 @@ textarea, textarea:focus-visible { padding: 8px 8px 8px 6px; border: 0; resize: 
 .meta .rule { color: var(--faint); }
 .meta .rule:hover { color: var(--ink); }
 .note.rel { pointer-events: none; }
-.leaders { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; fill: none; stroke: var(--pen); stroke-width: 1; stroke-opacity: .5; }
+.leaders { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; fill: none; stroke: var(--pen); stroke-width: 1; stroke-opacity: .3; }
 .leaders path.lit { stroke-width: 1.5; stroke-opacity: 1; }
 .leaders marker path { fill: var(--pen); stroke: none; }
 
