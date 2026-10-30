@@ -76,7 +76,7 @@ pub(crate) fn walk<'a>(
         max_depth: config.max_depth,
         problems: Vec::new(),
         stack: Vec::new(),
-        spare_keys: Vec::new(),
+        depth: 0,
         events: sink,
     };
     if lines.start == 0 {
@@ -147,9 +147,10 @@ struct Parser<'a, 's> {
     invalid_code_point: Severity,
     max_depth: usize,
     problems: Vec<Problem>,
+    /// The open containers are `stack[..depth]`. Frames past `depth` are closed ones kept for
+    /// reuse in place, so a container's key list is not moved or allocated anew.
     stack: Vec<Frame<'a>>,
-    /// Emptied key lists from closed objects, reused so each object does not allocate anew.
-    spare_keys: Vec<Keys<'a>>,
+    depth: usize,
     /// Where each value goes as it is read, when the caller asked for them.
     events: Option<&'s mut dyn FnMut(Event<'a>)>,
 }
@@ -364,7 +365,7 @@ impl<'a> Parser<'a, '_> {
             return;
         };
         let structural = ["a value", "a key", "`:`", "`,` or `}`", "`,` or `]`"];
-        let Some(frame) = self.stack.last() else {
+        let Some(frame) = self.top() else {
             return;
         };
         if fail.started.is_none() && structural.contains(&expected) {
@@ -535,9 +536,18 @@ impl<'a> Parser<'a, '_> {
         }
     }
 
+    /// The innermost open container.
+    fn top(&self) -> Option<&Frame<'a>> {
+        self.stack[..self.depth].last()
+    }
+
+    fn top_mut(&mut self) -> Option<&mut Frame<'a>> {
+        self.stack[..self.depth].last_mut()
+    }
+
     /// The state after a complete value.
     fn state_after_value(&self) -> State {
-        if self.stack.is_empty() {
+        if self.depth == 0 {
             State::Done
         } else {
             State::AfterValue
@@ -546,14 +556,11 @@ impl<'a> Parser<'a, '_> {
 
     /// `,` or the closing bracket after a value that ended at `value_end`.
     fn after_value(&mut self, value_end: usize) -> Result<State, Fail> {
-        let object = self
-            .stack
-            .last()
-            .is_some_and(|f| f.container == Container::Object);
+        let object = self.top().is_some_and(|f| f.container == Container::Object);
         match self.peek() {
             Some(b',') => {
                 self.pos += 1;
-                if let Some(frame) = self.stack.last_mut() {
+                if let Some(frame) = self.top_mut() {
                     frame.element_index += 1;
                 }
                 Ok(if object {
@@ -594,34 +601,44 @@ impl<'a> Parser<'a, '_> {
         }
         self.emit(self.pos, EventKind::End);
         self.pos += 1;
-        if let Some(mut frame) = self.stack.pop() {
-            frame.keys.clear();
-            self.spare_keys.push(frame.keys);
+        if let Some(depth) = self.depth.checked_sub(1) {
+            self.depth = depth;
+            self.stack[depth].keys.clear();
         }
         Ok(self.state_after_value())
     }
 
     fn open(&mut self, container: Container) -> Result<State, Fail> {
-        if self.stack.len() >= self.max_depth {
+        if self.depth >= self.max_depth {
             let limit = self.max_depth;
             return Err(Fail::at(self.pos, SyntaxKind::TooDeep { limit }));
         }
-        let segment = match self.stack.last() {
+        let segment = match self.top() {
             None => Segment::Root,
             Some(parent) => match parent.container {
                 Container::Object => Segment::Key(parent.current_key.clone()),
                 Container::Array => Segment::Index(parent.element_index),
             },
         };
-        self.stack.push(Frame {
-            container,
-            opened: self.pos,
-            segment,
-            rendered: OnceCell::new(),
-            keys: self.spare_keys.pop().unwrap_or_default(),
-            current_key: Key::Borrowed(&[]),
-            element_index: 0,
-        });
+        if let Some(frame) = self.stack.get_mut(self.depth) {
+            frame.container = container;
+            frame.opened = self.pos;
+            frame.segment = segment;
+            frame.rendered = OnceCell::new();
+            frame.current_key = Key::Borrowed(&[]);
+            frame.element_index = 0;
+        } else {
+            self.stack.push(Frame {
+                container,
+                opened: self.pos,
+                segment,
+                rendered: OnceCell::new(),
+                keys: Keys::default(),
+                current_key: Key::Borrowed(&[]),
+                element_index: 0,
+            });
+        }
+        self.depth += 1;
         let kind = match container {
             Container::Object => EventKind::ObjectStart,
             Container::Array => EventKind::ArrayStart,
@@ -715,7 +732,7 @@ impl<'a> Parser<'a, '_> {
             self.emit(start, EventKind::Key(key.clone()));
         }
         self.check_duplicate(start, &key);
-        if let Some(frame) = self.stack.last_mut() {
+        if let Some(frame) = self.top_mut() {
             frame.current_key = key;
         }
         Ok(())
@@ -742,7 +759,7 @@ impl<'a> Parser<'a, '_> {
 
     /// Report `key`, found at `start`, if the current object already has it; record it if not.
     fn check_duplicate(&mut self, start: usize, key: &Key<'a>) {
-        let Some(frame) = self.stack.last_mut() else {
+        let Some(frame) = self.top_mut() else {
             return;
         };
         match frame.keys.first_or_insert(key, start) {
@@ -750,7 +767,7 @@ impl<'a> Parser<'a, '_> {
             Some(first) => {
                 let mut last = String::new();
                 path::push_key(&mut last, key);
-                let stack = &self.stack;
+                let stack = &self.stack[..self.depth];
                 let path = path::bounded(stack.len() + 1, |i| {
                     stack.get(i).map_or(last.as_str(), Frame::rendered)
                 });
