@@ -1120,7 +1120,13 @@ impl<'a> Parser<'a, '_> {
     /// different word whole in its place shows as found where `instead` was needed.
     fn literal(&mut self, word: &'static str, instead: &'static str) -> Result<(), Fail> {
         let start = self.pos;
-        for &expected in word.trim_matches('`').as_bytes() {
+        // Every caller passes the word in backticks.
+        let bare = &word.as_bytes()[1..word.len() - 1];
+        if self.bytes[start..].starts_with(bare) {
+            self.pos += bare.len();
+            return Ok(());
+        }
+        for &expected in bare {
             if self.peek() != Some(expected) {
                 // A different word, such as `None` for `NaN`, shows whole; a cut-off `nul` or
                 // `nul]` still says which literal it started.
