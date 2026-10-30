@@ -1651,6 +1651,16 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
     }
 
     #[test]
+    fn a_dollar_schema_key_written_with_an_escape_is_found() {
+        let mut files = keyed_schemas();
+        files.push(("f.json", r#"{"\u0024schema": "sc.json"}"#));
+        files.push(("g.json", r#"{"$sch\u0065ma": "sc.json"}"#));
+        let dir = workdir(&files);
+        assert_eq!(picked_by(&dir, &["f.json"]), "kc");
+        assert_eq!(picked_by(&dir, &["g.json"]), "kc");
+    }
+
+    #[test]
     fn a_config_schema_path_is_relative_to_the_config_file_not_the_working_directory() {
         let mut files = keyed_schemas();
         // A decoy of the same name at the root, where the run starts.

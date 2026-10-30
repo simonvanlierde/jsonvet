@@ -108,6 +108,9 @@ Most users need no change. Check these if they apply to you:
 
 ### Fixed
 
+- A file whose `$schema` key is written with an escape, such as `"\u0024schema"` or JSON5's
+  `"\x24schema"`, is now checked against its schema. Before, jsonvet skipped the schema and the
+  file passed.
 - `--schema` no longer fails a file because a string in it is too costly to match against a
   pattern the schema never applies there. jsonvet tried every pattern on every string, so any Expo
   `app.json` with a string of 5,000 characters or more failed against SchemaStore's schema.
