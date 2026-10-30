@@ -120,8 +120,10 @@ licence and has no RustSec advisory or unmaintained notice. Renovate bumps the p
 - **CodSpeed.** CodSpeed comments each pull request's change in time, peak memory and
   allocations on the divan benchmarks in each crate's `benches/codspeed.rs`. Nothing fails on it:
   the `bench` job is the gate.
-- **Profiling.** `just profile-files` writes the bench files and two large documents (88.5 MB
-  pretty, 38.7 MB minified) to `target/profile-files`. `just profile FILE` records call stacks with
+- **Profiling.** `just profile-files` writes the bench files and 13 large cases to
+  `target/profile-files`: one per scanner path (pretty and minified objects, rows, strings,
+  numbers, deep nesting, JSONC, JSON5, JSON Lines) and canada, citm_catalog and twitter from
+  serde-rs/json-benchmark. `just profile FILE` records call stacks with
   samply, `just counters FILE` reads the CPU's counters with `perf stat` (instructions per cycle,
   branch and cache misses) on one CPU, and `just threads` times the small files on 1 to 8 CPUs.
   All three use the `profiling` build: release code with line tables and frame pointers. The

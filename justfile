@@ -87,8 +87,8 @@ bench *ARGS:
     cargo build --release -p jsonvet-cli
     uv run scripts/bench.py --jsonvet {{ target }}/release/jsonvet {{ ARGS }}
 
-# Write bench.py's files and two large inputs (doc-pretty.json, 88.5 MB; doc-min.json, 38.7 MB)
-# into DIR, for the three profiling recipes below.
+# Write bench.py's files and 13 large inputs, one per scanner path plus three real-world files
+# (doc-pretty.json is 88.5 MB), into DIR, for the three profiling recipes below.
 profile-files DIR=(target / "profile-files"):
     uv run scripts/bench.py --files {{ DIR }}
 
@@ -97,12 +97,13 @@ profile-files DIR=(target / "profile-files"):
 profiling-build:
     RUSTFLAGS="-C force-frame-pointers=yes" cargo build --locked --profile profiling -p jsonvet-cli
 
-# Where `jsonvet FILES` spends its time, recorded by samply into target/profile.json.gz. Open it
-# with `samply load`, or at profiler.firefox.com on another machine. Linux needs
-# perf_event_paranoid at 1 or lower.
+# Where `jsonvet FILES` spends its time, recorded by samply at 10 kHz into target/profile.json.gz,
+# with its symbols beside it, so `samply load` opens it on any machine once both files are copied
+# there. Linux needs perf_event_paranoid at 1 or lower.
 profile +FILES: profiling-build
     @command -v samply >/dev/null || { echo "needs samply: https://github.com/mstange/samply" >&2; exit 1; }
-    samply record --save-only -o {{ target }}/profile.json.gz {{ target }}/profiling/jsonvet {{ FILES }}
+    samply record --save-only --unstable-presymbolicate --rate 10000 -o {{ target }}/profile.json.gz \
+        {{ target }}/profiling/jsonvet {{ FILES }}
 
 # Hardware counters for `jsonvet FILES` on one CPU (`core`), mean of 10 runs: instructions per
 # cycle, branch misses and cache misses. Linux perf only, so not in CI, where `just counts` gates.
