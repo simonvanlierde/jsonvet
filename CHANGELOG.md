@@ -10,6 +10,8 @@ version for a new option or output, the patch version for a fix.
 
 ### Added
 
+- A JSON Schema describes the `--format json` document, for editors and code generators
+  ([JSON](docs/usage.md#json)).
 - A crash in jsonvet now prints its message with a link to the issue tracker and exits 101,
   instead of ending with a signal and no message
   ([exit status](docs/usage.md#exit-status-and-files)).

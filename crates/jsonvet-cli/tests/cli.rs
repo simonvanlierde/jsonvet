@@ -3966,3 +3966,53 @@ fn a_panic_names_the_issue_tracker_and_exits_101() {
         "{err}"
     );
 }
+
+/// The JSON Schema in `docs/json-output.schema.json` accepts what `--format json` prints, for
+/// every kind of diagnostic, and rejects a document that breaks the layout.
+#[test]
+fn json_output_matches_its_published_schema() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/json-output.schema.json");
+    let schema: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(path).expect("the schema file"))
+            .expect("a JSON schema");
+    let validator = jsonschema::validator_for(&schema).expect("a valid schema");
+    let dir = workdir(&[
+        ("schema.json", r#"{"type": "object"}"#),
+        ("bad.json", "[1,"),
+        ("dup.json", "{\n  \"a\": 1,\n  \"a\": 2\n}"),
+        ("bom.json", "\u{FEFF}{}"),
+        ("arr.json", "[]"),
+    ]);
+    // Problems with and without a related place or a position, and the empty list.
+    let full = [
+        "--format",
+        "json",
+        "--schema",
+        "schema.json",
+        "--dialect=json:*.json",
+        "bad.json",
+        "dup.json",
+        "bom.json",
+        "arr.json",
+        "gone.json",
+    ];
+    for args in [&full[..], &["--format", "json"]] {
+        let (_, out, _) = jsonvet_stderr(&dir, args);
+        let json: serde_json::Value = serde_json::from_str(&out).expect("JSON output");
+        let errors: Vec<String> = validator
+            .iter_errors(&json)
+            .map(|error| error.to_string())
+            .collect();
+        assert!(errors.is_empty(), "{errors:?}\n{out}");
+    }
+    let (_, out, _) = jsonvet_stderr(&dir, &full);
+    let mut json: serde_json::Value = serde_json::from_str(&out).expect("JSON output");
+    json["diagnostics"][0]["severity"] = "fatal".into();
+    assert!(!validator.is_valid(&json));
+    json["diagnostics"][0]["severity"] = "error".into();
+    json["diagnostics"][0]
+        .as_object_mut()
+        .expect("an object")
+        .remove("url");
+    assert!(!validator.is_valid(&json));
+}

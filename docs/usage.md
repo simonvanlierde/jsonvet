@@ -27,7 +27,6 @@ The details behind the [README](../README.md). Why things work this way is in
 
 `jsonvet --help` prints the same list with more detail.
 
-
 ## Folders
 
 A folder on the command line stands for the files under it with an extension or name from the
@@ -211,7 +210,6 @@ schema wants a number. The schema comes from `--schema`, the config file's `sche
 `$schema` in the file. Always an error: `--error`, `--warn`, `--ignore` and settings files do not
 take this rule.
 
-
 ## Globs
 
 - A glob without `/` matches the file name at any depth. A glob with `/` matches the whole path,
@@ -332,7 +330,8 @@ jsonvet --format json config.json5 | jq -r '.diagnostics[] | "\(.file):\(.line) 
   | `offset`   | the byte offset in the file, from 0; `null` with no line                          |
   | `related`  | other places the problem names, each with `message`, `line`, `column` and `offset`: a duplicate key's first copy (`first copy`), the bracket an unclosed value opened at (`opened here`), or where an unterminated comment or string starts (`starts here`). Often empty |
 
-
+- [json-output.schema.json](json-output.schema.json) is a JSON Schema for the document. A test
+  checks real output against it.
 - Strings are escaped as in SARIF, so a JSON reader gets the name and message back unchanged.
 - Each diagnostic is on a line of its own, written as files are checked. The exit status and
   `--max-warnings` work as with text. No annotations or count are printed.
