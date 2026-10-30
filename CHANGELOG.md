@@ -22,6 +22,9 @@ version for a new option or output, the patch version for a fix.
 
 ### Changed
 
+- The playground has a new layout: the problems sit beside the text on wide screens, each one
+  underlines the character it points at, and the page says what each dialect is for and whether
+  the CLI would pass the text.
 - Checking a file reads `true`, `false` and `null` with less work: 2-4% fewer instructions on
   typical JSON, JSONC and JSON5 files.
 - Each object and array costs less to open and close: 19% fewer instructions on deeply nested

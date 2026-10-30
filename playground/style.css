@@ -1,59 +1,117 @@
+/* The page is a data sheet: one petrol title band, a cool white sheet, hairline rules, square
+   corners, and state colours only where a problem is. DESIGN.md has the system. */
 :root {
-  --bg: #fafaf9; --fg: #1c1917; --muted: #78716c; --line: #e7e5e4; --panel: #fff;
-  --error: #b91c1c; --error-bg: #fee2e2; --warning: #b45309; --warning-bg: #fef3c7; --ok: #15803d;
+  --paper: #f4f6f6; --sheet: #fff; --side: #f8fafa; --ink: #14191c; --muted: #56636b; --rule: #d3dadd;
+  --band: #0e4a57; --band-ink: #f2f8f9; --band-muted: #bcd6db;
+  --accent: #0b6575; --focus: #0b6575; --active: #d5ebef; --hover: #edf2f3; --select: #b9dde4;
+  --error: #b42318; --error-bg: #fde7e4; --warning: #9a5a00; --warning-bg: #fdf0d8; --ok: #1a7a3c;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   --size: 14px; --lh: 20px;
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0c0a09; --fg: #e7e5e4; --muted: #a8a29e; --line: #292524; --panel: #1c1917;
-    --error: #f87171; --error-bg: #450a0a; --warning: #fbbf24; --warning-bg: #422006; --ok: #4ade80;
+    --paper: #0b1012; --sheet: #11181b; --side: #0e1416; --ink: #e2e9eb; --muted: #94a4ab; --rule: #253238;
+    --band: #0f3f4a; --band-ink: #eaf4f6; --band-muted: #a9c8ce;
+    --accent: #6cc6d6; --focus: #6cc6d6; --active: #173a42; --hover: #172126; --select: #1f5561;
+    --error: #ff8f85; --error-bg: #3a1714; --warning: #f2b54b; --warning-bg: #352509; --ok: #6fd391;
   }
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif; }
-main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
-header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
-h1 { margin: 0; font-size: 1.5rem; }
-header p { margin: 0; color: var(--muted); }
-header a { color: inherit; }
-.bar { display: flex; align-items: center; gap: 12px; margin: 16px 0 8px; }
-select { font: inherit; padding: 4px 8px; border: 1px solid var(--muted); border-radius: 6px; background: var(--panel); color: var(--fg); }
-#status { margin-left: auto; font-size: .9rem; color: var(--muted); }
-#status.ok { color: var(--ok); }
-#status.bad { color: var(--error); }
-.editor { position: relative; display: flex; height: 50vh; min-height: 240px; border: 1px solid var(--muted); border-radius: 8px; background: var(--panel); overflow: hidden; }
-.editor:focus-within { outline: 2px solid var(--muted); outline-offset: -1px; }
-.gutter, .layer, textarea { margin: 0; padding: 8px; font: var(--size)/var(--lh) var(--mono); white-space: pre; tab-size: 4; }
-.gutter { flex: none; min-width: 4.5em; text-align: right; color: var(--muted); border-right: 1px solid var(--line); overflow: hidden; user-select: none; }
+::selection { background: var(--select); }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.5 var(--sans); }
+a { color: var(--accent); text-underline-offset: .2em; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1280px; margin-inline: auto; padding-inline: clamp(16px, 3vw, 32px); }
+
+/* The title band. */
+.band { background: var(--band); color: var(--band-ink); }
+.band .wrap { display: flex; align-items: baseline; gap: 4px 24px; padding-block: 14px; }
+.title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 16px; min-width: 0; }
+h1 { margin: 0; font-size: 1.25rem; line-height: 1.3; letter-spacing: -.01em; }
+.mark { display: inline-block; margin-right: .2em; padding: 0 .3em; background: var(--band-ink); color: var(--band); font: 700 .85em/1.35 var(--mono); }
+.band p { margin: 0; color: var(--band-muted); }
+.band a { color: var(--band-ink); }
+.band :focus-visible { outline-color: var(--band-ink); }
+.source { flex: none; margin-left: auto; font-weight: 600; }
+
+/* The dialect picker and what the dialect means. */
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding-block: 16px 12px; }
+label { font-weight: 600; }
+select { min-height: 40px; padding: 6px 10px; font: inherit; color: var(--ink); background: var(--sheet); border: 1px solid var(--muted); border-radius: 0; }
+select:hover { border-color: var(--ink); }
+#dialect-hint { flex: 1 1 18rem; margin: 0; color: var(--muted); font-size: .875rem; line-height: 1.4; }
+
+/* The text and the report share one ruled frame. */
+.work { display: grid; background: var(--sheet); border: 1px solid var(--rule); }
+.editor { position: relative; display: flex; height: 45vh; min-height: 240px; min-width: 0; }
+.editor:focus-within { outline: 2px solid var(--focus); outline-offset: -2px; }
+.gutter, .layer, textarea { margin: 0; font: var(--size)/var(--lh) var(--mono); white-space: pre; tab-size: 4; }
+.gutter { flex: none; padding: 8px 0; color: var(--muted); background: var(--side); border-right: 1px solid var(--rule); text-align: right; font-variant-numeric: tabular-nums; overflow: hidden; user-select: none; }
+.gutter div { padding-inline: 10px 8px; }
 .text { position: relative; flex: 1; min-width: 0; }
 .layer, textarea { position: absolute; inset: 0; width: 100%; height: 100%; overflow: auto; }
+.layer { padding: 8px 0; color: transparent; pointer-events: none; overflow: hidden; forced-color-adjust: none; }
 /* Room for the textarea's scrollbar, so the layers scroll as far as it does. */
 .layer, .gutter { padding-bottom: 40px; }
-.layer { color: transparent; pointer-events: none; overflow: hidden; }
+.layer div { width: max-content; min-width: 100%; padding-inline: 8px; }
 .layer div, .gutter div { min-height: var(--lh); }
 .layer .error, .gutter .error { background: var(--error-bg); }
 .layer .warning, .gutter .warning { background: var(--warning-bg); }
 .gutter .error { color: var(--error); }
 .gutter .warning { color: var(--warning); }
-textarea { border: 0; resize: none; background: transparent; color: var(--fg); outline: none; }
-ol { list-style: none; margin: 12px 0 0; padding: 0; }
-.more { padding: 8px 12px; color: var(--muted); font-size: .95rem; }
-li button { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: auto auto 1fr; gap: 2px 12px; width: 100%; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: .95rem; }
-li button:hover, li button:focus-visible { background: var(--panel); }
-li button:focus-visible { outline: 2px solid var(--muted); }
-.at { font-family: var(--mono); color: var(--muted); }
-.rule { font-family: var(--mono); }
-.rule.error { color: var(--error); }
-.rule.warning { color: var(--warning); }
-.path { grid-column: 3; font-family: var(--mono); color: var(--muted); font-size: .85rem; overflow-wrap: anywhere; }
+.layer div.active, .gutter div.active { background: var(--active); }
+/* The character a problem points at. */
+.layer mark { color: transparent; background: none; box-shadow: inset 0 -3px var(--error); }
+.layer mark.warning { box-shadow: inset 0 -3px var(--warning); }
+textarea { padding: 8px; border: 0; resize: none; background: transparent; color: var(--ink); caret-color: var(--accent); outline: none; scrollbar-color: var(--muted) transparent; }
+
+/* The verdict and the problem list. */
+.report { min-width: 0; padding: 16px 20px 20px; background: var(--side); border-top: 1px solid var(--rule); }
+#status { margin: 0; font-size: 1.75rem; font-weight: 700; line-height: 1.15; letter-spacing: -.02em; color: var(--muted); }
+#status::before { display: inline-block; width: .5em; height: .5em; margin-right: .3em; vertical-align: .1em; background: currentColor; }
+#status.ok { color: var(--ok); }
+#status.ok::before { content: ""; border-radius: 50%; }
+#status.warn { color: var(--warning); }
+#status.warn::before { content: ""; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+#status.bad { color: var(--error); }
+#status.bad::before { content: ""; }
+#verdict { margin: 6px 0 0; color: var(--muted); font-size: .9375rem; }
+#verdict:empty { display: none; }
+#verdict code { font: .875rem var(--mono); white-space: nowrap; }
+ol { display: grid; grid-template-columns: auto auto 1fr; column-gap: 12px; margin: 16px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--rule); }
+ol:empty { display: none; }
+li { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; }
+li button { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; row-gap: 2px; padding: 10px 8px; border-bottom: 1px solid var(--rule); }
+li button:hover { background: var(--hover); }
+li button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; background: var(--active); }
+.at, .severity, .rule, .path { font-family: var(--mono); font-size: .875rem; }
+.at { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.severity { font-weight: 600; }
+.severity::before { content: ""; display: inline-block; width: .6em; height: .6em; margin-right: .35em; background: currentColor; }
+.severity.error { color: var(--error); }
+.severity.warning { color: var(--warning); }
+.severity.warning::before { clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.rule { color: var(--ink); overflow-wrap: anywhere; }
+.msg, .path { grid-column: 2 / -1; }
+.msg { font-size: .9375rem; }
+.path { color: var(--muted); overflow-wrap: anywhere; }
+.more { grid-column: 1 / -1; padding: 10px 8px; color: var(--muted); font-size: .9375rem; }
+
+footer { padding-block: 16px 32px; color: var(--muted); font-size: .875rem; }
+noscript p { max-width: 1280px; margin: 0 auto; padding: 16px; color: var(--error); }
+
+@media (min-width: 1024px) {
+  .work { grid-template-columns: minmax(0, 1fr) minmax(20rem, 28rem); height: clamp(420px, calc(100dvh - 190px), 1000px); }
+  .editor { height: auto; min-height: 0; }
+  .report { overflow: auto; border-top: 0; border-left: 1px solid var(--rule); scrollbar-color: var(--muted) transparent; }
+}
 @media (max-width: 560px) {
   /* 16px, or iOS zooms in when the text area gets focus. */
   :root { --size: 16px; --lh: 22px; }
-  li button { grid-template-columns: auto 1fr; }
-  .msg, .path { grid-column: 1 / -1; }
+  select { min-height: 44px; flex: 1; }
+  .band .wrap { flex-direction: column; }
+  .source { margin-left: 0; }
+  #status { font-size: 1.5rem; }
 }
-footer { margin-top: 24px; font-size: .85rem; color: var(--muted); }
-footer a { color: inherit; }
-noscript p { max-width: 960px; margin: 0 auto; padding: 0 16px 24px; color: var(--error); }
