@@ -2,8 +2,7 @@
 
 This file describes the browser playground in `playground/`, not jsonvet as a whole. What jsonvet
 promises is in [docs/design.md](../docs/design.md), and how to use it in
-[docs/usage.md](../docs/usage.md). Facts marked *(inferred)* come from the code and docs, not from
-a confirmed interview.
+[docs/usage.md](../docs/usage.md).
 
 ## Platform
 
@@ -14,13 +13,17 @@ web
 - **Developers deciding whether to adopt jsonvet** as a pre-commit or prek hook, a GitHub Action
   or a CI command. They arrive from the README's "Try it in your browser" link or a shared link,
   paste a file from their own repo, and want to see what jsonvet would say about it before they
-  add the hook. *(inferred)*
+  add the hook.
 - **People debugging why a file fails.** A hook or CI run reported a problem, and they paste the
   file to see the line, the rule and the message next to the text, and to try fixes as they type.
-  *(inferred)*
+- **People comparing dialects.** They keep the same text and switch between JSON, JSONC, JSON5
+  and the rest to see what each one accepts.
+- **People seeing what jsonvet is.** They follow a shared link, skim the page with the sample text
+  and rarely paste their own. The first screen has to show what jsonvet does without any input.
 
-Both work at a desk, usually on a laptop or a wide screen, often switching from an editor or a CI
-log. A shared link also gets opened on a phone. *(inferred)*
+Most work at a desk, on a laptop or a wide screen, often switching from an editor or a CI log. A
+shared link also gets opened on a phone, so the phone layout must work, but the desk layout comes
+first.
 
 ## Product Purpose
 
