@@ -152,12 +152,19 @@ fn github_annotations_follow_each_problem() {
         "bom.json:1:1: warning[byte-order-mark] byte order mark at the start of the file\n\
          ::warning file=bom.json,line=1,col=1,endColumn=1,title=jsonvet (byte-order-mark)::byte order mark at the start of the file\n\
          dup.json:1:8: error[duplicate-key] duplicate key $.a (first at 1:2)\n\
-         ::error file=dup.json,line=1,col=8,endColumn=10,title=jsonvet (duplicate-key)::duplicate key $.a (first at 1:2)\n"
+         ::error file=dup.json,line=1,col=8,endColumn=10,title=jsonvet (duplicate-key)::duplicate key $.a (first at 1:2)\n\
+         ::notice title=jsonvet::1 error and 1 warning in 2 of 2 files\n"
     );
     assert_eq!(
         run("false"),
         "bom.json:1:1: warning[byte-order-mark] byte order mark at the start of the file\n\
          dup.json:1:8: error[duplicate-key] duplicate key $.a (first at 1:2)\n"
+    );
+    // No problems, no summary notice.
+    fs::write(dir.join("ok.json"), "{}").expect("write");
+    assert_eq!(
+        run_jsonvet(&dir, &["ok.json"], true),
+        (0, String::new(), String::new())
     );
 }
 
@@ -196,7 +203,8 @@ fn each_output_path_escapes_names_and_messages() {
             true,
             format!(
                 "./::a\\n\\u001b[2J,.json:1:4: {end}\n\
-                 ::error file=%3A%3Aa\\n\\u001b[2J%2C.json,line=1,col=4,title=jsonvet (syntax)::unclosed `[`: expected a value, found the end of the file (opened at 1:1)\n"
+                 ::error file=%3A%3Aa\\n\\u001b[2J%2C.json,line=1,col=4,title=jsonvet (syntax)::unclosed `[`: expected a value, found the end of the file (opened at 1:1)\n\
+                 ::notice title=jsonvet::1 error in 1 of 1 file\n"
             ),
         ),
         // A message in an annotation.
@@ -204,7 +212,8 @@ fn each_output_path_escapes_names_and_messages() {
             "m.json",
             true,
             format!(
-                "{text}::error file=m.json,line=1,col=17,endColumn=26,title=jsonvet (duplicate-key)::{}\n",
+                "{text}::error file=m.json,line=1,col=17,endColumn=26,title=jsonvet (duplicate-key)::{}\n\
+                 ::notice title=jsonvet::1 error in 1 of 1 file\n",
                 message.replace('%', "%25")
             ),
         ),
@@ -214,7 +223,8 @@ fn each_output_path_escapes_names_and_messages() {
             "::gone\u{1b}[2J.json",
             true,
             "./::gone\\u001b[2J.json: error: no such file\n\
-             ::error file=%3A%3Agone\\u001b[2J.json,title=jsonvet::no such file\n"
+             ::error file=%3A%3Agone\\u001b[2J.json,title=jsonvet::no such file\n\
+             ::notice title=jsonvet::1 error in 1 of 1 file\n"
                 .to_owned(),
         ),
     ];
@@ -938,11 +948,11 @@ fn json_holds_every_problem_and_keeps_the_exit_codes() {
     let (code, out, err) = run_jsonvet(&dir, &args, true);
     assert_eq!((code, err.as_str()), (1, ""));
     let expected = r#"{"version":1,"diagnostics":[
-{"file":"bad.json","rule":"syntax","severity":"error","message":"unclosed `[`: expected a value, found the end of the file (opened at 1:1)","line":1,"column":4,"offset":3,"related":[{"message":"opened here","line":1,"column":1,"offset":0}]},
-{"file":"dup.json","rule":"duplicate-key","severity":"error","message":"duplicate key $.a (first at 2:3)","line":3,"column":3,"offset":14,"related":[{"message":"first copy","line":2,"column":3,"offset":4}]},
-{"file":"bom.json","rule":"byte-order-mark","severity":"warning","message":"byte order mark at the start of the file","line":1,"column":1,"offset":0,"related":[]},
-{"file":"arr.json","rule":"schema","severity":"error","message":"[] is not of type \"object\" (at $)","line":1,"column":1,"offset":0,"related":[]},
-{"file":"gone.json","rule":"unreadable","severity":"error","message":"no such file","line":null,"column":null,"offset":null,"related":[]}
+{"file":"bad.json","rule":"syntax","url":"https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#syntax","severity":"error","message":"unclosed `[`: expected a value, found the end of the file (opened at 1:1)","line":1,"column":4,"offset":3,"related":[{"message":"opened here","line":1,"column":1,"offset":0}]},
+{"file":"dup.json","rule":"duplicate-key","url":"https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#duplicate-key","severity":"error","message":"duplicate key $.a (first at 2:3)","line":3,"column":3,"offset":14,"related":[{"message":"first copy","line":2,"column":3,"offset":4}]},
+{"file":"bom.json","rule":"byte-order-mark","url":"https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#byte-order-mark","severity":"warning","message":"byte order mark at the start of the file","line":1,"column":1,"offset":0,"related":[]},
+{"file":"arr.json","rule":"schema","url":"https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#schema","severity":"error","message":"[] is not of type \"object\" (at $)","line":1,"column":1,"offset":0,"related":[]},
+{"file":"gone.json","rule":"unreadable","url":"https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#unreadable","severity":"error","message":"no such file","line":null,"column":null,"offset":null,"related":[]}
 ]}
 "#;
     assert_eq!(out, expected);
@@ -1648,6 +1658,16 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
         files.push(("f.json", "{\"$schema\": \"sc.json#\"}"));
         let dir = workdir(&files);
         assert_eq!(picked_by(&dir, &["f.json"]), "kc");
+    }
+
+    #[test]
+    fn a_dollar_schema_key_written_with_an_escape_is_found() {
+        let mut files = keyed_schemas();
+        files.push(("f.json", r#"{"\u0024schema": "sc.json"}"#));
+        files.push(("g.json", r#"{"$sch\u0065ma": "sc.json"}"#));
+        let dir = workdir(&files);
+        assert_eq!(picked_by(&dir, &["f.json"]), "kc");
+        assert_eq!(picked_by(&dir, &["g.json"]), "kc");
     }
 
     #[test]
@@ -3947,4 +3967,72 @@ mod file_reads {
         );
         let _ = fs::remove_dir_all(&dir);
     }
+}
+
+/// A panic prints its message and where to report it, and exits 101 as an unwinding panic does,
+/// rather than aborting with a signal as the release build's `panic = "abort"` would.
+#[test]
+fn a_panic_names_the_issue_tracker_and_exits_101() {
+    let out = command(env!("CARGO_BIN_EXE_jsonvet"))
+        .env("JSONVET_TEST_PANIC", "1")
+        .output()
+        .expect("run jsonvet");
+    let err = String::from_utf8(out.stderr).expect("UTF-8 errors");
+    assert_eq!(out.status.code(), Some(101));
+    assert_eq!(out.stdout, Vec::<u8>::new());
+    assert!(err.contains("test panic"), "{err}");
+    assert!(
+        err.contains("https://github.com/simonvanlierde/jsonvet/issues"),
+        "{err}"
+    );
+}
+
+/// The JSON Schema in `docs/json-output.schema.json` accepts what `--format json` prints, for
+/// every kind of diagnostic, and rejects a document that breaks the layout.
+#[test]
+fn json_output_matches_its_published_schema() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/json-output.schema.json");
+    let schema: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(path).expect("the schema file"))
+            .expect("a JSON schema");
+    let validator = jsonschema::validator_for(&schema).expect("a valid schema");
+    let dir = workdir(&[
+        ("schema.json", r#"{"type": "object"}"#),
+        ("bad.json", "[1,"),
+        ("dup.json", "{\n  \"a\": 1,\n  \"a\": 2\n}"),
+        ("bom.json", "\u{FEFF}{}"),
+        ("arr.json", "[]"),
+    ]);
+    // Problems with and without a related place or a position, and the empty list.
+    let full = [
+        "--format",
+        "json",
+        "--schema",
+        "schema.json",
+        "--dialect=json:*.json",
+        "bad.json",
+        "dup.json",
+        "bom.json",
+        "arr.json",
+        "gone.json",
+    ];
+    for args in [&full[..], &["--format", "json"]] {
+        let (_, out, _) = jsonvet_stderr(&dir, args);
+        let json: serde_json::Value = serde_json::from_str(&out).expect("JSON output");
+        let errors: Vec<String> = validator
+            .iter_errors(&json)
+            .map(|error| error.to_string())
+            .collect();
+        assert!(errors.is_empty(), "{errors:?}\n{out}");
+    }
+    let (_, out, _) = jsonvet_stderr(&dir, &full);
+    let mut json: serde_json::Value = serde_json::from_str(&out).expect("JSON output");
+    json["diagnostics"][0]["severity"] = "fatal".into();
+    assert!(!validator.is_valid(&json));
+    json["diagnostics"][0]["severity"] = "error".into();
+    json["diagnostics"][0]
+        .as_object_mut()
+        .expect("an object")
+        .remove("url");
+    assert!(!validator.is_valid(&json));
 }

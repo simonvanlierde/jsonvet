@@ -10,6 +10,17 @@ version for a new option or output, the patch version for a fix.
 
 ### Added
 
+- In GitHub Actions, a run that finds problems ends with a notice annotation that counts them,
+  since GitHub shows only the first 10 annotations of a type for a step
+  ([output](docs/usage.md#output)).
+- A JSON Schema describes the `--format json` document, for editors and code generators
+  ([JSON](docs/usage.md#json)).
+- A crash in jsonvet now prints its message with a link to the issue tracker and exits 101,
+  instead of ending with a signal and no message
+  ([exit status](docs/usage.md#exit-status-and-files)).
+- Each code frame ends with a `help:` line linking the rule's section in the docs, and each
+  `--format json` diagnostic has a `url` field with the same link
+  ([output](docs/usage.md#output), [JSON](docs/usage.md#json)).
 - The playground has a social card, so a link to it shows a preview of the page.
 - jsonvet's messages can now be translated. Problem messages, `--help`, `--list-rules`,
   `--explain`, usage and config errors, the reasons a file cannot be read, the schema errors
@@ -108,6 +119,9 @@ Most users need no change. Check these if they apply to you:
 
 ### Fixed
 
+- A file whose `$schema` key is written with an escape, such as `"\u0024schema"` or JSON5's
+  `"\x24schema"`, is now checked against its schema. Before, jsonvet skipped the schema and the
+  file passed.
 - `--schema` no longer fails a file because a string in it is too costly to match against a
   pattern the schema never applies there. jsonvet tried every pattern on every string, so any Expo
   `app.json` with a string of 5,000 characters or more failed against SchemaStore's schema.

@@ -386,6 +386,20 @@ impl<W: Write> Printer<W> {
         Ok(())
     }
 
+    /// The run's last annotation, a notice with the summary, when annotating. GitHub shows only
+    /// the first 10 annotations of a type for each step, and the notice is a type of its own, so
+    /// it shows however many problems there are.
+    pub(crate) fn summary_annotation(&mut self, summary: &str) -> io::Result<()> {
+        if matches!(self.sink, Sink::Text { annotate: true, .. }) {
+            writeln!(
+                self.out,
+                "::notice title=jsonvet::{}",
+                escape(&printable(summary), false)
+            )?;
+        }
+        Ok(())
+    }
+
     /// Write what can only come once every file was checked: the end of the SARIF or JSON
     /// document, with SARIF's count of results past the cap.
     pub(crate) fn finish(&mut self) -> io::Result<()> {

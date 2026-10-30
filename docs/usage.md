@@ -27,7 +27,6 @@ The details behind the [README](../README.md). Why things work this way is in
 
 `jsonvet --help` prints the same list with more detail.
 
-
 ## Folders
 
 A folder on the command line stands for the files under it with an extension or name from the
@@ -68,6 +67,8 @@ severities, JSONPaths and exit codes are never translated.
   column 1.
 - A duplicate key gets its JSONPath and the position of the first copy: `$` is the root,
   `$.tags[1]` an array element, `$[""]` the empty key.
+- A code frame ends with `= help: <url>`, the link to the rule's section on this page, as SARIF's
+  `helpUri` and JSON's `url` do. Lines carry no link.
 - A file jsonvet cannot read gets a line with no position and no rule, such as
   `gone.json: error: no such file`. It always fails the run.
 - A syntax error about two places names the second: `(started at 1:10)` for an unterminated
@@ -76,7 +77,10 @@ severities, JSONPaths and exit codes are never translated.
   `comments are not allowed in json; the jsonc dialect allows this`.
 - A UTF-16 or UTF-32 file fails with `file is UTF-16 (LE); jsonvet reads UTF-8`. Any other file
   that is not UTF-8 fails with `not valid UTF-8 (byte N)`.
-- In GitHub Actions, each problem is also an annotation.
+- In GitHub Actions, each problem is also an annotation. GitHub shows only the first 10 of each
+  type for a step, so when a run finds problems, its last line is a `notice` annotation with the
+  summary, such as `3 errors and 1 warning in 2 of 5 files`. Notices have a limit of their own, so
+  this one always shows.
 
 jsonvet escapes control, bidirectional and invisible characters in file names and messages, so no
 output line can drive a terminal or pass for a GitHub workflow command
@@ -90,6 +94,11 @@ JSON and annotations, and exactly in SARIF.
 |    0 | no file has an error, or there were no files             |
 |    1 | a file has an error, or a file cannot be read            |
 |    2 | a usage error, such as an unknown option or a bad schema |
+|  101 | a bug in jsonvet: it panicked                            |
+
+On a panic, jsonvet prints the message and where it happened to standard error, with a link to
+the [issue tracker](https://github.com/simonvanlierde/jsonvet/issues), and exits 101. Output not
+yet written is lost, and the verdict for the files checked so far is not given.
 
 jsonvet reads regular files, and follows a symlink to one. A device, FIFO or socket prints
 `error: not a regular file`. When the output pipe closes early, as in `jsonvet … | head -1`,
@@ -204,7 +213,6 @@ schema wants a number. The schema comes from `--schema`, the config file's `sche
 `$schema` in the file. Always an error: `--error`, `--warn`, `--ignore` and settings files do not
 take this rule.
 
-
 ## Globs
 
 - A glob without `/` matches the file name at any depth. A glob with `/` matches the whole path,
@@ -304,8 +312,8 @@ jsonvet --format json config.json5 | jq -r '.diagnostics[] | "\(.file):\(.line) 
 
 ```json
 {"version":1,"diagnostics":[
-{"file":"dup.json","rule":"duplicate-key","severity":"error","message":"duplicate key $.a (first at 2:3)","line":3,"column":3,"offset":14,"related":[{"message":"first copy","line":2,"column":3,"offset":4}]},
-{"file":"gone.json","rule":"unreadable","severity":"error","message":"no such file","line":null,"column":null,"offset":null,"related":[]}
+{"file":"dup.json","rule":"duplicate-key","url":"https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#duplicate-key","severity":"error","message":"duplicate key $.a (first at 2:3)","line":3,"column":3,"offset":14,"related":[{"message":"first copy","line":2,"column":3,"offset":4}]},
+{"file":"gone.json","rule":"unreadable","url":"https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#unreadable","severity":"error","message":"no such file","line":null,"column":null,"offset":null,"related":[]}
 ]}
 ```
 
@@ -317,6 +325,7 @@ jsonvet --format json config.json5 | jq -r '.diagnostics[] | "\(.file):\(.line) 
   | ---------- | --------------------------------------------------------------------------------- |
   | `file`     | the file name as given, or the `--stdin-filename`; bytes that are not UTF-8 show as U+FFFD |
   | `rule`     | the rule id, such as `duplicate-key`, or `schema` or `unreadable`                 |
+  | `url`      | a link to the rule's section in this page, the same as SARIF's `helpUri`          |
   | `severity` | `error` or `warning`                                                              |
   | `message`  | the message as text output prints it in English, with its `(first at 2:3)` part   |
   | `line`     | the line, from 1; `null` for a file jsonvet could not read                        |
@@ -324,7 +333,8 @@ jsonvet --format json config.json5 | jq -r '.diagnostics[] | "\(.file):\(.line) 
   | `offset`   | the byte offset in the file, from 0; `null` with no line                          |
   | `related`  | other places the problem names, each with `message`, `line`, `column` and `offset`: a duplicate key's first copy (`first copy`), the bracket an unclosed value opened at (`opened here`), or where an unterminated comment or string starts (`starts here`). Often empty |
 
-
+- [json-output.schema.json](json-output.schema.json) is a JSON Schema for the document. A test
+  checks real output against it.
 - Strings are escaped as in SARIF, so a JSON reader gets the name and message back unchanged.
 - Each diagnostic is on a line of its own, written as files are checked. The exit status and
   `--max-warnings` work as with text. No annotations or count are printed.
