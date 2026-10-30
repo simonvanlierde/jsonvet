@@ -938,11 +938,11 @@ fn json_holds_every_problem_and_keeps_the_exit_codes() {
     let (code, out, err) = run_jsonvet(&dir, &args, true);
     assert_eq!((code, err.as_str()), (1, ""));
     let expected = r#"{"version":1,"diagnostics":[
-{"file":"bad.json","rule":"syntax","severity":"error","message":"unclosed `[`: expected a value, found the end of the file (opened at 1:1)","line":1,"column":4,"offset":3,"related":[{"message":"opened here","line":1,"column":1,"offset":0}]},
-{"file":"dup.json","rule":"duplicate-key","severity":"error","message":"duplicate key $.a (first at 2:3)","line":3,"column":3,"offset":14,"related":[{"message":"first copy","line":2,"column":3,"offset":4}]},
-{"file":"bom.json","rule":"byte-order-mark","severity":"warning","message":"byte order mark at the start of the file","line":1,"column":1,"offset":0,"related":[]},
-{"file":"arr.json","rule":"schema","severity":"error","message":"[] is not of type \"object\" (at $)","line":1,"column":1,"offset":0,"related":[]},
-{"file":"gone.json","rule":"unreadable","severity":"error","message":"no such file","line":null,"column":null,"offset":null,"related":[]}
+{"file":"bad.json","rule":"syntax","url":"https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#syntax","severity":"error","message":"unclosed `[`: expected a value, found the end of the file (opened at 1:1)","line":1,"column":4,"offset":3,"related":[{"message":"opened here","line":1,"column":1,"offset":0}]},
+{"file":"dup.json","rule":"duplicate-key","url":"https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#duplicate-key","severity":"error","message":"duplicate key $.a (first at 2:3)","line":3,"column":3,"offset":14,"related":[{"message":"first copy","line":2,"column":3,"offset":4}]},
+{"file":"bom.json","rule":"byte-order-mark","url":"https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#byte-order-mark","severity":"warning","message":"byte order mark at the start of the file","line":1,"column":1,"offset":0,"related":[]},
+{"file":"arr.json","rule":"schema","url":"https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#schema","severity":"error","message":"[] is not of type \"object\" (at $)","line":1,"column":1,"offset":0,"related":[]},
+{"file":"gone.json","rule":"unreadable","url":"https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#unreadable","severity":"error","message":"no such file","line":null,"column":null,"offset":null,"related":[]}
 ]}
 "#;
     assert_eq!(out, expected);

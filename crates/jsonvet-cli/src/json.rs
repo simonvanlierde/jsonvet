@@ -36,9 +36,10 @@ pub(crate) fn diagnostic(
         )
     });
     format!(
-        r#"{{"file":{},"rule":{},"severity":"{}","message":{},{},"related":[{related}]}}"#,
+        r#"{{"file":{},"rule":{},"url":{},"severity":"{}","message":{},{},"related":[{related}]}}"#,
         string(&file.to_string_lossy()),
         string(rule),
+        string(&crate::rules::help_uri(rule)),
         level(severity),
         string(message),
         position(at),

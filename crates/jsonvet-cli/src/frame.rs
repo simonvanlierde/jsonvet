@@ -100,6 +100,7 @@ pub(crate) fn render(
             columns.push(related.at.column);
         }
     }
+    let group = group.element(Level::HELP.message(crate::rules::help_uri(rule)));
     let frame = renderer.render(&[group]);
     // annotate-snippets counts a header's column in the excerpt, which can start mid-line, so
     // each header gets the column of the mark it names instead.
@@ -496,5 +497,16 @@ mod tests {
             None,
         );
         assert_eq!(frame, "error: no such file\n--> gone.json");
+    }
+
+    #[test]
+    fn a_frame_ends_with_a_help_line_naming_the_rules_docs() {
+        let frame = frames("[1 2]");
+        assert!(
+            frame.ends_with(
+                "\n  = help: https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#syntax\n"
+            ),
+            "{frame}"
+        );
     }
 }

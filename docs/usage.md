@@ -68,6 +68,8 @@ severities, JSONPaths and exit codes are never translated.
   column 1.
 - A duplicate key gets its JSONPath and the position of the first copy: `$` is the root,
   `$.tags[1]` an array element, `$[""]` the empty key.
+- A code frame ends with `= help: <url>`, the link to the rule's section on this page, as SARIF's
+  `helpUri` and JSON's `url` do. Lines carry no link.
 - A file jsonvet cannot read gets a line with no position and no rule, such as
   `gone.json: error: no such file`. It always fails the run.
 - A syntax error about two places names the second: `(started at 1:10)` for an unterminated
@@ -304,8 +306,8 @@ jsonvet --format json config.json5 | jq -r '.diagnostics[] | "\(.file):\(.line) 
 
 ```json
 {"version":1,"diagnostics":[
-{"file":"dup.json","rule":"duplicate-key","severity":"error","message":"duplicate key $.a (first at 2:3)","line":3,"column":3,"offset":14,"related":[{"message":"first copy","line":2,"column":3,"offset":4}]},
-{"file":"gone.json","rule":"unreadable","severity":"error","message":"no such file","line":null,"column":null,"offset":null,"related":[]}
+{"file":"dup.json","rule":"duplicate-key","url":"https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#duplicate-key","severity":"error","message":"duplicate key $.a (first at 2:3)","line":3,"column":3,"offset":14,"related":[{"message":"first copy","line":2,"column":3,"offset":4}]},
+{"file":"gone.json","rule":"unreadable","url":"https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#unreadable","severity":"error","message":"no such file","line":null,"column":null,"offset":null,"related":[]}
 ]}
 ```
 
@@ -317,6 +319,7 @@ jsonvet --format json config.json5 | jq -r '.diagnostics[] | "\(.file):\(.line) 
   | ---------- | --------------------------------------------------------------------------------- |
   | `file`     | the file name as given, or the `--stdin-filename`; bytes that are not UTF-8 show as U+FFFD |
   | `rule`     | the rule id, such as `duplicate-key`, or `schema` or `unreadable`                 |
+  | `url`      | a link to the rule's section in this page, the same as SARIF's `helpUri`          |
   | `severity` | `error` or `warning`                                                              |
   | `message`  | the message as text output prints it in English, with its `(first at 2:3)` part   |
   | `line`     | the line, from 1; `null` for a file jsonvet could not read                        |

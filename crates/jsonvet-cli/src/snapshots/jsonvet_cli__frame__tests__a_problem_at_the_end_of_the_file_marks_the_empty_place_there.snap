@@ -12,3 +12,5 @@ error[syntax]: unclosed `[`: expected a value, found the end of the file
   |
 1 | {"a": [1,
   |       - here
+  |
+  = help: https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#syntax

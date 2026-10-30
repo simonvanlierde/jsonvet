@@ -10,6 +10,9 @@ version for a new option or output, the patch version for a fix.
 
 ### Added
 
+- Each code frame ends with a `help:` line linking the rule's section in the docs, and each
+  `--format json` diagnostic has a `url` field with the same link
+  ([output](docs/usage.md#output), [JSON](docs/usage.md#json)).
 - The playground has a social card, so a link to it shows a preview of the page.
 - jsonvet's messages can now be translated. Problem messages, `--help`, `--list-rules`,
   `--explain`, usage and config errors, the reasons a file cannot be read, the schema errors
