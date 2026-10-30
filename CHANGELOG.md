@@ -21,6 +21,8 @@ version for a new option or output, the patch version for a fix.
 
 ### Changed
 
+- Checking a file reads `true`, `false` and `null` with less work: 2-4% fewer instructions on
+  typical JSON, JSONC and JSON5 files.
 - A file whose `$schema` names a path that does not exist is still checked without a schema, but
   jsonvet now says so: one note on stderr per missing schema, such as one under a `node_modules`
   that was never installed. The exit code is unchanged.
