@@ -29,8 +29,10 @@ first.
 
 The playground runs jsonvet's own parser, built to WebAssembly, on the text you paste, and shows
 every problem as you type: the line in the gutter, a highlight on the row, and a list with the
-position, severity, rule id, message and, for a duplicate key, its JSONPath. Clicking a problem
-moves the caret to it.
+position, severity, rule id, message and, for a duplicate key, its JSONPath and where its first
+copy is. Clicking a problem moves the caret to it. A strip above the text shows the verdict of all
+six dialects at once, and the report ends with the hook and Action snippets for the chosen
+dialect.
 
 A visit succeeds when the visitor sees the verdict jsonvet would give their text, understands
 each problem well enough to fix it, and knows where the command-line tool is.
@@ -39,7 +41,7 @@ each problem well enough to fix it, and knows where the command-line tool is.
 
 It is the same parser and the same messages as the CLI, hook and Action, not a separate JavaScript
 linter, so what the playground says is what CI will say for that dialect. The text never leaves
-the page.
+the page: a share link keeps it in the URL fragment, which browsers do not send to a server.
 
 ## Operating Context
 
@@ -57,9 +59,13 @@ the page.
 - No runtime dependencies and no build step for the page: plain HTML, CSS and ES modules beside
   the wasm-bindgen output in `playground/pkg/`.
 - Large input stays usable: above 5,000 rows the gutter and highlights turn off, above 200,000
-  characters a check waits for a pause in typing, and the list shows at most 200 problems.
+  characters a check waits for a pause in typing, past either the other five dialects are not
+  checked, and the list shows at most 200 problems.
+- Nothing is stored and nothing is requested but the page's own files: no cookies or local
+  storage. The share link lives in the address bar (`#dialect:data`, the text deflated and in
+  base64url, by `share.mjs`), and a dropped file is read in the page.
 - `playground/browser-check.sh` loads the page in headless Chrome and expects the status
-  `1 problem` for the sample text.
+  `1 error` for the sample text.
 
 ## Brand Commitments
 
@@ -69,7 +75,8 @@ the page.
 
 ## Evidence on Hand
 
-- The sample text in `index.html` (a JSON5 config with a repeated `port` key).
+- The sample text in `index.html`: a config with a comment, a trailing comma and a `port` key
+  repeated inside `server`, so it fails as JSON, and each dialect gives a different verdict.
 - The social card `playground/og.png`, a screenshot of the page itself.
 - No testimonials, user counts or quotes exist; none may be invented.
 

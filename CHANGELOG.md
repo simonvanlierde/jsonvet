@@ -22,9 +22,10 @@ version for a new option or output, the patch version for a fix.
 
 ### Changed
 
-- The playground has a new layout: the problems sit beside the text on wide screens, each one
-  underlines the character it points at, and the page says what each dialect is for and whether
-  the CLI would pass the text.
+- The playground has a lighter layout that shows every dialect's verdict on the text at once,
+  marks both copies of a duplicate key (and the bracket an unclosed value opened at), and ends with
+  the hook and Action snippets for the chosen dialect. The address bar keeps the text as a share
+  link without sending it anywhere, and a file dropped on the text is read in the page.
 - Checking a file reads `true`, `false` and `null` with less work: 2-4% fewer instructions on
   typical JSON, JSONC and JSON5 files.
 - Each object and array costs less to open and close: 19% fewer instructions on deeply nested
