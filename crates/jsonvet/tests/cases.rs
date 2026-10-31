@@ -471,6 +471,22 @@ fn messages_show_bidi_controls_as_code_points() {
     );
 }
 
+/// An error message translates the `{expected}` part as well as the template.
+#[test]
+fn error_message_translates_expected_part() {
+    let report = check("", &Config::new(Dialect::Json));
+    let problem = &report.problems()[0];
+    let german = |id: &str| match id {
+        "syntax.unexpected-end" => Some("{expected} erwartet, Dateiende gefunden"),
+        "expected.a-value" => Some("ein Wert"),
+        _ => None,
+    };
+    assert_eq!(
+        problem.message_with(german),
+        "ein Wert erwartet, Dateiende gefunden"
+    );
+}
+
 /// JWCC ends a `//` comment at LF only, JSONC also at a lone CR, and JSON5 also at U+2028 and
 /// U+2029. Where the comment does not end, it swallows the `2]` after it.
 #[test]
@@ -681,4 +697,11 @@ fn json5_identifier_surrogate_pair_escapes() {
     // Lone surrogates are not valid identifier characters and fail.
     let report = check("{\\ud820: 1}", &Config::new(Dialect::Json5));
     assert!(!report.passed());
+
+    // The escaped surrogate pair decodes to the exact code point U+1825D.
+    let text = "{\\ud820\\ude5d: 1, \"\u{1825d}\": 2}";
+    let report = check(text, &Config::new(Dialect::Json5));
+    assert_eq!(report.problems().len(), 1);
+    assert_eq!(report.problems()[0].rule(), jsonvet::Rule::DuplicateKey);
+    assert_eq!(report.problems()[0].to_string(), "duplicate key $[\"𘉝\"]");
 }

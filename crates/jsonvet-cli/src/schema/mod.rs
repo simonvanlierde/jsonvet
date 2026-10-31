@@ -1343,6 +1343,43 @@ mod tests {
         }
     }
 
+    #[test]
+    fn check_lines_places_schema_errors_across_lines() {
+        let schema_val = json!({
+            "properties": {"a": {"type": "integer"}},
+            "required": ["a"]
+        });
+        let options = jsonschema::options();
+        let schema = Schema {
+            compiled: Compiled {
+                validator: options.build(&schema_val).expect("a schema"),
+                schema: schema_val,
+                moved: None,
+            },
+            items: OnceLock::new(),
+            members: OnceLock::new(),
+            kept: false,
+            key_patterns: Vec::new(),
+            string_patterns: Vec::new(),
+            linear: true,
+            quiet: None,
+        };
+        // Line 1 and Line 2 fail schema consecutively; Line 3 passes; Line 4 fails.
+        let text = "{\"a\": \"bad1\"}\n{\"a\": \"bad2\"}\n{\"a\": 3}\n{\"a\": \"bad4\"}\n";
+        let config = Config::new(Dialect::JsonLines);
+        let (_, errors) = schema.check_lines(text, 0..text.len(), &config);
+        assert_eq!(errors.len(), 3);
+        assert_eq!(errors[0].0, 6);
+        assert_eq!(errors[1].0, 20);
+        assert_eq!(errors[2].0, 43);
+
+        // Subrange starting at line 2 (offset 14) to end of text
+        let (_, errors) = schema.check_lines(text, 14..text.len(), &config);
+        assert_eq!(errors.len(), 2);
+        assert_eq!(errors[0].0, 20);
+        assert_eq!(errors[1].0, 43);
+    }
+
     proptest! {
         #[test]
         fn a_split_object_schema_reports_what_one_pass_does(members in prop::collection::vec(("[ab]{1,2}", any_json()), 0..6)) {

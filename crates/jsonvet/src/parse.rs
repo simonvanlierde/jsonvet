@@ -1543,4 +1543,16 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn escaped_surrogate_pair_identifier_decodes_to_exact_character() {
+        use crate::{Config, Dialect, parse};
+        let (report, events) = parse("{\\uD801\\uDC00: 1}", &Config::new(Dialect::Json5));
+        assert!(report.passed());
+        let events = events.expect("events");
+        assert_eq!(
+            events[1].kind,
+            crate::EventKind::Key(Key::from("\u{10400}".as_bytes()))
+        );
+    }
 }

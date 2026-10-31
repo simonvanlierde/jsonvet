@@ -749,8 +749,10 @@ mod tests {
 
     use super::{
         CHUNK_BYTES, MAX_CONFIG_BYTES, SCHEMA_BYTES, SPLIT_BYTES, STDIN, Schema, Settings, check,
-        chunk_len, parallel, read_small, schema_share, schema_shares, split, unsafe_ignore_file,
+        chunk_len, parallel, read_small, schema_share, schema_shares, split, take_chunk,
+        unsafe_ignore_file,
     };
+    use crate::schema::select::Job;
     use std::sync::Arc;
 
     /// A schema that takes any value, in a fresh folder named for `test`, which also holds an
@@ -900,6 +902,26 @@ mod tests {
         assert_eq!(chunk_len(&[CHUNK_BYTES - 1, 1, 1]), 2);
         assert_eq!(chunk_len(&[CHUNK_BYTES - 2, 1, 1]), 3);
         assert_eq!(chunk_len(&[0, CHUNK_BYTES - 1, 0, 2, 5]), 4);
+    }
+
+    #[test]
+    fn take_chunk_respects_shares() {
+        let dir = std::env::temp_dir().join(format!("jsonvet-chunk-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        let f1 = dir.join("1.json");
+        let f2 = dir.join("2.json");
+        std::fs::write(&f1, "{}").expect("write");
+        std::fs::write(&f2, "{}").expect("write");
+        let settings = Arc::new(Settings::default());
+        let job1: Job = ((settings.clone(), None), f1.into_os_string());
+        let job2: Job = ((settings.clone(), None), f2.into_os_string());
+        let rest = [job1, job2];
+        let mut ahead = Vec::new();
+        let shares = [CHUNK_BYTES, CHUNK_BYTES];
+        let taken = take_chunk(&mut ahead, &rest, Some(&shares), 1, &|_, _| false);
+        assert_eq!(taken.len(), 1);
+        assert_eq!(ahead, []);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

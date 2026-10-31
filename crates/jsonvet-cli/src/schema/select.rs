@@ -376,4 +376,36 @@ mod tests {
             assert_eq!(super::is_url(text), url, "{text}");
         }
     }
+
+    #[test]
+    fn check_own_schema_runs_on_duplicate_key_without_syntax_error() {
+        let dir = std::env::temp_dir().join(format!("jsonvet-own-schema-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a temporary directory");
+        std::fs::write(
+            dir.join("s.json"),
+            r#"{"properties": {"b": {"type": "integer"}}, "required": ["b"]}"#,
+        )
+        .expect("write schema");
+        let settings = Settings::default();
+        let schemas = Schemas::default();
+        let root = |_path: &std::path::Path| dir.clone();
+        let load = |path: &std::path::Path, quiet: bool| {
+            Schema::load(path, &settings, quiet, |_| Ok(())).map(std::sync::Arc::new)
+        };
+        let file = dir.join("test.json");
+        let text = r#"{"$schema": "s.json", "k": 1, "k": 2, "b": "bad"}"#;
+        let (report, errors) = super::check_own_schema(
+            &file.to_string_lossy(),
+            text,
+            &settings,
+            &schemas,
+            &root,
+            &load,
+            1,
+        );
+        assert_eq!(report.problems().len(), 1);
+        assert_eq!(report.problems()[0].rule(), jsonvet::Rule::DuplicateKey);
+        assert!(!errors.is_empty(), "own schema should be validated");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
