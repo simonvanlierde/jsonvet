@@ -420,3 +420,20 @@ impl fmt::Display for Shown {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{SyntaxError, SyntaxKind};
+
+    #[test]
+    fn syntax_error_display() {
+        let err = SyntaxError {
+            kind: SyntaxKind::BlankLine,
+            started: None,
+        };
+        assert_eq!(
+            format!("{err}"),
+            "blank line; JSON Lines needs a value on every line"
+        );
+    }
+}

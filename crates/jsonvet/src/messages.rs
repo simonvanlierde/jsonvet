@@ -251,4 +251,12 @@ mod tests {
         fill(&mut out, "a {x} `{` {y} {", &[("x", &"{y}"), ("y", &2)]).expect("a write to memory");
         assert_eq!(out, "a {y} `{` 2 {");
     }
+
+    #[test]
+    fn part_id_resolves_known_parts_and_rejects_unknown() {
+        assert_eq!(part_id("a value"), Some("expected.a-value"));
+        assert_eq!(part_id("a key"), Some("expected.a-key"));
+        assert_eq!(part_id("not an expected part"), None);
+        assert_eq!(part_id("duplicate key {path}"), None);
+    }
 }
