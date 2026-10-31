@@ -205,7 +205,14 @@ impl<'a> Keys<'a> {
             .ok()
             .filter(|_| list.len() > LINEAR_KEYS);
         let Some(position) = position else {
-            if let Some((_, first)) = list.iter().find(|(k, _)| k == key) {
+            let target = key.as_ref();
+            if let Some((_, first)) = list.iter().find(|(k, _)| {
+                let existing = k.as_ref();
+                existing.len() == target.len()
+                    && (existing.as_ptr() == target.as_ptr()
+                        || (existing.is_empty()
+                            || (existing[0] == target[0] && existing == target)))
+            }) {
                 return Some(*first);
             }
             list.push((key.clone(), at));
@@ -1111,11 +1118,13 @@ impl<'a> Parser<'a, '_> {
 
     /// Skip a run of decimal digits; true if there was at least one.
     fn skip_digits(&mut self) -> bool {
-        let start = self.pos;
-        while self.peek().is_some_and(|b| b.is_ascii_digit()) {
-            self.pos += 1;
+        let rest = &self.bytes[self.pos..];
+        let mut len = 0;
+        while len < rest.len() && rest[len].is_ascii_digit() {
+            len += 1;
         }
-        self.pos > start
+        self.pos += len;
+        len > 0
     }
 
     /// `NaN` or `Infinity`, which only JSON5 allows. `start` is at the sign, if there is one.
