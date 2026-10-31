@@ -229,10 +229,23 @@ Run on 2026-10-28. The full grid, and where each expected verdict comes from: [d
 
 <!-- conformance:end -->
 
+## Development
+
+You need [Rust](https://rustup.rs) and [just](https://just.systems).
+
+```sh
+git submodule update --init --quiet
+cargo test --workspace
+```
+
+See [CONTRIBUTING.md](https://github.com/simonvanlierde/jsonvet/blob/main/CONTRIBUTING.md) for
+the full check and lint suite.
+
 ## More
 
 - [Reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md),
-  [design](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md) and
+  [design](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md),
+  [accessibility](https://github.com/simonvanlierde/jsonvet/blob/main/docs/accessibility.md) and
   [CHANGELOG](https://github.com/simonvanlierde/jsonvet/blob/main/CHANGELOG.md).
 - [CONTRIBUTING.md](https://github.com/simonvanlierde/jsonvet/blob/main/CONTRIBUTING.md),
   [ROADMAP.md](https://github.com/simonvanlierde/jsonvet/blob/main/ROADMAP.md) and
