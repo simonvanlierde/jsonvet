@@ -663,3 +663,22 @@ fn every_character_in_a_string_has_a_rule() {
         }
     }
 }
+
+/// JSON5 identifiers accept escaped surrogate pairs that form an ECMAScript 5.1 identifier character.
+#[test]
+fn json5_identifier_surrogate_pair_escapes() {
+    // U+1825D (Tangut letter, Lo) written as \uD820\uDE5D.
+    let text = "{\\ud820\\ude5d: 1, a\\ud820\\ude5db: 2}";
+    let report = check(text, &Config::new(Dialect::Json5));
+    assert!(report.passed(), "problems: {:?}", report.problems());
+
+    // libFuzzer crash-321bca1acb18d4bc66d50ccb3497973c499ad9fd regression
+    let crash_input =
+        "{\n  scripts: {\n    pppppp\\ud820\\ude5dbtest: 'node ./test/run.js',\n  },\n}\n";
+    let report = check(crash_input, &Config::new(Dialect::Json5));
+    assert!(report.passed(), "problems: {:?}", report.problems());
+
+    // Lone surrogates are not valid identifier characters and fail.
+    let report = check("{\\ud820: 1}", &Config::new(Dialect::Json5));
+    assert!(!report.passed());
+}

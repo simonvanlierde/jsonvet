@@ -35,7 +35,17 @@ fn has_newer_identifier_char(text: &str) -> bool {
     use unicode_properties::UnicodeGeneralCategory;
     let escaped = text.match_indices("\\u").filter_map(|(at, _)| {
         let hex = text.get(at + 2..at + 6)?;
-        char::from_u32(u32::from_str_radix(hex, 16).ok()?)
+        let unit = u32::from_str_radix(hex, 16).ok()?;
+        if (0xD800..0xDC00).contains(&unit)
+            && text.get(at + 6..at + 8) == Some("\\u")
+            && let Some(low_hex) = text.get(at + 8..at + 12)
+            && let Ok(low) = u32::from_str_radix(low_hex, 16)
+            && (0xDC00..0xE000).contains(&low)
+        {
+            char::from_u32(0x10000 + ((unit - 0xD800) << 10) + (low - 0xDC00))
+        } else {
+            char::from_u32(unit)
+        }
     });
     text.chars()
         .chain(escaped)

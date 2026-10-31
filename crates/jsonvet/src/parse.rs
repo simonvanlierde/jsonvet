@@ -802,7 +802,16 @@ impl<'a> Parser<'a, '_> {
                 let Some(unit) = self.hex(self.pos + 2, 4) else {
                     return Err(self.fail(SyntaxKind::InvalidUnicodeEscape));
                 };
-                (char::from_u32(unit).unwrap_or('\u{FFFD}'), 6)
+                if is_high_surrogate(unit)
+                    && self.bytes.get(self.pos + 6..self.pos + 8) == Some(b"\\u")
+                    && let Some(low) = self.hex(self.pos + 8, 4)
+                    && is_low_surrogate(low)
+                {
+                    let code_point = 0x10000 + ((unit - 0xD800) << 10) + (low - 0xDC00);
+                    (char::from_u32(code_point).unwrap_or('\u{FFFD}'), 12)
+                } else {
+                    (char::from_u32(unit).unwrap_or('\u{FFFD}'), 6)
+                }
             } else {
                 let c = self.char_at(self.pos);
                 (c, c.len_utf8())
