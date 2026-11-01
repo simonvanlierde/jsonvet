@@ -109,4 +109,9 @@ exclude_re = [
   "path.rs:\\d+:(35|55): replace \\+ with (\\*|-) in path_of$",
   "path.rs:\\d+:16: replace < with <= in path_of$",
   "path.rs:\\d+:14: replace match guard i >= tail with true in path_of$",
+  # No two braces are at the same place in a glob.
+  "editorconfig.rs:.* replace < with <= in alternatives$",
+  # Speed only: without the problems the scan found, the report runs the check again and finds the
+  # same.
+  "jsonvet-cli/src/lib.rs:.* delete match arm Some\\(Err\\(problems\\)\\) in fix_chunk$",
 ]

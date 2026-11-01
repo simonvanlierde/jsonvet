@@ -268,6 +268,14 @@ pub(super) mod tests {
     }
 
     #[test]
+    fn a_record_far_into_a_json_lines_file_is_placed_where_it_is() {
+        let far = u32::MAX as usize + 10;
+        let events = moved("[true]", &[far, far, far]);
+        let document = first_document(&events);
+        assert_eq!(document.tree.place(&[(vec![], vec![])])[0].0, far);
+    }
+
+    #[test]
     fn a_value_too_far_into_one_document_is_not_checked_and_says_why() {
         let events = moved("[true]", &[0, 0, super::super::nodes::MAX_OFFSET - 4]);
         let reason = first_document(&events).unchecked.map(|(_, reason)| reason);

@@ -667,6 +667,27 @@ mod tests {
     }
 
     #[test]
+    fn items_are_unique_by_value_for_booleans_and_arrays() {
+        let unique = |text: &str| {
+            let (_, events) = jsonvet::parse(text, &Config::new(Dialect::Json));
+            let events = events.unwrap_or_default();
+            let document = documents(&events).next().expect("a document");
+            document
+                .tree
+                .root()
+                .as_array()
+                .expect("an array")
+                .is_unique()
+        };
+        assert!(!unique("[true, true]"));
+        assert!(!unique("[false, false]"));
+        assert!(unique("[true, false]"));
+        assert!(!unique("[[1, 2], [1, 2]]"));
+        assert!(unique("[[1], [1, 2]]"));
+        assert!(unique("[[1, 2], [1, 3]]"));
+    }
+
+    #[test]
     fn duplicate_keys_count_once_and_one_member_can_be_shown_alone() {
         let text = r#"{"b": 1, "a": [true], "b": "last"}"#;
         let (_, events) = jsonvet::parse(text, &Config::new(Dialect::Json));

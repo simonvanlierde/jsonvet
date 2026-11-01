@@ -504,3 +504,42 @@ fn an_output_over_a_gigabyte_is_refused_with_its_size_in_gigabytes() {
     assert_eq!((code, out.as_str()), (1, ""));
     assert!(err.ends_with("the output would be 1.3 GB\n"), "{err}");
 }
+
+#[test]
+fn an_editorconfig_stops_the_search_only_with_root_set_to_true() {
+    let nested = "{\"k\": [\"aaaaaaaaaa\", \"bbbbbbbbbb\", \"cccccccccc\"]}";
+    let nested_flat = "{ \"k\": [\"aaaaaaaaaa\", \"bbbbbbbbbb\", \"cccccccccc\"] }";
+    let four = "{\n    \"k\": [\n        \"aaaaaaaaaa\",\n        \"bbbbbbbbbb\",\n        \"cccccccccc\"\n    ]\n}\n";
+    // These do not stop it, so the one above still applies.
+    for inner in ["root = false\n", "other = true\n", "[*]\nroot = true\n"] {
+        let dir = workdir(&[
+            (
+                ".editorconfig",
+                "[*]\nindent_size = 4\nmax_line_length = 30\n",
+            ),
+            ("sub/.editorconfig", inner),
+        ]);
+        let (code, out, _) = run(&dir, &["fmt", "--stdin-filename", "sub/a.json"], nested);
+        assert_eq!((code, out.as_str()), (0, four), "{inner:?}");
+    }
+    let dir = workdir(&[
+        (
+            ".editorconfig",
+            "[*]\nindent_size = 4\nmax_line_length = 30\n",
+        ),
+        ("sub/.editorconfig", "# first\nroot = true\n"),
+    ]);
+    let (_, out, _) = run(&dir, &["fmt", "--stdin-filename", "sub/a.json"], nested);
+    // Root: the parent's width and indent do not apply, so it fits on one line.
+    assert_eq!(out, format!("{nested_flat}\n"));
+}
+
+#[test]
+fn an_editorconfig_section_with_braces_the_wrong_way_round_is_one_glob() {
+    let dir = workdir(&[(".editorconfig", "[}x{]\nindent_size = 8\n")]);
+    let (code, out, err) = run(&dir, &["fmt", "--stdin-filename", "a.json"], "{\"a\":1}");
+    assert_eq!(
+        (code, out.as_str(), err.as_str()),
+        (0, "{ \"a\": 1 }\n", "")
+    );
+}

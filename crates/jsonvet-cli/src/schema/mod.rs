@@ -1142,6 +1142,25 @@ mod tests {
     use super::fold::documents;
     use super::fold::tests::any_json;
 
+    /// Whether the JSON `text` fits in a message, counted by `fits_node`.
+    fn text_fits(text: &str) -> bool {
+        let (_, events) = jsonvet::parse(text, &Config::new(Dialect::Json));
+        let events = events.unwrap_or_default();
+        let document = documents(&events).next().expect("a document");
+        fits_node(&document.tree.root())
+    }
+
+    #[test]
+    fn a_string_is_counted_by_the_bytes_it_is_written_in() {
+        // A space takes one byte and the quotes two.
+        assert!(text_fits(&format!("\"{}\"", " ".repeat(MAX_MESSAGE - 2))));
+        assert!(!text_fits(&format!("\"{}\"", " ".repeat(MAX_MESSAGE - 1))));
+        // A control character takes six: \u0001.
+        let controls = |n: usize| format!("\"{}\"", "\\u0001".repeat(n));
+        assert!(text_fits(&controls((MAX_MESSAGE - 2) / 6)));
+        assert!(!text_fits(&controls((MAX_MESSAGE - 2) / 6 + 1)));
+    }
+
     #[test]
     fn a_large_nested_value_is_named_not_quoted() {
         let validator = jsonschema::validator_for(&json!({"type": "string"})).expect("a schema");
