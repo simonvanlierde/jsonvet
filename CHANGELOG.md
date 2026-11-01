@@ -13,19 +13,22 @@ version for a new option or output, the patch version for a fix.
 ### Added
 
 - A `mixed-line-endings` rule warns once per file about the first line ending that differs from
-  the file's first one (LF, CRLF or a lone CR), and `--fix` rewrites them all to that one
-  ([mixed-line-endings](docs/usage.md#mixed-line-endings)).
+  the file's first one (LF, CRLF or a lone CR), and `--fix` rewrites them all to that one. It is on
+  in every dialect, so a run with `--max-warnings 0` now fails on such a file; `--ignore
+  mixed-line-endings` turns it off ([mixed-line-endings](docs/usage.md#mixed-line-endings)).
 - `--fix` rewrites files with the fixes that are safe: it removes a byte order mark and trailing
-  commas where the dialect forbids them, and adds a missing final newline to JSON Lines. It then
+  commas where the dialect forbids them, adds a missing final newline to JSON Lines and makes every
+  line ending match the first one. It then
   reports what is left, and the exit status follows it. `--unsafe-fixes` also drops duplicate
   keys, keeping the last. Standard input is fixed to standard output, and a pre-commit or prek
   hook takes `args: [--fix]` ([fixing](docs/usage.md#fixing)).
 - `jsonvet fmt [--check] [FILE]...` formats JSON, JSONC, JWCC, JSON5 and JSON Lines files and
   keeps their comments. A container stays on one line if it fits in 80 columns, and otherwise
   takes one member per line. An object with a line break after its `{` stays expanded, and when a
-  block comment over several lines moves, its later lines move with it. Indent, width and the space
-  inside braces (`{ "a": 1 }`) come from `.editorconfig` or a `[format]` table in
-  `jsonvet.toml`. There is a `jsonvet-format` pre-commit hook ([formatting](docs/format.md)).
+  block comment over several lines moves, its later lines move with it. Every line ending,
+  including those in block comments and JSON5 line continuations, follows the file's first one.
+  Indent, width and the space inside braces (`{ "a": 1 }`) come from `.editorconfig` or a
+  `[format]` table in `jsonvet.toml`. There is a `jsonvet-format` pre-commit hook ([formatting](docs/format.md)).
 - The browser playground has Fix and Format buttons. Fix applies the safe fixes to the text, or
   one correction's fix from its note, and Format sets the text with the indent, width and
   bracket spacing you pick. Each has an options popover that shows the same settings as
@@ -76,8 +79,7 @@ version for a new option or output, the patch version for a fix.
 - A file whose `$schema` names a path that does not exist is still checked without a schema, but
   jsonvet now says so: one note on stderr per missing schema, such as one under a `node_modules`
   that was never installed. The exit code is unchanged.
-- Decimal digits in numbers are scanned in a slice loop, reducing instruction counts by 2.2% on
-  `canada-x20.json` and 1.1% on `numbers.json`.
+- Checking numbers takes less work: 1-2% fewer instructions on files full of numbers.
 - Objects and arrays no longer keep their path while they are open: jsonvet builds it only when
   it reports a duplicate key. Key comparisons and the I-JSON number check also skip work. Deeply
   nested files take 13% fewer instructions, many-row JSON and JSON Lines 5% fewer, and the rest up
