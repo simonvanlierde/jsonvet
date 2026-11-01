@@ -16,7 +16,7 @@ terminal without colour, and in scripts and CI logs:
 
 ## Web playground
 
-The [playground](https://simonvanlierde.github.io/jsonvet/) runs jsonvet via
+The [playground](https://simonvanlierde.com/jsonvet/) runs jsonvet via
 WebAssembly in the browser:
 
 - Works with keyboard navigation: dialect switches are a radio group navigable

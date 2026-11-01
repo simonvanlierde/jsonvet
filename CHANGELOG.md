@@ -10,25 +10,33 @@ version for a new option or output, the patch version for a fix.
 
 ## [3.3.0] - 2026-11-01
 
+Most users need no change. Check this if it applies to you:
+
+1. A new rule, `mixed-line-endings`, is on by default as a warning, so a run with
+   `--max-warnings 0` now fails on a file that mixes LF, CRLF and lone CR line endings. Run
+   `jsonvet --fix` to make them match, or turn the rule off with `--ignore mixed-line-endings` or
+   `rules = { mixed-line-endings = "ignore" }` in `jsonvet.toml`.
+
 ### Added
 
 - A `mixed-line-endings` rule warns once per file about the first line ending that differs from
-  the file's first one (LF, CRLF or a lone CR), and `--fix` rewrites them all to that one. It is on
-  in every dialect, so a run with `--max-warnings 0` now fails on such a file; `--ignore
-  mixed-line-endings` turns it off ([mixed-line-endings](docs/usage.md#mixed-line-endings)).
+  the file's first one (LF, CRLF or a lone CR), and `--fix` rewrites them all to that one. In
+  JWCC a lone CR does not end a `//` comment, so there a file that starts with lone CRs gets LF
+  ([mixed-line-endings](docs/usage.md#mixed-line-endings)).
 - `--fix` rewrites files with the fixes that are safe: it removes a byte order mark and trailing
   commas where the dialect forbids them, adds a missing final newline to JSON Lines and makes every
-  line ending match the first one. It then
-  reports what is left, and the exit status follows it. `--unsafe-fixes` also drops duplicate
-  keys, keeping the last. Standard input is fixed to standard output, and a pre-commit or prek
-  hook takes `args: [--fix]` ([fixing](docs/usage.md#fixing)).
+  line ending match the first one. It then reports what is left, and the exit status follows it.
+  `--unsafe-fixes` also drops duplicate keys, keeping the last. Standard input is fixed to
+  standard output, and a pre-commit or prek hook takes `args: [--fix]`
+  ([fixing](docs/usage.md#fixing)).
 - `jsonvet fmt [--check] [FILE]...` formats JSON, JSONC, JWCC, JSON5 and JSON Lines files and
   keeps their comments. A container stays on one line if it fits in 80 columns, and otherwise
   takes one member per line. An object with a line break after its `{` stays expanded, and when a
   block comment over several lines moves, its later lines move with it. Every line ending,
-  including those in block comments and JSON5 line continuations, follows the file's first one.
-  Indent, width and the space inside braces (`{ "a": 1 }`) come from `.editorconfig` or a
-  `[format]` table in `jsonvet.toml`. There is a `jsonvet-format` pre-commit hook ([formatting](docs/format.md)).
+  including those in block comments and JSON5 line continuations, is written as the one
+  `mixed-line-endings` fixes to. Indent, width and the space inside braces (`{ "a": 1 }`) come
+  from `.editorconfig` or a `[format]` table in `jsonvet.toml`. There is a `jsonvet-format`
+  pre-commit hook ([formatting](docs/format.md)).
 - The browser playground has Fix and Format buttons. Fix applies the safe fixes to the text, or
   one correction's fix from its note, and Format sets the text with the indent, width and
   bracket spacing you pick. Each has an options popover that shows the same settings as

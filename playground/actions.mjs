@@ -3,7 +3,16 @@
 
 // The fixes (from fix()) that belong to a problem: those at its own place or at the place it
 // names, such as a duplicate key's first copy, which is the member the fix drops.
-export function fixesFor(problem, fixes) {
+// `problems` are all the notes, so a duplicate key's note can find the key's other copies.
+export function fixesFor(problem, fixes, problems = []) {
+  // The fix keeps the last copy of a key and drops every earlier one, so a note on any copy
+  // applies them all: the fixes at the first copy and at each copy reported against it.
+  const first = problem.rule === "duplicate-key" ? problem.related[0]?.index : undefined;
+  if (first !== undefined) {
+    const copies = problems.filter((q) => q.rule === "duplicate-key" && q.related[0]?.index === first);
+    const at = [first, ...copies.map((q) => q.index)];
+    return fixes.filter((f) => f.rule === "duplicate-key" && at.includes(f.index));
+  }
   // A trailing comma is reported at the closing bracket; its fix is the comma before it.
   if (problem.rule === "syntax" && problem.message?.startsWith("trailing comma")) {
     const comma = fixes.findLast((f) => f.rule === "syntax" && f.index < problem.index);

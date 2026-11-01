@@ -95,6 +95,10 @@ pub fn fix(text: &str, dialect: &str, unsafe_fixes: bool, only: &[u32]) -> Resul
             }
             units += u32::try_from(c.len_utf16()).unwrap_or(2);
         }
+        // A missing final newline is reported at the end of the text, past every character.
+        if only.contains(&units) {
+            found.push(text.len());
+        }
         found
     };
     // Indexes that name no character leave nothing to fix, rather than every fix.
@@ -380,6 +384,17 @@ mod tests {
             "{one}"
         );
         assert_eq!(fix(text, "json", false, &[3]).as_deref(), Ok("null"));
+    }
+
+    #[test]
+    fn a_fix_at_the_end_of_the_text_applies_from_its_note() {
+        // A missing final newline is reported just past the last character.
+        let text = "{\"a\":1}\n{\"b\":2}";
+        let out = fix(text, "jsonl", false, &[15]).unwrap_or_default();
+        assert!(
+            out.contains(r#""text":"{\"a\":1}\u000a{\"b\":2}\u000a""#),
+            "{out}"
+        );
     }
 
     #[test]

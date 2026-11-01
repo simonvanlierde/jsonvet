@@ -247,7 +247,7 @@ function schedule() {
 }
 
 // A problem's note: a button that moves the caret to it, and its position and rule id.
-function note(p, n) {
+function note(p, n, problems) {
   const item = el("li", `note ${p.severity}`);
   const button = el("button");
   button.type = "button";
@@ -273,7 +273,7 @@ function note(p, n) {
   ruleItem.append(rule);
   meta.append(ruleItem);
   if (relText) meta.append(el("span", "", relText));
-  const own = fixesFor(p, fixes);
+  const own = fixesFor(p, fixes, problems);
   if (own.length) {
     const slot = el("span");
     if (own.every((f) => f.safe) || fixValues.unsafe) {
@@ -354,7 +354,7 @@ function run() {
     lines(layer, texts, cols);
     lines(gutter, texts.map((_, i) => String(i + 1)), null, numbers);
   }
-  const items = shown.map((p, i) => note(p, i + 1));
+  const items = shown.map((p, i) => note(p, i + 1, problems));
   if (problems.length > MAX_ITEMS) items.push(el("li", "more", `and ${problems.length - MAX_ITEMS} more`));
   list.replaceChildren(...items);
   // One note for each related place, however many problems name it.

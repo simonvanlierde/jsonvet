@@ -15,6 +15,20 @@ test("a correction finds its fix at its place or its first copy", () => {
   assert.deepEqual(fixesFor({ rule: "duplicate-key", index: 12, related: [] }, fixes), []);
 });
 
+test("a note on any copy of a key applies the fixes for every earlier copy", () => {
+  // {"a":1,"a":2,"a":3}: the fixes drop the copies at 1 and 7 and keep the last.
+  const fixes = [
+    { rule: "duplicate-key", index: 1, safe: false },
+    { rule: "duplicate-key", index: 7, safe: false },
+  ];
+  const problems = [
+    { rule: "duplicate-key", index: 7, related: [{ index: 1 }] },
+    { rule: "duplicate-key", index: 13, related: [{ index: 1 }] },
+  ];
+  assert.deepEqual(fixesFor(problems[1], fixes, problems), fixes);
+  assert.deepEqual(fixesFor(problems[0], fixes, problems), fixes);
+});
+
 test("a trailing comma's fix is the comma before the bracket it is reported at", () => {
   const fixes = [{ rule: "syntax", index: 5, safe: true }, { rule: "syntax", index: 20, safe: true }];
   const p = { rule: "syntax", index: 6, message: "trailing comma before `]` is not allowed in json", related: [] };
