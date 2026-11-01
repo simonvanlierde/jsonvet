@@ -190,7 +190,12 @@ pub fn run_with(
     let files = jobs(files, &shown, &settings_for, args.schema.as_deref(), &load)?;
     let summary = terminal.tty;
     let look = look(args.format, args.color, terminal);
-    let mut printer = Printer::new(out, args.format, annotate, look);
+    // Standard input fixed to standard output leaves only standard error for the problems.
+    let stdin_fix = args.fix && files.iter().any(|(_, file)| file == STDIN);
+    let mut out = out;
+    let sink = Diagnostics::new(stdin_fix, &mut out);
+    let mut printer = Printer::new(sink, args.format, annotate, look);
+    let mut fixed = FixRun::default();
     let mut counts = Counts::default();
     // Files are read and checked on every core, a chunk at a time, then printed here in the
     // order given. A chunk ends once its files hold CHUNK_BYTES, so memory stays near that. With
@@ -212,9 +217,19 @@ pub fn run_with(
         }
         let shares = shares.get(files.len() - rest.len()..);
         let with_schema = |job: &Job, text: &str| with_schema(job, &shown(&job.1), text);
-        let texts = take_chunk(&mut ahead, rest, shares, threads, &with_schema);
+        let mut texts = take_chunk(&mut ahead, rest, shares, threads, &with_schema);
         let chunk;
         (chunk, rest) = rest.split_at(texts.len());
+        if args.fix {
+            fix_chunk(
+                chunk,
+                &mut texts,
+                &shown,
+                args.unsafe_fixes,
+                threads,
+                &mut fixed,
+            );
+        }
         let jobs: Vec<_> = chunk.iter().zip(&texts).collect();
         let parts = (threads / jobs.len()).max(1);
         let checked = parallel(
@@ -234,28 +249,50 @@ pub fn run_with(
             },
         );
         schemas.over().map_err(|e| output::printable(&e))?;
-        let outcome =
-            chunk
-                .iter()
-                .zip(checked)
-                .try_for_each(|((_, file), checked)| match checked {
-                    Ok((report, schema_errors)) => print_file(
-                        &shown(file),
-                        &report,
-                        &schema_errors,
-                        &mut printer,
-                        &mut counts,
-                    ),
-                    Err(message) => {
-                        counts.errors += 1;
-                        counts.files += 1;
-                        printer.unreadable(&shown(file), message)
-                    }
-                });
+        let outcome = print_checked(chunk, checked, &shown, &mut printer, &mut counts);
         if outcome.is_err() {
             break outcome;
         }
     };
+    let written = written.and_then(|()| fixed.finish(&mut out));
+    conclude(written, &schemas, &counts, args.max_warnings)
+}
+
+/// A file's report and its schema errors.
+type Checked<'t> = (Report<'t>, Vec<(usize, String, bool)>);
+
+/// Print what checking the files of `chunk` found, in order: the problems of each, or why it
+/// could not be read.
+fn print_checked(
+    chunk: &[Job],
+    checked: Vec<Result<Checked<'_>, &String>>,
+    shown: &impl Fn(&OsStr) -> OsString,
+    printer: &mut Printer<impl Write>,
+    counts: &mut Counts,
+) -> io::Result<()> {
+    chunk
+        .iter()
+        .zip(checked)
+        .try_for_each(|((_, file), checked)| match checked {
+            Ok((report, schema_errors)) => {
+                print_file(&shown(file), &report, &schema_errors, printer, counts)
+            }
+            Err(message) => {
+                counts.errors += 1;
+                counts.files += 1;
+                printer.unreadable(&shown(file), message)
+            }
+        })
+}
+
+/// The exit code once the output is written: 1 for an error, or for more warnings than
+/// `max_warnings` allows.
+fn conclude(
+    written: io::Result<()>,
+    schemas: &Schemas,
+    counts: &Counts,
+    max_warnings: Option<usize>,
+) -> Result<u8, String> {
     // A reader that has gone, as with `| head`, wants no more output: the verdict so far stands.
     match written {
         Err(e) if e.kind() != io::ErrorKind::BrokenPipe => {
@@ -264,7 +301,7 @@ pub fn run_with(
         _ => {}
     }
     schemas.note_missing();
-    let too_many_warnings = args.max_warnings.is_some_and(|max| counts.warnings > max);
+    let too_many_warnings = max_warnings.is_some_and(|max| counts.warnings > max);
     Ok(u8::from(counts.errors > 0 || too_many_warnings))
 }
 
@@ -447,6 +484,162 @@ fn lock(resolver: &Mutex<Resolver>) -> std::sync::MutexGuard<'_, Resolver> {
     resolver
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Where the problems go: standard output, or standard error when standard output carries a
+/// fixed text.
+enum Diagnostics<'w, W: Write> {
+    Out(&'w mut W),
+    Stderr(io::Stderr),
+}
+
+impl<'w, W: Write> Diagnostics<'w, W> {
+    fn new(to_stderr: bool, out: &'w mut W) -> Self {
+        if to_stderr {
+            Diagnostics::Stderr(io::stderr())
+        } else {
+            Diagnostics::Out(out)
+        }
+    }
+}
+
+impl<W: Write> Write for Diagnostics<'_, W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self {
+            Diagnostics::Out(out) => out.write(buf),
+            Diagnostics::Stderr(err) => err.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        match self {
+            Diagnostics::Out(out) => out.flush(),
+            Diagnostics::Stderr(err) => err.flush(),
+        }
+    }
+}
+
+/// What `--fix` did over the whole run.
+#[derive(Default)]
+struct FixRun {
+    problems: usize,
+    files: usize,
+    /// Standard input as it is after the fixes, for standard output.
+    stdin: Option<String>,
+}
+
+impl FixRun {
+    /// Print the count to standard error, then standard input's fixed text to `out`.
+    fn finish(&self, out: &mut impl Write) -> io::Result<()> {
+        if let Some(summary) = self.summary() {
+            eprintln!("{summary}");
+        }
+        match &self.stdin {
+            Some(text) => out.write_all(text.as_bytes()).and_then(|()| out.flush()),
+            None => Ok(()),
+        }
+    }
+
+    /// Such as `fixed 3 problems in 2 files`, or `None` when nothing was fixed.
+    fn summary(&self) -> Option<String> {
+        (self.problems > 0).then(|| {
+            messages::fill(
+                "summary.fixed",
+                &[
+                    (
+                        "problems",
+                        &messages::count("summary.problems", self.problems),
+                    ),
+                    ("files", &messages::count("summary.files", self.files)),
+                ],
+            )
+        })
+    }
+}
+
+/// Fix the `texts` of `chunk` in place, and write each changed file, so the check that follows
+/// reports what is left. A file that cannot be written gets the reason in place of its text.
+fn fix_chunk(
+    chunk: &[Job],
+    texts: &mut [(Result<String, String>, bool)],
+    shown: &(impl Fn(&OsStr) -> OsString + Sync),
+    unsafe_fixes: bool,
+    threads: usize,
+    run: &mut FixRun,
+) {
+    let jobs: Vec<_> = chunk.iter().zip(texts.iter()).collect();
+    let done = parallel(
+        &jobs,
+        threads,
+        || false,
+        |(((settings, _), file), (text, _))| {
+            let text = text.as_ref().ok()?;
+            let name = shown(file);
+            let config = settings.config_for(&name.to_string_lossy());
+            let fixed = jsonvet::fix(text, &config, unsafe_fixes)?;
+            let saved = if file == STDIN {
+                Ok(())
+            } else {
+                write_atomically(Path::new(file), &fixed.text)
+            };
+            Some((fixed, saved))
+        },
+    );
+    drop(jobs);
+    for (((_, file), entry), done) in chunk.iter().zip(texts.iter_mut()).zip(done) {
+        match done {
+            Some((fixed, Ok(()))) => {
+                run.problems += fixed.fixes.len();
+                run.files += 1;
+                entry.0 = Ok(fixed.text);
+            }
+            Some((_, Err(error))) => {
+                entry.0 = Err(messages::fill("fix.write", &[("error", &error)]));
+            }
+            None => {}
+        }
+        if file == STDIN
+            && let Ok(text) = &entry.0
+        {
+            run.stdin = Some(text.clone());
+        }
+    }
+}
+
+/// Replace the file `path` leads to with `text`: write a temporary file beside it, give it the
+/// file's permissions, then rename it over the file, so a crash leaves the old text or the new
+/// one and never half of either. A symlink is followed and stays a symlink. A read-only file is
+/// refused, as the rename would replace it anyway.
+fn write_atomically(path: &Path, text: &str) -> Result<(), String> {
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let target = std::fs::canonicalize(path).map_err(|e| e.to_string())?;
+    let permissions = std::fs::metadata(&target)
+        .map_err(|e| e.to_string())?
+        .permissions();
+    if permissions.readonly() {
+        return Err(messages::text("fix.read-only").to_owned());
+    }
+    let name = target.file_name().unwrap_or_default().to_string_lossy();
+    let temp = target.with_file_name(format!(
+        ".{name}.jsonvet-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let write = || -> io::Result<()> {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)?;
+        file.write_all(text.as_bytes())?;
+        file.set_permissions(permissions)?;
+        file.sync_all()?;
+        drop(file);
+        std::fs::rename(&temp, &target)
+    };
+    write().map_err(|e| {
+        let _ = std::fs::remove_file(&temp);
+        e.to_string()
+    })
 }
 
 #[derive(Default)]

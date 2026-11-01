@@ -42,6 +42,7 @@ const ENGLISH: &[(&str, &str)] = &[
         "error.stdin-twice",
         "`-` (standard input) can be given only once",
     ),
+    ("error.unsafe-fixes", "--unsafe-fixes needs --fix"),
     ("error.unknown-option", "unknown option `{option}`"),
     ("error.not-utf8", "not valid UTF-8: {value}"),
     (
@@ -112,6 +113,11 @@ const ENGLISH: &[(&str, &str)] = &[
     ("summary.errors.other", "{count} errors"),
     ("summary.warnings.one", "{count} warning"),
     ("summary.warnings.other", "{count} warnings"),
+    ("summary.problems.one", "{count} problem"),
+    ("summary.problems.other", "{count} problems"),
+    ("summary.fixed", "fixed {problems} in {files}"),
+    ("fix.write", "cannot write the fixes: {error}"),
+    ("fix.read-only", "the file is read-only"),
     ("summary.none", "no problems in {files}"),
     ("summary.both", "{errors} and {warnings}"),
     ("summary.some", "{problems} in {failed} of {files}"),
@@ -244,13 +250,15 @@ const ENGLISH: &[(&str, &str)] = &[
         "rule.syntax.explanation",
         "The file is not valid in its dialect: a missing or extra comma, a comment in strict \
          JSON, an unclosed string. jsonvet reports the first one and stops there, since what \
-         follows cannot be read reliably.\n\n  Bad (json):  {\"a\": 1,}\n  Good (json): {\"a\": 1}",
+         follows cannot be read reliably. --fix removes a trailing comma where the \
+         dialect forbids it.\n\n  Bad (json):  {\"a\": 1,}\n  Good (json): {\"a\": 1}",
     ),
     (
         "rule.duplicate-key.explanation",
         "Most parsers keep the last copy of a repeated key and drop the others without a \
          word, so a value is lost; RFC 8259 leaves the result undefined. The message gives \
-         the key's JSONPath and where its first copy is.\n\n  Bad:  {\"port\": 80, \"port\": \
+         the key's JSONPath and where its first copy is. --fix --unsafe-fixes keeps the last \
+         copy and drops the others.\n\n  Bad:  {\"port\": 80, \"port\": \
          8080}\n  Good: {\"port\": 8080}",
     ),
     (
@@ -270,13 +278,13 @@ const ENGLISH: &[(&str, &str)] = &[
     (
         "rule.byte-order-mark.explanation",
         "RFC 8259 says JSON text must not start with a byte order mark (U+FEFF), and many \
-         parsers fail on one. Save the file as UTF-8 without a BOM.\n\n  Bad:  \
+         parsers fail on one. Save the file as UTF-8 without a BOM. --fix removes it.\n\n  Bad:  \
          <U+FEFF>{\"a\": 1}\n  Good: {\"a\": 1}",
     ),
     (
         "rule.missing-final-newline.explanation",
         "JSON Lines ends every record with a newline. Without one, the next record appended \
-         joins the last line and breaks it.\n\n  Bad (jsonl):  {\"a\": 1}<end of file>\n  \
+         joins the last line and breaks it. --fix adds it.\n\n  Bad (jsonl):  {\"a\": 1}<end of file>\n  \
          Good (jsonl): {\"a\": 1}<newline>",
     ),
     (
