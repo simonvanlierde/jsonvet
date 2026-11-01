@@ -6,6 +6,10 @@ on:
   schedule:
     - cron: "41 4 * * 1"
   workflow_dispatch:
+    inputs:
+      shards:
+        description: "Only these shards, as a JSON list such as [3, 17]; all 64 if empty"
+        default: ""
 
 permissions:
   contents: read
@@ -24,8 +28,9 @@ jobs:
       # The account runs 20 jobs at a time; this keeps 5 runners free for PRs.
       max-parallel: 15
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]
-    # The slowest of 64 shards took 45 minutes; 40 shards ran past the hour. If shards near the
+        shard: ${{ fromJSON(inputs.shards || '[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]') }}
+    # The slowest of 64 shards took 27 minutes with --profile mutants; 40 shards ran past the hour
+    # without it. If shards near the
     # limit, add shards rather than raise it: a timed-out shard is cancelled and reports no
     # missed mutants at all.
     timeout-minutes: 60

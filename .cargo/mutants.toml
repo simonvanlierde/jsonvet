@@ -114,6 +114,10 @@ exclude_re = [
   "path.rs:\\d+:14: replace match guard i >= tail with true in path_of$",
   # No two braces are at the same place in a glob.
   "editorconfig.rs:.* replace < with <= in alternatives$",
+  # A comment that moved no columns has n = 0, which the first branch handles before it asks which
+  # way it moved; and the indent character is one byte, so dividing by its length changes nothing.
+  "format.rs:\\d+:64: replace > with >= in Writer<'_>::comment$",
+  "format.rs:\\d+:34: replace \\* with / in Writer<'_>::comment$",
   # The index of the document's first event is kept but never read.
   "schema/fold.rs:60:19: replace \\+= with \\*= in Fold<'e>::event$",
   # Speed only: the hash only sorts the items into buckets, which `equal` then compares, and

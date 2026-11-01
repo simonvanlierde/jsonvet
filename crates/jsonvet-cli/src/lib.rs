@@ -1106,7 +1106,7 @@ mod tests {
             // Stopped from the start, it still does the first item, and a thread that looks
             // before another has taken it may take one more.
             let stopped = parallel(&items, threads, || true, |&i| i);
-            assert!(stopped.len() <= threads, "{stopped:?}");
+            assert!((1..=threads).contains(&stopped.len()), "{stopped:?}");
             assert_eq!(stopped, (0..stopped.len()).collect::<Vec<_>>());
             let done = AtomicUsize::new(0);
             let some = parallel(
