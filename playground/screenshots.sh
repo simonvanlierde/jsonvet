@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Serves playground/ and saves screenshots of it in headless Chrome, on a desktop and a phone
 # width, in light and dark, into DIR, so a pull request's page can be looked at without running
-# it. Run from the repository root, after wasm-bindgen wrote playground/pkg.
+# it. Run from the repository root, after wasm-bindgen wrote playground/pkg. CHROME names another
+# Chrome binary.
 set -euo pipefail
 out=${1:?usage: playground/screenshots.sh DIR}
 mkdir -p "$out"
@@ -14,7 +15,7 @@ for size in desktop:1440,900 phone:400,900; do
     for scheme in light dark; do
         dark=()
         [ "$scheme" = dark ] && dark=(--force-dark-mode)
-        google-chrome --headless=new --no-sandbox --disable-gpu --hide-scrollbars \
+        "${CHROME:-google-chrome}" --headless=new --no-sandbox --disable-gpu --hide-scrollbars \
             --virtual-time-budget=10000 "${dark[@]}" --window-size="${size#*:}" \
             --screenshot="$out/${size%%:*}-$scheme.png" "http://127.0.0.1:$port/" 2>/dev/null
     done

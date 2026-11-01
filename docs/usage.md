@@ -42,6 +42,7 @@ it fixed something, it prints a count to standard error, such as `fixed 3 proble
 | [byte-order-mark](#byte-order-mark)                               | remove the mark              | yes  |
 | a trailing comma where the dialect forbids it ([syntax](#syntax)) | remove the comma             | yes  |
 | [missing-final-newline](#missing-final-newline)                   | add the newline              | yes  |
+| [mixed-line-endings](#mixed-line-endings)                         | use the first line ending    | yes  |
 | [duplicate-key](#duplicate-key)                                   | keep the last, drop the rest | no   |
 
 Rules:
@@ -72,7 +73,7 @@ run, so you review the change and commit again.
 
 ```yaml
 - repo: https://github.com/simonvanlierde/jsonvet
-  rev: v3.2.0
+  rev: v3.3.0
   hooks:
     - id: jsonvet
       args: [--fix]
@@ -258,6 +259,29 @@ Bad (jsonl):  {"a": 1}<end of file>
 Good (jsonl): {"a": 1}<newline>
 ```
 
+### mixed-line-endings
+
+A file that uses more than one kind of line ending (LF, CRLF or a lone CR) shows whole files as
+changed in a diff, and tools split its lines differently. jsonvet reports the first ending that
+differs from the file's first one. `--fix` rewrites every ending to the first one. A warning in
+every dialect.
+
+```text
+Bad:  {"a": 1,<CRLF>"b": 2,<LF>"c": 3}
+Good: {"a": 1,<CRLF>"b": 2,<CRLF>"c": 3}
+```
+
+What counts as a line ending:
+
+- A line break between tokens, in a comment, or after a backslash inside a JSON5 string (a line
+  continuation). JSON5 follows ES5 here: the continuation is a line terminator, and it adds
+  nothing to the string, so rewriting it is safe.
+- In `jsonl`, only LF and CRLF. A lone CR is white space there.
+- In `jwcc`, a CR inside a `//` comment is part of the comment, because the comment ends only at
+  LF. A lone CR elsewhere counts, and `--fix` turns it into LF, as `jsonvet fmt` does.
+- A CR or LF inside an ordinary string is a syntax error, not a line ending. U+2028 and U+2029 in
+  JSON5 are not counted.
+
 ### unreadable
 
 jsonvet could not check the file at all: it does not exist, is a device, FIFO or socket, could
@@ -363,8 +387,32 @@ jsonvet --format sarif $(git ls-files '*.json') > jsonvet.sarif
   25,000, and counts the rest in a tool notification and on stderr.
 
 The exit status and `--max-warnings` work as with text, and no annotations are printed. On exit 2
-or 101 the document may be cut off, so do not upload it. The README
-has an [upload workflow](../README.md#github-code-scanning).
+or 101 the document may be cut off, so do not upload it.
+
+### Code scanning
+
+The Action's `sarif` input writes the document for you to upload to GitHub code scanning:
+
+```yaml
+jobs:
+  jsonvet:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: simonvanlierde/jsonvet@v3
+        with:
+          sarif: jsonvet.sarif
+      # Upload when jsonvet found problems too: that is when the step fails.
+      - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        if: success() || failure()
+        with:
+          sarif_file: jsonvet.sarif
+```
 
 ## JSON
 

@@ -34,8 +34,9 @@ Options:
       --ignore RULE             Do not check RULE.
       --max-warnings N          Fail when there are more than N warnings.
       --fix                     Fix what has a safe fix in place, then report what is left: a
-                                byte order mark, a trailing comma where the dialect forbids it
-                                and a missing final newline in JSON Lines. A file with another
+                                byte order mark, a trailing comma where the dialect forbids it,
+                                a missing final newline in JSON Lines and line endings that
+                                differ from the file's first one. A file with another
                                 syntax error is left as it is. Standard input is fixed to
                                 standard output, with the problems left on standard error.
       --unsafe-fixes            With --fix, also fix duplicate keys: keep the last of each key
@@ -62,9 +63,9 @@ Options:
   -V, --version                 Print the version.
 
 Rules: syntax, duplicate-key, invalid-number, invalid-code-point, byte-order-mark,
-missing-final-newline (--list-rules says more). With a schema (--schema, the schemas setting
-or a local $schema in the file), errors also come under the rule schema; they are always errors,
-and --error, --warn, --ignore and settings files do not take schema.
+missing-final-newline, mixed-line-endings (--list-rules says more). With a schema (--schema, the
+schemas setting or a local $schema in the file), errors also come under the rule schema; they
+are always errors, and --error, --warn, --ignore and settings files do not take schema.
 
 Settings come from jsonvet.toml, or [tool.jsonvet] in pyproject.toml: for each file, the nearest
 one in its folder or a parent, up to the repository root (without .git, the working directory).

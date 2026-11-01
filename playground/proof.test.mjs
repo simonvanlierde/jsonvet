@@ -13,9 +13,18 @@ test("a mark covers a quoted string, a word or one character", () => {
   assert.equal(tokenEnd("ab", 2), 2); // the end of the row
 });
 
-test("notes keep their line, or stack under the one above", () => {
+test("notes keep their line, or move apart around their lines within the margin", () => {
   assert.deepEqual(stack([0, 100, 200], [20, 20, 20], 4), [0, 100, 200]);
-  assert.deepEqual(stack([0, 10, 12], [40, 20, 20], 4), [0, 44, 68]);
+  // Two notes that want the same line share the move: one goes up, one down.
+  assert.deepEqual(stack([100, 100], [20, 20], 4), [88, 112]);
+  // At the top of the margin they can only go down.
+  assert.deepEqual(stack([0, 10, 12], [40, 20, 20], 4, 0), [0, 44, 68]);
+  // At the bottom they move up into the free space instead of running past it.
+  assert.deepEqual(stack([0, 100], [20, 20], 4, 0, 110), [0, 90]);
+  // A note clear of the crowd below keeps its line.
+  assert.deepEqual(stack([0, 200, 200], [20, 20, 20], 4, 0, 300), [0, 188, 212]);
+  // When they cannot fit, the floor wins and they run past the bottom.
+  assert.deepEqual(stack([0, 0], [20, 20], 4, 0, 30), [0, 24]);
   assert.deepEqual(stack([], [], 4), []);
 });
 

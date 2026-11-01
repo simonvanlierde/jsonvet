@@ -161,6 +161,19 @@ expression: "serde_json::to_string_pretty(&sarif).expect(\"JSON\")"
             },
             {
               "fullDescription": {
+                "text": "a file that mixes LF, CRLF and CR line endings."
+              },
+              "help": {
+                "text": "A file that uses more than one kind of line ending (LF, CRLF or a lone CR) shows whole files as changed in a diff, and tools split its lines differently. jsonvet reports the first ending that differs from the file's first one. --fix rewrites every ending to the first one.\n\n  Bad:  {\"a\": 1,<CRLF>\"b\": 2,<LF>\"c\": 3}\n  Good: {\"a\": 1,<CRLF>\"b\": 2,<CRLF>\"c\": 3}"
+              },
+              "helpUri": "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#mixed-line-endings",
+              "id": "mixed-line-endings",
+              "shortDescription": {
+                "text": "a file that mixes LF, CRLF and CR line endings"
+              }
+            },
+            {
+              "fullDescription": {
                 "text": "a file that does not exist, is not a regular file, could not be read, or is not UTF-8."
               },
               "help": {

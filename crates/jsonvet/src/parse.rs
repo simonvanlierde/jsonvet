@@ -60,7 +60,7 @@ pub(crate) fn walk<'a>(
     config: &Config,
     sink: Option<&mut dyn FnMut(Event<'a>)>,
 ) -> Vec<Problem> {
-    walk_scan::<false>(text, lines, config, sink, None)
+    walk_scan::<false>(text, lines, config, sink, None).0
 }
 
 /// What `--fix` needs besides the problems. With it, a trailing comma is noted here and read
@@ -76,6 +76,43 @@ pub(crate) struct Scan {
     /// Where the current member's key starts, for each open object: kept here so the check
     /// path carries none of it.
     starts: Vec<usize>,
+    /// Each line ending that is not the file's target one, as its offset and length. Filled only
+    /// once the file is known to mix endings.
+    pub(crate) endings: Vec<(usize, usize)>,
+    /// The line ending `--fix` rewrites the others to, once the file has a first one.
+    pub(crate) target: Option<Eol>,
+}
+
+/// A kind of line ending.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Eol {
+    Lf,
+    CrLf,
+    Cr,
+}
+
+impl Eol {
+    pub(crate) fn len(self) -> usize {
+        self.text().len()
+    }
+
+    pub(crate) fn text(self) -> &'static str {
+        match self {
+            Eol::Lf => "\n",
+            Eol::CrLf => "\r\n",
+            Eol::Cr => "\r",
+        }
+    }
+}
+
+/// Which line endings a file uses, as far as the parser has seen. An LF is not looked at one by
+/// one: the first ending that holds a CR settles whether the file began with an LF.
+struct Endings {
+    severity: Severity,
+    /// The first line ending in the file, once known.
+    first: Option<Eol>,
+    /// Whether the mixed-line-endings problem is out already.
+    reported: bool,
 }
 
 /// One object member, up to the `,` after it.
@@ -91,7 +128,7 @@ pub(crate) struct Member {
 /// Check the whole `text` as [`check`] does, and note what the fixes need.
 pub(crate) fn scan(text: &str, config: &Config) -> (Vec<Problem>, Scan) {
     let mut scan = Scan::default();
-    let problems = walk_scan::<true>(text, 0..text.len(), config, None, Some(&mut scan));
+    let problems = walk_scan::<true>(text, 0..text.len(), config, None, Some(&mut scan)).0;
     (problems, scan)
 }
 
@@ -101,7 +138,7 @@ fn walk_scan<'a, 's, const SCAN: bool>(
     config: &Config,
     sink: Option<&'s mut dyn FnMut(Event<'a>)>,
     scan: Option<&'s mut Scan>,
-) -> Vec<Problem> {
+) -> (Vec<Problem>, Option<Eol>) {
     let dialect = config.dialect();
     let text = &text[..lines.end];
     let mut parser = Parser::<SCAN> {
@@ -120,7 +157,28 @@ fn walk_scan<'a, 's, const SCAN: bool>(
         depth: 0,
         events: sink,
         scan,
+        endings: Endings {
+            severity: config.severity(Rule::MixedLineEndings),
+            first: None,
+            reported: false,
+        },
+        cr_mask: 0,
+        lf_fast: dialect != Dialect::JsonLines,
     };
+    if parser.endings.severity.is_on() {
+        if parser.json_lines {
+            // The ending of the first line, which a chunk of lines does not start with.
+            parser.endings.first = text.find('\n').map(|i| {
+                if text[..i].ends_with('\r') {
+                    Eol::CrLf
+                } else {
+                    Eol::Lf
+                }
+            });
+        } else if lines.start == 0 {
+            parser.cr_mask = CR_BIT;
+        }
+    }
     if lines.start == 0 {
         parser.byte_order_mark(config.severity(Rule::ByteOrderMark));
     }
@@ -142,7 +200,47 @@ fn walk_scan<'a, 's, const SCAN: bool>(
             }),
         });
     }
-    parser.problems
+    if let (Some(scan), Some(first)) = (parser.scan.as_deref_mut(), parser.endings.first) {
+        scan.target = Some(target_ending(first, dialect));
+    }
+    (parser.problems, parser.endings.first)
+}
+
+/// Check `text` as [`check`] does, and give the line ending `jsonvet fmt` writes: the file's
+/// first one as the mixed-line-endings rule sees it, with the rule's fix target for JWCC, and LF
+/// for a file with none.
+pub(crate) fn check_ending(text: &str, config: &Config) -> (Vec<Problem>, &'static str) {
+    // The rule's first ending is what is wanted, so it is looked at even where the rule is off.
+    let severity = config.severity(Rule::MixedLineEndings);
+    let on;
+    let config = if severity.is_on() {
+        config
+    } else {
+        on = config
+            .clone()
+            .rule(Rule::MixedLineEndings, Severity::Warning);
+        &on
+    };
+    let (mut problems, first) = walk_scan::<false>(text, 0..text.len(), config, None, None);
+    if !severity.is_on() {
+        problems.retain(|p| p.rule() != Rule::MixedLineEndings);
+    }
+    // No CR-bearing ending seen means every ending is an LF.
+    let eol = first.map_or(Eol::Lf, |first| target_ending(first, config.dialect()));
+    (problems, eol.text())
+}
+
+/// Bit 2 (value 4) is set in a CR (0x0D) and not in a space, tab or LF.
+const CR_BIT: u8 = 4;
+
+/// The ending `--fix` rewrites a file that began with `first` to. A JWCC line comment ends only
+/// at LF, so a lone CR would swallow the next line; `jsonvet fmt` uses LF there too.
+fn target_ending(first: Eol, dialect: Dialect) -> Eol {
+    if first == Eol::Cr && dialect == Dialect::Jwcc {
+        Eol::Lf
+    } else {
+        first
+    }
 }
 
 /// A decoded key as WTF-8: UTF-8, except that a lone surrogate escape such as `\\uD800` is kept
@@ -197,6 +295,13 @@ struct Parser<'a, 's, const SCAN: bool> {
     events: Option<&'s mut dyn FnMut(Event<'a>)>,
     /// What the fixes need, when they are wanted.
     scan: Option<&'s mut Scan>,
+    endings: Endings,
+    /// ANDs with the OR of a white space run's bytes: nonzero when the run holds a CR (bit 2 is
+    /// set in no other white space byte) and endings are checked, or always while every ending is.
+    cr_mask: u8,
+    /// Whether a line break followed by spaces can be skipped without looking at the break:
+    /// not in JSON Lines, and not once an ending other than LF has come first.
+    lf_fast: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -530,6 +635,84 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
         }
     }
 
+    /// Take note of the line ending of kind `eol` at `at`: the first one decides what the others
+    /// must match.
+    #[inline]
+    fn ending(&mut self, at: usize, eol: Eol) {
+        // An ending that is not the one `--fix` writes is always looked at, for the fix to edit.
+        let known = self.endings.first == Some(eol);
+        if !known || target_ending(eol, self.dialect) != eol {
+            self.ending_differs(at, eol);
+        }
+    }
+
+    #[inline(never)]
+    fn ending_differs(&mut self, at: usize, eol: Eol) {
+        let first = if let Some(first) = self.endings.first {
+            first
+        } else {
+            // Only an ending with a CR gets here before it is known, so an LF before it makes
+            // LF the first.
+            let lf_before = eol != Eol::Lf && memchr::memchr(b'\n', &self.bytes[..at]).is_some();
+            let first = if lf_before { Eol::Lf } else { eol };
+            self.endings.first = Some(first);
+            if first != Eol::Lf {
+                // Every ending is of interest from here on.
+                self.cr_mask = u8::MAX;
+                self.lf_fast = false;
+            }
+            first
+        };
+        if eol != first && !self.endings.reported {
+            self.endings.reported = true;
+            let end = at + eol.len();
+            self.report(at, end, self.endings.severity, Detail::MixedLineEndings);
+            if !SCAN {
+                self.endings.severity = Severity::Off;
+                self.cr_mask = 0;
+                self.lf_fast = !self.json_lines;
+            }
+        }
+        let target = target_ending(first, self.dialect);
+        if SCAN
+            && eol != target
+            && let Some(scan) = self.scan.as_deref_mut()
+        {
+            let (mut at, mut len) = (at, eol.len());
+            // When the fix writes LF, a CR before a CRLF that is no ending itself (white space in
+            // JSON Lines, text in a JWCC line comment) goes too, or it would pair with that LF.
+            // A CR that is an ending has an edit of its own, which `stop` keeps clear of.
+            if eol == Eol::CrLf && target == Eol::Lf {
+                let stop = scan.endings.last().map_or(0, |&(a, l)| a + l);
+                while at > stop && self.bytes[at - 1] == b'\r' {
+                    (at, len) = (at - 1, len + 1);
+                }
+            }
+            scan.endings.push((at, len));
+        }
+    }
+
+    /// The line endings in `bytes[from..to]`: a CRLF, an LF, or a CR that does not start a CRLF.
+    #[inline(never)]
+    fn endings_in(&mut self, from: usize, to: usize) {
+        let mut i = from;
+        while let Some(rest) = self.bytes.get(i..to)
+            && let Some(found) = memchr::memchr2(b'\n', b'\r', rest)
+        {
+            let at = i + found;
+            i = at + 1;
+            let (at, eol) = match self.bytes[at] {
+                // The LF after it takes the pair.
+                b'\r' if self.bytes.get(i) == Some(&b'\n') => continue,
+                b'\r' => (at, Eol::Cr),
+                // The CR can be before the range: a JWCC line comment ends at its LF.
+                _ if at > 0 && self.bytes[at - 1] == b'\r' => (at - 1, Eol::CrLf),
+                _ => (at, Eol::Lf),
+            };
+            self.ending(at, eol);
+        }
+    }
+
     fn byte_order_mark(&mut self, severity: Severity) {
         if self.text.starts_with('\u{FEFF}') {
             self.report(0, '\u{FEFF}'.len_utf8(), severity, Detail::ByteOrderMark);
@@ -748,6 +931,9 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
                 Some(_) => self.document()?,
             }
             if let Some(len) = self.line_end() {
+                if self.endings.severity.is_on() {
+                    self.ending(self.pos, if len == 1 { Eol::Lf } else { Eol::CrLf });
+                }
                 self.pos += len;
             } else {
                 self.report(len, len, final_newline, Detail::MissingFinalNewline);
@@ -1033,10 +1219,19 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
                 Ok(Some(value))
             }
             // Line continuations: the backslash and the line break vanish.
-            b'\n' => Ok(None),
+            b'\n' => {
+                if self.cr_mask != 0 {
+                    self.ending(at + 1, Eol::Lf);
+                }
+                Ok(None)
+            }
             b'\r' => {
-                if self.peek() == Some(b'\n') {
+                let crlf = self.peek() == Some(b'\n');
+                if crlf {
                     self.pos += 1;
+                }
+                if self.cr_mask != 0 {
+                    self.ending(at + 1, if crlf { Eol::CrLf } else { Eol::Cr });
                 }
                 Ok(None)
             }
@@ -1312,7 +1507,7 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
             self.pos += 1;
             return Ok(());
         }
-        if self.peek() == Some(b'\n') && !self.json_lines {
+        if self.peek() == Some(b'\n') && self.lf_fast {
             let rest = &self.bytes[self.pos..][1..];
             if let Some(run) = rest.iter().position(|&b| b != b' ')
                 && ends_trivia(rest[run])
@@ -1333,18 +1528,29 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
                 b' ' | b'\t' | b'\r' | b'\n' => {
                     // The whole run at once, with one bounds check. In JSON Lines it stops
                     // before a CR or LF, which the arm above decides on.
-                    let rest = &self.bytes[self.pos + 1..];
+                    let from = self.pos;
+                    let rest = &self.bytes[from + 1..];
+                    let mut seen = b;
                     let run = if self.json_lines {
                         rest.iter().position(|&b| !matches!(b, b' ' | b'\t'))
                     } else {
-                        rest.iter()
-                            .position(|&b| !matches!(b, b' ' | b'\t' | b'\r' | b'\n'))
+                        rest.iter().position(|&b| {
+                            let white = matches!(b, b' ' | b'\t' | b'\r' | b'\n');
+                            seen |= if white { b } else { 0 };
+                            !white
+                        })
                     };
                     let Some(run) = run else {
                         self.pos = self.bytes.len();
+                        if seen & self.cr_mask != 0 {
+                            self.endings_in(from, self.pos);
+                        }
                         return Ok(());
                     };
                     self.pos += 1 + run;
+                    if seen & self.cr_mask != 0 {
+                        self.endings_in(from, self.pos);
+                    }
                     if ends_trivia(rest[run]) {
                         return Ok(());
                     }
@@ -1376,6 +1582,11 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
         if self.dialect.line_comment_ends_only_at_lf() {
             self.pos =
                 memchr::memchr(b'\n', &self.bytes[from..]).map_or(self.bytes.len(), |n| from + n);
+            // The CR of a CRLF is in the comment, but the ending is the pair.
+            if self.cr_mask != 0 && self.pos < self.bytes.len() && self.bytes[self.pos - 1] == b'\r'
+            {
+                self.ending(self.pos - 1, Eol::CrLf);
+            }
             return;
         }
         while let Some(found) = memchr::memchr3(b'\n', b'\r', 0xE2, &self.bytes[from..]) {
@@ -1398,6 +1609,9 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
             let at = from + found;
             if self.bytes.get(at + 1) == Some(&b'/') {
                 self.pos = at + 2;
+                if self.cr_mask != 0 {
+                    self.endings_in(start + 2, at);
+                }
                 return Ok(());
             }
             from = at + 1;

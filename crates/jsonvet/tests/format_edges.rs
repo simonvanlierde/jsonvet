@@ -129,15 +129,16 @@ fn non_ascii_bare_keys_and_literals_keep_their_text() {
 
 #[test]
 fn a_comment_over_several_lines_leaves_the_column_of_its_last_line() {
-    // After `*/` and a space the value starts at column 3, and `[1, 2]` takes 6 more.
+    // The comment moves two columns right, so its last line is ` */`: after a space the value
+    // starts at column 4, and `[1, 2]` takes 6 more.
     let text = "{\"a\": /*\n*/ [1,2]}";
     assert_eq!(
-        fmt(Dialect::Jsonc, &width(9), text),
-        "{\n  \"a\": /*\n*/ [1, 2]\n}\n"
+        fmt(Dialect::Jsonc, &width(10), text),
+        "{\n  \"a\": /*\n */ [1, 2]\n}\n"
     );
     assert_eq!(
-        fmt(Dialect::Jsonc, &width(8), text),
-        "{\n  \"a\": /*\n*/ [\n    1,\n    2\n  ]\n}\n"
+        fmt(Dialect::Jsonc, &width(9), text),
+        "{\n  \"a\": /*\n */ [\n    1,\n    2\n  ]\n}\n"
     );
 }
 

@@ -325,6 +325,14 @@ const ENGLISH: &[(&str, &str)] = &[
          Good (jsonl): {\"a\": 1}<newline>",
     ),
     (
+        "rule.mixed-line-endings.explanation",
+        "A file that uses more than one kind of line ending (LF, CRLF or a lone CR) shows whole \
+         files as changed in a diff, and tools split its lines differently. jsonvet reports the \
+         first ending that differs from the file's first one. --fix rewrites every ending to \
+         the first one.\n\n  Bad:  {\"a\": 1,<CRLF>\"b\": 2,<LF>\"c\": 3}\n  Good: {\"a\": 1,<CRLF>\"b\": \
+         2,<CRLF>\"c\": 3}",
+    ),
+    (
         "rule.schema.explanation",
         "A value the file's JSON Schema rejects, such as a missing required key or a string \
          where the schema wants a number. The schema comes from --schema, the config file's \

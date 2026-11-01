@@ -574,3 +574,13 @@ fn a_folder_that_takes_no_new_file_is_reported_and_the_file_left_alone() {
         assert_eq!(read(&dir, "sub/a.json"), UGLY);
     }
 }
+
+#[test]
+fn fmt_check_passes_on_what_fix_wrote() {
+    // The CR in the comment is comment text, so the first ending is the CRLF for both tools.
+    let dir = workdir(&[("a.jwcc", "// a\rb\r\n[1, 2]\n")]);
+    assert_eq!(run(&dir, &["--fix", "a.jwcc"], "").0, 0);
+    assert_eq!(read(&dir, "a.jwcc"), "// a\rb\r\n[1, 2]\r\n");
+    assert_eq!(run(&dir, &["fmt", "--check", "a.jwcc"], "").0, 0);
+    assert_eq!(read(&dir, "a.jwcc"), "// a\rb\r\n[1, 2]\r\n");
+}

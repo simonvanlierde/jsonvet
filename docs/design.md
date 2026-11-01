@@ -57,16 +57,17 @@ are intended, besides the line ends and paths above:
 ## Speed
 
 <!-- speed:start -->
-Median of 40 runs from `uv run scripts/bench.py`, on 12 cores of a Ryzen 7 H 255 under Linux
-(2026-10-28), and of 3 for 1.0.1. Every tool gives the same verdict in every case:
+Median of 40 runs of jsonvet from `uv run scripts/bench.py`, on 8 cores of a Core i9-14900KF under
+Linux (2026-11-01), of 10 for 1.4.1 and of 3 for 1.0.1. Every tool gives the same verdict in every
+case:
 
-| Case                       | check-json5 1.0.1 | check-json5 1.4.1 | jsonvet 3.2 | Speed-up over 1.4.1 | over 1.0.1 |
+| Case                       | check-json5 1.0.1 | check-json5 1.4.1 | jsonvet 3.3 | Speed-up over 1.4.1 | over 1.0.1 |
 | -------------------------- | ----------------: | ----------------: | ----------: | ------------------: | ---------: |
-| 1,100 config files         |          1,828 ms |             40 ms |      4.3 ms |                  9x |       423x |
-| 2.7 MB JSON                |         10,076 ms |             41 ms |      9.2 ms |                  4x |     1,095x |
-| 2.7 MB JSON, duplicate key |         10,071 ms |            322 ms |     11.8 ms |                 27x |       851x |
-| 120 KB JSONC               |            498 ms |             20 ms |      2.2 ms |                  9x |       231x |
-| 1.8 MB JSON5               |         11,407 ms |         11,541 ms |      8.3 ms |              1,395x |     1,379x |
+| 1,100 config files         |          2,219 ms |             47 ms |      4.0 ms |                 12x |       559x |
+| 2.7 MB JSON                |         15,555 ms |             44 ms |      8.1 ms |                  5x |     1,918x |
+| 2.7 MB JSON, duplicate key |         15,642 ms |            410 ms |     10.6 ms |                 39x |     1,470x |
+| 120 KB JSONC               |            826 ms |             28 ms |      1.3 ms |                 22x |       653x |
+| 1.8 MB JSON5               |         18,151 ms |         17,955 ms |      8.2 ms |              2,201x |     2,225x |
 <!-- speed:end -->
 
 1.4 sent strict JSON and JSONC to Python's C parser, so those were already fast, and everything

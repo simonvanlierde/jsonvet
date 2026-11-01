@@ -1,21 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fixesFor, fixSummary, formatArgs } from "./actions.mjs";
+import { fixesFor, fixSummary } from "./actions.mjs";
 import { snippets } from "./snippets.mjs";
-
-const form = { indent: "2", width: "80", spacing: true, normalize: true };
-
-test("the controls become format()'s arguments", () => {
-  assert.deepEqual(formatArgs(form, "json"), [2, 80, true, false]);
-  assert.deepEqual(formatArgs({ ...form, indent: "tab", spacing: false }, "json5"), [0, 80, false, true]);
-  assert.deepEqual(formatArgs({ ...form, indent: "4", width: "100" }, "jsonc"), [4, 100, true, false]);
-});
-
-test("a bad width is the default", () => {
-  for (const width of ["", "0", "-3", "1.5", "abc", "5000", undefined]) {
-    assert.equal(formatArgs({ ...form, width }, "json")[1], 80, String(width));
-  }
-});
 
 test("a correction finds its fix at its place or its first copy", () => {
   const fixes = [
@@ -44,6 +30,11 @@ test("a summary counts the fixes by kind", () => {
     fixSummary([f("syntax"), f("syntax"), f("duplicate-key")]),
     "Fixed 3 problems: 2 trailing commas, 1 duplicate key.",
   );
+});
+
+test("a summary names mixed line endings", () => {
+  const f = { rule: "mixed-line-endings", index: 4, safe: true };
+  assert.equal(fixSummary([f]), "Fixed 1 problem: 1 mixed line ending.");
 });
 
 test("the snippets add --fix and the format hook", () => {

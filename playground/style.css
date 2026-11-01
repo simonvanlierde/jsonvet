@@ -48,7 +48,10 @@ button { font: inherit; color: inherit; }
 .slug, .colophon .slug-part { font: 13px/1.6 var(--mono); color: var(--faint); }
 .slug { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 24px; padding-block: 20px 9px; border-bottom: 1px dashed var(--rule-strong); }
 .slug-part { display: flex; flex-wrap: wrap; margin: 0; }
-.slug-part > :not([hidden]) ~ :not([hidden])::before { content: "·"; content: "·" / ""; margin-inline: .7ch; color: var(--dim); }
+/* Every part gets a dot, and the list is shifted left by one dot and clipped there, so the dot
+   before whichever part starts a wrapped line is hidden. */
+.slug-part, .meta:has(> *) { margin-inline-start: -2.4ch; clip-path: inset(-8px -8px -8px calc(2.4ch - 4px)); }
+.slug-part > :not([hidden])::before, .meta > *::before { content: "·"; content: "·" / ""; display: inline-block; width: 2.4ch; text-align: center; color: var(--dim); }
 .slug b, .slug #name, .slug #set { color: var(--ink); font-weight: 600; }
 .slug b { font-weight: 700; }
 .speed { color: var(--ink); }
@@ -79,14 +82,49 @@ button { font: inherit; color: inherit; }
 .act { padding: 3px 12px; min-height: 32px; font: 600 13px/1.4 var(--mono); color: var(--ink); background: none; border: 1px solid var(--ink); border-radius: 0; cursor: pointer; }
 .act:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--tint); }
 .act:disabled, .act[aria-disabled="true"] { color: var(--faint); border-color: var(--rule-strong); cursor: default; }
-.opt { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; }
-.opt input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--ink); }
-.opt select, .opt input[type="number"] { font: 13px/1.4 var(--mono); color: var(--ink); background: var(--paper); border: 1px solid var(--rule-strong); border-radius: 0; padding: 3px 6px; min-height: 32px; }
-.opt input[type="number"] { width: 6ch; }
+/* Split button: the action, and beside it the part that opens the options. */
+.split { display: inline-flex; }
+.split .act + .act { margin-left: -1px; padding-inline: 8px; }
+.opts .n:not(:empty) { margin-right: 4px; }
+.opts .n:not(:empty)::before { content: ""; display: inline-block; width: .5em; height: .5em; margin-right: 4px; background: var(--ink); border-radius: 50%; }
+.split:has(+ .pop:popover-open) .opts { background: var(--tint); }
+.act:focus-visible { position: relative; z-index: 1; }
+/* The options popover: a few rows of label and control, then the real config for them. */
+.pop { position: fixed; inset: auto; left: min(var(--x, 8px), calc(100vw - min(25rem, 100vw - 16px) - 8px)); top: var(--y, 8px); width: min(25rem, calc(100vw - 16px)); max-height: calc(100dvh - var(--y, 8px) - 8px); overflow: auto; margin: 0; padding: 12px 14px 10px; color: var(--ink); background: var(--paper); border: 1px solid var(--ink); border-radius: 0; font: 13px/1.6 var(--mono); }
+.pop::backdrop { background: none; }
+.pop h2 { margin: 0 0 6px; font: 600 13px/1.6 var(--mono); }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 38px; border-top: 1px dashed var(--rule-strong); }
+.lab { color: var(--faint); }
+.seg { display: inline-flex; }
+.seg button, .num { min-height: 32px; font: 13px/1.4 var(--mono); color: var(--faint); background: none; border: 1px solid var(--rule-strong); border-radius: 0; }
+.seg button { padding: 3px 12px; min-width: 3.2rem; cursor: pointer; }
+.seg button + button { margin-left: -1px; }
+.seg button:hover { color: var(--ink); background: var(--tint); }
+.seg button[aria-checked="true"] { color: var(--ink); background: var(--tint); border-color: var(--ink); box-shadow: inset 0 -2px var(--ink); position: relative; }
+.seg button:focus-visible { position: relative; z-index: 1; outline-offset: -3px; }
+.num { width: 8ch; padding: 3px 6px; color: var(--ink); background: var(--paper); }
+.num[aria-invalid="true"] { border-color: var(--pen); color: var(--pen); }
+.conf { margin-top: 2px; padding-top: 8px; border-top: 1px solid var(--rule); }
+.conf-h { margin: 0; color: var(--faint); }
+.conf-text { margin: 4px 0 4px; padding: 8px 10px; overflow-x: auto; white-space: pre; background: var(--tint); font-size: 13px; line-height: 1.55; scrollbar-color: var(--rule-strong) transparent; }
+.conf-text.none { color: var(--faint); font-style: italic; }
+/* The copy icon sits in the code block's top-right corner; the text keeps clear of it. */
+.conf-code { position: relative; }
+.conf-code .conf-text { padding-right: 36px; }
+.conf-copy { position: absolute; top: 4px; right: 4px; display: grid; place-items: center; width: 26px; height: 26px; padding: 0; color: var(--faint); background: var(--tint); border: 0; cursor: pointer; }
+.conf-copy:hover { color: var(--ink); }
+.conf-copy svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+.conf-copy .i-done, .conf-copy.done .i-copy { display: none; }
+.conf-copy.done .i-done { display: block; }
 
 /* The proof: the set text on the left, the margin with the corrections on the right. */
-/* A galley's measure: the text column stops near 60 characters and the margin takes the rest, so notes sit close to their lines. */
-.proof { position: relative; display: grid; grid-template-columns: minmax(0, 36rem) minmax(18.5rem, 1fr); margin-top: 18px; }
+/* A galley's measure: the text column stops after 80 characters and the margin takes the rest, so notes sit close to their lines. */
+/* The text column is sized in ch of the editor's own font, so it shows 80 characters beside the gutter
+   (a slot for a correction's number, up to three digits, and its padding) and the text's padding and
+   scrollbar. The proof is set in the editor's font for that, and the margin sets its own back. Where
+   the screen is narrower the column gives way and the text scrolls inside the editor. */
+.proof { position: relative; display: grid; grid-template-columns: minmax(0, calc(80ch + 8ch + 32px)) minmax(18.5rem, 1fr); margin-top: 18px; font: var(--size)/var(--lh) var(--mono); }
+.margin { font: 1rem/1.5 var(--serif); }
 .proof.listed { grid-template-columns: minmax(0, 1fr); }
 .editor { position: relative; display: flex; min-width: 0; height: 248px; border-right: 1px solid var(--rule); }
 .proof.listed .editor { border-right: 0; }
@@ -125,13 +163,14 @@ textarea, textarea:focus-visible { padding: 8px 8px 8px 6px; border: 0; resize: 
 .margin ol { margin: 0; padding: 0; list-style: none; }
 .note { color: var(--pen); font: italic 16px/var(--lh) var(--serif); }
 .proof:not(.listed) .note { position: absolute; left: 30px; right: 10px; padding: 0 4px; background: var(--paper); }
-.note button { all: unset; box-sizing: border-box; display: block; cursor: pointer; overflow-wrap: anywhere; }
+.note > button { all: unset; box-sizing: border-box; display: block; cursor: pointer; overflow-wrap: anywhere; }
 .note button:hover .msg { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: .2em; }
 .note button:focus-visible { outline-offset: 2px; outline: 2px solid var(--ink); }
 .note .msg code { font-style: normal; font-size: .82em; }
 .note .n { display: none; }
 .meta { display: flex; flex-wrap: wrap; align-items: baseline; font: normal 12.5px/1.5 var(--mono); color: var(--faint); }
-.meta > * + *::before { content: "·"; content: "·" / ""; margin-inline: .6ch; color: var(--dim); }
+/* An item never breaks inside, so its own dot cannot be left behind on the line above. */
+.meta > * { white-space: nowrap; }
 .meta .rule { display: inline-block; padding-block: 3.5px; color: var(--faint); }
 .meta .rule:hover { color: var(--ink); }
 /* A correction with a fix: apply it from the margin. */
@@ -181,7 +220,7 @@ kbd { padding: 0 4px; font-size: .8em; border: 1px solid var(--rule-strong); bor
 
 /* The colophon. */
 .colophon { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 24px; margin-top: 28px; padding-block: 10px 20px; border-top: 1px solid var(--rule); }
-.colophon p { margin: 0; }
+.colophon p { margin-block: 0; }
 .colophon .quiet { flex-basis: 100%; margin-bottom: 4px; color: var(--faint); font-size: .9375rem; font-style: italic; }
 .colophon a:hover { color: var(--ink); }
 noscript p { max-width: 1240px; margin: 0 auto; padding: 16px; color: var(--pen); }
@@ -193,8 +232,9 @@ noscript p { max-width: 1240px; margin: 0 auto; padding: 16px; color: var(--pen)
   .stages button:nth-child(n + 4) { border-top: 1px solid var(--rule); }
 }
 @media (max-width: 560px) {
-  .tool { width: 100%; }
-  .opt select, .opt input[type="number"] { font-size: 16px; }
+  .num { font-size: 16px; }
+  /* A bottom sheet, so it cannot run off the screen. */
+  .pop { left: 0; right: 0; top: auto; bottom: 0; width: auto; max-height: 80dvh; border-width: 1px 0 0; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
   /* 16px, or iOS zooms in when the text area gets focus. */
   :root { --size: 16px; --lh: 22px; }
   .stages button { padding-inline: 8px; }
@@ -207,6 +247,7 @@ noscript p { max-width: 1240px; margin: 0 auto; padding: 16px; color: var(--pen)
   .stages button[aria-checked="true"] { border-bottom: 2px solid CanvasText; }
   .tabs button[aria-selected="true"] { border-bottom: 2px solid CanvasText; }
   .margin .note { background: Canvas; }
-  .act, .opt select, .opt input[type="number"] { border-color: CanvasText; }
+  .act, .seg button, .num, .pop { border-color: CanvasText; }
+  .seg button[aria-checked="true"] { border-bottom: 2px solid CanvasText; }
   .act:disabled, .act[aria-disabled="true"] { border-color: GrayText; color: GrayText; }
 }

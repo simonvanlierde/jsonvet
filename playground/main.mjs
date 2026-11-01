@@ -23,7 +23,6 @@ const tryBig = $("try");
 const back = $("back");
 const fixButton = $("fix");
 const formatButton = $("format");
-const unsafe = $("unsafe");
 const acted = $("acted");
 const radios = [...stages.querySelectorAll('[role="radio"]')];
 const radio = (d) => radios.find((r) => r.dataset.dialect === d);
@@ -83,6 +82,10 @@ let lineCount;
 let runFix;
 let runFormat;
 let formatArgs;
+// The options of Fix and Format, by key (settings.mjs), and the popovers that edit them. Not kept.
+let fixValues = {};
+let formatValues = {};
+const mounted = [];
 let fixesFor;
 let fixSummary;
 let snippets;
@@ -273,7 +276,7 @@ function note(p, n) {
   const own = fixesFor(p, fixes);
   if (own.length) {
     const slot = el("span");
-    if (own.every((f) => f.safe) || unsafe.checked) {
+    if (own.every((f) => f.safe) || fixValues.unsafe) {
       const apply = el("button", "link apply", "apply");
       apply.type = "button";
       apply.setAttribute("aria-label", `Apply the fix for ${p.line}:${p.column}, ${p.message.replaceAll("`", "")}`);
@@ -281,7 +284,7 @@ function note(p, n) {
       slot.append(apply);
     } else {
       slot.append(el("span", "unsafe", "unsafe fix"));
-      slot.title = "Tick \u201cdrop duplicate keys too\u201d to apply it";
+      slot.title = "Turn on \u201cDrop duplicate keys\u201d in the Fix options to apply it";
     }
     meta.append(slot);
   }
@@ -423,7 +426,7 @@ function others(text, long) {
 // The notes that sit beside a row: one for each problem, and one for each related place.
 const placed = () => [...list.children, ...sheet.children].filter((n) => n.dataset.row);
 
-// Places the notes in the margin beside their rows, stacked where they would overlap, or lists
+// Places the notes in the margin beside their rows, moved apart where they would overlap, or lists
 // them under the proof when they do not fit; then sizes the editor to the text.
 function layout() {
   const lh = lineHeight();
@@ -436,7 +439,8 @@ function layout() {
   proof.classList.toggle("listed", !inMargin);
   if (inMargin && notes.length) {
     const heights = notes.map((n) => n.offsetHeight);
-    const tops = stack(notes.map((n) => PAD + (n.dataset.row - 1) * lh), heights, NOTE_GAP);
+    const room = Math.max(textHeight, 8 * lh + 2 * PAD) - PAD;
+    const tops = stack(notes.map((n) => PAD + (n.dataset.row - 1) * lh), heights, NOTE_GAP, 0, room);
     bottom = tops.at(-1) + heights.at(-1) + PAD;
     if (bottom > Math.max(textHeight, cap)) {
       inMargin = false;
@@ -526,7 +530,7 @@ function select(d, focus) {
     if (on && focus) r.focus();
   }
   setRich(hint, hints[d]);
-  $("norm-label").hidden = d !== "json5";
+  for (const o of mounted) o.render();
   slug();
   schedule();
 }
@@ -622,9 +626,9 @@ function act(kind, only = none) {
   let out;
   try {
     if (kind === "fix") {
-      out = JSON.parse(runFix(text, dialect, only.length > 0 || unsafe.checked, only));
+      out = JSON.parse(runFix(text, dialect, only.length > 0 || fixValues.unsafe, only));
     } else {
-      out = runFormat(text, dialect, ...formatArgs({ indent: $("indent").value, width: $("width").value, spacing: $("spacing").checked, normalize: $("norm").checked }, dialect));
+      out = runFormat(text, dialect, ...formatArgs(formatValues, dialect));
     }
   } catch (e) {
     const why = String(e);
@@ -647,14 +651,13 @@ function act(kind, only = none) {
 
 // The Fix button counts the fixes it would apply; it stays focusable at zero so it can say why.
 function fixState() {
-  const n = fixes.filter((f) => f.safe || unsafe.checked).length;
+  const n = fixes.filter((f) => f.safe || fixValues.unsafe).length;
   fixButton.textContent = n ? `Fix ${n}` : "Fix";
   fixButton.setAttribute("aria-disabled", String(!n));
   fixButton.setAttribute("aria-label", n ? `Fix: apply ${plural(n, "fix")}` : "Fix: nothing to fix");
 }
 fixButton.addEventListener("click", () => act("fix"));
 formatButton.addEventListener("click", () => act("format"));
-unsafe.addEventListener("change", () => loaded && run());
 
 wide.addEventListener("change", layout);
 let resizeFrame;
@@ -800,7 +803,22 @@ try {
   ({ encode, decode } = await import(`./share.mjs${version}`));
   ({ tokenEnd, stack, formatMs, lineCount } = await import(`./proof.mjs${version}`));
   ({ hosts } = await import(`./hosts.mjs${version}`));
-  ({ formatArgs, fixesFor, fixSummary } = await import(`./actions.mjs${version}`));
+  ({ fixesFor, fixSummary } = await import(`./actions.mjs${version}`));
+  const settings = await import(`./settings.mjs${version}`);
+  ({ formatArgs } = settings);
+  fixValues = settings.defaults("fix");
+  formatValues = settings.defaults("format");
+  const { mountOptions } = await import(`./options.mjs${version}`);
+  // Without popover support (Safari before 17, Firefox before 125) the panels would sit open
+  // over the page, so those browsers get the actions with their defaults and no options.
+  if (!Object.hasOwn(HTMLElement.prototype, "popover")) {
+    for (const id of ["fix-opts", "fix-pop", "format-opts", "format-pop"]) $(id).hidden = true;
+  }
+  const say = (t) => (shareStatus.textContent = t);
+  mounted.push(
+    mountOptions({ tool: "fix", button: $("fix-opts"), pop: $("fix-pop"), values: fixValues, dialect: () => dialect, onChange: () => loaded && run(), say }),
+    mountOptions({ tool: "format", button: $("format-opts"), pop: $("format-pop"), values: formatValues, dialect: () => dialect, onChange() {}, say }),
+  );
   ({ snippets } = await import(`./snippets.mjs${version}`));
   const wasm = await import(`./pkg/jsonvet_wasm.js${version}`);
   await wasm.default({ module_or_path: new URL(`./pkg/jsonvet_wasm_bg.wasm${version}`, import.meta.url) });

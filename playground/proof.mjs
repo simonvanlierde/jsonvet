@@ -24,14 +24,32 @@ export function tokenEnd(row, offset) {
 }
 
 // The top of each note, given the top it wants (sorted) and its height: a note keeps its line
-// unless the one above reaches it, then it goes `gap` below that one.
-export function stack(wanted, heights, gap) {
-  const tops = [];
-  let floor = -Infinity;
+// where it can, and notes that would overlap move apart around their lines, as close to them as
+// they fit, all between `floor` and `ceiling` (the floor wins when they do not fit).
+export function stack(wanted, heights, gap, floor = -Infinity, ceiling = Infinity) {
+  // Taking from each top the room the notes above it need turns "no overlap" into "tops in
+  // order"; pooling each run that is out of order at its mean gives the closest such order.
+  const room = [];
+  let total = 0;
+  for (const h of heights) {
+    room.push(total);
+    total += h + gap;
+  }
+  const runs = [];
   wanted.forEach((top, i) => {
-    tops.push(Math.max(top, floor));
-    floor = tops[i] + heights[i] + gap;
+    let run = { sum: top - room[i], n: 1 };
+    while (runs.length && runs.at(-1).sum / runs.at(-1).n > run.sum / run.n) {
+      const prev = runs.pop();
+      run = { sum: prev.sum + run.sum, n: prev.n + run.n };
+    }
+    runs.push(run);
   });
+  const high = ceiling - (total - gap);
+  const tops = [];
+  for (const run of runs) {
+    const at = Math.max(floor, Math.min(high, run.sum / run.n));
+    for (let k = 0; k < run.n; k++) tops.push(at + room[tops.length]);
+  }
   return tops;
 }
 

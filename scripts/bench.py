@@ -156,7 +156,9 @@ def machine() -> str:
     cpuinfo = Path("/proc/cpuinfo")
     if cpuinfo.exists() and (found := re.search(r"^model name\s*: (.+)$", cpuinfo.read_text(), re.MULTILINE)):
         model = re.sub(r"^(AMD|Intel\(R\)) |\(\w+\)| w/ .*| CPU .*|\s+\d+-Core Processor", "", found[1]).strip()
-    return f"{os.cpu_count()} cores of a {model} under {platform.system()}"
+    # The CPUs this process may run on: under taskset or a pinned slot, fewer than the machine has.
+    cores = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count()
+    return f"{cores} cores of a {model} under {platform.system()}"
 
 
 def write(table: list[str], runs: int, ref_runs: int, old_runs: int, largest: str) -> None:
@@ -169,7 +171,8 @@ def write(table: list[str], runs: int, ref_runs: int, old_runs: int, largest: st
         "Every tool gives the same verdict in every case:"
     )
     DESIGN.write_text(text[:start] + "\n".join([textwrap.fill(intro, 100), "", *table]) + "\n" + text[end:])
-    claim = r"(up to )[\d,]+(\s+times faster than check-json5 1\.4\.1)"
+    # The README may set the claim in bold: "up to **N times faster** than".
+    claim = r"(up to \**)[\d,]+(\s+times faster\**\s+than check-json5 1\.4\.1)"
     README.write_text(re.sub(claim, rf"\g<1>{largest}\g<2>", README.read_text(), count=1))
 
 

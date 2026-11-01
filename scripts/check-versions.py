@@ -80,7 +80,7 @@ def main() -> int:
     table = first(r"<!-- speed:start -->(.*?)<!-- speed:end -->", "docs/design.md") or ""
     rows = [row.split("|") for row in table.splitlines() if row.startswith("|")][2:]
     largest = max((row[5].strip() for row in rows), key=lambda up: int(up.rstrip("x").replace(",", "")), default=None)
-    claim = first(r"up to ([\d,]+)\s+times faster than check-json5 1\.4\.1", "README.md")
+    claim = first(r"up to \**([\d,]+)\s+times faster\**\s+than check-json5 1\.4\.1", "README.md")
     print(f"{'README speed-up':16} {claim}x, table {largest}")
     if (
         len(pins) != PINS

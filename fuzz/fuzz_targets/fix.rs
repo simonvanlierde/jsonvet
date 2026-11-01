@@ -22,7 +22,10 @@ fuzz_target!(|text: &str| {
             // `fix` returns None for a text with a syntax error, so the input had none.
             for problem in check(out, &config).problems() {
                 let handled = match problem.rule() {
-                    Rule::Syntax | Rule::ByteOrderMark | Rule::MissingFinalNewline => true,
+                    Rule::Syntax
+                    | Rule::ByteOrderMark
+                    | Rule::MissingFinalNewline
+                    | Rule::MixedLineEndings => true,
                     Rule::DuplicateKey => unsafe_fixes,
                     _ => false,
                 };

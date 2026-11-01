@@ -56,7 +56,7 @@ check: lint test
 msrv:
     cargo +1.88 check --workspace --lib --bins --locked
 
-# Re-run the conformance matrix (needs docker), then render docs/conformance.md and the README block.
+# Re-run the conformance matrix (needs docker), then render docs/conformance.md.
 matrix:
     cargo build --release -p jsonvet-cli
     uv run conformance/run.py --jsonvet {{ target }}/release/jsonvet
@@ -121,7 +121,7 @@ compare REF DIR=(target / "profile-files"): profiling-build
     set -euo pipefail
     command -v perf >/dev/null || { echo "needs Linux perf (linux-tools)" >&2; exit 1; }
     tree=$(mktemp -d)
-    trap 'git worktree remove --force "$tree"' EXIT
+    trap 'git -C "{{ justfile_directory() }}" worktree remove --force "$tree"' EXIT
     git worktree add --quiet --detach "$tree" "{{ REF }}"
     RUSTFLAGS="-C force-frame-pointers=yes" cargo build --quiet --locked --profile profiling -p jsonvet-cli \
         --manifest-path "$tree/Cargo.toml" --target-dir "{{ target }}/compare-ref"

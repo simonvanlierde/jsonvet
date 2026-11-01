@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::ops::Range;
 
-use crate::parse::{self, Member, Scan};
+use crate::parse::{self, Eol, Member, Scan};
 use crate::{Config, Problem, Rule};
 
 /// One fix that was applied.
@@ -92,10 +92,13 @@ pub fn try_fix_at(
         return Err(same.then_some(problems));
     }
     // The file's own line ending, from its first one; JSON Lines knows only LF and CRLF.
-    let eol = match text.find('\n') {
-        Some(i) if text[..i].ends_with('\r') => "\r\n",
-        _ => "\n",
-    };
+    let eol = scan.target.map_or_else(
+        || match text.find('\n') {
+            Some(i) if text[..i].ends_with('\r') => "\r\n",
+            _ => "\n",
+        },
+        Eol::text,
+    );
     let mut groups = Vec::new();
     for problem in &problems {
         match problem.rule() {
@@ -103,7 +106,7 @@ pub fn try_fix_at(
                 let edit = if problem.rule() == Rule::ByteOrderMark {
                     Edit::delete(problem.offset()..problem.end())
                 } else {
-                    Edit::insert(problem.offset(), eol)
+                    Edit::newline(text, eol)
                 };
                 groups.push(Group::new(
                     problem.rule(),
@@ -146,10 +149,35 @@ pub fn try_fix_at(
             safe: group.safe,
         });
     }
+    // The line endings go in last: an ending inside a dropped member is gone with it.
+    if let (Some(problem), Some(target)) = (
+        problems.iter().find(|p| p.rule() == Rule::MixedLineEndings),
+        scan.target,
+    ) && only.is_none_or(|only| only.contains(&problem.offset()))
+    {
+        fixes.push(Fix {
+            rule: Rule::MixedLineEndings,
+            offset: problem.offset(),
+            safe: true,
+        });
+        edits.extend(scan.endings.iter().map(|&(at, len)| Edit {
+            range: at..at + len,
+            insert: target.text(),
+            soft: true,
+        }));
+    }
     if fixes.is_empty() {
         return Err(same.then_some(problems));
     }
-    edits.sort_by_key(|e| e.range.start);
+    edits.sort_by_key(|e| (e.range.start, e.range.end));
+    let mut reach = 0;
+    edits.retain(|e| {
+        let overlaps = e.range.start < reach;
+        if !overlaps {
+            reach = reach.max(e.range.end);
+        }
+        !(overlaps && e.soft)
+    });
     let mut out = String::with_capacity(text.len());
     let mut from = 0;
     for edit in edits {
@@ -165,17 +193,30 @@ pub fn try_fix_at(
 struct Edit {
     range: Range<usize>,
     insert: &'static str,
+    /// A line ending rewrite, which gives way to any other edit it overlaps.
+    soft: bool,
 }
 
 impl Edit {
     fn delete(range: Range<usize>) -> Self {
-        Edit { range, insert: "" }
+        Edit {
+            range,
+            insert: "",
+            soft: false,
+        }
     }
 
-    fn insert(at: usize, insert: &'static str) -> Self {
+    fn newline(text: &str, insert: &'static str) -> Self {
+        // A trailing CR must not pair with the inserted LF and make a CRLF.
+        let at = if insert == "\n" {
+            text.trim_end_matches('\r').len()
+        } else {
+            text.len()
+        };
         Edit {
-            range: at..at,
+            range: at..text.len(),
             insert,
+            soft: false,
         }
     }
 }

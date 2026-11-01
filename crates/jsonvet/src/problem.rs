@@ -4,9 +4,9 @@ use crate::messages::{
     self, BLANK_LINE, BYTE_ORDER_MARK, COMMENTS_NOT_ALLOWED, CONTROL_CHARACTER, DIALECT_ALLOWS,
     DID_YOU_MEAN, DUPLICATE_KEY, INVALID_ESCAPE, INVALID_HEX_ESCAPE, INVALID_UNICODE_ESCAPE,
     JWCC_AND_JSON5_ALLOW, LEADING_ZERO, LINE_BREAK_IN_STRING, LONE_SURROGATE, MISSING_COMMA,
-    MISSING_FINAL_NEWLINE, Message, NONCHARACTER, NUMBER_INEXACT, NUMBER_OVERFLOWS, TOO_DEEP,
-    TRAILING_COMMA, Translate, UNCLOSED, UNEXPECTED, UNEXPECTED_END, UNEXPECTED_LINE_END,
-    UNEXPECTED_WORD, UNTERMINATED_COMMENT, UNTERMINATED_STRING, fill,
+    MISSING_FINAL_NEWLINE, MIXED_LINE_ENDINGS, Message, NONCHARACTER, NUMBER_INEXACT,
+    NUMBER_OVERFLOWS, TOO_DEEP, TRAILING_COMMA, Translate, UNCLOSED, UNEXPECTED, UNEXPECTED_END,
+    UNEXPECTED_LINE_END, UNEXPECTED_WORD, UNTERMINATED_COMMENT, UNTERMINATED_STRING, fill,
 };
 use crate::unicode::{is_bidi_control, is_surrogate};
 use crate::{Dialect, Rule, Severity};
@@ -57,6 +57,7 @@ impl Problem {
             Detail::InvalidCodePoint { .. } => Rule::InvalidCodePoint,
             Detail::ByteOrderMark => Rule::ByteOrderMark,
             Detail::MissingFinalNewline => Rule::MissingFinalNewline,
+            Detail::MixedLineEndings => Rule::MixedLineEndings,
         }
     }
 
@@ -179,6 +180,8 @@ pub(crate) enum Detail {
     ByteOrderMark,
     /// A JSON Lines file that does not end with a newline.
     MissingFinalNewline,
+    /// A line ending that differs from the file's first one.
+    MixedLineEndings,
 }
 
 impl Detail {
@@ -201,6 +204,7 @@ impl Detail {
             }
             Detail::ByteOrderMark => out.write_str(t(BYTE_ORDER_MARK)),
             Detail::MissingFinalNewline => out.write_str(t(MISSING_FINAL_NEWLINE)),
+            Detail::MixedLineEndings => out.write_str(t(MIXED_LINE_ENDINGS)),
         }
     }
 }
