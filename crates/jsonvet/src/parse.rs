@@ -752,11 +752,13 @@ impl<'a> Parser<'a, '_> {
             Some(first) => {
                 // Each open container's step to its child, then the duplicate key itself.
                 let stack = &self.stack[..self.depth];
-                let parents = stack[..stack.len() - 1].iter().map(|f| match f.container {
-                    Container::Object => PathStep::Key(&f.current_key),
-                    Container::Array => PathStep::Index(f.element_index),
+                let path = path::path_of(stack.len(), |i| match stack.get(i + 1) {
+                    None => PathStep::Key(key),
+                    Some(_) => match stack[i].container {
+                        Container::Object => PathStep::Key(&stack[i].current_key),
+                        Container::Array => PathStep::Index(stack[i].element_index),
+                    },
                 });
-                let path = path::json_path(parents.chain([PathStep::Key(key)]));
                 self.report(
                     start,
                     self.pos,
