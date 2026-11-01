@@ -25,6 +25,7 @@ keywords:
   - "linter"
   - "pre-commit"
   - "pre-commit-hook"
+  - "rust"
   - "github-action"
   - "formatter"
   - "fixer"

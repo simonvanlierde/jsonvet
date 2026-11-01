@@ -10,7 +10,7 @@ readme = "../../README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 dynamic = ["version"]
-keywords = ["json", "json5", "jsonc", "lint", "pre-commit"]
+keywords = ["json", "json5", "jsonc", "lint", "pre-commit", "rust"]
 classifiers = [
   "Environment :: Console",
   "Operating System :: OS Independent",
