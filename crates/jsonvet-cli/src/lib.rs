@@ -22,12 +22,14 @@ mod rules;
 mod sarif;
 mod schema;
 mod settings;
+mod write;
 
 use args::{Command, STDIN};
 use output::{Format, Look, Printer};
 use schema::Schema;
 use schema::select::{Job, Schemas, check_own_schema, jobs, with_schema};
 use settings::{Resolver, Settings};
+use write::write_atomically;
 
 /// The stack every run uses, for `--schema`: jsonschema validates recursively, and building,
 /// validating and dropping a value [`schema::SCHEMA_MAX_DEPTH`] levels deep against a recursive schema
@@ -610,7 +612,7 @@ fn fix_chunk(
                 entry.0 = Ok(fixed.text);
             }
             Some((_, Err(error))) => {
-                entry.0 = Err(messages::fill("fix.write", &[("error", &error)]));
+                entry.0 = Err(error);
             }
             None => {}
         }
@@ -621,50 +623,6 @@ fn fix_chunk(
         }
     }
     known
-}
-
-/// Replace the file `path` leads to with `text`: write a temporary file beside it, give it the
-/// file's permissions, then rename it over the file, so a crash leaves the old text or the new
-/// one and never half of either. A symlink is followed and stays a symlink. A read-only file is
-/// refused, as the rename would replace it anyway.
-fn write_atomically(path: &Path, text: &str) -> Result<(), String> {
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
-    let target = std::fs::canonicalize(path).map_err(|e| e.to_string())?;
-    let permissions = std::fs::metadata(&target)
-        .map_err(|e| e.to_string())?
-        .permissions();
-    if permissions.readonly() {
-        return Err(messages::text("fix.read-only").to_owned());
-    }
-    let name = target.file_name().unwrap_or_default().to_string_lossy();
-    // A name taken by another process is never ours to remove: try the next one.
-    let mut tries = 0;
-    let (mut file, temp) = loop {
-        let temp = target.with_file_name(format!(
-            ".{name}.jsonvet-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temp)
-        {
-            Ok(file) => break (file, temp),
-            Err(e) if e.kind() == io::ErrorKind::AlreadyExists && tries < 8 => tries += 1,
-            Err(e) => return Err(e.to_string()),
-        }
-    };
-    let write = || -> io::Result<()> {
-        file.write_all(text.as_bytes())?;
-        file.set_permissions(permissions)?;
-        file.sync_all()?;
-        std::fs::rename(&temp, &target)
-    };
-    write().map_err(|e| {
-        let _ = std::fs::remove_file(&temp);
-        e.to_string()
-    })
 }
 
 #[derive(Default)]

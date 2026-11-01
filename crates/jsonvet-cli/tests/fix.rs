@@ -204,7 +204,7 @@ fn a_read_only_file_is_left_alone_and_fails_the_run() {
     let (code, out, _) = run(&dir, &["--fix", "a.json", "b.json"]);
     assert_eq!(code, 1);
     assert!(
-        out.starts_with("a.json: error: cannot write the fixes: "),
+        out.starts_with("a.json: error: the file is read-only"),
         "{out}"
     );
     assert_eq!(read(&dir, "a.json"), "[1,]");

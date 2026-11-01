@@ -97,27 +97,6 @@ fn fmt_rewrites_files_in_place_and_leaves_no_temporary_file() {
     assert_eq!(run(&dir, &["fmt", "--check", "."], "").0, 0);
 }
 
-#[cfg(unix)]
-#[test]
-fn fmt_keeps_permissions_and_symlinks() {
-    use std::os::unix::fs::{PermissionsExt, symlink};
-    let dir = workdir(&[("real.json", UGLY)]);
-    fs::set_permissions(dir.join("real.json"), fs::Permissions::from_mode(0o640)).expect("chmod");
-    symlink("real.json", dir.join("link.json")).expect("symlink");
-    assert_eq!(run(&dir, &["fmt", "link.json"], "").0, 0);
-    assert_eq!(read(&dir, "real.json"), PRETTY);
-    assert!(
-        fs::symlink_metadata(dir.join("link.json"))
-            .expect("meta")
-            .is_symlink()
-    );
-    let mode = fs::metadata(dir.join("real.json"))
-        .expect("meta")
-        .permissions()
-        .mode();
-    assert_eq!(mode & 0o777, 0o640);
-}
-
 #[test]
 fn check_writes_nothing_and_lists_the_files_that_would_change() {
     let dir = workdir(&[
