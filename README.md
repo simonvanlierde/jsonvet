@@ -11,8 +11,8 @@
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15798/badge)](https://www.bestpractices.dev/projects/15798)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23461825.svg)](https://doi.org/10.5281/zenodo.23461825)
 
-A linter for JSON, I-JSON, JSONC, HuJSON (JWCC), JSON5 and JSON Lines. It finds syntax errors and
-duplicate keys, and tells you the exact line and column:
+A linter and formatter for JSON, I-JSON, JSONC, HuJSON (JWCC), JSON5 and JSON Lines. It finds
+syntax errors and duplicate keys, and tells you the exact line and column:
 
 ```text
 config.json:4:5: error[duplicate-key] duplicate key $.server.port (first at 2:5)
@@ -23,10 +23,13 @@ events.jsonl:12:1: error[syntax] blank line; JSON Lines needs a value on every l
 It replaces check-json5, a Python hook, and is up to 1,395 times faster than check-json5 1.4.1
 on JSON5 files ([figures](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#speed)).
 
-**Try it in your browser:** the [playground](https://simonvanlierde.com/jsonvet/) checks the
-text you paste as you type. Nothing to install, and the text stays on your machine.
+**Try it in your browser:** the [playground](https://simonvanlierde.com/jsonvet/) checks, fixes
+and formats the text you paste. Nothing to install, and the text stays on your machine.
 
 - **Six dialects, one parser.** Each file is checked in the dialect its extension implies.
+- **Fixes.** `--fix` repairs what has a safe fix, such as a stray byte order mark.
+- **Formatting that keeps comments.** `jsonvet fmt` lays out JSON, JSONC, JWCC, JSON5 and JSON Lines
+  and leaves your comments where they are.
 - **JSON Schema with positions.** Each schema error points at its value's line and column.
   jsonvet never fetches anything from the network.
 - **Fits CI.** A pre-commit or prek hook, a GitHub Action, a command or a Rust library, with text,
@@ -44,9 +47,12 @@ Add this to `.pre-commit-config.yaml` (for [pre-commit](https://pre-commit.com) 
   rev: v3.2.0
   hooks:
     - id: jsonvet
+    - id: jsonvet-format
 ```
 
-To fix what has a safe fix as well (`args: [--fix]`), see [Fixing](docs/usage.md#fixing).
+`jsonvet-format` rewrites files, so a commit that changes one fails and you commit again. Add
+`args: [--fix]` to `jsonvet` to repair what has a safe fix
+([Fixing](docs/usage.md#fixing)). Both hooks are in the same block, but each works alone.
 
 It checks files by name: `.json`, `.jsonc`, `.json5`, `.jsonl`, `.ndjson`, `.geojson`, `.jsonld`,
 `.hujson`, `.jwcc`, `.code-workspace`, `.code-snippets`, `.webmanifest` and `.babelrc`.
@@ -65,11 +71,16 @@ request. Before it installs jsonvet from PyPI, it checks that the wheel came fro
 repository's release workflow. Its inputs are in the
 [reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#github-action).
 
+The Action only checks. To check formatting too, add a step with `run: uvx jsonvet fmt --check .`.
+
 ### Command line
 
 ```bash
 uvx jsonvet config/*.json        # run it from PyPI without installing
 uvx jsonvet .                    # check every JSON-like file under a folder
+uvx jsonvet --fix .              # also fix what has a safe fix, in place
+uvx jsonvet fmt .                # format the files, keeping their comments
+uvx jsonvet fmt --check .        # list files that need formatting; exit 1 if any
 pip install jsonvet              # install it as a Python package
 cargo install jsonvet-cli        # build it from source
 cargo binstall jsonvet-cli       # download the binary from the GitHub release
@@ -79,8 +90,9 @@ Each [GitHub release](https://github.com/simonvanlierde/jsonvet/releases) also h
 for Linux, macOS and Windows, with checksums and an SBOM
 ([verifying a release](https://github.com/simonvanlierde/jsonvet/blob/main/SECURITY.md#verifying-a-release)).
 A folder stands for the JSON-like files under it, skipping hidden and ignored files, and `-` reads
-standard input. `jsonvet fmt` formats files and keeps their comments
-([formatting](https://github.com/simonvanlierde/jsonvet/blob/main/docs/format.md)).
+standard input. The [reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#fixing)
+covers `--fix`, and [formatting](https://github.com/simonvanlierde/jsonvet/blob/main/docs/format.md)
+covers `jsonvet fmt`.
 `jsonvet --help` lists every option, and the
 [reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md) has the details.
 
@@ -143,12 +155,19 @@ dialects = [
 
 # Skipped when jsonvet walks a folder; files named on the command line are still checked.
 exclude = ["node_modules", "tests/fixtures/*"]
+
+# Used by `jsonvet fmt`.
+[format]
+indent = 4
+width = 100
 ```
 
 Each file takes the nearest config file in its folder or a parent, up to the repository root, so
 each package in a monorepo can have its own. Options on the command line win. The reference says
 [where jsonvet looks](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#configuration-file)
 and [how globs match](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#globs).
+[Formatting](https://github.com/simonvanlierde/jsonvet/blob/main/docs/format.md#settings) lists the
+`[format]` settings and how `.editorconfig` fits in.
 
 ## JSON Schema
 
@@ -248,6 +267,7 @@ the full check and lint suite.
 ## More
 
 - [Reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md),
+  [formatting](https://github.com/simonvanlierde/jsonvet/blob/main/docs/format.md),
   [design](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md),
   [accessibility](https://github.com/simonvanlierde/jsonvet/blob/main/docs/accessibility.md) and
   [CHANGELOG](https://github.com/simonvanlierde/jsonvet/blob/main/CHANGELOG.md).
