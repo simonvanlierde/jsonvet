@@ -708,3 +708,141 @@ fn an_expanded_object_formats_the_same_the_second_time() {
         }
     }
 }
+
+// ---- block comments move with their start ----
+
+#[test]
+fn a_block_comment_keeps_its_lines_in_step_with_its_start() {
+    let d = FormatOptions::default();
+    let c = |text: &str| out(Dialect::Jsonc, &d, text);
+    // Moved right by two columns.
+    assert_eq!(
+        c("[1,\n/* a\n   b */\n2]"),
+        "[\n  1,\n  /* a\n     b */\n  2\n]\n"
+    );
+    // A line with no indent gets the whole move.
+    assert_eq!(
+        c("[1,\n/* a\nb */\n2]"),
+        "[\n  1,\n  /* a\n  b */\n  2\n]\n"
+    );
+    // Moved left by two: the lines give up two spaces.
+    assert_eq!(
+        c("{\n    /* a\n     * b\n     */\n\"x\": 1}"),
+        "{\n  /* a\n   * b\n   */\n  \"x\": 1\n}\n"
+    );
+    // A line with exactly the whitespace to give is shifted; one with a column less stays.
+    assert_eq!(
+        c("{\n    /* a\n  b\n */\n\"x\": 1}"),
+        "{\n  /* a\nb\n */\n  \"x\": 1\n}\n"
+    );
+    // A blank line or a line of only spaces is not touched.
+    assert_eq!(
+        c("[1,\n/* a\n\n  \n b */\n2]"),
+        "[\n  1,\n  /* a\n\n  \n   b */\n  2\n]\n"
+    );
+    // Not at the start of its line: the column is where the comment began.
+    assert_eq!(
+        c("{\n\"a\":/* x\n   y */ 1}"),
+        "{\n  \"a\": /* x\n      y */ 1\n}\n"
+    );
+    // Before the document.
+    assert_eq!(c("  /* a\n   b */\n{}"), "/* a\n b */\n{}\n");
+    assert_eq!(c("\u{feff}/* a\n b */ [1]"), "\u{feff}/* a\n b */ [1]\n");
+    // Line comments and one-line block comments are left alone.
+    assert_eq!(
+        c("[1,\n// a\n   // b\n/* c */\n2]"),
+        "[\n  1,\n  // a\n  // b\n  /* c */\n  2\n]\n"
+    );
+    // The file's line ending is kept inside the comment, and a shift keeps it too.
+    assert_eq!(
+        c("[1,\r\n/* a\r\n   b */\r\n2]"),
+        "[\r\n  1,\r\n  /* a\r\n     b */\r\n  2\r\n]\r\n"
+    );
+    assert_eq!(
+        c("[1,\r/* a\r   b */\r2]"),
+        "[\r  1,\r  /* a\r     b */\r  2\r]\r"
+    );
+}
+
+#[test]
+fn a_block_comment_shifts_only_by_whole_indent_characters() {
+    let tab = FormatOptions {
+        indent: Indent::Tab,
+        ..FormatOptions::default()
+    };
+    let c = |options: &FormatOptions, text: &str| out(Dialect::Jsonc, options, text);
+    // Right by four columns: one tab goes before a line that starts with a tab.
+    assert_eq!(
+        c(&tab, "[1,\n/* a\n\t b */\n2]"),
+        "[\n\t1,\n\t/* a\n\t\t b */\n\t2\n]\n"
+    );
+    // A line that starts with spaces stays, when the indent is a tab.
+    assert_eq!(
+        c(&tab, "[1,\n/* a\n   b */\n2]"),
+        "[\n\t1,\n\t/* a\n   b */\n\t2\n]\n"
+    );
+    // Left by four columns: a tab goes.
+    assert_eq!(
+        c(&tab, "[\n\t\t/* a\n\t\t b */\n1]"),
+        "[\n\t/* a\n\t b */\n\t1\n]\n"
+    );
+    // A shift that is not a whole number of tabs leaves the lines.
+    assert_eq!(
+        c(&tab, "{\n\"a\":  /* x\n\ty */ 1}"),
+        "{\n\t\"a\": /* x\n\ty */ 1\n}\n"
+    );
+    // Spaces output: a line that starts with a tab stays.
+    assert_eq!(
+        c(&FormatOptions::default(), "[1,\n/* a\n\t b */\n2]"),
+        "[\n  1,\n  /* a\n\t b */\n  2\n]\n"
+    );
+}
+
+#[test]
+fn shifted_block_comments_format_the_same_the_second_time() {
+    let tab = FormatOptions {
+        indent: Indent::Tab,
+        ..FormatOptions::default()
+    };
+    for options in [FormatOptions::default(), tab, width(1)] {
+        for dialect in [Dialect::Jsonc, Dialect::Jwcc, Dialect::Json5] {
+            for text in [
+                "[1,\n/* a\n   b */\n2]",
+                "{\n      /* a\n       * b\n       */\n\"x\":/* c\n d */ [ /* e\n f */ 1]}",
+                "{\"a\": /* x\n\ty */ 1, \"b\": {\n/* z\n  w */\n\"c\": 2}}",
+                "  /* a\n   b */ {} /* t\n   u */",
+                "\u{feff}[1,\n/* a\n   b */\n2]",
+            ] {
+                check_promises(text, dialect, &options).unwrap();
+            }
+        }
+    }
+}
+
+#[test]
+fn shifting_a_comment_counts_toward_the_output_size_limit() {
+    // 3,000 levels of nesting hold a comment of 20,000 lines. Each line moves right by 3,000
+    // columns, which is 60 MB the text does not show, on top of 18 MB for the nesting.
+    let depth = 3_000;
+    let comment = format!("/*{}*/", "\n x".repeat(20_000));
+    let text = format!("{}{comment}1{}", "[".repeat(depth), "]".repeat(depth));
+    let result = std::thread::Builder::new()
+        .stack_size(64 << 20)
+        .spawn(move || {
+            format(
+                &text,
+                &Config::new(Dialect::Jsonc),
+                &FormatOptions::default(),
+            )
+            .map(|s| s.len())
+            .map_err(|e| e.to_string())
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+    let err = result.expect_err("too large");
+    assert!(
+        err.starts_with("not formatted: the output would be 7"),
+        "{err}"
+    );
+}

@@ -177,6 +177,8 @@ pub fn format<'a>(
             pad,
         };
         w.put(bom);
+        // A byte order mark takes no column.
+        w.col = 0;
         w
     };
     if dialect == Dialect::JsonLines {
@@ -227,6 +229,15 @@ fn first_line_ending(text: &str) -> &'static str {
         Some(i) if text[i..].starts_with('\r') => "\r",
         _ => "\n",
     }
+}
+
+/// The column at which `at` sits in its line of `text`, a tab counting as four.
+fn column(text: &str, at: usize) -> usize {
+    let start = text[..at].rfind(['\n', '\r']).map_or(0, |i| i + 1);
+    text[start..at]
+        .chars()
+        .map(|c| if c == '\t' { 4 } else { 1 })
+        .sum()
 }
 
 fn narrow(n: usize) -> u32 {
@@ -991,7 +1002,7 @@ impl Writer<'_> {
             self.out.push_str(s);
             self.spill();
         }
-        let (last, base) = match s.rfind('\n') {
+        let (last, base) = match s.rfind(['\n', '\r']) {
             Some(i) => (&s[i + 1..], 0),
             None => (s, self.col),
         };
@@ -1000,6 +1011,58 @@ impl Writer<'_> {
                 .chars()
                 .map(|c| if c == '\t' { 4 } else { 1 })
                 .sum::<usize>();
+    }
+
+    /// A comment. A block comment over several lines moves its later lines by as many columns
+    /// as the comment itself moved from its place in the text, when each line can follow.
+    fn comment(&mut self, t: &Tree<'_>, c: Comment) {
+        let text = t.comment(c);
+        if c.has(LINE) || !text.contains(['\n', '\r']) {
+            self.put(text);
+            return;
+        }
+        let old = column(t.text, c.start as usize);
+        let (unit, cols) = match self.options.indent {
+            Indent::Spaces(_) => (' ', 1),
+            Indent::Tab => ('\t', 4),
+        };
+        let (moved, right) = (self.col.abs_diff(old), self.col > old);
+        // Only a whole number of indent characters can move a line.
+        let n = if moved % cols == 0 { moved / cols } else { 0 };
+        let mut rest = text;
+        let mut first = true;
+        while !rest.is_empty() {
+            let end = rest.find(['\n', '\r']).map_or(rest.len(), |i| {
+                i + if rest[i..].starts_with("\r\n") { 2 } else { 1 }
+            });
+            let (line, tail) = rest.split_at(end);
+            rest = tail;
+            let body = line.trim_end_matches(['\n', '\r']);
+            let lead = body.len() - body.trim_start_matches([' ', '\t']).len();
+            let same = body[..lead].chars().take_while(|&ch| ch == unit).count();
+            // The first line starts the comment, and a blank line stays as it is.
+            if first || n == 0 || lead == body.len() {
+                self.put(line);
+            } else if right && (lead == 0 || same > 0) {
+                self.pad(unit, n);
+                self.put(line);
+            } else if !right && same >= n {
+                self.put(&line[n * unit.len_utf8()..]);
+            } else {
+                self.put(line);
+            }
+            first = false;
+        }
+    }
+
+    /// `n` of the indent character, counted but built only while the output is kept.
+    fn pad(&mut self, c: char, n: usize) {
+        self.total += n as u64;
+        if !self.over {
+            self.out.extend(std::iter::repeat_n(c, n));
+            self.spill();
+        }
+        self.col += n * if c == '\t' { 4 } else { 1 };
     }
 
     fn put_char(&mut self, c: char) {
@@ -1014,16 +1077,10 @@ impl Writer<'_> {
     }
 
     fn indent(&mut self, depth: usize) {
-        let (n, c, cols) = match self.options.indent {
-            Indent::Spaces(n) => (n * depth, ' ', n * depth),
-            Indent::Tab => (depth, '\t', 4 * depth),
-        };
-        self.total += n as u64;
-        if !self.over {
-            self.out.extend(std::iter::repeat_n(c, n));
-            self.spill();
+        match self.options.indent {
+            Indent::Spaces(n) => self.pad(' ', n * depth),
+            Indent::Tab => self.pad('\t', depth),
         }
-        self.col += cols;
     }
 
     /// Start a new line at `depth`, after a blank line if `blank`.
@@ -1044,7 +1101,7 @@ impl Writer<'_> {
             } else if started {
                 self.put(" ");
             }
-            self.put(t.comment(c));
+            self.comment(t, c);
             (started, new_line) = (true, c.has(NL_AFTER));
         }
         if let Some(value) = doc.value {
@@ -1064,7 +1121,7 @@ impl Writer<'_> {
             } else {
                 self.put(" ");
             }
-            self.put(t.comment(c));
+            self.comment(t, c);
         }
         if started {
             self.newline();
@@ -1134,7 +1191,7 @@ impl Writer<'_> {
         self.put_char(if c.object { '{' } else { '[' });
         for &o in t.list(c.open_trailing) {
             self.put(" ");
-            self.put(t.comment(o));
+            self.comment(t, o);
         }
         let mut extras = t.extras[t.extras.partition_point(|(j, _)| *j < c.members.start)..]
             .iter()
@@ -1151,7 +1208,7 @@ impl Writer<'_> {
                     } else {
                         self.put(" ");
                     }
-                    self.put(t.comment(l));
+                    self.comment(t, l);
                     (first, new_line) = (false, l.has(NL_AFTER));
                 }
             }
@@ -1171,7 +1228,7 @@ impl Writer<'_> {
             self.member(t, m, extra, inner, suffix);
             for &b in before_comma {
                 self.put(" ");
-                self.put(t.comment(b));
+                self.comment(t, b);
             }
             if comma {
                 self.put(",");
@@ -1179,13 +1236,13 @@ impl Writer<'_> {
             if let Some(extra) = extra {
                 for &tr in t.list(extra.trailing) {
                     self.put(" ");
-                    self.put(t.comment(tr));
+                    self.comment(t, tr);
                 }
             }
         }
         for &tl in t.list(c.tail) {
             self.line(inner, tl.has(BLANK) && !first);
-            self.put(t.comment(tl));
+            self.comment(t, tl);
             first = false;
         }
         self.line(depth, false);
@@ -1207,7 +1264,7 @@ impl Writer<'_> {
             if let Some(extra) = extra {
                 for &b in t.list(extra.before_colon) {
                     self.put(" ");
-                    self.put(t.comment(b));
+                    self.comment(t, b);
                 }
             }
             self.put(":");
@@ -1220,7 +1277,7 @@ impl Writer<'_> {
                 } else {
                     self.put(" ");
                 }
-                self.put(t.comment(a));
+                self.comment(t, a);
                 new_line = a.has(LINE) || (i + 1 == after.len() && a.has(NL_AFTER));
             }
             if new_line {

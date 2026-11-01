@@ -34,6 +34,11 @@ The pre-commit hook is `jsonvet-format`:
   tokens. A comment on its own line stays on its own line.
 - Blank lines between members stay, but at most one. Blank lines at the start and end of a
   container go.
+- A block comment over several lines moves its later lines by as many columns as the comment
+  itself moved. A line follows only if its indent starts with the formatter's indent character
+  (a space, or a tab with `indent = "tab"`) and the move is a whole number of them; a line
+  that cannot follow, a blank line, and a move that is not a whole number of tabs leave the
+  lines as written. Line comments and one-line block comments are not touched.
 - Strings and numbers are never changed. No escape is added or removed.
 - The file ends with exactly one newline. Line endings follow the first line ending in the file:
   `\r\n`, `\n` or a lone `\r`. JWCC uses `\n` in place of a lone `\r`, because a JWCC line comment
@@ -145,5 +150,4 @@ is more, jsonvet works out its size without building it, prints
 ## Not done yet
 
 - Range formatting, and sorting keys.
-- Re-indenting the lines inside a block comment. They stay as written.
 - Filling a number array across lines, as Prettier does.

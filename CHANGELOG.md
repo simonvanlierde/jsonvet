@@ -17,9 +17,10 @@ version for a new option or output, the patch version for a fix.
   hook takes `args: [--fix]` ([fixing](docs/usage.md#fixing)).
 - `jsonvet fmt [--check] [FILE]...` formats JSON, JSONC, JWCC, JSON5 and JSON Lines files and
   keeps their comments. A container stays on one line if it fits in 80 columns, and otherwise
-  takes one member per line. An object you began on a new line stays expanded. Indent, width and the space inside braces (`{ "a": 1 }`) come from
-  `.editorconfig` or a `[format]` table in `jsonvet.toml`. There is a `jsonvet-format` pre-commit
-  hook ([formatting](docs/format.md)).
+  takes one member per line. An object you began on a new line stays expanded, and a block
+  comment over several lines keeps its lines in step with its start. Indent, width and the space
+  inside braces (`{ "a": 1 }`) come from `.editorconfig` or a `[format]` table in
+  `jsonvet.toml`. There is a `jsonvet-format` pre-commit hook ([formatting](docs/format.md)).
 - The browser playground has Fix and Format buttons. Fix applies the safe fixes to the text, or
   one correction's fix from its note, and Format sets the text with the indent, width and
   bracket spacing you pick. Each has an options popover that shows the same settings as

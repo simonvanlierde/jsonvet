@@ -183,11 +183,11 @@ jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, brac
 [
   1,
   /* a
-   b */
+     b */
   2
 ]
 
-=== "[\n  1,\n  /* a\n   b */\n  2\n]\n"
+=== "[\n  1,\n  /* a\n     b */\n  2\n]\n"
 
 jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
 --- in
