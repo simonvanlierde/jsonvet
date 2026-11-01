@@ -99,6 +99,16 @@ fn fixes_in_place_and_reports_what_is_left() {
     assert_eq!(err, "fixed 1 problem in 1 file\n");
 }
 
+/// Two names for one file would have two workers rewrite it at once.
+#[test]
+fn a_file_named_twice_is_fixed_once() {
+    let dir = workdir(&[("a.json", "[1, 2,]")]);
+    let (code, out, err) = run(&dir, &["--fix", "a.json", "./a.json", "."]);
+    assert_eq!((code, out.as_str()), (0, ""), "{err}");
+    assert_eq!(err, "fixed 1 problem in 1 file\n");
+    assert_eq!(read(&dir, "a.json"), "[1, 2]");
+}
+
 #[test]
 fn exit_code_is_zero_when_nothing_is_left() {
     let dir = workdir(&[
