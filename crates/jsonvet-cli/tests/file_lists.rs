@@ -57,7 +57,7 @@ fn the_hooks_check_the_default_files() {
         .lines()
         .filter_map(|line| line.trim().strip_prefix("files: "))
         .collect();
-    assert_eq!(patterns.len(), 2, "one pattern per hook");
+    assert_eq!(patterns.len(), 3, "one pattern per hook");
     for pattern in patterns {
         assert_eq!(hook_pattern(pattern), defaults(), "{pattern}");
     }

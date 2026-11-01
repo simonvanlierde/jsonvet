@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
-use jsonvet::{Config, Dialect, Rule, Severity};
+use jsonvet::{Config, Dialect, Indent, Rule, Severity};
 use toml::Spanned;
 use toml::Table;
 use toml::de::{DeTable, DeValue};
@@ -113,6 +113,16 @@ pub(crate) struct Settings {
     pub(crate) exclude: Vec<(Glob, String)>,
     /// Schemas for the files matching a pattern, from a config file's `schemas`.
     pub(crate) schemas: Vec<SchemaPattern>,
+    /// The `[format]` table of a config file.
+    pub(crate) format: FormatSettings,
+}
+
+/// The `[format]` table: what `jsonvet fmt` is told to do, where a key is set.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct FormatSettings {
+    pub(crate) indent: Option<Indent>,
+    pub(crate) width: Option<usize>,
+    pub(crate) normalize_json5: Option<bool>,
 }
 
 /// A schema for the files matching a glob, from a config file.
@@ -137,6 +147,11 @@ impl Settings {
         self.rules.extend(later.rules);
         self.exclude.extend(later.exclude);
         self.schemas.extend(later.schemas);
+        self.format = FormatSettings {
+            indent: later.format.indent.or(self.format.indent),
+            width: later.format.width.or(self.format.width),
+            normalize_json5: later.format.normalize_json5.or(self.format.normalize_json5),
+        };
         self
     }
 
@@ -387,6 +402,22 @@ impl Resolver {
         Ok(settings)
     }
 
+    /// The folders a search for the file at `path` visits, nearest first, ending where
+    /// [`Resolver::for_file`]'s search stops.
+    pub(crate) fn search_dirs(&self, path: &Path) -> Vec<PathBuf> {
+        let path = lexical(&self.cwd.join(path));
+        let start = path.parent().unwrap_or(&path);
+        let last = self.last(start);
+        let mut dirs = Vec::new();
+        for dir in start.ancestors() {
+            dirs.push(dir.to_owned());
+            if ends_at(dir, last) {
+                break;
+            }
+        }
+        dirs
+    }
+
     /// The settings of the user's own `jsonvet.toml`, as ruff has, with the command line's on
     /// top; the command line's alone without one.
     fn user(&mut self) -> Result<Arc<Settings>, String> {
@@ -615,20 +646,7 @@ pub(crate) fn load(path: &Path, root: Option<&Path>) -> Result<Settings, String>
     for (key, value) in file {
         let here = value.span().start;
         match (key.get_ref().as_ref(), value.get_ref()) {
-            ("rules", DeValue::Table(rules)) => {
-                for (id, severity) in rules {
-                    let rule = parse_rule(id.get_ref()).map_err(|e| at(id.span().start, &e))?;
-                    let severity_at = severity.span().start;
-                    let severity = severity.get_ref().as_str().ok_or_else(|| {
-                        at(
-                            severity_at,
-                            &messages::fill("config.rule-not-string", &[("id", id.get_ref())]),
-                        )
-                    })?;
-                    let severity = parse_severity(severity).map_err(|e| at(severity_at, &e))?;
-                    settings.rules.push((rule, severity));
-                }
-            }
+            ("rules", DeValue::Table(rules)) => rules_table(rules, &at, &mut settings)?,
             ("dialects", DeValue::Array(entries)) => {
                 for entry in entries {
                     let mut pattern = dialect_entry(entry).map_err(|(offset, e)| at(offset, &e))?;
@@ -659,12 +677,17 @@ pub(crate) fn load(path: &Path, root: Option<&Path>) -> Result<Settings, String>
                     }
                 }
             }
-            (key @ ("exclude" | "schemas" | "rules" | "dialects"), _) => {
+            ("format", DeValue::Table(table)) => {
+                settings.format = format_table(table, &at)?;
+            }
+            (key @ ("exclude" | "schemas" | "rules" | "dialects" | "format"), _) => {
                 return Err(at(here, &messages::text(&format!("config.{key}-type"))));
             }
             (key_text, _) => {
-                let hint =
-                    messages::did_you_mean(key_text, ["rules", "dialects", "exclude", "schemas"]);
+                let hint = messages::did_you_mean(
+                    key_text,
+                    ["rules", "dialects", "exclude", "schemas", "format"],
+                );
                 return Err(at(
                     key.span().start,
                     &messages::fill("config.unknown-key", &[("key", &key_text), ("hint", &hint)]),
@@ -673,6 +696,67 @@ pub(crate) fn load(path: &Path, root: Option<&Path>) -> Result<Settings, String>
         }
     }
     Ok(settings)
+}
+
+/// The `rules` table: a severity for each rule id.
+fn rules_table(
+    rules: &DeTable<'_>,
+    at: &dyn Fn(usize, &dyn std::fmt::Display) -> String,
+    settings: &mut Settings,
+) -> Result<(), String> {
+    for (id, severity) in rules {
+        let rule = parse_rule(id.get_ref()).map_err(|e| at(id.span().start, &e))?;
+        let severity_at = severity.span().start;
+        let severity = severity.get_ref().as_str().ok_or_else(|| {
+            at(
+                severity_at,
+                &messages::fill("config.rule-not-string", &[("id", id.get_ref())]),
+            )
+        })?;
+        let severity = parse_severity(severity).map_err(|e| at(severity_at, &e))?;
+        settings.rules.push((rule, severity));
+    }
+    Ok(())
+}
+
+/// The `[format]` table: `indent` (a number of spaces, or "tab"), `width` and `normalize-json5`.
+fn format_table(
+    table: &DeTable<'_>,
+    at: &dyn Fn(usize, &dyn std::fmt::Display) -> String,
+) -> Result<FormatSettings, String> {
+    let mut format = FormatSettings::default();
+    for (key, value) in table {
+        let here = value.span().start;
+        let wrong = |id: &str| at(here, &messages::text(id));
+        match (key.get_ref().as_ref(), value.get_ref()) {
+            ("indent", DeValue::String(s)) if s == "tab" => format.indent = Some(Indent::Tab),
+            ("indent", DeValue::Integer(n)) => {
+                let spaces = n.as_str().parse::<usize>().ok().filter(|n| *n <= 16);
+                format.indent = Some(Indent::Spaces(
+                    spaces.ok_or_else(|| wrong("config.format-indent"))?,
+                ));
+            }
+            ("width", DeValue::Integer(n)) => {
+                let width = n.as_str().parse::<usize>().ok().filter(|n| *n >= 1);
+                format.width = Some(width.ok_or_else(|| wrong("config.format-width"))?);
+            }
+            ("normalize-json5", DeValue::Boolean(on)) => format.normalize_json5 = Some(*on),
+            ("indent", _) => return Err(wrong("config.format-indent")),
+            ("width", _) => return Err(wrong("config.format-width")),
+            ("normalize-json5", _) => return Err(wrong("config.format-normalize")),
+            (name, _) => {
+                let hint = messages::did_you_mean(name, ["indent", "width", "normalize-json5"]);
+                return Err(at(
+                    key.span().start,
+                    &messages::fill(
+                        "config.format-unknown-key",
+                        &[("key", &name), ("hint", &hint)],
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(format)
 }
 
 /// One `dialects` entry: a table with exactly a `files` string and a `dialect` string. An error

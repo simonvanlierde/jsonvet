@@ -1,0 +1,379 @@
+//! `jsonvet fmt` end to end: in-place writes, `--check`, standard input, files that do not
+//! parse, and where the layout settings come from.
+
+#![allow(
+    clippy::expect_used,
+    reason = "a broken test setup should fail the test loudly"
+)]
+
+use std::fs;
+use std::io::Write as _;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// A fresh directory for one test, inside the target directory and marked as a repository root
+/// so no config file above it applies.
+fn workdir(files: &[(&str, &str)]) -> PathBuf {
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
+        "fmt-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    for (name, text) in files {
+        let path = dir.join(name);
+        fs::create_dir_all(path.parent().expect("a parent")).expect("create dirs");
+        fs::write(path, text).expect("write file");
+    }
+    fs::create_dir_all(dir.join(".git")).expect("mark the repository root");
+    dir
+}
+
+/// Run jsonvet in `dir` with `input` on standard input: exit code, stdout, stderr.
+fn run(dir: &Path, args: &[&str], input: &str) -> (i32, String, String) {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_jsonvet"));
+    // Settings from the machine running the tests must not apply.
+    command.env_remove("XDG_CONFIG_HOME").env("HOME", dir);
+    let mut child = command
+        .args(args)
+        .current_dir(dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run jsonvet");
+    let mut stdin = child.stdin.take().expect("a stdin pipe");
+    if let Err(e) = stdin.write_all(input.as_bytes()) {
+        assert_eq!(e.kind(), std::io::ErrorKind::BrokenPipe, "write stdin: {e}");
+    }
+    drop(stdin);
+    let out = child.wait_with_output().expect("wait for jsonvet");
+    (
+        out.status.code().expect("an exit code"),
+        String::from_utf8(out.stdout).expect("UTF-8 output"),
+        String::from_utf8(out.stderr).expect("UTF-8 errors"),
+    )
+}
+
+fn read(dir: &Path, name: &str) -> String {
+    fs::read_to_string(dir.join(name)).expect("read file")
+}
+
+const UGLY: &str = "{\"a\":[1,2], // c\n\"b\":{\"c\":null}}";
+const PRETTY: &str = "{\n  \"a\": [1, 2], // c\n  \"b\": {\"c\": null}\n}\n";
+
+#[test]
+fn fmt_rewrites_files_in_place_and_leaves_no_temporary_file() {
+    let dir = workdir(&[
+        ("a.json", UGLY),
+        ("sub/b.jsonc", UGLY),
+        ("done.json", PRETTY),
+    ]);
+    assert_eq!(
+        run(&dir, &["fmt", "a.json", "sub", "done.json"], ""),
+        (0, String::new(), String::new())
+    );
+    assert_eq!(read(&dir, "a.json"), PRETTY);
+    assert_eq!(read(&dir, "sub/b.jsonc"), PRETTY);
+    let mut names: Vec<String> = fs::read_dir(&dir)
+        .expect("a listing")
+        .chain(fs::read_dir(dir.join("sub")).expect("a listing"))
+        .map(|e| {
+            e.expect("an entry")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    names.sort();
+    assert_eq!(names, [".git", "a.json", "b.jsonc", "done.json", "sub"]);
+    // A second run changes nothing.
+    assert_eq!(run(&dir, &["fmt", "--check", "."], "").0, 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn fmt_keeps_permissions_and_symlinks() {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    let dir = workdir(&[("real.json", UGLY)]);
+    fs::set_permissions(dir.join("real.json"), fs::Permissions::from_mode(0o640)).expect("chmod");
+    symlink("real.json", dir.join("link.json")).expect("symlink");
+    assert_eq!(run(&dir, &["fmt", "link.json"], "").0, 0);
+    assert_eq!(read(&dir, "real.json"), PRETTY);
+    assert!(
+        fs::symlink_metadata(dir.join("link.json"))
+            .expect("meta")
+            .is_symlink()
+    );
+    let mode = fs::metadata(dir.join("real.json"))
+        .expect("meta")
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o640);
+}
+
+#[test]
+fn check_writes_nothing_and_lists_the_files_that_would_change() {
+    let dir = workdir(&[
+        ("a.json", UGLY),
+        ("done.json", PRETTY),
+        ("b.jsonc", "[1,2]"),
+    ]);
+    let (code, out, err) = run(
+        &dir,
+        &["fmt", "--check", "a.json", "done.json", "b.jsonc"],
+        "",
+    );
+    assert_eq!(
+        (code, out.as_str(), err.as_str()),
+        (1, "a.json\nb.jsonc\n", "")
+    );
+    assert_eq!(read(&dir, "a.json"), UGLY);
+    assert_eq!(read(&dir, "b.jsonc"), "[1,2]");
+    assert_eq!(
+        run(&dir, &["fmt", "--check", "done.json"], ""),
+        (0, String::new(), String::new())
+    );
+    // A directory stands for the files under it.
+    assert_eq!(
+        run(&dir, &["fmt", "--check", "."], "").1,
+        "./a.json\n./b.jsonc\n"
+    );
+}
+
+#[test]
+fn standard_input_goes_to_standard_output() {
+    let dir = workdir(&[("jsonvet.toml", "[format]\nindent = 4\n")]);
+    let (code, out, err) = run(&dir, &["fmt", "-"], UGLY);
+    assert_eq!((code, err.as_str()), (0, ""));
+    assert_eq!(out, PRETTY.replace("  ", "    "));
+    // The name picks the dialect: strict JSON refuses the comment.
+    let (code, out, err) = run(&dir, &["fmt", "--dialect", "json", "-"], UGLY);
+    assert_eq!((code, out.as_str()), (1, ""));
+    assert!(err.starts_with("-:1:"), "{err}");
+    let (code, out, _) = run(
+        &dir,
+        &["fmt", "--stdin-filename", "x.jsonl"],
+        "{\"a\":1}\n[2]",
+    );
+    assert_eq!((code, out.as_str()), (0, "{\"a\": 1}\n[2]\n"));
+    // With --check nothing is printed but the name, and the exit code says it would change.
+    assert_eq!(
+        run(
+            &dir,
+            &["fmt", "--check", "--stdin-filename", "x.json"],
+            UGLY
+        )
+        .1,
+        "x.json\n"
+    );
+    assert_eq!(
+        run(
+            &dir,
+            &["fmt", "--check", "--stdin-filename", "x.json"],
+            &PRETTY.replace("  ", "    ")
+        )
+        .0,
+        0
+    );
+}
+
+#[test]
+fn a_file_that_does_not_parse_is_left_alone_and_reported() {
+    let dir = workdir(&[
+        ("bad.json", "{\"a\": }"),
+        ("good.json", UGLY),
+        ("empty.json", ""),
+    ]);
+    let (code, out, err) = run(
+        &dir,
+        &["fmt", "bad.json", "good.json", "empty.json", "gone.json"],
+        "",
+    );
+    assert_eq!((code, out.as_str()), (1, ""));
+    assert!(err.starts_with("bad.json:1:7: "), "{err}");
+    assert!(err.contains("empty.json:1:1: "), "{err}");
+    assert!(err.contains("gone.json: no such file"), "{err}");
+    assert_eq!(read(&dir, "bad.json"), "{\"a\": }");
+    assert_eq!(read(&dir, "empty.json"), "");
+    assert_eq!(
+        read(&dir, "good.json"),
+        PRETTY,
+        "the others are still formatted"
+    );
+}
+
+#[test]
+fn a_file_named_fmt_needs_a_path() {
+    let dir = workdir(&[("fmt", UGLY)]);
+    // `fmt` alone is the subcommand with no files.
+    assert_eq!(run(&dir, &["fmt"], ""), (0, String::new(), String::new()));
+    assert_eq!(read(&dir, "fmt"), UGLY);
+    // `./fmt` is a file, checked as always (it is not a name jsonvet checks by default, so it is
+    // named, and gets the default dialect).
+    assert_eq!(run(&dir, &["./fmt"], ""), (0, String::new(), String::new()));
+    assert_eq!(run(&dir, &["fmt", "./fmt"], "").0, 0);
+    assert_eq!(read(&dir, "fmt"), PRETTY);
+}
+
+#[test]
+fn layout_comes_from_defaults_then_editorconfig_then_jsonvet_toml() {
+    let long = "[\"aaaaaaaaaa\", \"bbbbbbbbbb\", \"cccccccccc\"]";
+    let nested = format!("{{\"k\": {long}}}");
+    let format = |dir: &Path, name: &str| {
+        let (code, out, err) = run(dir, &["fmt", "--stdin-filename", name], &nested);
+        assert_eq!((code, err.as_str()), (0, ""), "{name}");
+        out
+    };
+    let dir = workdir(&[]);
+    // Defaults: two spaces, 80 columns.
+    assert_eq!(format(&dir, "a.json"), format!("{nested}\n"));
+
+    let dir = workdir(&[(
+        ".editorconfig",
+        "root = true\n[*]\nindent_size = 4\nmax_line_length = 30\n[*.md]\nindent_size = 8\n",
+    )]);
+    let expected = "{\n    \"k\": [\n        \"aaaaaaaaaa\",\n        \"bbbbbbbbbb\",\n        \"cccccccccc\"\n    ]\n}\n";
+    assert_eq!(format(&dir, "a.json"), expected);
+
+    // Tabs, from the editorconfig style keys.
+    let dir = workdir(&[(
+        ".editorconfig",
+        "[*.{json,jsonc}]\nindent_style = tab\nmax_line_length = 30\n",
+    )]);
+    assert_eq!(format(&dir, "a.json"), expected.replace("    ", "\t"));
+    assert_eq!(
+        format(&dir, "a.json5"),
+        format!("{nested}\n"),
+        "no section matches .json5"
+    );
+
+    // jsonvet.toml wins over .editorconfig where it sets a key, and only there.
+    let dir = workdir(&[
+        (
+            ".editorconfig",
+            "[*]\nindent_size = 4\nmax_line_length = 30\n",
+        ),
+        ("jsonvet.toml", "[format]\nindent = 1\n"),
+    ]);
+    assert_eq!(format(&dir, "a.json"), expected.replace("    ", " "));
+    let dir = workdir(&[
+        (
+            ".editorconfig",
+            "[*]\nindent_size = 4\nmax_line_length = 30\n",
+        ),
+        ("jsonvet.toml", "[format]\nwidth = 100\n"),
+    ]);
+    assert_eq!(format(&dir, "a.json"), format!("{nested}\n"));
+
+    // The nearest of each kind wins: a nearer .editorconfig overrides a farther one, and the
+    // nearest jsonvet.toml replaces the farther one whole.
+    let dir = workdir(&[
+        (
+            ".editorconfig",
+            "[*]\nindent_size = 8\nmax_line_length = 30\n",
+        ),
+        ("sub/.editorconfig", "[*]\nindent_size = 4\n"),
+        ("jsonvet.toml", "[format]\nwidth = 100\n"),
+        ("sub/deep/jsonvet.toml", "[format]\nindent = 2\n"),
+    ]);
+    assert_eq!(
+        format(&dir, "sub/a.json"),
+        format!("{nested}\n"),
+        "the root jsonvet.toml"
+    );
+    assert_eq!(
+        format(&dir, "sub/deep/a.json"),
+        expected.replace("    ", "  "),
+        "the deep jsonvet.toml replaces the root one, so the width is the editorconfig's"
+    );
+    let dir = workdir(&[
+        (
+            ".editorconfig",
+            "[*]\nindent_size = 8\nmax_line_length = 30\n",
+        ),
+        ("sub/.editorconfig", "[*]\nindent_size = 4\n"),
+    ]);
+    assert_eq!(
+        format(&dir, "sub/a.json"),
+        expected,
+        "sub/.editorconfig over the root one"
+    );
+    assert_eq!(format(&dir, "a.json"), expected.replace("    ", "        "));
+
+    // root = true stops the search.
+    let dir = workdir(&[
+        (
+            ".editorconfig",
+            "[*]\nindent_size = 8\nmax_line_length = 30\n",
+        ),
+        ("sub/.editorconfig", "root = true\n[*]\nindent_size = 4\n"),
+    ]);
+    assert_eq!(format(&dir, "sub/a.json"), format!("{nested}\n"));
+}
+
+#[test]
+fn normalize_json5_comes_from_the_format_table() {
+    let text = "{'a': 'x', b: [1,],}";
+    let dir = workdir(&[("jsonvet.toml", "[format]\nnormalize-json5 = true\n")]);
+    let (_, out, _) = run(&dir, &["fmt", "--stdin-filename", "a.json5"], text);
+    assert_eq!(out, "{a: \"x\", b: [1]}\n");
+    let dir = workdir(&[(
+        "pyproject.toml",
+        "[tool.jsonvet.format]\nnormalize-json5 = true\n",
+    )]);
+    let (_, out, _) = run(&dir, &["fmt", "--stdin-filename", "a.json5"], text);
+    assert_eq!(out, "{a: \"x\", b: [1]}\n");
+    // Off by default: written as it was, apart from layout.
+    let dir = workdir(&[]);
+    let (_, out, _) = run(&dir, &["fmt", "--stdin-filename", "a.json5"], text);
+    assert_eq!(out, "{'a': 'x', b: [1]}\n");
+}
+
+#[test]
+fn a_bad_format_table_is_a_usage_error() {
+    for (toml, message) in [
+        (
+            "[format]\nwidth = 0\n",
+            "`format.width` must be a whole number of 1 or more",
+        ),
+        ("[format]\nindent = \"spaces\"\n", "`format.indent` must be"),
+        ("[format]\nindent = 17\n", "`format.indent` must be"),
+        (
+            "[format]\nnormalize-json5 = 1\n",
+            "`format.normalize-json5` must be true or false",
+        ),
+        (
+            "[format]\nwidht = 80\n",
+            "unknown key `widht` (did you mean `width`?) in `format`",
+        ),
+        ("format = 1\n", "`format` must be a table"),
+    ] {
+        let dir = workdir(&[("jsonvet.toml", toml), ("a.json", "[1]")]);
+        let (code, out, err) = run(&dir, &["fmt", "a.json"], "");
+        assert_eq!((code, out.as_str()), (2, ""), "{toml}");
+        assert!(err.contains(message), "{toml}: {err}");
+        assert_eq!(read(&dir, "a.json"), "[1]");
+    }
+}
+
+#[test]
+fn the_option_check_belongs_to_fmt() {
+    let dir = workdir(&[("a.json", "[1]")]);
+    let (code, _, err) = run(&dir, &["--check", "a.json"], "");
+    assert_eq!(code, 2);
+    assert!(err.contains("unknown option `--check`"), "{err}");
+}
+
+#[test]
+fn the_deepest_allowed_nesting_formats_without_overflowing_the_stack() {
+    let dir = workdir(&[("jsonvet.toml", "[format]\nindent = 0\n")]);
+    let depth = 9_000;
+    let text = format!("{}1{}", "[".repeat(depth), "]".repeat(depth));
+    let (code, out, err) = run(&dir, &["fmt", "--stdin-filename", "deep.json"], &text);
+    assert_eq!((code, err.as_str()), (0, ""));
+    // The innermost 39 levels fit in 80 columns, so they share a line.
+    assert_eq!(out.lines().count(), 2 * (depth - 39) + 1);
+}

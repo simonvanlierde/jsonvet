@@ -14,6 +14,7 @@ Check JSON, I-JSON, JSONC, JWCC (HuJSON), JSON5 and JSON Lines files for syntax 
 duplicate keys and the rules of each dialect.
 
 Usage: jsonvet [OPTIONS] [FILE]...
+       jsonvet fmt [--check] [OPTIONS] [FILE]...
 
 A FILE of - reads standard input. A directory stands for the files under it with an extension
 or name jsonvet checks by default. jsonvet skips hidden files there, and the files that
@@ -63,6 +64,10 @@ one in its folder or a parent, up to the repository root (without .git, the work
 With none, jsonvet/jsonvet.toml in $XDG_CONFIG_HOME or ~/.config (%APPDATA% on Windows) applies.
 Options on the command line win.
 
+jsonvet fmt rewrites the files in place and keeps their comments. With --check it writes
+nothing, lists the files it would change and exits 1 if there are any. Standard input goes to
+standard output. A file named fmt needs ./fmt. Settings: docs/format.md in the repository.
+
 Exit status: 0 when no file has an error, 1 when one does, 2 for a usage error, such as a
 schema that cannot be read or used.";
 
@@ -76,6 +81,8 @@ pub(crate) enum ConfigSource {
 
 #[derive(Debug)]
 pub(crate) struct Args {
+    /// Set for `jsonvet fmt`: whether `--check` was given.
+    pub(crate) fmt: Option<bool>,
     pub(crate) files: Vec<OsString>,
     pub(crate) settings: Settings,
     pub(crate) max_warnings: Option<usize>,
@@ -90,7 +97,7 @@ pub(crate) struct Args {
 
 #[derive(Debug)]
 pub(crate) enum Command {
-    Check(Args),
+    Check(Box<Args>),
     Help,
     Version,
     ListRules,
@@ -129,6 +136,10 @@ fn parse_color(when: &str) -> Result<Option<bool>, String> {
 }
 
 pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command, String> {
+    // `fmt` as the first argument is the subcommand; anywhere else it is a file.
+    let mut args = args.into_iter().peekable();
+    let fmt = args.next_if(|arg| arg == "fmt").is_some();
+    let mut check_only = false;
     let mut parser = lexopt::Parser::from_args(args);
     // Otherwise `-x=a.json` would come back as `-x` and `a.json`, losing the `=`.
     parser.set_short_equals(false);
@@ -144,12 +155,7 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
         // lexopt reads a non-UTF-8 argument that starts with `-` lossily. No option has such a
         // name, so it is a file, kept as given. An existing file named like `--dialect=json`
         // is a file too, as pre-commit puts file names after the options with no `--`.
-        if let Some(file) = parser.try_raw_args().and_then(|mut raw| {
-            raw.next_if(|arg| match arg.to_str() {
-                None => true,
-                Some(arg) => arg.starts_with("--") && arg.contains('=') && exists(arg),
-            })
-        }) {
+        if let Some(file) = raw_file(&mut parser) {
             files.push(file);
             continue;
         }
@@ -179,6 +185,7 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
                         .map_err(|_| messages::fill("error.max-warnings", &[("value", &n)]))?,
                 );
             }
+            Long("check") if fmt => check_only = true,
             Long("format") => format = parse_format(&value(&mut parser)?)?,
             Long("color") => color = parse_color(&value(&mut parser)?)?,
             Long("config") => config = ConfigSource::File(PathBuf::from(value(&mut parser)?)),
@@ -223,7 +230,8 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
     if files.is_empty() && stdin_filename.is_some() {
         files.push(STDIN.into());
     }
-    Ok(Command::Check(Args {
+    Ok(Command::Check(Box::new(Args {
+        fmt: fmt.then_some(check_only),
         files,
         settings,
         max_warnings,
@@ -232,7 +240,18 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
         color,
         schema,
         stdin_filename,
-    }))
+    })))
+}
+
+/// The next argument if it can only be a file: not UTF-8, or an existing file named like
+/// `--dialect=json`.
+fn raw_file(parser: &mut lexopt::Parser) -> Option<OsString> {
+    parser.try_raw_args().and_then(|mut raw| {
+        raw.next_if(|arg| match arg.to_str() {
+            None => true,
+            Some(arg) => arg.starts_with("--") && arg.contains('=') && exists(arg),
+        })
+    })
 }
 
 /// The file name that stands for standard input.
@@ -320,7 +339,7 @@ mod tests {
 
     fn check(args: &[&str]) -> super::Args {
         match parse(args.iter().map(Into::into)) {
-            Ok(Command::Check(args)) => args,
+            Ok(Command::Check(args)) => *args,
             other => panic!("expected a check, got {other:?}"),
         }
     }

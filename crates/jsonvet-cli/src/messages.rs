@@ -95,7 +95,24 @@ const ENGLISH: &[(&str, &str)] = &[
     ),
     (
         "config.unknown-key",
-        "unknown key `{key}`{hint}; expected rules, dialects, exclude or schemas",
+        "unknown key `{key}`{hint}; expected rules, dialects, exclude, schemas or format",
+    ),
+    ("config.format-type", "`format` must be a table"),
+    (
+        "config.format-unknown-key",
+        "unknown key `{key}`{hint} in `format`; expected indent, width or normalize-json5",
+    ),
+    (
+        "config.format-indent",
+        "`format.indent` must be a number of spaces from 0 to 16, or \"tab\"",
+    ),
+    (
+        "config.format-width",
+        "`format.width` must be a whole number of 1 or more",
+    ),
+    (
+        "config.format-normalize",
+        "`format.normalize-json5` must be true or false",
     ),
     ("config.entry-type", "each `{array}` entry must be a table"),
     (
@@ -518,7 +535,7 @@ mod tests {
         assert!(ENGLISH.iter().all(|(_, text)| !text.is_empty()));
         assert!(jsonvet::MESSAGES.iter().all(|(_, text)| !text.is_empty()));
         // The ids the code builds from a name.
-        for key in ["exclude", "schemas", "rules", "dialects"] {
+        for key in ["exclude", "schemas", "rules", "dialects", "format"] {
             assert!(!english(&format!("config.{key}-type")).is_empty(), "{key}");
         }
         for what in ["key", "string", "value"] {
@@ -538,6 +555,7 @@ mod tests {
             include_str!("lib.rs"),
             include_str!("output.rs"),
             include_str!("rules.rs"),
+            include_str!("format.rs"),
             include_str!("settings.rs"),
             include_str!("schema/fold.rs"),
             include_str!("schema/limits.rs"),

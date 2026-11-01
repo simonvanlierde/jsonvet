@@ -11,6 +11,8 @@ use std::sync::{Arc, Mutex};
 use jsonvet::{Dialect, Report, Severity};
 
 mod args;
+mod editorconfig;
+mod format;
 mod frame;
 mod glob;
 mod json;
@@ -161,13 +163,16 @@ pub fn run_with(
         Command::Version => return print(out, concat!("jsonvet ", env!("CARGO_PKG_VERSION"))),
         Command::ListRules => return print(out, &rules::list()),
         Command::Explain(text) => return print(out, &text),
-        Command::Check(args) => args,
+        Command::Check(args) => *args,
     };
     messages::english_only(args.format != Format::Text);
     let resolver = Arc::new(Mutex::new(Resolver::new(&args.config, args.settings)?));
     let settings_for = |path: &Path| lock(&resolver).for_file(path);
     let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     let files = expand(args.files, &resolver, threads)?;
+    if let Some(check_only) = args.fmt {
+        return format::run(&files, check_only, args.stdin_filename, &resolver, out);
+    }
     let schemas = Schemas::default();
     let load = |path: &Path, quiet| {
         schemas.get(path, quiet, |admit| {
@@ -188,7 +193,6 @@ pub fn run_with(
     // Every config file, and every schema one names, is read before any file is checked, so a
     // bad one stops the run at once.
     let files = jobs(files, &shown, &settings_for, args.schema.as_deref(), &load)?;
-    let summary = terminal.tty;
     let look = look(args.format, args.color, terminal);
     let mut printer = Printer::new(out, args.format, annotate, look);
     let mut counts = Counts::default();
@@ -208,7 +212,7 @@ pub fn run_with(
         if rest.is_empty() {
             let line = (!files.is_empty()).then(|| counts.summary(files.len()));
             let found = counts.errors + counts.warnings > 0;
-            break print_summary(&mut printer, line.as_deref(), summary, found);
+            break print_summary(&mut printer, line.as_deref(), terminal.tty, found);
         }
         let shares = shares.get(files.len() - rest.len()..);
         let with_schema = |job: &Job, text: &str| with_schema(job, &shown(&job.1), text);
