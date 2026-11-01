@@ -29,6 +29,7 @@
 
 mod dialect;
 mod event;
+mod fixes;
 mod messages;
 mod parse;
 mod path;
@@ -40,6 +41,8 @@ mod unicode;
 
 pub use dialect::{Dialect, UnknownDialect};
 pub use event::{Event, EventKind};
+#[doc(hidden)]
+pub use fixes::{Fix, Fixed, fix, try_fix};
 pub use messages::{MESSAGES, fill};
 pub use path::{PathStep, json_path, key_text};
 pub use problem::{Problem, Related, RelatedKind};
@@ -52,6 +55,16 @@ pub use unicode::is_hidden;
 /// first syntax error; problems found before it stay in the report.
 pub fn check<'a>(text: &'a str, config: &Config) -> Report<'a> {
     let problems = parse::check(text, config, false).0;
+    Report::new(text, problems, config.dialect() == Dialect::Json5)
+}
+
+/// The report [`check`] gives for `text`, from the problems it found, such as those [`try_fix`]
+/// returns.
+///
+/// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
+#[doc(hidden)]
+#[must_use]
+pub fn report<'a>(text: &'a str, problems: Vec<Problem>, config: &Config) -> Report<'a> {
     Report::new(text, problems, config.dialect() == Dialect::Json5)
 }
 

@@ -736,6 +736,7 @@ dependencies = [
  "insta",
  "memchr",
  "proptest",
+ "serde_json",
  "unicode-properties",
 ]
 

@@ -13,6 +13,8 @@ The details behind the [README](../README.md). Why things work this way is in
                            --strict '!GLOB' means --dialect auto:GLOB
 --error RULE, --warn RULE, --ignore RULE
 --max-warnings N
+--fix                      fix what has a safe fix, in place, then report what is left
+--unsafe-fixes             with --fix, also drop duplicate keys
 --format text|sarif|json   text lines (the default), one SARIF 2.1.0 document, or one JSON
                            document on stdout
 --color auto|always|never  color text output; auto colors it on a terminal unless NO_COLOR
@@ -26,6 +28,53 @@ The details behind the [README](../README.md). Why things work this way is in
 ```
 
 `jsonvet --help` prints the same list with more detail.
+
+## Fixing
+
+`--fix` rewrites each file with the fixes that are safe, then checks the result and reports what
+is left. The exit status comes from those problems, so a run that fixes everything exits 0. When
+it fixed something, it prints a count to standard error, such as `fixed 3 problems in 2 files`.
+
+| Problem                                                           | Fix                          | Safe |
+| ----------------------------------------------------------------- | ---------------------------- | ---- |
+| [byte-order-mark](#byte-order-mark)                               | remove the mark              | yes  |
+| a trailing comma where the dialect forbids it ([syntax](#syntax)) | remove the comma             | yes  |
+| [missing-final-newline](#missing-final-newline)                   | add the newline              | yes  |
+| [duplicate-key](#duplicate-key)                                   | keep the last, drop the rest | no   |
+
+Rules:
+
+- A fix applies only for a rule that is on, so `--ignore byte-order-mark` keeps the mark.
+- jsonvet leaves a file as it is when it has a syntax error that no fix removes, such as a
+  missing comma.
+- A trailing comma goes alone: the comments and white space around it stay.
+- `--unsafe-fixes` also fixes duplicate keys. Readers disagree on which copy a repeated key
+  keeps, so jsonvet keeps the last, as `JSON.parse` and Python do, and drops each earlier member
+  with its comma. Comments stay. It needs `--fix`.
+- The fixes of one run do not overlap: when a duplicate member is dropped, the fixes inside it go
+  with it.
+- A large JSON Lines file is fixed whole on one thread, not split across cores as a check is.
+
+jsonvet writes a temporary file in the same folder, gives it the file's permissions, and renames
+it over the file, so a crash leaves the old text or the new one. A symlink is followed and stays
+a link. A read-only file is not changed and fails the run with an error. The new file keeps the
+mode but not the owner or extended attributes of the old one, and the rename replaces the file, so
+other hard links to it keep the old content.
+
+With standard input, `--fix` prints the fixed text to standard output and the problems left to
+standard error, so `jsonvet --fix --stdin-filename x.json < x.json > fixed.json` works. A text it
+cannot fix comes back as it was.
+
+In a pre-commit or prek hook, add `args: [--fix]`. The hook changes the files and fails that
+run, so you review the change and commit again.
+
+```yaml
+- repo: https://github.com/simonvanlierde/jsonvet
+  rev: v3.2.0
+  hooks:
+    - id: jsonvet
+      args: [--fix]
+```
 
 ## Folders
 
@@ -100,6 +149,9 @@ On a panic, jsonvet prints the message and where it happened to standard error, 
 the [issue tracker](https://github.com/simonvanlierde/jsonvet/issues), and exits 101. Output not
 yet written is lost, and the verdict for the files checked so far is not given.
 
+On exit 2 or 101 the run may stop part way, so a SARIF or JSON document on standard output may be cut
+off. Do not upload it.
+
 jsonvet reads regular files, and follows a symlink to one. A device, FIFO or socket prints
 `error: not a regular file`. When the output pipe closes early, as in `jsonvet … | head -1`,
 jsonvet stops quietly, with the verdict for the files it has checked.
@@ -109,7 +161,8 @@ jsonvet stops quietly, with the verdict for the files it has checked.
 `-` reads standard input, named `-` and checked as JSON5. `--stdin-filename PATH` names it `PATH`
 instead, in the output and for picking its dialect and settings, and makes the `-` optional. Empty
 input is a syntax error. To check a file named `-`, pass `./-`. jsonvet reads standard input only
-when asked, so `echo '{}' | jsonvet` checks nothing and exits 0.
+when asked, so `echo '{}' | jsonvet` checks nothing and exits 0. With `--fix`, the fixed text goes
+to standard output ([Fixing](#fixing)).
 
 ## File names that look like options
 
@@ -140,7 +193,7 @@ below. SARIF output links each rule to its section here.
 
 The file is not valid in its dialect: a missing or extra comma, a comment in strict JSON, an
 unclosed string. jsonvet reports the first one and stops there, since what follows cannot be read
-reliably. Always an error.
+reliably. `--fix` removes a trailing comma where the dialect forbids it. Always an error.
 
 ```text
 Bad (json):  {"a": 1,}
@@ -151,7 +204,8 @@ Good (json): {"a": 1}
 
 Most parsers keep the last copy of a repeated key and drop the others without a word, so a value
 is lost; RFC 8259 leaves the result undefined. The message gives the key's JSONPath and where its
-first copy is. An error in every dialect.
+first copy is. `--fix --unsafe-fixes` keeps the last copy and drops the others. An error in every
+dialect.
 
 ```text
 Bad:  {"port": 80, "port": 8080}
@@ -182,8 +236,8 @@ Good (i-json): {"a": "\ud83d\ude00"}
 ### byte-order-mark
 
 RFC 8259 says JSON text must not start with a byte order mark (U+FEFF), and many parsers fail on
-one. Save the file as UTF-8 without a BOM. An error in `jsonl`, a warning in `json` and `i-json`,
-off otherwise.
+one. Save the file as UTF-8 without a BOM. `--fix` removes it. An error in `jsonl`, a warning in
+`json` and `i-json`, off otherwise.
 
 ```text
 Bad:  <U+FEFF>{"a": 1}
@@ -193,7 +247,7 @@ Good: {"a": 1}
 ### missing-final-newline
 
 JSON Lines ends every record with a newline. Without one, the next record appended joins the last
-line and breaks it. A warning in `jsonl`, off otherwise.
+line and breaks it. `--fix` adds it. A warning in `jsonl`, off otherwise.
 
 ```text
 Bad (jsonl):  {"a": 1}<end of file>
@@ -299,7 +353,8 @@ jsonvet --format sarif $(git ls-files '*.json') > jsonvet.sarif
 - GitHub keeps only 5,000 results of a run with more than 25,000. So jsonvet writes the first
   25,000, and counts the rest in a tool notification and on stderr.
 
-The exit status and `--max-warnings` work as with text, and no annotations are printed. The README
+The exit status and `--max-warnings` work as with text, and no annotations are printed. On exit 2
+or 101 the document may be cut off, so do not upload it. The README
 has an [upload workflow](../README.md#github-code-scanning).
 
 ## JSON

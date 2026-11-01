@@ -32,6 +32,13 @@ Options:
       --warn RULE               Report RULE as a warning.
       --ignore RULE             Do not check RULE.
       --max-warnings N          Fail when there are more than N warnings.
+      --fix                     Fix what has a safe fix in place, then report what is left: a
+                                byte order mark, a trailing comma where the dialect forbids it
+                                and a missing final newline in JSON Lines. A file with another
+                                syntax error is left as it is. Standard input is fixed to
+                                standard output, with the problems left on standard error.
+      --unsafe-fixes            With --fix, also fix duplicate keys: keep the last of each key
+                                and drop the earlier members, as JSON.parse does.
       --format FORMAT           Print problems as text (the default), sarif (one SARIF 2.1.0
                                 document, for GitHub code scanning) or json (one JSON document;
                                 docs/usage.md in the repository lists its fields).
@@ -64,7 +71,7 @@ With none, jsonvet/jsonvet.toml in $XDG_CONFIG_HOME or ~/.config (%APPDATA% on W
 Options on the command line win.
 
 Exit status: 0 when no file has an error, 1 when one does, 2 for a usage error, such as a
-schema that cannot be read or used.";
+schema that cannot be read or used. With --fix, the problems left decide.";
 
 /// Where settings come from besides the command line.
 #[derive(Debug, PartialEq, Eq)]
@@ -79,6 +86,10 @@ pub(crate) struct Args {
     pub(crate) files: Vec<OsString>,
     pub(crate) settings: Settings,
     pub(crate) max_warnings: Option<usize>,
+    /// `--fix`: rewrite files with the fixes that apply.
+    pub(crate) fix: bool,
+    /// `--unsafe-fixes`: with `fix`, also the fixes that can change what a file means.
+    pub(crate) unsafe_fixes: bool,
     pub(crate) config: ConfigSource,
     pub(crate) format: Format,
     /// Whether to color text output, from `--color`: `None` for `auto`.
@@ -135,6 +146,7 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
     let mut files = Vec::new();
     let mut settings = Settings::default();
     let mut max_warnings = None;
+    let (mut fix, mut unsafe_fixes) = (false, false);
     let mut config = ConfigSource::Search;
     let mut format = Format::Text;
     let mut color = None;
@@ -179,6 +191,8 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
                         .map_err(|_| messages::fill("error.max-warnings", &[("value", &n)]))?,
                 );
             }
+            Long("fix") => fix = true,
+            Long("unsafe-fixes") => unsafe_fixes = true,
             Long("format") => format = parse_format(&value(&mut parser)?)?,
             Long("color") => color = parse_color(&value(&mut parser)?)?,
             Long("config") => config = ConfigSource::File(PathBuf::from(value(&mut parser)?)),
@@ -217,22 +231,39 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
             }
         }
     }
-    if files.iter().filter(|file| *file == STDIN).count() > 1 {
-        return Err(messages::text("error.stdin-twice").to_owned());
-    }
-    if files.is_empty() && stdin_filename.is_some() {
-        files.push(STDIN.into());
-    }
+    finish_files(&mut files, stdin_filename.is_some(), fix, unsafe_fixes)?;
     Ok(Command::Check(Args {
         files,
         settings,
         max_warnings,
+        fix,
+        unsafe_fixes,
         config,
         format,
         color,
         schema,
         stdin_filename,
     }))
+}
+
+/// The checks on the files and flags once all are read: `--unsafe-fixes` needs `--fix`,
+/// standard input comes once, and `--stdin-filename` alone stands for it.
+fn finish_files(
+    files: &mut Vec<OsString>,
+    named_stdin: bool,
+    fix: bool,
+    unsafe_fixes: bool,
+) -> Result<(), String> {
+    if unsafe_fixes && !fix {
+        return Err(messages::text("error.unsafe-fixes").to_owned());
+    }
+    if files.iter().filter(|file| *file == STDIN).count() > 1 {
+        return Err(messages::text("error.stdin-twice").to_owned());
+    }
+    if files.is_empty() && named_stdin {
+        files.push(STDIN.into());
+    }
+    Ok(())
 }
 
 /// The file name that stands for standard input.

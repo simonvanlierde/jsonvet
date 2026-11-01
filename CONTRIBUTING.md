@@ -101,8 +101,8 @@ licence and has no RustSec advisory or unmaintained notice. Renovate bumps the p
   `conformance/results/` and both rendered files. CI fails when the report is stale, or when
   `conformance/results/versions.json` disagrees with the pinned parsers. After a pin change, run
   `just matrix-lock` first ([details](conformance/README.md)).
-- **Fuzzing.** `just fuzz check` (or `diff_serde_json`, `diff_json5`, `parse`) runs a target for 20
-  minutes on a nightly toolchain. A new json5 version in `fuzz/` can need new skips in
+- **Fuzzing.** `just fuzz check` (or `diff_serde_json`, `diff_json5`, `parse`, `fix`) runs a target
+  for 20 minutes on a nightly toolchain. A new json5 version in `fuzz/` can need new skips in
   `diff_json5`: read its skip list before you call a divergence a jsonvet bug.
 - **Mutation testing.** `just mutants` takes over an hour on one CI runner, so `mutants.yml` runs
   it weekly in ten parallel shards. It fails when a mutant survives that `.cargo/mutants.toml`
