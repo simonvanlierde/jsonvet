@@ -44,9 +44,9 @@ exclude_re = [
   # continuation byte, which no token starts with.
   "parse.rs:.* replace ends_trivia -> bool with false",
   "parse.rs:.* replace < with (==|<=) in ends_trivia",
-  # Speed only: these trivia fast-path variants only make a check miss, and the fallback to
-  # skip_trivia decides every byte the same way. The `-` variants change behaviour, so they stay.
-  "parse.rs:.* replace (\\+ with \\*|!= with ==) in Parser<.*>::trivia",
+  # Speed only: a newline followed by a space misses the fast path and falls back to
+  # skip_trivia, which decides every byte the same way.
+  "parse.rs:.* replace != with == in Parser<.*>::trivia",
   # Speed only: `std::path::absolute` finds the working directory itself, once per path.
   "settings.rs:.* replace match guard .* with false in absolute",
   # Speed only: a chunk that ends after every file still prints the same.
