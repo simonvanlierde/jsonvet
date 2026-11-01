@@ -1,0 +1,541 @@
+//! The formatter: reviewed snapshots of what it makes of each dialect and comment placement,
+//! width boundaries, and properties over generated documents with comments.
+
+#![allow(
+    clippy::expect_used,
+    reason = "a generated text that does not parse is a bug in the test"
+)]
+
+use std::fmt::Write as _;
+
+use jsonvet::{Config, Dialect, FormatOptions, Indent, Rule, check, format, parse};
+use proptest::prelude::*;
+
+fn fmt(dialect: Dialect, options: &FormatOptions, text: &str) -> String {
+    match format(text, &Config::new(dialect), options) {
+        Ok(out) => out,
+        Err(report) => format!("syntax error: {}", report.problems()[0]),
+    }
+}
+
+fn width(width: usize) -> FormatOptions {
+    FormatOptions {
+        width,
+        ..FormatOptions::default()
+    }
+}
+
+fn normalized() -> FormatOptions {
+    FormatOptions {
+        normalize_json5: true,
+        ..FormatOptions::default()
+    }
+}
+
+/// Each case as its input and its output, so a snapshot shows the change.
+fn show(dialect: Dialect, options: &FormatOptions, cases: &[&str]) -> String {
+    let mut out = String::new();
+    for text in cases {
+        let formatted = fmt(dialect, options, text);
+        let (text, shown) = (
+            text.replace('\u{feff}', "<BOM>"),
+            formatted.replace('\u{feff}', "<BOM>"),
+        );
+        let _ = write!(
+            out,
+            "{dialect} {options:?}\n--- in\n{text}\n--- out\n{shown}\n"
+        );
+        let _ = writeln!(out, "=== {formatted:?}\n");
+    }
+    out
+}
+
+#[test]
+fn jsonc_comment_placement() {
+    insta::assert_snapshot!(show(
+        Dialect::Jsonc,
+        &FormatOptions::default(),
+        &[
+            "// head\n\n\n// second\n{\"a\":1} // tail\n// last\n",
+            "{ // after the brace\n\"a\": 1, // after the comma\n// own line\n\"b\": [1,2,3], /* block after */\n\"c\": 4 // last, no comma\n}",
+            "{\"a\": /* after colon */ 2, \"b\" /* before colon */ : 3, \"c\": 4 /* before comma */, \"d\": 5}",
+            "{\"a\": // line after colon\n 1}",
+            "{ // only\n}",
+            "[ /* only */ ]",
+            "[\n// own line\n]",
+            "[/* a */ 1, /* b */ 2, 3 /* c */]",
+            "[1, /* between */ 2]",
+            "[\n  1, 2, // two\n  3\n]",
+            "{\"a\": {\"b\": [1 /* deep */]}, \"c\": [2]}",
+            "{\n\n\n\"a\":1,\n\n\n\n// c\n\n\"b\":2\n\n\n}",
+            "[1,\n/* a\n   b */\n2]",
+            "{\"a\": [] // empty\n}",
+            "[1, 2 /* end */]",
+            "{\"a\": 1 /* x */ }",
+        ]
+    ));
+}
+
+#[test]
+fn jsonc_whitespace_and_line_ends() {
+    let tab = FormatOptions {
+        indent: Indent::Tab,
+        ..FormatOptions::default()
+    };
+    let four = FormatOptions {
+        indent: Indent::Spaces(4),
+        ..FormatOptions::default()
+    };
+    let mut out = show(
+        Dialect::Jsonc,
+        &tab,
+        &["{\"a\": [1, 2], // c\n\"b\": {\"c\": 3}}"],
+    );
+    out += &show(
+        Dialect::Jsonc,
+        &four,
+        &["{\"a\": [1, 2], // c\n\"b\": {\"c\": 3}}"],
+    );
+    out += &show(
+        Dialect::Jsonc,
+        &FormatOptions::default(),
+        &[
+            "{\r\n\"a\": 1, // c\r\n\"b\": [2]\r\n}",
+            "\u{feff}[1]",
+            "[1]\n\n\n",
+            "[1]",
+            "{}",
+            "  \"x\"  ",
+            "// head\n[1]",
+        ],
+    );
+    insta::assert_snapshot!(out);
+}
+
+#[test]
+fn jwcc_keeps_trailing_commas_only_where_lines_break() {
+    insta::assert_snapshot!(show(
+        Dialect::Jwcc,
+        &FormatOptions::default(),
+        &[
+            "{\"a\": 1, \"b\": [1, 2,],}",
+            "{\n\"a\": 1,\n// c\n\"b\": 2,\n}",
+            "[\n  1,\n  2, // two\n]",
+            "[1 /* x */,]",
+        ]
+    ));
+}
+
+#[test]
+fn json5_is_kept_as_written() {
+    insta::assert_snapshot!(show(
+        Dialect::Json5,
+        &FormatOptions::default(),
+        &[
+            "{a: 'single', \"b\": \"double\", 'c': 0x1F, d: +1, e: .5, f: 5., g: Infinity, h: -Infinity, i: NaN,}",
+            "{a: [1, 2,], // c\n b: 'it\\'s',\n}",
+            "{\\u0061: 1, 'a-b': 2}",
+            "'it\\'s \"quoted\"'",
+            "{\"line\": \"one \\\ntwo\"}",
+            "[0xDEAD, +.5e-3, 1e+5, -0]",
+        ]
+    ));
+}
+
+#[test]
+fn json5_normalized() {
+    insta::assert_snapshot!(show(
+        Dialect::Json5,
+        &normalized(),
+        &[
+            "{a: 'single', \"b\": \"double\", 'c': 0x1F, d: +1, e: .5,}",
+            "{'it\\'s': 'say \"hi\"', \"a-b\": 1, \"\": 2, \"1a\": 3, \"ok_$\": 4, \"\\u0061\": 5}",
+            "{a: [1, 2,], b: {c: 1,},}",
+            "{a: 1, // c\n b: 2}",
+            "[\n1, 2]",
+            "{\"aaaaaaaaaaaaaaaaaaa\": [1111111111, 2222222222, 3333333333], \"bbbbbbbbbbbbbbbbbbbbbbbbb\": 1}",
+            "[]",
+            "{ // only\n}",
+        ]
+    ));
+    // The setting means nothing outside JSON5.
+    insta::assert_snapshot!(
+        "json5_normalized_other_dialects",
+        show(
+            Dialect::Jsonc,
+            &normalized(),
+            &["{\"a\": 1, // c\n \"b\": 2}"]
+        )
+    );
+}
+
+#[test]
+fn strict_dialects_use_the_plain_layout() {
+    let long = "{\"name\": \"jsonvet\", \"keywords\": [\"json\", \"json5\", \"jsonc\", \"lint\", \"pre-commit\"], \"nested\": {\"a\": [1, 2, {\"b\": null}]}}";
+    let mut out = show(
+        Dialect::Json,
+        &FormatOptions::default(),
+        &[long, "[[], {}, [[]]]"],
+    );
+    out += &show(Dialect::IJson, &FormatOptions::default(), &[long]);
+    out += &show(Dialect::Json, &width(40), &[long]);
+    out += &show(
+        Dialect::Json,
+        &FormatOptions::default(),
+        &["{\"a\": 1,}", "// c\n1"],
+    );
+    insta::assert_snapshot!(out);
+}
+
+#[test]
+fn json_lines_are_compact_whatever_the_width() {
+    insta::assert_snapshot!(show(
+        Dialect::JsonLines,
+        &width(10),
+        &[
+            "{\"a\":1,\"b\":[1,2,{\"c\":null}]}\n[1,2,3]\n\"x\"\n",
+            "{\"a\":1}\n\n   \n{\"b\":2}",
+            "  {  \"a\" :  1  }  \r\n[ ]\r\n",
+            "",
+            "{\"a\":\n1}\n",
+        ]
+    ));
+}
+
+#[test]
+fn nested_layout_follows_the_width() {
+    insta::assert_snapshot!(show(
+        Dialect::Json,
+        &width(30),
+        &[
+            "{\"short\": [1, 2, 3], \"longer\": [\"aaaaaaaaaa\", \"bbbbbbbbbb\", \"cccccccccc\"], \"obj\": {\"k\": \"v\"}}",
+            "[[1, 2], [3, 4], [\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"]]",
+        ]
+    ));
+}
+
+#[test]
+fn a_syntax_error_is_reported_not_formatted() {
+    let err = format(
+        "{\"a\": }",
+        &Config::new(Dialect::Json),
+        &FormatOptions::default(),
+    );
+    let report = err.expect_err("a syntax error");
+    assert_eq!(report.problems()[0].rule(), Rule::Syntax);
+    assert!(
+        format(
+            "[1,]",
+            &Config::new(Dialect::Json),
+            &FormatOptions::default()
+        )
+        .is_err()
+    );
+    assert!(
+        format(
+            "[1,]",
+            &Config::new(Dialect::Jwcc),
+            &FormatOptions::default()
+        )
+        .is_ok()
+    );
+}
+
+/// A flat array whose line is exactly `columns` wide: `["xxx"]`.
+fn array_of_width(columns: usize) -> String {
+    format!("[\"{}\"]", "x".repeat(columns - 4))
+}
+
+#[test]
+fn exactly_the_width_fits_and_one_more_breaks() {
+    let json = Config::new(Dialect::Json);
+    let options = FormatOptions::default();
+    let at_80 = array_of_width(80);
+    assert_eq!(
+        format(&at_80, &json, &options).unwrap(),
+        format!("{at_80}\n")
+    );
+    let at_81 = array_of_width(81);
+    assert_eq!(
+        format(&at_81, &json, &options).unwrap(),
+        format!("[\n  \"{}\"\n]\n", "x".repeat(77))
+    );
+    // Indentation counts: `  "k": ["x…"],` is 12 columns plus the string.
+    let nested = |n: usize| format!("{{\"a\": 1, \"k\": [\"{}\"], \"z\": 2}}", "x".repeat(n));
+    let fits = format(&nested(68), &json, &options).unwrap();
+    assert!(fits.contains(&format!("  \"k\": [\"{}\"],\n", "x".repeat(68))));
+    assert_eq!(fits.lines().map(str::len).max(), Some(80));
+    let breaks = format(&nested(69), &json, &options).unwrap();
+    assert!(breaks.contains(&format!("  \"k\": [\n    \"{}\"\n  ],\n", "x".repeat(69))));
+    // The last member has no comma after it, so the same width fits one column more.
+    let last = |n: usize| format!("{{\"a\": 1, \"k\": [\"{}\"]}}", "x".repeat(n));
+    let fits = format(&last(69), &json, &options).unwrap();
+    assert!(fits.contains(&format!("  \"k\": [\"{}\"]\n", "x".repeat(69))));
+    // The whole document on one line when it fits.
+    assert_eq!(
+        format("{\"a\": [1, 2]}", &json, &width(13)).unwrap(),
+        "{\"a\": [1, 2]}\n"
+    );
+    assert_eq!(
+        format("{\"a\": [1, 2], \"b\": 1}", &json, &width(20)).unwrap(),
+        "{\n  \"a\": [1, 2],\n  \"b\": 1\n}\n"
+    );
+}
+
+// ---- properties ----
+
+/// A tiny deterministic stream, so a failing case is a pair of numbers.
+struct Rng(u64);
+
+impl Rng {
+    fn next(&mut self, below: usize) -> usize {
+        self.0 = self
+            .0
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        usize::try_from(self.0 >> 33).unwrap_or(0) % below
+    }
+}
+
+#[derive(Clone, Debug)]
+enum Tree {
+    Atom(String),
+    Array(Vec<Tree>),
+    Object(Vec<(String, Tree)>),
+}
+
+fn tree(dialect: Dialect) -> impl Strategy<Value = Tree> {
+    let json5 = dialect == Dialect::Json5;
+    let mut atoms = vec![
+        "1".to_owned(),
+        "-0.5e3".to_owned(),
+        "true".to_owned(),
+        "null".to_owned(),
+        r#""a\"b""#.to_owned(),
+        "\"é\"".to_owned(),
+        "\"\\u00e9\"".to_owned(),
+        "\"a string long enough to push a line past a small width\"".to_owned(),
+    ];
+    let mut keys = vec!["\"k0\"", "\"k1\"", "\"k2\"", "\"a long key\""];
+    if json5 {
+        atoms.extend(
+            [
+                "'single'", "0x1F", ".5", "+1", "Infinity", "NaN", "'it\\'s'",
+            ]
+            .map(String::from),
+        );
+        keys.extend(["a", "'b'", "$c", "\"d-e\""]);
+    }
+    let atom = prop::sample::select(atoms).prop_map(Tree::Atom);
+    let key = prop::sample::select(keys).prop_map(str::to_owned);
+    atom.prop_recursive(4, 40, 5, move |inner| {
+        prop_oneof![
+            prop::collection::vec(inner.clone(), 0..5).prop_map(Tree::Array),
+            prop::collection::vec((key.clone(), inner), 0..5).prop_map(Tree::Object),
+        ]
+    })
+}
+
+/// Text for the tree with a random gap at every place a token could be separated from the next:
+/// white space, blank lines, and in the dialects that have them, comments with a number each.
+fn render(tree: &Tree, dialect: Dialect, seed: u64, trailing: bool) -> String {
+    struct Out<'d> {
+        text: String,
+        rng: Rng,
+        dialect: Dialect,
+        trailing: bool,
+        marker: &'d std::cell::Cell<usize>,
+    }
+    impl Out<'_> {
+        fn gap(&mut self) {
+            let comments = self.dialect.comments_allowed();
+            let choice = self.rng.next(if comments { 16 } else { 5 });
+            let n = self.marker.get();
+            self.marker.set(n + 1);
+            let piece = match choice {
+                0..=1 => String::new(),
+                2 => " ".to_owned(),
+                3 => "\n".to_owned(),
+                4 => "\n\n\n  ".to_owned(),
+                5 => format!(" /*#{n}#*/"),
+                6 => format!("/*#{n}#*/ "),
+                7 => format!(" // #{n}#\n"),
+                8 => format!("\n// #{n}#\n"),
+                9 => format!("\n\n/* #{n}# */\n"),
+                10 => format!(" /* #{n}#\n   more */ "),
+                11 => format!("  // #{n}#   \n\n"),
+                12 => format!("\n/*#{n}#*/ "),
+                _ => format!(" /*#{n}#*/ \n"),
+            };
+            self.text.push_str(&piece);
+        }
+        fn value(&mut self, t: &Tree) {
+            match t {
+                Tree::Atom(a) => self.text.push_str(a),
+                Tree::Array(items) => {
+                    self.text.push('[');
+                    self.gap();
+                    for (i, item) in items.iter().enumerate() {
+                        self.value(item);
+                        self.gap();
+                        if i + 1 < items.len() || (self.trailing && self.rng.next(2) == 0) {
+                            self.text.push(',');
+                            self.gap();
+                        }
+                    }
+                    self.text.push(']');
+                }
+                Tree::Object(members) => {
+                    self.text.push('{');
+                    self.gap();
+                    for (i, (key, item)) in members.iter().enumerate() {
+                        self.text.push_str(key);
+                        self.gap();
+                        self.text.push(':');
+                        self.gap();
+                        self.value(item);
+                        self.gap();
+                        if i + 1 < members.len() || (self.trailing && self.rng.next(2) == 0) {
+                            self.text.push(',');
+                            self.gap();
+                        }
+                    }
+                    self.text.push('}');
+                }
+            }
+        }
+    }
+    let marker = std::cell::Cell::new(0);
+    let mut out = Out {
+        text: String::new(),
+        rng: Rng(seed),
+        dialect,
+        trailing,
+        marker: &marker,
+    };
+    out.gap();
+    out.value(tree);
+    out.gap();
+    out.text
+}
+
+trait CommentsAllowed {
+    fn comments_allowed(self) -> bool;
+}
+
+impl CommentsAllowed for Dialect {
+    fn comments_allowed(self) -> bool {
+        matches!(self, Dialect::Jsonc | Dialect::Jwcc | Dialect::Json5)
+    }
+}
+
+/// What a check finds, apart from what layout fixes.
+fn problems(text: &str, config: &Config) -> Vec<String> {
+    let mut found: Vec<String> = check(text, config)
+        .problems()
+        .iter()
+        .filter(|p| p.rule() != Rule::MissingFinalNewline)
+        .map(|p| format!("{}: {p}", p.rule()))
+        .collect();
+    found.sort();
+    found
+}
+
+fn events(text: &str, config: &Config) -> Vec<String> {
+    let (_, events) = parse(text, config);
+    events
+        .expect("valid")
+        .into_iter()
+        .map(|e| format!("{:?}", e.kind))
+        .collect()
+}
+
+fn options(width: usize, indent: usize, normalize: bool) -> FormatOptions {
+    FormatOptions {
+        indent: if indent == 0 {
+            Indent::Tab
+        } else {
+            Indent::Spaces(indent)
+        },
+        width,
+        normalize_json5: normalize,
+    }
+}
+
+/// Everything the formatter promises about the output for one document.
+fn check_promises(text: &str, dialect: Dialect, options: &FormatOptions) -> Result<(), String> {
+    let config = Config::new(dialect);
+    let once = format(text, &config, options)
+        .map_err(|_| format!("generated text is invalid: {text:?}"))?;
+    let twice = format(&once, &config, options)
+        .map_err(|_| format!("output is invalid\nin: {text:?}\nout: {once:?}"))?;
+    if once != twice {
+        return Err(format!(
+            "not idempotent\nin: {text:?}\n1: {once:?}\n2: {twice:?}"
+        ));
+    }
+    if !once.ends_with('\n') || once.ends_with("\n\n") {
+        return Err(format!("not exactly one final newline: {once:?}"));
+    }
+    if problems(text, &config) != problems(&once, &config) {
+        return Err(format!("problems changed\nin: {text:?}\nout: {once:?}"));
+    }
+    if events(text, &config) != events(&once, &config) {
+        return Err(format!("values changed\nin: {text:?}\nout: {once:?}"));
+    }
+    for n in 0..text.matches('#').count() / 2 {
+        let marker = format!("#{n}#");
+        if once.matches(&marker).count() != text.matches(&marker).count() {
+            return Err(format!(
+                "comment {marker} lost or copied\nin: {text:?}\nout: {once:?}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(256))]
+
+    #[test]
+    fn formatting_twice_changes_nothing_and_loses_nothing(
+        (dialect, t, seed, trailing, width, indent, normalize) in prop::sample::select(vec![
+            Dialect::Json, Dialect::IJson, Dialect::Jsonc, Dialect::Jwcc, Dialect::Json5,
+        ])
+        .prop_flat_map(|d| (Just(d), tree(d), any::<u64>(), any::<bool>(), prop::sample::select(vec![1, 12, 30, 80]), 0usize..5, any::<bool>()))
+    ) {
+        let trailing = trailing && matches!(dialect, Dialect::Jwcc | Dialect::Json5);
+        let text = render(&t, dialect, seed, trailing);
+        if let Err(message) = check_promises(&text, dialect, &options(width, indent, normalize)) {
+            prop_assert!(false, "{}", message);
+        }
+    }
+
+    #[test]
+    fn strict_json_keeps_its_value(
+        (t, seed, width) in (tree(Dialect::Json), any::<u64>(), prop::sample::select(vec![1, 20, 80]))
+    ) {
+        let text = render(&t, Dialect::Json, seed, false);
+        let out = format(&text, &Config::new(Dialect::Json), &self::width(width)).unwrap();
+        let before: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let after: serde_json::Value = serde_json::from_str(&out).unwrap();
+        prop_assert_eq!(before, after);
+    }
+
+    #[test]
+    fn json_lines_stay_one_record_a_line(
+        records in prop::collection::vec((tree(Dialect::Json), any::<u64>()), 0..5),
+        crlf in any::<bool>(),
+    ) {
+        let eol = if crlf { "\r\n" } else { "\n" };
+        let text: String = records
+            .iter()
+            .map(|(t, seed)| render(t, Dialect::Json, *seed, false).replace(['\n', '\r'], " ") + eol)
+            .collect();
+        let config = Config::new(Dialect::JsonLines);
+        let once = format(&text, &config, &FormatOptions::default()).unwrap();
+        prop_assert_eq!(once.lines().count(), records.len());
+        prop_assert_eq!(&format(&once, &config, &FormatOptions::default()).unwrap(), &once);
+        prop_assert_eq!(problems(&text, &config), problems(&once, &config));
+    }
+}

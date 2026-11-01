@@ -1,0 +1,15 @@
+---
+source: crates/jsonvet/tests/format.rs
+expression: "show(Dialect::Jsonc, &normalized(), &[\"{\\\"a\\\": 1, // c\\n \\\"b\\\": 2}\"])"
+---
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: true }
+--- in
+{"a": 1, // c
+ "b": 2}
+--- out
+{
+  "a": 1, // c
+  "b": 2
+}
+
+=== "{\n  \"a\": 1, // c\n  \"b\": 2\n}\n"

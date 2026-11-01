@@ -1,0 +1,222 @@
+---
+source: crates/jsonvet/tests/format.rs
+expression: "show(Dialect::Jsonc, &FormatOptions::default(),\n&[\"// head\\n\\n\\n// second\\n{\\\"a\\\":1} // tail\\n// last\\n\",\n\"{ // after the brace\\n\\\"a\\\": 1, // after the comma\\n// own line\\n\\\"b\\\": [1,2,3], /* block after */\\n\\\"c\\\": 4 // last, no comma\\n}\",\n\"{\\\"a\\\": /* after colon */ 2, \\\"b\\\" /* before colon */ : 3, \\\"c\\\": 4 /* before comma */, \\\"d\\\": 5}\",\n\"{\\\"a\\\": // line after colon\\n 1}\", \"{ // only\\n}\", \"[ /* only */ ]\",\n\"[\\n// own line\\n]\", \"[/* a */ 1, /* b */ 2, 3 /* c */]\",\n\"[1, /* between */ 2]\", \"[\\n  1, 2, // two\\n  3\\n]\",\n\"{\\\"a\\\": {\\\"b\\\": [1 /* deep */]}, \\\"c\\\": [2]}\",\n\"{\\n\\n\\n\\\"a\\\":1,\\n\\n\\n\\n// c\\n\\n\\\"b\\\":2\\n\\n\\n}\", \"[1,\\n/* a\\n   b */\\n2]\",\n\"{\\\"a\\\": [] // empty\\n}\", \"[1, 2 /* end */]\", \"{\\\"a\\\": 1 /* x */ }\",])"
+---
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false }
+--- in
+// head
+
+
+// second
+{"a":1} // tail
+// last
+
+--- out
+// head
+
+// second
+{"a": 1} // tail
+// last
+
+=== "// head\n\n// second\n{\"a\": 1} // tail\n// last\n"
+
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false }
+--- in
+{ // after the brace
+"a": 1, // after the comma
+// own line
+"b": [1,2,3], /* block after */
+"c": 4 // last, no comma
+}
+--- out
+{ // after the brace
+  "a": 1, // after the comma
+  // own line
+  "b": [1, 2, 3], /* block after */
+  "c": 4 // last, no comma
+}
+
+=== "{ // after the brace\n  \"a\": 1, // after the comma\n  // own line\n  \"b\": [1, 2, 3], /* block after */\n  \"c\": 4 // last, no comma\n}\n"
+
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false }
+--- in
+{"a": /* after colon */ 2, "b" /* before colon */ : 3, "c": 4 /* before comma */, "d": 5}
+--- out
+{
+  "a": /* after colon */ 2,
+  "b" /* before colon */: 3,
+  "c": 4 /* before comma */,
+  "d": 5
+}
+
+=== "{\n  \"a\": /* after colon */ 2,\n  \"b\" /* before colon */: 3,\n  \"c\": 4 /* before comma */,\n  \"d\": 5\n}\n"
+
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false }
+--- in
+{"a": // line after colon
+ 1}
+--- out
+{
+  "a": // line after colon
+    1
+}
+
+=== "{\n  \"a\": // line after colon\n    1\n}\n"
+
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false }
+--- in
+{ // only
+}
+--- out
+{ // only
+}
+
+=== "{ // only\n}\n"
+
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false }
+--- in
+[ /* only */ ]
+--- out
+[ /* only */
+]
+
+=== "[ /* only */\n]\n"
+
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false }
+--- in
+[
+// own line
+]
+--- out
+[
+  // own line
+]
+
+=== "[\n  // own line\n]\n"
+
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false }
+--- in
+[/* a */ 1, /* b */ 2, 3 /* c */]
+--- out
+[
+  /* a */ 1,
+  /* b */ 2,
+  3 /* c */
+]
+
+=== "[\n  /* a */ 1,\n  /* b */ 2,\n  3 /* c */\n]\n"
+
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false }
+--- in
+[1, /* between */ 2]
+--- out
+[
+  1,
+  /* between */ 2
+]
+
+=== "[\n  1,\n  /* between */ 2\n]\n"
+
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false }
+--- in
+[
+  1, 2, // two
+  3
+]
+--- out
+[
+  1,
+  2, // two
+  3
+]
+
+=== "[\n  1,\n  2, // two\n  3\n]\n"
+
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false }
+--- in
+{"a": {"b": [1 /* deep */]}, "c": [2]}
+--- out
+{
+  "a": {
+    "b": [
+      1 /* deep */
+    ]
+  },
+  "c": [2]
+}
+
+=== "{\n  \"a\": {\n    \"b\": [\n      1 /* deep */\n    ]\n  },\n  \"c\": [2]\n}\n"
+
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false }
+--- in
+{
+
+
+"a":1,
+
+
+
+// c
+
+"b":2
+
+
+}
+--- out
+{
+  "a": 1,
+
+  // c
+
+  "b": 2
+}
+
+=== "{\n  \"a\": 1,\n\n  // c\n\n  \"b\": 2\n}\n"
+
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false }
+--- in
+[1,
+/* a
+   b */
+2]
+--- out
+[
+  1,
+  /* a
+   b */
+  2
+]
+
+=== "[\n  1,\n  /* a\n   b */\n  2\n]\n"
+
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false }
+--- in
+{"a": [] // empty
+}
+--- out
+{
+  "a": [] // empty
+}
+
+=== "{\n  \"a\": [] // empty\n}\n"
+
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false }
+--- in
+[1, 2 /* end */]
+--- out
+[
+  1,
+  2 /* end */
+]
+
+=== "[\n  1,\n  2 /* end */\n]\n"
+
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false }
+--- in
+{"a": 1 /* x */ }
+--- out
+{
+  "a": 1 /* x */
+}
+
+=== "{\n  \"a\": 1 /* x */\n}\n"
