@@ -2,7 +2,6 @@
 //! each dialect rule applied where the syntax it governs appears.
 
 use std::borrow::Cow;
-use std::cell::OnceCell;
 use std::hash::{BuildHasher, RandomState};
 
 use hashbrown::HashTable;
@@ -13,7 +12,7 @@ use crate::messages::{
     COMMENTS_NOT_ALLOWED, Message, NAN_AND_INFINITY_NOT_ALLOWED, NUMBER_FORM_NOT_ALLOWED,
     SINGLE_QUOTES_NOT_ALLOWED, UNQUOTED_KEYS_NOT_ALLOWED,
 };
-use crate::path::{self, Segment};
+use crate::path::{self, PathStep};
 use crate::problem::{Detail, SyntaxError, SyntaxKind};
 use crate::unicode::{
     is_high_surrogate, is_identifier_part, is_identifier_start, is_json5_space, is_low_surrogate,
@@ -166,10 +165,6 @@ struct Frame<'a> {
     container: Container,
     /// The offset of its `{` or `[`.
     opened: usize,
-    /// How this container is reached from its parent.
-    segment: Segment<'a>,
-    /// `segment` as a path shows it, made on the first duplicate inside the container.
-    rendered: OnceCell<String>,
     /// The keys seen so far, for objects.
     keys: Keys<'a>,
     /// The current member's key, in an object.
@@ -178,10 +173,11 @@ struct Frame<'a> {
     element_index: usize,
 }
 
-impl Frame<'_> {
-    fn rendered(&self) -> &str {
-        self.rendered.get_or_init(|| path::rendered(&self.segment))
-    }
+/// `a == b`, but the first byte is compared inline, so keys of one length that differ there
+/// skip the `memcmp` call.
+#[inline]
+fn key_eq(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && a.first() == b.first() && a == b
 }
 
 /// An object's keys with the offset of each, in the order they came.
@@ -205,7 +201,7 @@ impl<'a> Keys<'a> {
             .ok()
             .filter(|_| list.len() > LINEAR_KEYS);
         let Some(position) = position else {
-            if let Some((_, first)) = list.iter().find(|(k, _)| k == key) {
+            if let Some((_, first)) = list.iter().find(|(k, _)| key_eq(k, key)) {
                 return Some(*first);
             }
             list.push((key.clone(), at));
@@ -221,7 +217,7 @@ impl<'a> Keys<'a> {
         let hash = short_hash(&self.state, key);
         let entry = self.index.entry(
             spread(hash),
-            |&(h, i)| h == hash && list[i as usize].0 == *key,
+            |&(h, i)| h == hash && key_eq(&list[i as usize].0, key),
             |&(h, _)| spread(h),
         );
         match entry {
@@ -613,26 +609,15 @@ impl<'a> Parser<'a, '_> {
             let limit = self.max_depth;
             return Err(Fail::at(self.pos, SyntaxKind::TooDeep { limit }));
         }
-        let segment = match self.top() {
-            None => Segment::Root,
-            Some(parent) => match parent.container {
-                Container::Object => Segment::Key(parent.current_key.clone()),
-                Container::Array => Segment::Index(parent.element_index),
-            },
-        };
         if let Some(frame) = self.stack.get_mut(self.depth) {
             frame.container = container;
             frame.opened = self.pos;
-            frame.segment = segment;
-            frame.rendered = OnceCell::new();
             frame.current_key = Key::Borrowed(&[]);
             frame.element_index = 0;
         } else {
             self.stack.push(Frame {
                 container,
                 opened: self.pos,
-                segment,
-                rendered: OnceCell::new(),
                 keys: Keys::default(),
                 current_key: Key::Borrowed(&[]),
                 element_index: 0,
@@ -765,12 +750,13 @@ impl<'a> Parser<'a, '_> {
         match frame.keys.first_or_insert(key, start) {
             None => {}
             Some(first) => {
-                let mut last = String::new();
-                path::push_key(&mut last, key);
+                // Each open container's step to its child, then the duplicate key itself.
                 let stack = &self.stack[..self.depth];
-                let path = path::bounded(stack.len() + 1, |i| {
-                    stack.get(i).map_or(last.as_str(), Frame::rendered)
+                let parents = stack[..stack.len() - 1].iter().map(|f| match f.container {
+                    Container::Object => PathStep::Key(&f.current_key),
+                    Container::Array => PathStep::Index(f.element_index),
                 });
+                let path = path::json_path(parents.chain([PathStep::Key(key)]));
                 self.report(
                     start,
                     self.pos,
@@ -1081,6 +1067,7 @@ impl<'a> Parser<'a, '_> {
         } else {
             self.skip_digits()
         };
+        let mut has_dot = false;
         if self.peek() == Some(b'.') {
             let fraction_digits = self.bytes.get(self.pos + 1).is_some_and(u8::is_ascii_digit);
             if !int_digits && !fraction_digits {
@@ -1093,9 +1080,11 @@ impl<'a> Parser<'a, '_> {
             }
             self.pos += 1;
             self.skip_digits();
+            has_dot = true;
         } else if !int_digits {
             return Err(self.unexpected("a digit"));
         }
+        let mut has_exp = false;
         if matches!(self.peek(), Some(b'e' | b'E')) {
             self.pos += 1;
             if matches!(self.peek(), Some(b'+' | b'-')) {
@@ -1104,8 +1093,9 @@ impl<'a> Parser<'a, '_> {
             if !self.skip_digits() {
                 return Err(self.unexpected("a digit"));
             }
+            has_exp = true;
         }
-        self.check_decimal(start);
+        self.check_decimal(start, has_dot, has_exp);
         Ok(())
     }
 
@@ -1172,17 +1162,29 @@ impl<'a> Parser<'a, '_> {
         Ok(())
     }
 
-    fn check_decimal(&mut self, start: usize) {
+    fn check_decimal(&mut self, start: usize, has_dot: bool, has_exp: bool) {
         if !self.invalid_number.is_on() {
             return;
         }
         let text = &self.text[start..self.pos];
-        let overflows = text.parse::<f64>().is_ok_and(f64::is_infinite);
-        let integer = !text.contains(['.', 'e', 'E']);
+        if has_dot || has_exp {
+            if (has_exp || text.len() > 308) && text.parse::<f64>().is_ok_and(f64::is_infinite) {
+                self.report(
+                    start,
+                    self.pos,
+                    self.invalid_number,
+                    Detail::InvalidNumber { overflows: true },
+                );
+            }
+            return;
+        }
         let digits = text.trim_start_matches(['+', '-']).trim_start_matches('0');
-        let unsafe_integer = integer
-            && (digits.len() > SAFE_DECIMAL_DIGITS
-                || digits.parse::<u64>().is_ok_and(|n| n > MAX_SAFE_INTEGER));
+        if digits.len() < SAFE_DECIMAL_DIGITS {
+            return;
+        }
+        let overflows = digits.len() > 308 && text.parse::<f64>().is_ok_and(f64::is_infinite);
+        let unsafe_integer = digits.len() > SAFE_DECIMAL_DIGITS
+            || digits.parse::<u64>().is_ok_and(|n| n > MAX_SAFE_INTEGER);
         if overflows || unsafe_integer {
             self.report(
                 start,

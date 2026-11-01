@@ -313,6 +313,29 @@ fn hex_numbers_overflow_exactly_where_a_double_does() {
 }
 
 #[test]
+fn decimal_numbers_overflow_exactly_where_a_double_does() {
+    use jsonvet::{Rule, Severity};
+    let config = Config::new(Dialect::Json5).rule(Rule::InvalidNumber, Severity::Error);
+    let message = |text: String| {
+        let report = check(&text, &config);
+        report.problems().first().map(ToString::to_string)
+    };
+    let overflow = Some("number overflows a double".to_owned());
+    let unsafe_integer =
+        Some("integer beyond ±(2^53 − 1) cannot be represented exactly".to_owned());
+    // No exponent: only the digit count makes these too big for a double.
+    assert_eq!(message("9".repeat(309)), overflow);
+    assert_eq!(message(format!("-{}", "9".repeat(309))), overflow);
+    assert_eq!(message("9".repeat(308)), unsafe_integer);
+    assert_eq!(message(format!("{}.5", "9".repeat(309))), overflow);
+    assert_eq!(message(format!("1{}.5", "0".repeat(307))), None);
+    assert_eq!(message(format!("0.{}", "9".repeat(400))), None);
+    assert_eq!(message("999999999999999".to_owned()), None);
+    assert_eq!(message("1.5e308".to_owned()), None);
+    assert_eq!(message("1.8e308".to_owned()), overflow);
+}
+
+#[test]
 fn names_and_file_names() {
     use std::path::Path;
     let for_path = |name: &str| Dialect::for_path(Path::new(name)).map(Dialect::name);

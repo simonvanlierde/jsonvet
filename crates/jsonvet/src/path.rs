@@ -7,14 +7,6 @@ use std::fmt::Write;
 
 use crate::unicode::is_hidden;
 
-/// One step from a container to a child.
-#[derive(Clone, Debug)]
-pub(crate) enum Segment<'a> {
-    Root,
-    Key(Cow<'a, [u8]>),
-    Index(usize),
-}
-
 /// Past this many bytes, a path keeps only the segments that fit in `MAX_PATH / 2` bytes at
 /// each end, with `…` in place of the rest. A segment longer than that is cut, so a long key
 /// still shows its start or its end. A full path never holds `…`: quoted keys escape it, and
@@ -74,13 +66,6 @@ pub(crate) fn bounded<'s>(count: usize, segment: impl Fn(usize) -> &'s str) -> S
     path
 }
 
-/// One segment as a path shows it: `$`, `.key`, `["key"]` or `[0]`.
-pub(crate) fn rendered(segment: &Segment<'_>) -> String {
-    let mut path = String::new();
-    push(&mut path, segment);
-    path
-}
-
 /// One step of a [`json_path`]: an object key or an array index.
 ///
 /// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
@@ -110,21 +95,23 @@ pub enum PathStep<'a> {
 /// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
 #[doc(hidden)]
 pub fn json_path<'a>(steps: impl IntoIterator<Item = PathStep<'a>>) -> String {
-    let segments: Vec<String> = std::iter::once("$".to_owned())
-        .chain(steps.into_iter().map(|step| match step {
-            PathStep::Key(key) => rendered(&Segment::Key(Cow::Borrowed(key))),
-            PathStep::Index(i) => rendered(&Segment::Index(i)),
-        }))
-        .collect();
-    bounded(segments.len(), |i| &segments[i])
+    // One buffer and the end of each segment in it, so a deep path costs two allocations.
+    let mut text = String::from("$");
+    let mut ends = vec![text.len()];
+    for step in steps {
+        push_step(&mut text, &step);
+        ends.push(text.len());
+    }
+    bounded(ends.len(), |i| {
+        &text[i.checked_sub(1).map_or(0, |j| ends[j])..ends[i]]
+    })
 }
 
-/// Append one segment to a path.
-fn push(path: &mut String, segment: &Segment<'_>) {
-    match segment {
-        Segment::Root => path.push('$'),
-        Segment::Key(key) => push_key(path, key),
-        Segment::Index(i) => {
+/// Append one step to a path.
+fn push_step(path: &mut String, step: &PathStep<'_>) {
+    match step {
+        PathStep::Key(key) => push_key(path, key),
+        PathStep::Index(i) => {
             let _ = write!(path, "[{i}]");
         }
     }

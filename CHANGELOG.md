@@ -50,6 +50,10 @@ version for a new option or output, the patch version for a fix.
   that was never installed. The exit code is unchanged.
 - Decimal digits in numbers are scanned in a slice loop, reducing instruction counts by 2.2% on
   `canada-x20.json` and 1.1% on `numbers.json`.
+- Objects and arrays no longer keep their path while they are open: jsonvet builds it only when
+  it reports a duplicate key. Key comparisons and the I-JSON number check also skip work. Deeply
+  nested files take 13% fewer instructions, many-row JSON and JSON Lines 5% fewer, and the rest up
+  to 3% fewer.
 - Text in the browser playground is a bit larger, with a 15px text size and 22px line height on
   desktop, and the drafting grid lines up with the 22px row height.
 - `--format sarif` writes each result as it is found instead of holding them all until the
