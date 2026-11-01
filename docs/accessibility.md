@@ -23,8 +23,8 @@ WebAssembly in the browser:
   with arrow keys, and correction notes and code snippets are focusable.
 - Screen reader announcements use semantic roles (`role="radio"`, `role="tablist"`)
   and an `aria-live` verdict region that announces correction counts on edits.
-- Colour schemes adapt to system preference (light and dark mode) with high-contrast
-  ink, and problem counts and severity indicators accompany colour markings.
+- Colour schemes follow the system's light or dark mode, and a button in the footer
+  switches between them. Both use high-contrast ink, and problem counts and severity indicators accompany colour markings.
 
 ## Contact
 

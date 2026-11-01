@@ -105,10 +105,11 @@ licence and has no RustSec advisory or unmaintained notice. Renovate bumps the p
   for 20 minutes on a nightly toolchain. A new json5 version in `fuzz/` can need new skips in
   `diff_json5`: read its skip list before you call a divergence a jsonvet bug.
 - **Mutation testing.** `just mutants` takes over an hour on one CI runner, so `mutants.yml` runs
-  it weekly in ten parallel shards. It fails when a mutant survives that `.cargo/mutants.toml`
-  does not list. List one there only when it changes no behaviour, and say why. On a pull
-  request, `mutants-diff.yml` runs it on the changed lines only; locally, `git diff origin/main...
-  > pr.diff && cargo mutants --in-diff pr.diff` does the same.
+  it weekly in 64 shards, 15 at a time; its `shards` input reruns only the ones you list. It fails
+  when a mutant survives that `.cargo/mutants.toml` does not list. List one there only when it
+  changes no behaviour, and say why. On a pull request, `mutants-diff.yml` runs it on the changed
+  lines only, in eight shards; locally, `git diff origin/main... > pr.diff && cargo mutants
+  --in-diff pr.diff` does the same.
 - **Differential.** `just differential` compares jsonvet with check-json5 1.4.1 on generated
   files. CI runs 5,000 cases with a new seed each run.
 - **Speed claims.** Measure with `just bench` on a quiet machine, and report the median. To

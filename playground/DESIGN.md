@@ -97,7 +97,9 @@ components:
 
 Product context is in [PRODUCT.md](PRODUCT.md). The tokens above are the light theme; the
 `dark-` entries replace their light namesakes under `prefers-color-scheme: dark` (or
-`data-theme="dark"`), in [style.css](style.css), which is the source of truth.
+`data-theme="dark"`), in [style.css](style.css), which is the source of truth. A sun or moon in
+the colophon sets `data-theme` and [theme.js](theme.js) keeps the choice; with none kept, the
+system's setting holds.
 
 ### Overview
 
@@ -249,7 +251,7 @@ after a syntax error, why the marks are off for a big text, and the drop and F8 
 
 A `details` fold, closed by default, with a tab list (pre-commit or prek hook, GitHub Action,
 command line), arrow keys between tabs. Each panel holds a focusable, scrolling `pre` on the tint
-and a "Copy" text button. The snippets use the version from the wasm's `version()` and add
+and a copy icon in its corner, as in the options popovers. The snippets use the version from the wasm's `version()` and add
 `--dialect DIALECT:*.json` for any dialect but JSON5. Each panel holds the check, then the same
 with `--fix`, then the format variant (the `jsonvet-format` hook, `jsonvet fmt --check` in a
 workflow step, `jsonvet fmt` on the command line), each under a `#` comment line.
