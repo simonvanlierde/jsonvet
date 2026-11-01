@@ -442,6 +442,8 @@ fn options_for_checking_are_a_usage_error_under_fmt() {
         "--error=syntax",
         "--warn=syntax",
         "--ignore=syntax",
+        "--fix",
+        "--unsafe-fixes",
     ] {
         let (code, out, err) = run(&dir, &["fmt", option, "a.json"], "");
         assert_eq!((code, out.as_str()), (2, ""), "{option}");

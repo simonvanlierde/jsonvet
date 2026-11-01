@@ -264,6 +264,8 @@ const CHECK_ONLY: &[&str] = &[
     "error",
     "warn",
     "ignore",
+    "fix",
+    "unsafe-fixes",
 ];
 
 fn fmt_option(name: &str) -> String {
