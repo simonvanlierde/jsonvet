@@ -58,3 +58,8 @@ strip = false
 inherits = "release"
 opt-level = "s"
 strip = "debuginfo"
+
+# cargo-mutants (`--profile mutants`): test code without debug info, so each mutant rebuilds faster.
+[profile.mutants]
+inherits = "test"
+debug = "none"
