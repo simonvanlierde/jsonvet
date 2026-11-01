@@ -669,11 +669,22 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
                 self.lf_fast = !self.json_lines;
             }
         }
+        let target = target_ending(first, self.dialect);
         if SCAN
-            && eol != target_ending(first, self.dialect)
+            && eol != target
             && let Some(scan) = self.scan.as_deref_mut()
         {
-            scan.endings.push((at, eol.len()));
+            let (mut at, mut len) = (at, eol.len());
+            // When the fix writes LF, a CR before a CRLF that is no ending itself (white space in
+            // JSON Lines, text in a JWCC line comment) goes too, or it would pair with that LF.
+            // A CR that is an ending has an edit of its own, which `stop` keeps clear of.
+            if eol == Eol::CrLf && target == Eol::Lf {
+                let stop = scan.endings.last().map_or(0, |&(a, l)| a + l);
+                while at > stop && self.bytes[at - 1] == b'\r' {
+                    (at, len) = (at - 1, len + 1);
+                }
+            }
+            scan.endings.push((at, len));
         }
     }
 

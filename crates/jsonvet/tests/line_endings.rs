@@ -603,3 +603,20 @@ fn a_json5_syntax_error_from_fmt_counts_its_line_separators() {
     };
     assert_eq!(report.location(report.problems()[0].offset()).line, 2);
 }
+
+#[test]
+fn a_cr_before_a_crlf_that_is_no_ending_goes_with_it() {
+    // A white-space CR in JSON Lines, and comment text in a JWCC line comment: left in place,
+    // it would pair with the LF the fix writes and make a CRLF again.
+    for (text, dialect, want) in [
+        ("1\n2\r\r\n3\n", Dialect::JsonLines, "1\n2\n3\n"),
+        ("1\n2\r\r\r\n3", Dialect::JsonLines, "1\n2\n3\n"),
+        ("[1,\n// a\r\r\n2]\n", Dialect::Jwcc, "[1,\n// a\n2]\n"),
+        // A lone CR outside a comment is an ending of its own in JWCC.
+        ("[1,\n\r\r\n2]\n", Dialect::Jwcc, "[1,\n\n\n2]\n"),
+    ] {
+        let out = fixed(text, dialect);
+        assert_eq!(out.as_deref(), Some(want), "{dialect} {text:?}");
+        assert_eq!(fixed(want, dialect), None, "{dialect} {want:?}");
+    }
+}
