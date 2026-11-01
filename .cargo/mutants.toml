@@ -44,6 +44,9 @@ exclude_re = [
   # continuation byte, which no token starts with.
   "parse.rs:.* replace ends_trivia -> bool with false",
   "parse.rs:.* replace < with (==|<=) in ends_trivia",
+  # Speed only: a white space run is searched for line endings even when it holds no CR, or
+  # when the mixed-line-endings rule is off, which finds none that count.
+  "parse.rs:.* replace & with (\\||\\^) in Parser<.*>::skip_trivia",
   # Speed only: a newline followed by a space misses the fast path and falls back to
   # skip_trivia, which decides every byte the same way.
   "parse.rs:.* replace != with == in Parser<.*>::trivia",

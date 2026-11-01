@@ -137,6 +137,7 @@ fail as JSON are config files with comments. To check a file as strict JSON, use
 | `invalid-code-point`    | a lone surrogate or a noncharacter in a string                 | error in `i-json`, off elsewhere                 |
 | `byte-order-mark`       | a byte order mark at the start of the file                     | warning in `json` and `i-json`, error in `jsonl` |
 | `missing-final-newline` | a JSON Lines file that does not end with a newline             | warning in `jsonl`                               |
+| `mixed-line-endings`    | a line ending that differs from the file's first one           | warning                                          |
 
 Change a rule's severity with `--error`, `--warn` or `--ignore`. Warnings fail a run only past
 `--max-warnings N`.

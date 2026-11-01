@@ -38,6 +38,7 @@ json5 "{\"\\x41b\": 1, \"Ab\": 2}"
        1:14 error[duplicate-key] duplicate key $.Ab (from 1:2)
 json5 "{\"a\\\nb\": 1, \"a\\\r\nb\": 2, \"a\\\u{2028}b\": 3, \"ab\": 4}"
        2:8 error[duplicate-key] duplicate key $.ab (from 1:2)
+       2:11 warning[mixed-line-endings] this line ending differs from the first one in the file
        3:8 error[duplicate-key] duplicate key $.ab (from 1:2)
        4:8 error[duplicate-key] duplicate key $.ab (from 1:2)
 i-json "{\"a\": 1, \"a\": 2}"

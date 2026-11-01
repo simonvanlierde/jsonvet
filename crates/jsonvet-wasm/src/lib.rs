@@ -339,6 +339,24 @@ mod tests {
     }
 
     #[test]
+    fn mixed_line_endings_are_checked_and_fixed_from_their_note() {
+        // `😀` is two units, so the CRLF at byte offset 9 is at index 7.
+        let text = "[\n\"😀\",\r\n1]";
+        let out = check(text, "json").unwrap_or_default();
+        assert!(
+            out.contains(r#""rule":"mixed-line-endings""#) && out.contains(r#""index":7,"#),
+            "{out}"
+        );
+        assert_eq!(
+            fix(text, "json", false, &[7]).as_deref(),
+            Ok(
+                r#"{"text":"[\u000a\"😀\",\u000a1]","fixes":[{"rule":"mixed-line-endings","index":7,"safe":true}]}"#
+            )
+        );
+        assert_eq!(fix(text, "json", false, &[0]).as_deref(), Ok("null"));
+    }
+
+    #[test]
     fn fix_keeps_duplicate_keys_unless_asked() {
         let text = "{\"a\": 1, \"a\": 2}";
         assert_eq!(fix(text, "json", false, &[]).as_deref(), Ok("null"));

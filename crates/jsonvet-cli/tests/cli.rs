@@ -683,7 +683,7 @@ fn pyproject_tool_table_and_bad_configs() {
             "typo.toml:2:1",
             "unknown rule `duplicate-keys` (did you mean `duplicate-key`?); expected one of \
              syntax, duplicate-key, invalid-number, invalid-code-point, byte-order-mark, \
-             missing-final-newline",
+             missing-final-newline, mixed-line-endings",
         ),
         (
             "key.toml:2:3",

@@ -42,6 +42,7 @@ it fixed something, it prints a count to standard error, such as `fixed 3 proble
 | [byte-order-mark](#byte-order-mark)                               | remove the mark              | yes  |
 | a trailing comma where the dialect forbids it ([syntax](#syntax)) | remove the comma             | yes  |
 | [missing-final-newline](#missing-final-newline)                   | add the newline              | yes  |
+| [mixed-line-endings](#mixed-line-endings)                         | use the first line ending    | yes  |
 | [duplicate-key](#duplicate-key)                                   | keep the last, drop the rest | no   |
 
 Rules:
@@ -257,6 +258,29 @@ line and breaks it. `--fix` adds it. A warning in `jsonl`, off otherwise.
 Bad (jsonl):  {"a": 1}<end of file>
 Good (jsonl): {"a": 1}<newline>
 ```
+
+### mixed-line-endings
+
+A file that uses more than one kind of line ending (LF, CRLF or a lone CR) shows whole files as
+changed in a diff, and tools split its lines differently. jsonvet reports the first ending that
+differs from the file's first one. `--fix` rewrites every ending to the first one. A warning in
+every dialect.
+
+```text
+Bad:  {"a": 1,<CRLF>"b": 2,<LF>"c": 3}
+Good: {"a": 1,<CRLF>"b": 2,<CRLF>"c": 3}
+```
+
+What counts as a line ending:
+
+- A line break between tokens, in a comment, or after a backslash inside a JSON5 string (a line
+  continuation). JSON5 follows ES5 here: the continuation is a line terminator, and it adds
+  nothing to the string, so rewriting it is safe.
+- In `jsonl`, only LF and CRLF. A lone CR is white space there.
+- In `jwcc`, a CR inside a `//` comment is part of the comment, because the comment ends only at
+  LF. A lone CR elsewhere counts, and `--fix` turns it into LF, as `jsonvet fmt` does.
+- A CR or LF inside an ordinary string is a syntax error, not a line ending. U+2028 and U+2029 in
+  JSON5 are not counted.
 
 ### unreadable
 

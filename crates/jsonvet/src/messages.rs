@@ -28,6 +28,10 @@ pub(crate) const BYTE_ORDER_MARK: Message = (
 );
 pub(crate) const MISSING_FINAL_NEWLINE: Message =
     ("missing-final-newline", "no newline at the end of the file");
+pub(crate) const MIXED_LINE_ENDINGS: Message = (
+    "mixed-line-endings",
+    "this line ending differs from the first one in the file",
+);
 pub(crate) const UNEXPECTED_END: Message = (
     "syntax.unexpected-end",
     "expected {expected}, found the end of the file",
@@ -117,6 +121,7 @@ pub const MESSAGES: &[(&str, &str)] = &[
     NONCHARACTER,
     BYTE_ORDER_MARK,
     MISSING_FINAL_NEWLINE,
+    MIXED_LINE_ENDINGS,
     UNEXPECTED_END,
     UNEXPECTED_LINE_END,
     UNCLOSED,

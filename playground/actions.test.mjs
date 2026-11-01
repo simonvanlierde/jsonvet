@@ -32,6 +32,11 @@ test("a summary counts the fixes by kind", () => {
   );
 });
 
+test("a summary names mixed line endings", () => {
+  const f = { rule: "mixed-line-endings", index: 4, safe: true };
+  assert.equal(fixSummary([f]), "Fixed 1 problem: 1 mixed line ending.");
+});
+
 test("the snippets add --fix and the format hook", () => {
   const s = snippets({ version: "3.3.0", glob: "", file: "config.json" });
   assert.match(s.hook, /rev: v3\.3\.0\n {2}hooks:\n {4}- id: jsonvet\n\n/);

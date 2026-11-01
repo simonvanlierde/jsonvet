@@ -19,6 +19,8 @@ pub enum Rule {
     ByteOrderMark,
     /// A JSON Lines file that does not end with a newline.
     MissingFinalNewline,
+    /// A file whose line endings are not all the same.
+    MixedLineEndings,
 }
 
 impl Rule {
@@ -30,6 +32,7 @@ impl Rule {
         Rule::InvalidCodePoint,
         Rule::ByteOrderMark,
         Rule::MissingFinalNewline,
+        Rule::MixedLineEndings,
     ];
 
     /// The rule's id, such as `duplicate-key`.
@@ -41,6 +44,7 @@ impl Rule {
             Rule::InvalidCodePoint => "invalid-code-point",
             Rule::ByteOrderMark => "byte-order-mark",
             Rule::MissingFinalNewline => "missing-final-newline",
+            Rule::MixedLineEndings => "mixed-line-endings",
         }
     }
 
@@ -53,6 +57,7 @@ impl Rule {
             Rule::InvalidCodePoint => "a lone surrogate or a noncharacter in a string",
             Rule::ByteOrderMark => "a byte order mark at the start of the file",
             Rule::MissingFinalNewline => "a JSON Lines file that does not end with a newline",
+            Rule::MixedLineEndings => "a file that mixes LF, CRLF and CR line endings",
         }
     }
 
@@ -63,7 +68,8 @@ impl Rule {
             | (Rule::InvalidNumber | Rule::InvalidCodePoint, Dialect::IJson)
             | (Rule::ByteOrderMark, Dialect::JsonLines) => Severity::Error,
             (Rule::ByteOrderMark, Dialect::Json | Dialect::IJson)
-            | (Rule::MissingFinalNewline, Dialect::JsonLines) => Severity::Warning,
+            | (Rule::MissingFinalNewline, Dialect::JsonLines)
+            | (Rule::MixedLineEndings, _) => Severity::Warning,
             _ => Severity::Off,
         }
     }
@@ -209,7 +215,7 @@ mod tests {
         for (i, &rule) in Rule::ALL.iter().enumerate() {
             assert_eq!(rule as usize, i, "{rule}");
         }
-        let last = Rule::MissingFinalNewline;
+        let last = Rule::MixedLineEndings;
         // No wildcard: a new rule stops this building until `last` and ALL are updated.
         match last {
             Rule::Syntax
@@ -217,7 +223,8 @@ mod tests {
             | Rule::InvalidNumber
             | Rule::InvalidCodePoint
             | Rule::ByteOrderMark
-            | Rule::MissingFinalNewline => {}
+            | Rule::MissingFinalNewline
+            | Rule::MixedLineEndings => {}
         }
         assert_eq!(Rule::ALL.len(), last as usize + 1);
     }

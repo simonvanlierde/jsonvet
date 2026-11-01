@@ -77,7 +77,7 @@ fn the_final_newline_follows_the_file_s_own_line_ending() {
     // The first line ending decides; a lone CR is not a line ending in JSON Lines.
     assert_eq!(
         safe("[1]\n[2]\r\n[3]", Dialect::JsonLines).as_deref(),
-        Some("[1]\n[2]\r\n[3]\n")
+        Some("[1]\n[2]\n[3]\n")
     );
 }
 

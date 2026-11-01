@@ -439,7 +439,8 @@ fn problems(text: &str, config: &Config) -> Vec<String> {
     let mut found: Vec<String> = check(text, config)
         .problems()
         .iter()
-        .filter(|p| p.rule() != Rule::MissingFinalNewline)
+        // The formatter gives the file one line ending, so a mix in the input goes.
+        .filter(|p| !matches!(p.rule(), Rule::MissingFinalNewline | Rule::MixedLineEndings))
         .map(|p| format!("{}: {p}", p.rule()))
         .collect();
     found.sort();

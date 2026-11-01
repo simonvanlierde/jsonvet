@@ -16,6 +16,7 @@ export function fixesFor(problem, fixes) {
 const KINDS = {
   "byte-order-mark": ["byte order mark", "byte order marks"],
   "missing-final-newline": ["missing final newline", "missing final newlines"],
+  "mixed-line-endings": ["mixed line ending", "mixed line endings"],
   "duplicate-key": ["duplicate key", "duplicate keys"],
   syntax: ["trailing comma", "trailing commas"],
 };

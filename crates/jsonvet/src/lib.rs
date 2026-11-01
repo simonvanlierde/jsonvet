@@ -188,6 +188,13 @@ pub fn parse_lines<'a>(
 pub fn join_lines(text: &str, parts: Vec<Lines>) -> (Report<'_>, bool) {
     let mut problems = Vec::new();
     for mut part in parts {
+        // Each part sees the mix against the file's first ending, but the file has one.
+        if problems
+            .iter()
+            .any(|p: &Problem| p.rule() == Rule::MixedLineEndings)
+        {
+            part.problems.retain(|p| p.rule() != Rule::MixedLineEndings);
+        }
         problems.append(&mut part.problems);
         if part.syntax_error {
             return (Report::new(text, problems, false), true);

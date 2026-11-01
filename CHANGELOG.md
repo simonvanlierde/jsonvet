@@ -10,6 +10,9 @@ version for a new option or output, the patch version for a fix.
 
 ### Added
 
+- A `mixed-line-endings` rule warns once per file about the first line ending that differs from
+  the file's first one (LF, CRLF or a lone CR), and `--fix` rewrites them all to that one
+  ([mixed-line-endings](docs/usage.md#mixed-line-endings)).
 - `--fix` rewrites files with the fixes that are safe: it removes a byte order mark and trailing
   commas where the dialect forbids them, and adds a missing final newline to JSON Lines. It then
   reports what is left, and the exit status follows it. `--unsafe-fixes` also drops duplicate
