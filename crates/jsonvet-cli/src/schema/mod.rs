@@ -7,6 +7,7 @@ mod limits;
 mod nodes;
 mod place;
 pub(crate) mod select;
+mod values;
 
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap};
@@ -24,7 +25,7 @@ use serde_json::{Map, Value};
 
 use crate::messages;
 use crate::settings::Settings;
-use fold::{Fold, documents};
+use fold::Fold;
 use limits::{MAX_SCHEMA_DEPTH, PATTERN_BYTES, Reach, registry};
 use nodes::{Nd, Own, Tree};
 use place::{place_found, pointer_path, segments};
@@ -616,6 +617,21 @@ impl<'e> Checking<'_, 'e> {
     }
 }
 
+/// The message for a `$ref` that points outside the project, if `error` is one; for a `quiet`
+/// schema it names only the path of the schema at `name`.
+fn outside(error: &ReferencingError, name: &str, quiet: bool) -> Option<String> {
+    match error {
+        ReferencingError::Unretrievable { .. } if quiet => {
+            Some(messages::fill("schema.ref-outside", &[("path", &name)]))
+        }
+        ReferencingError::Unretrievable { uri, .. } => Some(messages::fill(
+            "schema.ref-outside-to",
+            &[("path", &name), ("uri", uri)],
+        )),
+        _ => None,
+    }
+}
+
 impl Schema {
     /// Read and compile the schema at `path`, in its dialect under `settings`. Any problem
     /// with it is a usage error. A `quiet` one names only the place, never text from the
@@ -661,7 +677,7 @@ impl Schema {
             return Err(at(problem.offset(), &messages::problem(problem)));
         }
         let events = events.unwrap_or_default();
-        let mut documents: Vec<_> = documents(&events).collect();
+        let mut documents: Vec<_> = values::documents(&events).collect();
         if documents.len() != 1 {
             return Err(messages::fill("schema.one-value", &[("path", &name)]));
         }
@@ -670,17 +686,14 @@ impl Schema {
         if let Some((offset, reason)) = document.unchecked {
             return Err(at(offset, &reason));
         }
-        let schema = &document.tree.value();
-        let outside = |error: &ReferencingError| match error {
-            ReferencingError::Unretrievable { .. } if quiet => {
-                Some(messages::fill("schema.ref-outside", &[("path", &name)]))
-            }
-            ReferencingError::Unretrievable { uri, .. } => Some(messages::fill(
-                "schema.ref-outside-to",
-                &[("path", &name), ("uri", uri)],
-            )),
-            _ => None,
+        let schema = &document.value;
+        let tree = || {
+            fold::documents(events)
+                .next()
+                .map(|d| d.tree)
+                .unwrap_or_default()
         };
+        let outside = |error: &ReferencingError| outside(error, &name, quiet);
         // The same index of `$id`s and anchors jsonschema builds, offline.
         let registry = registry(schema)
             .map_err(|error| outside(&error).unwrap_or_else(|| at(events[0].offset, &error)))?;
@@ -688,7 +701,7 @@ impl Schema {
         // takes the stack or hours, however shallow the schema is.
         let refuse = |over: limits::Over| {
             let target = (over.path.clone(), vec![over.key.clone()]);
-            at(document.tree.place(&[target])[0].0, &over.message())
+            at(tree().place(&[target])[0].0, &over.message())
         };
         let kept = Reach::new(schema).measure(&registry).map_err(refuse)?;
         admit(limits::patterns(schema).map_err(refuse)?)?;
@@ -712,7 +725,7 @@ impl Schema {
                     key_patterns,
                     string_patterns,
                     linear,
-                    quiet: quiet.then(|| Quiet::new(&name, schema, &document.tree, &report)),
+                    quiet: quiet.then(|| Quiet::new(&name, schema, &tree(), &report)),
                 });
             }
             Err(error) => error,
@@ -723,8 +736,9 @@ impl Schema {
         {
             return Err(message);
         }
-        let errors = found(None, document.tree.root(), &error, String::new);
-        let (offset, _) = place_found(&document.tree, &errors)[0];
+        let tree = tree();
+        let errors = found(None, tree.root(), &error, String::new);
+        let (offset, _) = place_found(&tree, &errors)[0];
         // A regex too large to compile is reported as no regex at all.
         if matches!(error.kind(), ValidationErrorKind::Format { format } if format == "regex") {
             let mb = PATTERN_BYTES >> 20;
@@ -1119,12 +1133,13 @@ fn cut(mut message: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::limits::{Reach, registry};
-    use super::{Compiled, MAX_MESSAGE, Schema, cut, documents, fits, fits_node, message, split};
+    use super::{Compiled, MAX_MESSAGE, Schema, cut, fits, fits_node, message, split};
     use jsonvet::{Config, Dialect};
     use proptest::prelude::*;
     use serde_json::{Value, json};
     use std::sync::OnceLock;
 
+    use super::fold::documents;
     use super::fold::tests::any_json;
 
     #[test]

@@ -2,7 +2,6 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::ops::Range;
 
 use jsonvet::{Event, EventKind, key_text};
 use serde_json::{Number, Value};
@@ -10,10 +9,9 @@ use serde_json::{Number, Value};
 use super::nodes::{Builder, Tree};
 use crate::messages;
 
-/// One document's values, and the range of the events they were folded from.
+/// One document's values.
 pub(super) struct Document<'e> {
     pub(super) tree: Tree<'e>,
-    pub(super) events: Range<usize>,
     /// The offset of its first event.
     pub(super) offset: usize,
     /// Why the values are not the text's, and where: the first such number or key.
@@ -124,7 +122,6 @@ impl<'e> Fold<'e> {
             None => {
                 return Some(Document {
                     tree: self.build.finish(node),
-                    events: self.first.0..i + 1,
                     offset: self.first.1,
                     unchecked: self.unchecked.take(),
                 });
@@ -165,7 +162,7 @@ pub(super) fn documents<'e>(events: &[Event<'e>]) -> impl Iterator<Item = Docume
 
 /// A number as written in any dialect, or `None` for `NaN`, `Infinity` and numbers past a
 /// double's range. An integer too large for 64 bits becomes a double, as `serde_json` reads one.
-fn number(text: &str) -> Option<Value> {
+pub(super) fn number(text: &str) -> Option<Value> {
     let (negative, unsigned) = match text.as_bytes().first() {
         Some(b'-') => (true, &text[1..]),
         Some(b'+') => (false, &text[1..]),
