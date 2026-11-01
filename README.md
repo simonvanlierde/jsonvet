@@ -77,7 +77,9 @@ Each [GitHub release](https://github.com/simonvanlierde/jsonvet/releases) also h
 for Linux, macOS and Windows, with checksums and an SBOM
 ([verifying a release](https://github.com/simonvanlierde/jsonvet/blob/main/SECURITY.md#verifying-a-release)).
 A folder stands for the JSON-like files under it, skipping hidden and ignored files, and `-` reads
-standard input. `jsonvet --help` lists every option, and the
+standard input. `jsonvet fmt` formats files and keeps their comments
+([formatting](https://github.com/simonvanlierde/jsonvet/blob/main/docs/format.md)).
+`jsonvet --help` lists every option, and the
 [reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md) has the details.
 
 ### Rust library

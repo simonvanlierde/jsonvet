@@ -1,0 +1,118 @@
+# Formatting
+
+`jsonvet fmt` rewrites JSON, JSONC, JWCC (HuJSON), JSON5 and JSON Lines files and keeps their
+comments. Why it works this way is in [design.md](design.md).
+
+```bash
+jsonvet fmt config/ package.json   # rewrite the files in place
+jsonvet fmt --check .              # list the files that would change; exit 1 if any
+jsonvet fmt - < in.json            # standard input to standard output
+```
+
+A file literally named `fmt` needs `./fmt`, because `fmt` as the first argument is the
+subcommand. Plain `jsonvet FILE...` still checks.
+
+The pre-commit hook is `jsonvet-format`:
+
+```yaml
+- repo: https://github.com/simonvanlierde/jsonvet
+  rev: v3.2.0
+  hooks:
+    - id: jsonvet-format
+```
+
+## What it does
+
+- A container goes on one line if it fits in the line width. If not, each member gets its own
+  line. An empty container is `{}` or `[]`. A one-line container has no space inside the
+  brackets: `{"a": [1, 2]}`.
+- A comment inside a container puts that container, and the ones around it, on separate lines.
+- A line comment stays at the end of its line. A block comment stays where it was next to its
+  tokens. A comment on its own line stays on its own line.
+- Blank lines between members stay, but at most one. Blank lines at the start and end of a
+  container go.
+- Strings and numbers are never changed. No escape is added or removed.
+- The file ends with exactly one newline. Line endings follow the first line ending in the file.
+  A byte order mark stays.
+- A second run changes nothing.
+
+By dialect:
+
+- JSON and I-JSON: the layout above, and no trailing commas.
+- JSONC and JWCC: comments stay. jsonvet adds no trailing comma. In JWCC, a trailing comma stays
+  where the container has several lines, and goes where it fits on one.
+- JSON5: written as it was (quotes, unquoted keys, hex, `+1`, `.5`, `Infinity`, `NaN`, trailing
+  commas), unless `normalize-json5` is on.
+- JSON Lines: each record on one line as `{"a": 1, "b": [1, 2]}`. The width does not apply.
+
+A comment between a key and its colon stays there if it is a block comment. A line comment
+there moves to after the colon.
+
+A file with a syntax error is left as it is. jsonvet prints the error and exits 1.
+
+## Settings
+
+The defaults are 2 spaces and 80 columns. Each setting comes from the first of these that sets it:
+
+1. The `[format]` table of `jsonvet.toml` (or `[tool.jsonvet.format]` in `pyproject.toml`).
+2. `.editorconfig`.
+3. The default.
+
+```toml
+[format]
+indent = 4              # spaces from 0 to 16, or "tab"
+width = 100             # columns, 1 or more
+normalize-json5 = true  # JSON5 files only
+```
+
+`.editorconfig` is read in part: `indent_style`, `indent_size` and `max_line_length`, in sections
+with the glob `*`, `*.json` or `*.{json,jsonc}`, and `root = true`. Sections with a path in the
+glob are skipped. A tab counts as four columns when jsonvet measures a line.
+
+Each kind of file is looked up on its own:
+
+- `jsonvet.toml` is found as for a check: the nearest one in the file's folder or a parent,
+  up to the repository root. It replaces any further up, and nothing is merged.
+- `.editorconfig` files are merged, nearer ones over farther ones, up to the repository root or
+  a file with `root = true`.
+
+So a `jsonvet.toml` setting wins over `.editorconfig` even when the `.editorconfig` is nearer.
+A setting the nearest `jsonvet.toml` leaves out falls back to `.editorconfig`, then the default.
+
+The dialect of a file is picked as for a check, by `--dialect`, `dialects` in `jsonvet.toml`,
+or the extension. A `.json` file is JSON5 by default, so `normalize-json5` also applies to it.
+To keep `.json` files as strict JSON, set their dialect:
+
+```toml
+dialects = [{ files = "*.json", dialect = "json" }]
+```
+
+## normalize-json5
+
+With `normalize-json5 = true`, a JSON5 file gets:
+
+- double quotes on strings, with `\'` written as `'` and a bare `"` written as `\"`;
+- keys quoted only where an identifier will not do: `{'a': 1, "b-c": 2}` becomes
+  `{a: 1, "b-c": 2}`. Keys with an escape stay quoted;
+- a trailing comma in each container that has several lines, and none in one-line containers.
+
+Number forms stay as written. The setting does nothing for the other dialects.
+
+## Options
+
+`jsonvet fmt` takes `--check`, `--dialect`, `--strict`, `--config`, `--no-config` and
+`--stdin-filename`, which work as for a check. With `--check` nothing is written. Each file that
+would change is printed, and the exit status is 1 if there is one. Standard input goes to
+standard output; with `--check` it prints only its name.
+
+Exit status: 0 when every file is formatted or was rewritten, 1 when a file has a syntax error,
+cannot be read or written, or with `--check` would change, and 2 for a usage error.
+
+A file is replaced through a temporary file in its folder and a rename. A symlink stays a
+symlink, and the file keeps its permissions.
+
+## Not done yet
+
+- Keeping the author's line breaks, range formatting, and sorting keys.
+- Re-indenting the lines inside a block comment. They stay as written.
+- Filling a number array across lines, as Prettier does.

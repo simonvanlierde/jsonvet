@@ -15,3 +15,12 @@
   files: (\.(json|jsonc|json5|geojson|jsonld|hujson|jwcc|code-workspace|code-snippets|webmanifest|jsonl|ndjson)|(^|/)\.babelrc)$
   types: [text]
   minimum_pre_commit_version: "2.0.0"
+# Rewrites files, so it fails a commit that changes one, as other formatters do.
+- id: jsonvet-format
+  name: jsonvet format
+  description: formats JSON, JSONC, JWCC (HuJSON), JSON5 and JSON Lines files and keeps their comments
+  entry: jsonvet fmt
+  language: python
+  files: (\.(json|jsonc|json5|geojson|jsonld|hujson|jwcc|code-workspace|code-snippets|webmanifest|jsonl|ndjson)|(^|/)\.babelrc)$
+  types: [text]
+  minimum_pre_commit_version: "2.0.0"

@@ -258,6 +258,8 @@ dialect = "jwcc"
   replaces them all. A schema here that jsonvet cannot read or use is a usage error, even when no
   file matches its glob. In a config file the search finds, the schema must be inside the project
   ([JSON Schema limits](#json-schema-limits)).
+- `format` is a table of `indent`, `width` and `normalize-json5` for `jsonvet fmt`
+  ([formatting](format.md#settings)).
 
 ## GitHub Action
 
