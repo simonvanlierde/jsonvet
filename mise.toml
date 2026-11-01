@@ -5,7 +5,7 @@
 just = "1"
 uv = "0.13.5"
 prek = "0.5.7"
-hyperfine = "1"
+hyperfine = "2.0.0"
 node = "24" # the playground tests, and the smoke test of its wasm
 "aqua:nextest-rs/nextest/cargo-nextest" = "0.9.148"
 cargo-deny = "0.20.2"
