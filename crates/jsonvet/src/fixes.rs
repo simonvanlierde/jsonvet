@@ -106,7 +106,7 @@ pub fn try_fix_at(
                 let edit = if problem.rule() == Rule::ByteOrderMark {
                     Edit::delete(problem.offset()..problem.end())
                 } else {
-                    Edit::insert(problem.offset(), eol)
+                    Edit::newline(text, eol)
                 };
                 groups.push(Group::new(
                     problem.rule(),
@@ -206,9 +206,15 @@ impl Edit {
         }
     }
 
-    fn insert(at: usize, insert: &'static str) -> Self {
+    fn newline(text: &str, insert: &'static str) -> Self {
+        // A trailing CR must not pair with the inserted LF and make a CRLF.
+        let at = if insert == "\n" {
+            text.trim_end_matches('\r').len()
+        } else {
+            text.len()
+        };
         Edit {
-            range: at..at,
+            range: at..text.len(),
             insert,
             soft: false,
         }

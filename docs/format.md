@@ -39,7 +39,7 @@ The pre-commit hook is `jsonvet-format`:
   indent character (a space, or a tab with `indent = "tab"`), and the move is a whole number of them; a line
   that cannot follow, a blank line, and a move that is not a whole number of tabs leave the
   lines as written. Line comments and one-line block comments are not touched.
-- Strings and numbers are never changed. No escape is added or removed.
+- Strings and numbers keep their spelling, apart from line endings. No escape is added or removed.
 - The file ends with exactly one newline. Line endings follow the first line ending in the file:
   `\r\n`, `\n` or a lone `\r`, as the [mixed-line-endings](usage.md#mixed-line-endings) rule sees
   it. JWCC uses `\n` in place of a lone `\r`, because a JWCC line comment ends only at `\n`.

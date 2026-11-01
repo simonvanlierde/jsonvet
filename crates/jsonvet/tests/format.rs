@@ -569,6 +569,27 @@ fn a_lone_cr_never_ends_a_jwcc_line_comment_in_the_output() {
 }
 
 #[test]
+fn a_multiline_comment_does_not_change_the_width_of_the_value_before_it() {
+    let options = width(26);
+    let once = fmt(Dialect::Jsonc, &options, "{\"a\":[1,2] /* x\n z */}");
+    assert_eq!(once, "{\n  \"a\": [1, 2] /* x\n    z */\n}\n");
+    assert_eq!(fmt(Dialect::Jsonc, &options, &once), once);
+}
+
+#[test]
+fn trailing_comment_width_counts_characters_and_tabs() {
+    for (comment, columns) in [("/*x*/", 5), ("/*é*/", 5), ("/*\t*/", 8)] {
+        let text = format!("{{\"a\":[1,2] {comment}}}");
+        let fits = width(7 + 6 + 1 + columns);
+        let out = fmt(Dialect::Jsonc, &fits, &text);
+        assert!(out.contains("\"a\": [1, 2]"), "{out:?}");
+        let breaks = width(fits.width - 1);
+        let out = fmt(Dialect::Jsonc, &breaks, &text);
+        assert!(out.contains("\"a\": [\n"), "{out:?}");
+    }
+}
+
+#[test]
 fn braces_are_padded_by_default_and_the_padding_counts_toward_the_width() {
     let json = Config::new(Dialect::Json);
     let one = |n: usize| format!("{{\"k\": \"{}\"}}", "x".repeat(n));

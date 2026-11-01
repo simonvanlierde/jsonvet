@@ -620,3 +620,67 @@ fn a_cr_before_a_crlf_that_is_no_ending_goes_with_it() {
         assert_eq!(fixed(want, dialect), None, "{dialect} {want:?}");
     }
 }
+
+#[test]
+fn adding_the_final_newline_does_not_create_a_mixed_ending() {
+    let config = Config::new(Dialect::JsonLines);
+    for (text, want) in [
+        ("1\n2\r", "1\n2\n"),
+        ("1\n2\r\n3\r", "1\n2\n3\n"),
+        ("1\n2\r\r", "1\n2\n"),
+        ("1\n2\r ", "1\n2\r \n"),
+        ("1\r\n2\r", "1\r\n2\r\r\n"),
+        ("1\r", "1\n"),
+    ] {
+        let out = fix(text, &config, false).unwrap();
+        assert_eq!(out.text, want, "{text:?}");
+        assert!(check(&out.text, &config).problems().is_empty(), "{text:?}");
+        assert!(fix(&out.text, &config, false).is_none(), "{text:?}");
+    }
+    let text = "1\n2\r\n3\r";
+    let only = try_fix_at(text, &config, false, Some(&[text.len()])).unwrap();
+    assert_eq!(only.text, "1\n2\r\n3\n");
+    assert_eq!(only.fixes.len(), 1);
+}
+
+#[test]
+fn fmt_measures_json5_continuations_after_rewriting_their_endings() {
+    let config = Config::new(Dialect::Json5);
+    for width in 1..35 {
+        for normalize_json5 in [false, true] {
+            let options = FormatOptions {
+                width,
+                normalize_json5,
+                ..FormatOptions::default()
+            };
+            for text in [
+                "/*\r\n*/['a\\\nb', 123456789]",
+                "/*\n*/['a\\\r\nb', 123456789]",
+                "/*\r\n*/{'a\\\nb': 123456789}",
+                "/*\n*/{'a\\\r\nb': 123456789}",
+            ] {
+                let once = format(text, &config, &options).unwrap();
+                let twice = format(&once, &config, &options).unwrap();
+                assert_eq!(
+                    once, twice,
+                    "width={width}, normalize={normalize_json5}, {text:?}"
+                );
+                assert!(check(&once, &config).problems().is_empty(), "{once:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn fmt_syntax_reports_keep_the_configured_line_ending_severity() {
+    let text = "[\n1,\r\nx]";
+    for severity in [Severity::Off, Severity::Warning, Severity::Error] {
+        let config = Config::new(Dialect::Json).rule(Rule::MixedLineEndings, severity);
+        let Err(jsonvet::FormatError::Syntax(report)) =
+            format(text, &config, &FormatOptions::default())
+        else {
+            panic!("a syntax error");
+        };
+        assert_eq!(report.problems(), check(text, &config).problems());
+    }
+}

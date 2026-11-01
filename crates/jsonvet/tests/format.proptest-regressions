@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 2c4fe8a44aeb7c8f50d0e2c61ec76c1269c22b4667beacca98b581c673c432c9 # shrinks to (dialect, t, seed, trailing, width, indent, normalize, pad) = (Jsonc, Object([("\"k0\"", Array([Atom("-0.5e3"), Atom("\"\\u00e9\"")]))]), 11437956583660804671, false, 80, 1, false, false)

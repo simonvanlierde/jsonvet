@@ -211,8 +211,9 @@ fn walk_scan<'a, 's, const SCAN: bool>(
 /// for a file with none.
 pub(crate) fn check_ending(text: &str, config: &Config) -> (Vec<Problem>, &'static str) {
     // The rule's first ending is what is wanted, so it is looked at even where the rule is off.
+    let severity = config.severity(Rule::MixedLineEndings);
     let on;
-    let config = if config.severity(Rule::MixedLineEndings).is_on() {
+    let config = if severity.is_on() {
         config
     } else {
         on = config
@@ -220,7 +221,10 @@ pub(crate) fn check_ending(text: &str, config: &Config) -> (Vec<Problem>, &'stat
             .rule(Rule::MixedLineEndings, Severity::Warning);
         &on
     };
-    let (problems, first) = walk_scan::<false>(text, 0..text.len(), config, None, None);
+    let (mut problems, first) = walk_scan::<false>(text, 0..text.len(), config, None, None);
+    if !severity.is_on() {
+        problems.retain(|p| p.rule() != Rule::MixedLineEndings);
+    }
     // No CR-bearing ending seen means every ending is an LF.
     let eol = first.map_or(Eol::Lf, |first| target_ending(first, config.dialect()));
     (problems, eol.text())

@@ -104,8 +104,9 @@ impl fmt::Display for FormatError<'_> {
 
 impl std::error::Error for FormatError<'_> {}
 
-/// Format one text. Comments, strings and numbers stay as written. A text with a syntax error
-/// comes back as [`FormatError::Syntax`] with its report, and nothing is formatted.
+/// Format one text, keeping comments and values with line endings normalized.
+/// A text with a syntax error comes back as [`FormatError::Syntax`] with its report,
+/// and nothing is formatted.
 ///
 /// ```
 /// use jsonvet::{format, Config, Dialect, FormatOptions};
@@ -162,7 +163,6 @@ pub fn format<'a>(
             over: counting,
             col: 0,
             eol,
-            json5: dialect == Dialect::Json5,
             options,
             trailing,
             pad,
@@ -176,7 +176,7 @@ pub fn format<'a>(
         // Each record is worked out and written on its own, so the output is built as it goes.
         let capacity = (text.len() + text.len() / 4).min(usize::try_from(limit).unwrap_or(0));
         let mut w = writer(false, capacity, false);
-        let mut parser = Parser::new(body, Dialect::Json, false);
+        let mut parser = Parser::new(body, Dialect::Json, false, eol);
         for line in body.split('\n') {
             let line = line.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}');
             if line.is_empty() {
@@ -190,7 +190,7 @@ pub fn format<'a>(
         }
         return w.finish();
     }
-    let mut parser = Parser::new(body, dialect, norm);
+    let mut parser = Parser::new(body, dialect, norm, eol);
     parser.pad = options.bracket_spacing;
     parser.reserve();
     let doc = parser.document();
@@ -545,13 +545,14 @@ struct Parser<'a> {
     cur: Option<Tok>,
     nxt: Option<Tok>,
     norm: bool,
+    eol: &'static str,
     /// Whether an object on one line has a space inside its braces.
     pad: bool,
     t: Tree<'a>,
 }
 
 impl<'a> Parser<'a> {
-    fn new(text: &'a str, dialect: Dialect, norm: bool) -> Self {
+    fn new(text: &'a str, dialect: Dialect, norm: bool, eol: &'static str) -> Self {
         let mut lexer = Lexer {
             text,
             at: 0,
@@ -563,6 +564,7 @@ impl<'a> Parser<'a> {
             cur,
             nxt,
             norm,
+            eol,
             pad: false,
             t: Tree {
                 text,
@@ -701,6 +703,21 @@ impl<'a> Parser<'a> {
             key_text(source)
         } else {
             double_quoted(source)
+        };
+        // Rewrite continuations before measuring, so a second format uses the same widths.
+        let rewritten = if rewritten.contains(['\n', '\r']) {
+            let mut out = String::with_capacity(rewritten.len());
+            let mut rest = rewritten.as_ref();
+            while let Some(i) = rest.find(['\n', '\r']) {
+                out.push_str(&rest[..i]);
+                out.push_str(self.eol);
+                let len = if rest[i..].starts_with("\r\n") { 2 } else { 1 };
+                rest = &rest[i + len..];
+            }
+            out.push_str(rest);
+            Cow::Owned(out)
+        } else {
+            rewritten
         };
         match rewritten {
             Cow::Borrowed(_) => Span {
@@ -940,8 +957,6 @@ struct Writer<'o> {
     /// The column of the end of the line being written.
     col: usize,
     eol: &'o str,
-    /// Whether strings can hold line continuations (JSON5).
-    json5: bool,
     options: &'o FormatOptions,
     trailing: Trailing,
     /// Whether an object on one line has a space inside its braces.
@@ -995,33 +1010,6 @@ impl Writer<'_> {
                 .chars()
                 .map(|c| if c == '\t' { 4 } else { 1 })
                 .sum::<usize>();
-    }
-
-    /// A string, number or key. In JSON5 a string can hold line continuations.
-    fn put_atom(&mut self, s: &str) {
-        if self.json5 {
-            self.put_text(s);
-        } else {
-            self.put(s);
-        }
-    }
-
-    /// `s` with each line ending in it, from JSON5 line continuations, written as the file's own,
-    /// so the output has one kind.
-    fn put_text(&mut self, s: &str) {
-        if memchr::memchr2(b'\n', b'\r', s.as_bytes()).is_none() {
-            return self.put(s);
-        }
-        let mut out = String::with_capacity(s.len());
-        let mut rest = s;
-        while let Some(i) = rest.find(['\n', '\r']) {
-            out.push_str(&rest[..i]);
-            out.push_str(self.eol);
-            let len = if rest[i..].starts_with("\r\n") { 2 } else { 1 };
-            rest = &rest[i + len..];
-        }
-        out.push_str(rest);
-        self.put(&out);
     }
 
     /// A comment. A block comment over several lines moves its later lines by as many columns
@@ -1146,7 +1134,7 @@ impl Writer<'_> {
     /// `suffix` is the width of what must follow the value on its last line, such as a comma.
     fn value(&mut self, t: &Tree<'_>, value: Value, depth: usize, suffix: usize) {
         let Some(index) = value.container() else {
-            self.put_atom(t.atom(Span {
+            self.put(t.atom(Span {
                 start: value.start,
                 len: value.len,
             }));
@@ -1166,7 +1154,7 @@ impl Writer<'_> {
     fn flat_value(&mut self, t: &Tree<'_>, value: Value) {
         match value.container() {
             Some(index) => self.flat(t, &t.containers[index]),
-            None => self.put_atom(t.atom(Span {
+            None => self.put(t.atom(Span {
                 start: value.start,
                 len: value.len,
             })),
@@ -1184,7 +1172,7 @@ impl Writer<'_> {
                 self.put(", ");
             }
             if let Some(key) = m.key() {
-                self.put_atom(t.atom(key));
+                self.put(t.atom(key));
                 self.put(": ");
             }
             self.flat_value(t, m.value);
@@ -1235,11 +1223,21 @@ impl Writer<'_> {
             first = false;
             let comma = i + 1 < members.len() || comma_last;
             let before_comma = extra.map_or(&[][..], |e| t.list(e.before_comma));
-            let suffix = usize::from(comma)
-                + before_comma
-                    .iter()
-                    .map(|b| 1 + b.len as usize)
+            let mut suffix = usize::from(comma);
+            for &b in before_comma.iter().rev() {
+                let text = t.comment(b);
+                // Only the first line shares the value's line; later suffixes go after it.
+                let first = if let Some((first, _)) = text.split_once(['\n', '\r']) {
+                    suffix = 0;
+                    first
+                } else {
+                    text
+                };
+                suffix += 1 + first
+                    .chars()
+                    .map(|c| if c == '\t' { 4 } else { 1 })
                     .sum::<usize>();
+            }
             self.member(t, m, extra, inner, suffix);
             for &b in before_comma {
                 self.put(" ");
@@ -1275,7 +1273,7 @@ impl Writer<'_> {
     ) {
         let mut value_depth = depth;
         if let Some(key) = m.key() {
-            self.put_atom(t.atom(key));
+            self.put(t.atom(key));
             if let Some(extra) = extra {
                 for &b in t.list(extra.before_colon) {
                     self.put(" ");
