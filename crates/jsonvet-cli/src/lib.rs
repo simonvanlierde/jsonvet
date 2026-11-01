@@ -8,7 +8,7 @@ use std::process::ExitCode;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use jsonvet::{Dialect, Report, Severity};
+use jsonvet::{Dialect, Problem, Report, Severity};
 
 mod args;
 mod frame;
@@ -220,7 +220,7 @@ pub fn run_with(
         let mut texts = take_chunk(&mut ahead, rest, shares, threads, &with_schema);
         let chunk;
         (chunk, rest) = rest.split_at(texts.len());
-        if args.fix {
+        let known = if args.fix {
             fix_chunk(
                 chunk,
                 &mut texts,
@@ -228,23 +228,25 @@ pub fn run_with(
                 args.unsafe_fixes,
                 threads,
                 &mut fixed,
-            );
-        }
-        let jobs: Vec<_> = chunk.iter().zip(&texts).collect();
+            )
+        } else {
+            vec![None; texts.len()]
+        };
+        let jobs: Vec<_> = chunk.iter().zip(&texts).zip(&known).collect();
         let parts = (threads / jobs.len()).max(1);
         let checked = parallel(
             &jobs,
             threads,
             || false,
-            |(((settings, schema), file), (text, with))| {
+            |((((settings, schema), file), (text, with)), known)| {
                 let name = shown(file);
                 let name = name.to_string_lossy();
                 text.as_deref().map(|text| match schema {
-                    Some(schema) => check(&name, text, settings, Some(schema), parts),
+                    Some(schema) => check(&name, text, settings, Some(schema), parts, None),
                     None if *with => {
                         check_own_schema(&name, text, settings, &schemas, &root, &load, parts)
                     }
-                    None => check(&name, text, settings, None, parts),
+                    None => check(&name, text, settings, None, parts, known.as_deref()),
                 })
             },
         );
@@ -566,7 +568,7 @@ fn fix_chunk(
     unsafe_fixes: bool,
     threads: usize,
     run: &mut FixRun,
-) {
+) -> Vec<Option<Vec<Problem>>> {
     let jobs: Vec<_> = chunk.iter().zip(texts.iter()).collect();
     let done = parallel(
         &jobs,
@@ -576,17 +578,27 @@ fn fix_chunk(
             let text = text.as_ref().ok()?;
             let name = shown(file);
             let config = settings.config_for(&name.to_string_lossy());
-            let fixed = jsonvet::fix(text, &config, unsafe_fixes)?;
+            let fixed = match jsonvet::try_fix(text, &config, unsafe_fixes) {
+                Ok(fixed) => fixed,
+                Err(problems) => return Some(Err(problems)),
+            };
             let saved = if file == STDIN {
                 Ok(())
             } else {
                 write_atomically(Path::new(file), &fixed.text)
             };
-            Some((fixed, saved))
+            Some(Ok((fixed, saved)))
         },
     );
     drop(jobs);
+    let mut known = Vec::with_capacity(done.len());
     for (((_, file), entry), done) in chunk.iter().zip(texts.iter_mut()).zip(done) {
+        // The scan's problems stand for the check only while the text is unchanged.
+        known.push(match &done {
+            Some(Err(problems)) => problems.clone(),
+            _ => None,
+        });
+        let done = done.and_then(Result::ok);
         match done {
             Some((fixed, Ok(()))) => {
                 run.problems += fixed.fixes.len();
@@ -604,6 +616,7 @@ fn fix_chunk(
             run.stdin = Some(text.clone());
         }
     }
+    known
 }
 
 /// Replace the file `path` leads to with `text`: write a temporary file beside it, give it the
@@ -748,6 +761,7 @@ fn check<'t>(
     settings: &Settings,
     schema: Option<&Schema>,
     parts: usize,
+    known: Option<&[Problem]>,
 ) -> (Report<'t>, Vec<(usize, String, bool)>) {
     let config = settings.config_for(name);
     let ranges = split(text, config.dialect(), parts);
@@ -780,7 +794,14 @@ fn check<'t>(
     match schema {
         // A file with a syntax error gets no schema errors.
         Some(schema) => schema.check(text, &config),
-        None => (jsonvet::check(text, &config), Vec::new()),
+        // The problems `--fix` found on its way, when it changed nothing.
+        None => match known {
+            Some(problems) => (
+                jsonvet::report(text, problems.to_vec(), &config),
+                Vec::new(),
+            ),
+            None => (jsonvet::check(text, &config), Vec::new()),
+        },
     }
 }
 
@@ -1053,14 +1074,14 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         for text in &texts {
             for schema in [None, Some(&schema)] {
-                let (whole, whole_errors) = check("x.jsonl", text, &settings, schema, 1);
-                let (split, split_errors) = check("x.jsonl", text, &settings, schema, 8);
+                let (whole, whole_errors) = check("x.jsonl", text, &settings, schema, 1, None);
+                let (split, split_errors) = check("x.jsonl", text, &settings, schema, 8, None);
                 assert_ne!(whole.problems(), &[]);
                 assert_eq!(split.problems(), whole.problems());
                 assert_eq!(split_errors, whole_errors);
             }
         }
-        let (_, errors) = check("x.jsonl", &texts[0], &settings, Some(&schema), 8);
+        let (_, errors) = check("x.jsonl", &texts[0], &settings, Some(&schema), 8, None);
         // 570 strings, 100 and a summary for each wide line, and one for each line not checked.
         assert_eq!(errors.len(), 570 + 4 * 101 + 8);
         let unchecked = errors.iter().filter(|(_, m, _)| m.contains("not checked"));

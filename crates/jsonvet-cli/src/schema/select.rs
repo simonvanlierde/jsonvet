@@ -303,7 +303,7 @@ pub(crate) fn check_own_schema<'t>(
     match own {
         Ok(None) => (report, Vec::new()),
         // As with `--schema`.
-        Ok(Some(schema)) => check(name, text, settings, Some(&schema), parts),
+        Ok(Some(schema)) => check(name, text, settings, Some(&schema), parts, None),
         Err(error) => (report, vec![(offset, output::printable(&error), false)]),
     }
 }

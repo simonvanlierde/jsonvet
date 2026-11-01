@@ -49,9 +49,33 @@ pub struct Fixed {
 /// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
 #[doc(hidden)]
 pub fn fix(text: &str, config: &Config, unsafe_fixes: bool) -> Option<Fixed> {
+    try_fix(text, config, unsafe_fixes).ok()
+}
+
+/// [`fix`], but when nothing is fixed the `Err` holds the problems [`check`](crate::check) finds
+/// in `text`, so the caller need not check it again. That is `None` when the scan cannot tell
+/// them: it reads past a trailing comma that `check` stops at.
+///
+/// ```
+/// use jsonvet::{report, try_fix, Config, Dialect};
+///
+/// let config = Config::new(Dialect::Json);
+/// let problems = try_fix("[1,, 2]", &config, false).unwrap_err().unwrap();
+/// assert_eq!(report("[1,, 2]", problems, &config).problems().len(), 1);
+/// ```
+///
+/// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
+#[doc(hidden)]
+pub fn try_fix(
+    text: &str,
+    config: &Config,
+    unsafe_fixes: bool,
+) -> Result<Fixed, Option<Vec<Problem>>> {
     let (problems, scan) = parse::scan(text, config);
+    // Without a trailing comma the scan reads the text as `check` does.
+    let same = scan.commas.is_empty();
     if problems.iter().any(|p| p.rule() == Rule::Syntax) {
-        return None;
+        return Err(same.then_some(problems));
     }
     // The file's own line ending, from its first one; JSON Lines knows only LF and CRLF.
     let eol = match text.find('\n') {
@@ -106,7 +130,7 @@ pub fn fix(text: &str, config: &Config, unsafe_fixes: bool) -> Option<Fixed> {
         });
     }
     if fixes.is_empty() {
-        return None;
+        return Err(same.then_some(problems));
     }
     edits.sort_by_key(|e| e.range.start);
     let mut out = String::with_capacity(text.len());
@@ -118,7 +142,7 @@ pub fn fix(text: &str, config: &Config, unsafe_fixes: bool) -> Option<Fixed> {
     }
     out.push_str(&text[from..]);
     fixes.sort_by_key(|f| f.offset);
-    Some(Fixed { text: out, fixes })
+    Ok(Fixed { text: out, fixes })
 }
 
 struct Edit {

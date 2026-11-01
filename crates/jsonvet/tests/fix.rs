@@ -1,7 +1,7 @@
 //! `jsonvet::fix`: what each fix does in each dialect, that fixing twice equals fixing once, and
 //! that strict JSON keeps its value.
 
-use jsonvet::{Config, Dialect, Fix, Rule, Severity, check, fix};
+use jsonvet::{Config, Dialect, Fix, Rule, Severity, check, fix, report, try_fix};
 use proptest::prelude::*;
 
 fn safe(text: &str, dialect: Dialect) -> Option<String> {
@@ -222,6 +222,31 @@ fn tree() -> impl Strategy<Value = (String, serde_json::Value)> {
 }
 
 proptest! {
+    // When nothing is fixed, the problems `try_fix` returns are the ones `check` finds, positions
+    // included, in every dialect. A trailing comma is the case where they could differ.
+    #[test]
+    fn unfixed_problems_are_the_checks(
+        tokens in prop::collection::vec(
+            prop::sample::select(vec![
+                "{", "}", "[", "]", ",", ":", "\"a\"", "\"b\"", "1", "01", "0x1", "true", "// c\n",
+                "/* c */", "\n", " ", "\u{FEFF}", "'s'", "x", "\"\\ud800\"",
+            ]),
+            0..14,
+        ),
+        dialect in prop::sample::select(vec![
+            Dialect::Json, Dialect::IJson, Dialect::Jsonc, Dialect::Json5, Dialect::JsonLines,
+        ]),
+        unsafe_fixes in any::<bool>(),
+    ) {
+        let text = tokens.concat();
+        let config = Config::new(dialect);
+        if let Err(Some(problems)) = try_fix(&text, &config, unsafe_fixes) {
+            let again = report(&text, problems, &config);
+            let plain = check(&text, &config);
+            prop_assert_eq!(again.problems(), plain.problems());
+        }
+    }
+
     // Dropping the earlier copies leaves what serde_json (and JSON.parse) read from the original.
     #[test]
     fn fixed_strict_json_keeps_its_value(

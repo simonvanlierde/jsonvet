@@ -267,3 +267,49 @@ fn a_temp_name_taken_by_another_file_is_left_alone() {
     assert_eq!(decoys.len(), 1, "{decoys:?}");
     assert_eq!(read(&dir, &decoys[0]), "keep\n");
 }
+
+/// When `--fix` changes nothing, the problems it leaves are those a plain run prints, in every
+/// output format: a clean file, one with a duplicate key, and one a trailing comma and a later
+/// syntax error share, where the fix scan and the check read different problems.
+#[test]
+fn a_run_that_fixes_nothing_prints_what_a_run_without_fix_prints() {
+    let dir = workdir(&[
+        ("clean.json", "{\"a\": [1, 2]}\n"),
+        ("dup.json", "{\"a\": 1,\n \"a\": 2}\n"),
+        ("late.json", "[1,] x\n"),
+        ("jsonc.jsonc", "{\"a\": 1} // c"),
+        ("lines.jsonl", "{\"a\": 1}\n{\"a\": 2}\n"),
+        ("odd.json", "\u{FEFF}[01]\n"),
+    ]);
+    let files = [
+        "clean.json",
+        "dup.json",
+        "late.json",
+        "jsonc.jsonc",
+        "lines.jsonl",
+        "odd.json",
+    ];
+    for (format, github) in [
+        ("text", false),
+        ("json", false),
+        ("sarif", false),
+        ("text", true),
+    ] {
+        let go = |fix: bool| {
+            let mut command = command();
+            command.arg(format!("--format={format}")).args(files);
+            if fix {
+                command.arg("--fix");
+            }
+            if github {
+                command.env("GITHUB_ACTIONS", "true");
+            }
+            let out = command.current_dir(&dir).output().expect("run jsonvet");
+            (out.status.code(), out.stdout)
+        };
+        let plain = go(false);
+        let fixed = go(true);
+        assert_eq!(fixed, plain, "{format} github={github}");
+    }
+    assert_eq!(read(&dir, "late.json"), "[1,] x\n");
+}
