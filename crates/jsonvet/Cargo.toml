@@ -31,7 +31,7 @@ name = "codspeed"
 harness = false
 
 [dev-dependencies]
-divan = { version = "5.0.3", package = "codspeed-divan-compat" }
+divan = { version = "6.0.0", package = "codspeed-divan-compat" }
 gungraun = "0.20.0"
 insta = "1.49.0"
 proptest = "1.12.0"
