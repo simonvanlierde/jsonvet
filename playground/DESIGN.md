@@ -157,7 +157,7 @@ Timings, positions and counts use tabular figures.
 - The slug line runs across the top, its two halves at either end over a dashed rule. They wrap
   to two lines on a phone.
 - The stages are one bordered row, each stage at least 7.5rem wide; three by two under 720px.
-- From 860px the proof is two columns: the text, at most 36rem wide, and a margin of at least 18.5rem on the faint grid. The
+- From 860px the proof is two columns: the text, 80 characters of the editor's font wide (`80ch` plus the gutter and padding, so it follows the font) and a margin of at least 18.5rem on the faint grid. The
   editor grows with the text (at least 8 rows, at most 70% of the window, then it scrolls inside)
   and with the notes, which keep their row or stack below the one above.
 - Past 30 corrections, when the stacked notes would run past the text, above 5,000 rows, or under
@@ -191,14 +191,25 @@ the dialect adds and which files the CLI checks in it.
 
 #### Actions
 
-A row of small mono controls between the stages and the proof, set like the slug: **Fix** with its
-count of fixes ("Fix 2") and a "drop duplicate keys too" box; **Format** with indent (2 spaces,
-4 spaces, tab), width (80), "bracket spacing" (on) and, in JSON5 only, "normalize JSON5". The two
-buttons are the page's only outlined controls: a 1px ink border, no fill, the tint on hover. Fix
-stays focusable at zero and says why when used. The result is an italic aside under the proof
+A row of small mono controls between the stages and the proof, set like the slug: two split
+buttons, **Fix** (with its count of fixes, "Fix 2") and **Format**. The main part runs the action
+with the current settings. The small part beside it, a caret with a dot and a count when any
+setting differs from its default, opens a popover under the button (a bottom sheet under 560px).
+Both parts are outlined controls: a 1px ink border, no fill, the tint on hover and while open.
+
+The popover is a native `popover`, set in the same mono. A heading, then one row per setting that
+applies to the dialect: a faint label and a compact control, between dashed rules. A choice (indent:
+2, 4, tab) and an on/off setting (bracket spacing, drop duplicate keys, normalize JSON5, JSON5 only)
+are segmented controls with `role="radiogroup"`, one tab stop each and arrow keys inside; the
+chosen part has the tint and a 2px ink bar at its foot, like a stage. A number (width) is a small
+field. The foot shows the same settings as real config on the tint, with Copy: a `[format]` table
+for `jsonvet.toml`, or the `jsonvet --fix` flags. At the defaults it says there is nothing to set.
+Esc closes it and returns focus to the button. The settings come from one table in
+`settings.mjs`, so a new setting is a new row.
+
+Fix stays focusable at zero and says why when used. The result is an italic aside under the proof
 ("Fixed 2 problems: ... Ctrl+Z undoes it.", "Already formatted.", or the syntax error that stopped
-Format), and the slug line gains "fixed in 0.2 ms" or "formatted in 1.1 ms". The groups wrap, and
-each takes a full row under 560px.
+Format), and the slug line gains "fixed in 0.2 ms" or "formatted in 1.1 ms". The two groups wrap.
 
 #### Proof
 
@@ -221,7 +232,7 @@ whose accessible name is its position, severity, message and related place, and 
 with the position, "warning" when it is one, the rule id linked to its section in docs/usage.md,
 "first at 6:5" and, for a correction with a fix, an underlined "apply" in ink (not pen: the pen
 marks the correction, not the cure). A fix that is not safe reads "unsafe fix" until the
-duplicate-keys box is ticked. A related place gets its own short note ("first copy 6:5"), hidden from screen
+"drop duplicate keys" option is on. A related place gets its own short note ("first copy 6:5"), hidden from screen
 readers. A thin red leader runs from the end of the row to the note, with an arrowhead at the
 text; a stacked note's leader bends at the margin's edge. Hovering or focusing a correction tints
 its rows and darkens its leader. In the list form, each note carries the number shown in the

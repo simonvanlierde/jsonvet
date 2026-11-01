@@ -23,7 +23,6 @@ const tryBig = $("try");
 const back = $("back");
 const fixButton = $("fix");
 const formatButton = $("format");
-const unsafe = $("unsafe");
 const acted = $("acted");
 const radios = [...stages.querySelectorAll('[role="radio"]')];
 const radio = (d) => radios.find((r) => r.dataset.dialect === d);
@@ -83,6 +82,11 @@ let lineCount;
 let runFix;
 let runFormat;
 let formatArgs;
+let settings;
+// The options of Fix and Format, by key (settings.mjs), and the popovers that edit them. Not kept.
+let fixValues = { unsafe: false };
+let formatValues = {};
+const mounted = [];
 let fixesFor;
 let fixSummary;
 let snippets;
@@ -273,7 +277,7 @@ function note(p, n) {
   const own = fixesFor(p, fixes);
   if (own.length) {
     const slot = el("span");
-    if (own.every((f) => f.safe) || unsafe.checked) {
+    if (own.every((f) => f.safe) || fixValues.unsafe) {
       const apply = el("button", "link apply", "apply");
       apply.type = "button";
       apply.setAttribute("aria-label", `Apply the fix for ${p.line}:${p.column}, ${p.message.replaceAll("`", "")}`);
@@ -526,7 +530,7 @@ function select(d, focus) {
     if (on && focus) r.focus();
   }
   setRich(hint, hints[d]);
-  $("norm-label").hidden = d !== "json5";
+  for (const o of mounted) o.render();
   slug();
   schedule();
 }
@@ -622,9 +626,9 @@ function act(kind, only = none) {
   let out;
   try {
     if (kind === "fix") {
-      out = JSON.parse(runFix(text, dialect, only.length > 0 || unsafe.checked, only));
+      out = JSON.parse(runFix(text, dialect, only.length > 0 || fixValues.unsafe, only));
     } else {
-      out = runFormat(text, dialect, ...formatArgs({ indent: $("indent").value, width: $("width").value, spacing: $("spacing").checked, normalize: $("norm").checked }, dialect));
+      out = runFormat(text, dialect, ...formatArgs(formatValues, dialect));
     }
   } catch (e) {
     const why = String(e);
@@ -647,14 +651,13 @@ function act(kind, only = none) {
 
 // The Fix button counts the fixes it would apply; it stays focusable at zero so it can say why.
 function fixState() {
-  const n = fixes.filter((f) => f.safe || unsafe.checked).length;
+  const n = fixes.filter((f) => f.safe || fixValues.unsafe).length;
   fixButton.textContent = n ? `Fix ${n}` : "Fix";
   fixButton.setAttribute("aria-disabled", String(!n));
   fixButton.setAttribute("aria-label", n ? `Fix: apply ${plural(n, "fix")}` : "Fix: nothing to fix");
 }
 fixButton.addEventListener("click", () => act("fix"));
 formatButton.addEventListener("click", () => act("format"));
-unsafe.addEventListener("change", () => loaded && run());
 
 wide.addEventListener("change", layout);
 let resizeFrame;
@@ -800,7 +803,17 @@ try {
   ({ encode, decode } = await import(`./share.mjs${version}`));
   ({ tokenEnd, stack, formatMs, lineCount } = await import(`./proof.mjs${version}`));
   ({ hosts } = await import(`./hosts.mjs${version}`));
-  ({ formatArgs, fixesFor, fixSummary } = await import(`./actions.mjs${version}`));
+  ({ fixesFor, fixSummary } = await import(`./actions.mjs${version}`));
+  settings = await import(`./settings.mjs${version}`);
+  ({ formatArgs } = settings);
+  fixValues = settings.defaults("fix");
+  formatValues = settings.defaults("format");
+  const { mountOptions } = await import(`./options.mjs${version}`);
+  const say = (t) => (shareStatus.textContent = t);
+  mounted.push(
+    mountOptions({ tool: "fix", button: $("fix-opts"), pop: $("fix-pop"), values: fixValues, dialect: () => dialect, onChange: () => loaded && run(), say }),
+    mountOptions({ tool: "format", button: $("format-opts"), pop: $("format-pop"), values: formatValues, dialect: () => dialect, onChange() {}, say }),
+  );
   ({ snippets } = await import(`./snippets.mjs${version}`));
   const wasm = await import(`./pkg/jsonvet_wasm.js${version}`);
   await wasm.default({ module_or_path: new URL(`./pkg/jsonvet_wasm_bg.wasm${version}`, import.meta.url) });

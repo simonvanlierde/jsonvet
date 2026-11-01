@@ -22,7 +22,8 @@ version for a new option or output, the patch version for a fix.
   hook ([formatting](docs/format.md)).
 - The browser playground has Fix and Format buttons. Fix applies the safe fixes to the text, or
   one correction's fix from its note, and Format sets the text with the indent, width and
-  bracket spacing you pick. Both can be undone with Ctrl+Z, and the "Use this check" snippets show
+  bracket spacing you pick. Each has an options popover that shows the same settings as
+  `jsonvet.toml` or CLI flags. Both can be undone with Ctrl+Z, and the "Use this check" snippets show
   `--fix` and `jsonvet fmt`.
 - In GitHub Actions, a run that finds problems ends with a notice annotation that counts them,
   since GitHub shows only the first 10 annotations of a type for a step

@@ -1,18 +1,5 @@
-// Pure helpers for the Fix and Format actions: the wasm arguments from the controls, the fixes a
+// Pure helpers for the Fix and Format actions: the fixes a
 // correction names, and the sentence that says what an action did.
-
-// The controls' values as format()'s arguments after the text and dialect: spaces per level (0
-// for a tab), width, bracket spacing and JSON5 normalising. A width that is not a whole number
-// from 1 to 1000 is 80, the CLI's default; normalising applies to JSON5 only.
-export function formatArgs({ indent, width, spacing, normalize }, dialect) {
-  const n = Number(width);
-  return [
-    indent === "tab" ? 0 : indent === "4" ? 4 : 2,
-    Number.isInteger(n) && n >= 1 && n <= 1000 ? n : 80,
-    Boolean(spacing),
-    Boolean(normalize) && dialect === "json5",
-  ];
-}
 
 // The fixes (from fix()) that belong to a problem: those at its own place or at the place it
 // names, such as a duplicate key's first copy, which is the member the fix drops.
