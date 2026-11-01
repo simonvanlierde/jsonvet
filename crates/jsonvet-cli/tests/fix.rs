@@ -241,3 +241,29 @@ fn a_write_keeps_the_mode_leaves_no_temp_file_and_follows_a_symlink() {
         [".git", "a.json", "jsonvet.toml", "link.json", "real.json"]
     );
 }
+
+/// A file another process left under the name the temp file would take is not ours to touch.
+#[cfg(unix)]
+#[test]
+fn a_temp_name_taken_by_another_file_is_left_alone() {
+    let dir = workdir(&[("c.json", "[1,]")]);
+    // The shell's pid is the child's after `exec`, and the first name it tries ends in `-0`.
+    let out = Command::new("sh")
+        .args([
+            "-c",
+            "echo keep > .c.json.jsonvet-$$-0; exec \"$0\" --fix c.json",
+            env!("CARGO_BIN_EXE_jsonvet"),
+        ])
+        .current_dir(&dir)
+        .output()
+        .expect("run jsonvet");
+    assert_eq!(out.status.code(), Some(0));
+    assert_eq!(read(&dir, "c.json"), "[1]");
+    let decoys: Vec<_> = fs::read_dir(&dir)
+        .expect("list")
+        .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with(".c.json.jsonvet-"))
+        .collect();
+    assert_eq!(decoys.len(), 1, "{decoys:?}");
+    assert_eq!(read(&dir, &decoys[0]), "keep\n");
+}

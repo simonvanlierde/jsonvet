@@ -60,7 +60,7 @@ pub(crate) fn walk<'a>(
     config: &Config,
     sink: Option<&mut dyn FnMut(Event<'a>)>,
 ) -> Vec<Problem> {
-    walk_scan(text, lines, config, sink, None)
+    walk_scan::<false>(text, lines, config, sink, None)
 }
 
 /// What `--fix` needs besides the problems. With it, a trailing comma is noted here and read
@@ -73,6 +73,9 @@ pub(crate) struct Scan {
     pub(crate) members: Vec<Member>,
     /// The offset of the last `,` read.
     last_comma: usize,
+    /// Where the current member's key starts, for each open object: kept here so the check
+    /// path carries none of it.
+    starts: Vec<usize>,
 }
 
 /// One object member, up to the `,` after it.
@@ -88,11 +91,11 @@ pub(crate) struct Member {
 /// Check the whole `text` as [`check`] does, and note what the fixes need.
 pub(crate) fn scan(text: &str, config: &Config) -> (Vec<Problem>, Scan) {
     let mut scan = Scan::default();
-    let problems = walk_scan(text, 0..text.len(), config, None, Some(&mut scan));
+    let problems = walk_scan::<true>(text, 0..text.len(), config, None, Some(&mut scan));
     (problems, scan)
 }
 
-fn walk_scan<'a, 's>(
+fn walk_scan<'a, 's, const SCAN: bool>(
     text: &'a str,
     lines: std::ops::Range<usize>,
     config: &Config,
@@ -101,7 +104,7 @@ fn walk_scan<'a, 's>(
 ) -> Vec<Problem> {
     let dialect = config.dialect();
     let text = &text[..lines.end];
-    let mut parser = Parser {
+    let mut parser = Parser::<SCAN> {
         text,
         bytes: text.as_bytes(),
         pos: lines.start,
@@ -173,7 +176,7 @@ impl Fail {
     }
 }
 
-struct Parser<'a, 's> {
+struct Parser<'a, 's, const SCAN: bool> {
     text: &'a str,
     bytes: &'a [u8],
     pos: usize,
@@ -213,8 +216,6 @@ struct Frame<'a> {
     current_key: Key<'a>,
     /// The current element's position, in an array.
     element_index: usize,
-    /// Where the current member's key starts, in an object, for the fixes.
-    member_start: usize,
 }
 
 /// `a == b`, but the first byte is compared inline, so keys of one length that differ there
@@ -322,7 +323,7 @@ enum State {
     Done,
 }
 
-impl<'a> Parser<'a, '_> {
+impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
     fn peek(&self) -> Option<u8> {
         self.bytes.get(self.pos).copied()
     }
@@ -599,16 +600,12 @@ impl<'a> Parser<'a, '_> {
         let object = self.top().is_some_and(|f| f.container == Container::Object);
         match self.peek() {
             Some(b',') => {
-                let start = if self.scan.is_some() {
-                    self.top().map_or(0, |f| f.member_start)
-                } else {
-                    0
-                };
-                if let Some(scan) = self.scan.as_deref_mut() {
+                if SCAN && let Some(scan) = self.scan.as_deref_mut() {
                     scan.last_comma = self.pos;
                     if object {
+                        let start = self.depth.checked_sub(1).and_then(|d| scan.starts.get(d));
                         scan.members.push(Member {
-                            start,
+                            start: start.copied().unwrap_or(0),
                             end: value_end,
                             comma: self.pos,
                         });
@@ -649,7 +646,7 @@ impl<'a> Parser<'a, '_> {
 
     fn close(&mut self, close: char, after_comma: bool) -> Result<State, Fail> {
         if after_comma && !self.dialect.trailing_commas() {
-            if let Some(scan) = self.scan.as_deref_mut() {
+            if SCAN && let Some(scan) = self.scan.as_deref_mut() {
                 scan.commas.push(scan.last_comma);
             } else {
                 return Err(self.fail(SyntaxKind::TrailingComma {
@@ -677,7 +674,6 @@ impl<'a> Parser<'a, '_> {
             frame.opened = self.pos;
             frame.current_key = Key::Borrowed(&[]);
             frame.element_index = 0;
-            frame.member_start = 0;
         } else {
             self.stack.push(Frame {
                 container,
@@ -685,7 +681,6 @@ impl<'a> Parser<'a, '_> {
                 keys: Keys::default(),
                 current_key: Key::Borrowed(&[]),
                 element_index: 0,
-                member_start: 0,
             });
         }
         self.depth += 1;
@@ -782,9 +777,19 @@ impl<'a> Parser<'a, '_> {
             self.emit(start, EventKind::Key(key.clone()));
         }
         self.check_duplicate(start, &key);
+        if SCAN
+            && let Some(scan) = self.scan.as_deref_mut()
+            && let Some(top) = self.depth.checked_sub(1)
+        {
+            if scan.starts.len() <= top {
+                scan.starts.resize(top + 1, 0);
+            }
+            if let Some(slot) = scan.starts.get_mut(top) {
+                *slot = start;
+            }
+        }
         if let Some(frame) = self.top_mut() {
             frame.current_key = key;
-            frame.member_start = start;
         }
         Ok(())
     }

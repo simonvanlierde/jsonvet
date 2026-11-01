@@ -620,20 +620,28 @@ fn write_atomically(path: &Path, text: &str) -> Result<(), String> {
         return Err(messages::text("fix.read-only").to_owned());
     }
     let name = target.file_name().unwrap_or_default().to_string_lossy();
-    let temp = target.with_file_name(format!(
-        ".{name}.jsonvet-{}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    let write = || -> io::Result<()> {
-        let mut file = std::fs::OpenOptions::new()
+    // A name taken by another process is never ours to remove: try the next one.
+    let mut tries = 0;
+    let (mut file, temp) = loop {
+        let temp = target.with_file_name(format!(
+            ".{name}.jsonvet-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        match std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
-            .open(&temp)?;
+            .open(&temp)
+        {
+            Ok(file) => break (file, temp),
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists && tries < 8 => tries += 1,
+            Err(e) => return Err(e.to_string()),
+        }
+    };
+    let write = || -> io::Result<()> {
         file.write_all(text.as_bytes())?;
         file.set_permissions(permissions)?;
         file.sync_all()?;
-        drop(file);
         std::fs::rename(&temp, &target)
     };
     write().map_err(|e| {

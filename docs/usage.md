@@ -57,8 +57,8 @@ Rules:
 jsonvet writes a temporary file in the same folder, gives it the file's permissions, and renames
 it over the file, so a crash leaves the old text or the new one. A symlink is followed and stays
 a link. A read-only file is not changed and fails the run with an error. The new file keeps the
-mode but not the owner or extended attributes of the old one, and a hard link to the file is
-cut.
+mode but not the owner or extended attributes of the old one, and the rename replaces the file, so
+other hard links to it keep the old content.
 
 With standard input, `--fix` prints the fixed text to standard output and the problems left to
 standard error, so `jsonvet --fix --stdin-filename x.json < x.json > fixed.json` works. A text it
