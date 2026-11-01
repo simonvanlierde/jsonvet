@@ -246,12 +246,15 @@ Each type is `#[non_exhaustive]` or has private fields, so a new variant or fiel
 change. The `#[doc(hidden)]` items are public for jsonvet-cli only, and can change in any release:
 `parse`, `parse_with`, `parse_lines`, `join_lines`, `line_parts`, `Lines`, `Event`, `EventKind`,
 `json_path`, `PathStep`, `key_text`, `did_you_mean`, `closest`, `MESSAGES`, `fill`,
-`Problem::message_with`, `is_hidden`, `format`, `FormatOptions` and `Indent`.
+`Problem::message_with`, `is_hidden`, `format`, `FormatError`, `FormatOptions` and `Indent`.
 
 `format` is the formatter behind `jsonvet fmt`. It checks the text first and returns the report if
 there is a syntax error. Then it reads its own token stream, so the check path is unchanged: it
 attaches each comment to the token it sits next to, and lays the tree out from the tree alone, so
-a second run changes nothing. It recurses once per nesting level, which `max_depth` bounds.
+a second run changes nothing. The tree is flat vectors of 16-byte records with 32-bit offsets into
+the text, a first pass counts the output so it is built once at its size, and a file whose output
+would pass 16 times its size is refused. It recurses once per nesting level, which `max_depth`
+bounds.
 
 The text is `&str`, so every offset falls on a character boundary. `check` never panics and has no
 error mode: the problems in the file are its output. A `Report` is `Send` but not `Sync`, because
