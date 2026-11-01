@@ -24,8 +24,10 @@ pub(super) struct Document<'e> {
 /// key (as text, its offset, and as written if it holds U+FFFD) and each earlier key holding
 /// U+FFFD, by text, as written.
 enum Open<'e> {
-    Array(usize),
+    /// Where its children begin, and its first byte's offset.
+    Array(usize, usize),
     Object(
+        usize,
         usize,
         (Cow<'e, str>, usize, Cow<'e, [u8]>),
         HashMap<String, Cow<'e, [u8]>>,
@@ -55,7 +57,7 @@ impl<'e> Fold<'e> {
         }
         let node = match &event.kind {
             EventKind::Key(key) => {
-                if let Some(Open::Object(_, current, _)) = self.stack.last_mut() {
+                if let Some(Open::Object(_, _, current, _)) = self.stack.last_mut() {
                     let text = match key {
                         Cow::Borrowed(bytes) => key_text(bytes),
                         Cow::Owned(bytes) => Cow::Owned(key_text(bytes).into_owned()),
@@ -73,30 +75,32 @@ impl<'e> Fold<'e> {
             EventKind::ObjectStart => {
                 self.stack.push(Open::Object(
                     self.build.members.len(),
+                    event.offset,
                     (Cow::Borrowed(""), 0, Cow::Borrowed(&[])),
                     HashMap::new(),
                 ));
                 return None;
             }
             EventKind::ArrayStart => {
-                self.stack.push(Open::Array(self.build.elems.len()));
+                self.stack
+                    .push(Open::Array(self.build.elems.len(), event.offset));
                 return None;
             }
             EventKind::End => match self.stack.pop() {
-                Some(Open::Array(start)) => self.build.end_array(start),
-                Some(Open::Object(start, ..)) => self.build.end_object(start),
+                Some(Open::Array(start, at)) => self.build.end_array(start, at),
+                Some(Open::Object(start, at, ..)) => self.build.end_object(start, at),
                 None => return None,
             },
-            EventKind::Null => self.build.scalar(Value::Null),
-            EventKind::Bool(b) => self.build.scalar(Value::Bool(*b)),
-            EventKind::String(s) => self.build.string(s.clone()),
+            EventKind::Null => self.build.scalar(Value::Null, event.offset),
+            EventKind::Bool(b) => self.build.scalar(Value::Bool(*b), event.offset),
+            EventKind::String(s) => self.build.string(s.clone(), event.offset),
             EventKind::Number(text) => {
                 let value = number(text).unwrap_or_else(|| {
                     self.unchecked
                         .get_or_insert((event.offset, messages::text("schema.not-a-number")));
                     Value::Null
                 });
-                self.build.scalar(value)
+                self.build.scalar(value, event.offset)
             }
             _ => return None,
         };
@@ -109,12 +113,13 @@ impl<'e> Fold<'e> {
                     unchecked: self.unchecked.take(),
                 });
             }
-            Some(Open::Array(_)) => self.build.elems.push(node),
-            Some(Open::Object(_, (key, offset, raw), seen)) => {
+            Some(Open::Array(..)) => self.build.elems.push(node),
+            Some(Open::Object(_, _, (key, offset, raw), seen)) => {
                 let key = std::mem::take(key);
                 // Real duplicates are the duplicate-key rule's; keys that only become the same
                 // once lone surrogates are U+FFFD are not.
                 if key.contains('\u{FFFD}') {
+                    self.build.raw(node, raw.clone());
                     match seen.get(key.as_ref()) {
                         Some(earlier) if earlier != raw => {
                             self.unchecked
@@ -126,7 +131,7 @@ impl<'e> Fold<'e> {
                         }
                     }
                 }
-                self.build.members.push((key, node));
+                self.build.members.push((key, node, *offset));
             }
         }
         None

@@ -2,8 +2,10 @@
 //! validates through its `Json` trait instead of a `serde_json::Value` copy of the document.
 
 use std::borrow::Cow;
+use std::collections::HashMap;
 
 use jsonschema::json::{Array, Json, Node, NodeIdentity, Object};
+use jsonvet::{PathStep, json_path};
 use serde_json::{Map, Number, Value};
 
 /// jsonschema's name for this representation of a document.
@@ -25,10 +27,18 @@ enum Entry<'e> {
 #[derive(Default)]
 pub(super) struct Tree<'e> {
     entries: Vec<Entry<'e>>,
+    /// The offset of each entry's first byte in the text.
+    at: Vec<usize>,
     elems: Vec<u32>,
-    members: Vec<(Cow<'e, str>, u32)>,
+    members: Vec<Member<'e>>,
+    /// The key as written, by the entry of its value, for a key that holds U+FFFD: a lone
+    /// surrogate in the text is U+FFFD in the key's text.
+    raws: HashMap<u32, Cow<'e, [u8]>>,
     root: u32,
 }
+
+/// An object member: its key, its value's entry, and the offset of its key in the text.
+type Member<'e> = (Cow<'e, str>, u32, usize);
 
 /// What [`Tree`] is built with while a document's events come in: the children of every open
 /// container, until it ends.
@@ -36,50 +46,56 @@ pub(super) struct Tree<'e> {
 pub(super) struct Builder<'e> {
     pub(super) tree: Tree<'e>,
     pub(super) elems: Vec<u32>,
-    pub(super) members: Vec<(Cow<'e, str>, u32)>,
+    pub(super) members: Vec<Member<'e>>,
 }
 
 impl<'e> Builder<'e> {
-    pub(super) fn string(&mut self, text: Cow<'e, str>) -> u32 {
-        self.add(Entry::String(text))
+    /// Keep the key of the member whose value is `node` as written.
+    pub(super) fn raw(&mut self, node: u32, raw: Cow<'e, [u8]>) {
+        self.tree.raws.insert(node, raw);
     }
 
-    pub(super) fn scalar(&mut self, value: Value) -> u32 {
+    pub(super) fn string(&mut self, text: Cow<'e, str>, at: usize) -> u32 {
+        self.add(Entry::String(text), at)
+    }
+
+    pub(super) fn scalar(&mut self, value: Value, at: usize) -> u32 {
         let entry = match value {
             Value::Bool(b) => Entry::Bool(b),
             Value::Number(n) => Entry::Number(n),
             _ => Entry::Null,
         };
-        self.add(entry)
+        self.add(entry, at)
     }
 
-    fn add(&mut self, entry: Entry<'e>) -> u32 {
+    fn add(&mut self, entry: Entry<'e>, at: usize) -> u32 {
         self.tree.entries.push(entry);
+        self.tree.at.push(at);
         u32::try_from(self.tree.entries.len() - 1).unwrap_or(u32::MAX)
     }
 
     /// End the array whose children began at `start` in [`Builder::elems`].
-    pub(super) fn end_array(&mut self, start: usize) -> u32 {
+    pub(super) fn end_array(&mut self, start: usize, at: usize) -> u32 {
         let from = u32::try_from(self.tree.elems.len()).unwrap_or(u32::MAX);
         self.tree.elems.extend(self.elems.drain(start..));
         let to = u32::try_from(self.tree.elems.len()).unwrap_or(u32::MAX);
-        self.add(Entry::Array(from, to))
+        self.add(Entry::Array(from, to), at)
     }
 
     /// End the object whose members began at `start` in [`Builder::members`]. A later member of
     /// a key replaces an earlier one.
-    pub(super) fn end_object(&mut self, start: usize) -> u32 {
+    pub(super) fn end_object(&mut self, start: usize, at: usize) -> u32 {
         let from = u32::try_from(self.tree.members.len()).unwrap_or(u32::MAX);
         self.members[start..].sort_by(|a, b| a.0.cmp(&b.0));
-        let mut drained = self.members.drain(start..).peekable();
-        while let Some(member) = drained.next() {
-            if drained.peek().is_none_or(|next| next.0 != member.0) {
-                self.tree.members.push(member);
+        for member in self.members.drain(start..) {
+            match self.tree.members[from as usize..].last_mut() {
+                // The later value, at the first copy of the key.
+                Some(last) if last.0 == member.0 => last.1 = member.1,
+                _ => self.tree.members.push(member),
             }
         }
-        drop(drained);
         let to = u32::try_from(self.tree.members.len()).unwrap_or(u32::MAX);
-        self.add(Entry::Object(from, to))
+        self.add(Entry::Object(from, to), at)
     }
 
     pub(super) fn finish(&mut self, root: u32) -> Tree<'e> {
@@ -102,7 +118,66 @@ impl<'e> Tree<'e> {
         self.root().to_value().into_owned()
     }
 
-    fn members_of(&self, from: u32, to: u32) -> &[(Cow<'e, str>, u32)] {
+    /// Where each target is: given as a value's path and keys in it, the first of those keys'
+    /// offset, or else the value's. With it, the value's JSONPath, written as duplicate-key
+    /// paths are. A later duplicate key's value is the one found, at the key's first copy.
+    pub(super) fn place(&self, targets: &[(Vec<String>, Vec<String>)]) -> Vec<(usize, String)> {
+        targets
+            .iter()
+            .map(|(path, keys)| self.place_one(path, keys))
+            .collect()
+    }
+
+    fn place_one(&self, path: &[String], keys: &[String]) -> (usize, String) {
+        let mut node = self.root;
+        let mut steps = Vec::with_capacity(path.len());
+        let mut lost = false;
+        for segment in path {
+            let next = match (lost, &self.entries[node as usize]) {
+                (false, Entry::Array(from, to)) => segment
+                    .parse::<usize>()
+                    .ok()
+                    .filter(|i| i.to_string() == *segment && (*from as usize + i) < *to as usize)
+                    .map(|i| (self.elems[*from as usize + i], PathStep::Index(i))),
+                (false, Entry::Object(from, to)) => {
+                    let members = self.members_of(*from, *to);
+                    let found =
+                        members.binary_search_by(|(k, ..)| k.as_ref().cmp(segment.as_str()));
+                    found.ok().map(|at| {
+                        let child = members[at].1;
+                        let raw = self.raws.get(&child).map_or(segment.as_bytes(), |raw| raw);
+                        (child, PathStep::Key(raw))
+                    })
+                }
+                _ => None,
+            };
+            match next {
+                Some((child, step)) => {
+                    node = child;
+                    steps.push(step);
+                }
+                None => {
+                    lost = true;
+                    steps.push(PathStep::Key(segment.as_bytes()));
+                }
+            }
+        }
+        let offset = match (&self.entries[node as usize], lost) {
+            (Entry::Object(from, to), false) => {
+                let members = self.members_of(*from, *to);
+                keys.iter()
+                    .filter_map(|key| {
+                        let at = members.binary_search_by(|(k, ..)| k.as_ref().cmp(key.as_str()));
+                        at.ok().map(|at| members[at].2)
+                    })
+                    .min()
+            }
+            _ => None,
+        };
+        (offset.unwrap_or(self.at[node as usize]), json_path(steps))
+    }
+
+    fn members_of(&self, from: u32, to: u32) -> &[Member<'e>] {
         &self.members[from as usize..to as usize]
     }
 
@@ -121,7 +196,7 @@ impl<'e> Tree<'e> {
             Entry::Object(from, to) => Value::Object(
                 self.members_of(*from, *to)
                     .iter()
-                    .map(|(key, child)| (key.to_string(), self.value_at(*child)))
+                    .map(|(key, child, _)| (key.to_string(), self.value_at(*child)))
                     .collect::<Map<_, _>>(),
             ),
         }
@@ -189,14 +264,14 @@ impl Json for Own {
 
 /// An object, or one of its members: the slice of members it shows.
 #[derive(Clone, Copy)]
-pub(super) struct Members<'a>(&'a Tree<'a>, &'a [(Cow<'a, str>, u32)]);
+pub(super) struct Members<'a>(&'a Tree<'a>, &'a [Member<'a>]);
 
-pub(super) struct MemberIter<'a>(&'a Tree<'a>, std::slice::Iter<'a, (Cow<'a, str>, u32)>);
+pub(super) struct MemberIter<'a>(&'a Tree<'a>, std::slice::Iter<'a, Member<'a>>);
 
 impl<'a> Iterator for MemberIter<'a> {
     type Item = (&'a str, Nd<'a>);
     fn next(&mut self) -> Option<Self::Item> {
-        let (key, child) = self.1.next()?;
+        let (key, child, _) = self.1.next()?;
         Some((key.as_ref(), Nd::At(self.0, *child, None)))
     }
 }
@@ -213,7 +288,7 @@ impl<'a> Object<'a, Own> for Members<'a> {
     fn get(&self, key: &String) -> Option<Nd<'a>> {
         let at = self
             .1
-            .binary_search_by(|(k, _)| k.as_ref().cmp(key.as_str()))
+            .binary_search_by(|(k, ..)| k.as_ref().cmp(key.as_str()))
             .ok()?;
         Some(Nd::At(self.0, self.1[at].1, None))
     }

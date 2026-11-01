@@ -278,4 +278,72 @@ mod tests {
             assert_eq!(place(&events, vec![target])[0].1, path, "{pointer}");
         }
     }
+
+    /// Every value's path, and for each object its keys one at a time and all together.
+    fn targets(value: &serde_json::Value) -> Vec<(Vec<String>, Vec<String>)> {
+        fn walk(
+            value: &serde_json::Value,
+            path: &mut Vec<String>,
+            out: &mut Vec<(Vec<String>, Vec<String>)>,
+        ) {
+            out.push((path.clone(), Vec::new()));
+            let children: Vec<(String, &serde_json::Value)> = match value {
+                serde_json::Value::Object(members) => {
+                    let keys: Vec<String> = members.keys().cloned().collect();
+                    for key in &keys {
+                        out.push((path.clone(), vec![key.clone()]));
+                    }
+                    out.push((path.clone(), keys));
+                    members.iter().map(|(k, v)| (k.clone(), v)).collect()
+                }
+                serde_json::Value::Array(items) => items
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| (i.to_string(), v))
+                    .collect(),
+                _ => Vec::new(),
+            };
+            for (key, child) in children {
+                path.push(key);
+                walk(child, path, out);
+                path.pop();
+            }
+        }
+        let mut out = Vec::new();
+        walk(value, &mut Vec::new(), &mut out);
+        out
+    }
+
+    fn same_places(text: &str) {
+        let (_, events) = jsonvet::parse(text, &Config::new(Dialect::Json));
+        let events = events.unwrap_or_default();
+        let document = documents(&events).next().expect("a document");
+        let targets = targets(&document.tree.value());
+        assert_eq!(
+            document.tree.place(&targets),
+            place(&events, targets.clone()),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn the_tree_places_what_the_walk_over_events_does() {
+        for text in [
+            r#"{"a": [1, {"b": 2}], "b\u00e9/~": "x", "a": "last"}"#,
+            r#"{"": 1, "0": [true, {"a/b~c.d\"\u00e9": 2}], "x": {"": 3}, "\ud800": 4}"#,
+            r#"{"k": {"k": 1, "j": 2, "k": 3}, "k": {"j": [0, [1, 2]], "k": null}}"#,
+            r#"{"\ud800": {"\ud800": 1}, "a": [[], {}, [{"b": [ ]}]], "a\ud83d": 5}"#,
+            r#"[1, [2, {"z": 1, "y": 2, "z": 3}], {"0": 9}]"#,
+            "  7 ",
+        ] {
+            same_places(text);
+        }
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn the_tree_places_what_the_walk_does_on_any_json(value in super::super::fold::tests::any_json()) {
+            same_places(&serde_json::to_string(&value).unwrap_or_default());
+        }
+    }
 }
