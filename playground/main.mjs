@@ -82,9 +82,8 @@ let lineCount;
 let runFix;
 let runFormat;
 let formatArgs;
-let settings;
 // The options of Fix and Format, by key (settings.mjs), and the popovers that edit them. Not kept.
-let fixValues = { unsafe: false };
+let fixValues = {};
 let formatValues = {};
 const mounted = [];
 let fixesFor;
@@ -285,7 +284,7 @@ function note(p, n) {
       slot.append(apply);
     } else {
       slot.append(el("span", "unsafe", "unsafe fix"));
-      slot.title = "Tick \u201cdrop duplicate keys too\u201d to apply it";
+      slot.title = "Turn on \u201cDrop duplicate keys\u201d in the Fix options to apply it";
     }
     meta.append(slot);
   }
@@ -804,11 +803,16 @@ try {
   ({ tokenEnd, stack, formatMs, lineCount } = await import(`./proof.mjs${version}`));
   ({ hosts } = await import(`./hosts.mjs${version}`));
   ({ fixesFor, fixSummary } = await import(`./actions.mjs${version}`));
-  settings = await import(`./settings.mjs${version}`);
+  const settings = await import(`./settings.mjs${version}`);
   ({ formatArgs } = settings);
   fixValues = settings.defaults("fix");
   formatValues = settings.defaults("format");
   const { mountOptions } = await import(`./options.mjs${version}`);
+  // Without popover support (Safari before 17, Firefox before 125) the panels would sit open
+  // over the page, so those browsers get the actions with their defaults and no options.
+  if (!Object.hasOwn(HTMLElement.prototype, "popover")) {
+    for (const id of ["fix-opts", "fix-pop", "format-opts", "format-pop"]) $(id).hidden = true;
+  }
   const say = (t) => (shareStatus.textContent = t);
   mounted.push(
     mountOptions({ tool: "fix", button: $("fix-opts"), pop: $("fix-pop"), values: fixValues, dialect: () => dialect, onChange: () => loaded && run(), say }),

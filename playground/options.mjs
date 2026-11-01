@@ -61,9 +61,16 @@ export function mountOptions({ tool, button, pop, values, dialect, onChange, say
     const input = el("input", "num");
     Object.assign(input, { type: "number", min: row.min, max: row.max, inputMode: "numeric" });
     input.setAttribute("aria-labelledby", labelId);
-    input.addEventListener("input", () => set(row.key, input.value));
+    input.addEventListener("input", () => {
+      set(row.key, input.value);
+      // Until the field is left, a width it cannot hold is marked; the default is in use meanwhile.
+      input.setAttribute("aria-invalid", String(input.value === "" || clean(row, input.value) !== Number(input.value)));
+    });
     // A value the field cannot hold goes back to what is in use once the field is left.
-    input.addEventListener("blur", () => (input.value = clean(row, values[row.key])));
+    input.addEventListener("blur", () => {
+      input.value = clean(row, values[row.key]);
+      input.removeAttribute("aria-invalid");
+    });
     paints.push(() => {
       if (document.activeElement !== input) input.value = clean(row, values[row.key]);
     });
@@ -119,5 +126,5 @@ export function mountOptions({ tool, button, pop, values, dialect, onChange, say
   });
   render();
   button.disabled = false;
-  return { render, paint };
+  return { render };
 }
