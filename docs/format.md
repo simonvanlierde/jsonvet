@@ -35,8 +35,8 @@ The pre-commit hook is `jsonvet-format`:
 - Blank lines between members stay, but at most one. Blank lines at the start and end of a
   container go.
 - A block comment over several lines moves its later lines by as many columns as the comment
-  itself moved. A line follows only if its indent starts with the formatter's indent character
-  (a space, or a tab with `indent = "tab"`) and the move is a whole number of them; a line
+  itself moved. A line follows only if it has no indent or its indent starts with the formatter's
+  indent character (a space, or a tab with `indent = "tab"`), and the move is a whole number of them; a line
   that cannot follow, a blank line, and a move that is not a whole number of tabs leave the
   lines as written. Line comments and one-line block comments are not touched.
 - Strings and numbers are never changed. No escape is added or removed.
@@ -149,5 +149,5 @@ is more, jsonvet works out its size without building it, prints
 
 ## Not done yet
 
-- Range formatting, and sorting keys.
+- Range formatting and sorting keys.
 - Filling a number array across lines, as Prettier does.
