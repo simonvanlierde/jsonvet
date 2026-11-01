@@ -29,11 +29,16 @@ path, so each failing document's errors are placed by looking that path up in th
 keeps the offset of every value and key and the spelling of keys with lone surrogates. No second
 walk over the events is needed.
 
+A container's value is not copied when jsonschema builds an error: the error holds the container's
+text span and reads it again only if something asks for the value. A message that quotes a value
+only when it is short checks that on the tree first. This needs `jsonschema-value` as a direct
+dependency, pinned to jsonschema's version, because `LazyInstance` is not re-exported. Offsets
+are kept in 32 bits, so a value more than 4 GiB into a text is reported as not checked.
+
 ## Consequences
 
 An escaped string is still decoded by the parser, so only strings without escapes are borrowed.
-`to_value` builds a `Value` for a failing node when jsonschema quotes it in an error, which is a
-copy of that node only. The traits are pinned by the exact `jsonschema` version in `Cargo.toml`
+A string is copied into an error when it fails; a container is read again only when asked for. The traits are pinned by the exact `jsonschema` version in `Cargo.toml`
 and `Cargo.lock`. When a release changes them, the build fails in `nodes.rs` and nowhere else:
 the changes to expect are a new required method on `Node`, `Object` or `Array`, a changed
 signature of `with_string_node`, or the traits moving out of `jsonschema::json`. If one cannot be

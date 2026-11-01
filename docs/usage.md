@@ -388,7 +388,7 @@ exists is in [design.md](design.md#--schema).
   past a double's range have no JSON Schema value, so a document that holds one is reported once
   and not checked. So is an object with two keys that differ only in lone surrogates, since both
   become U+FFFD.
-- **Memory.** jsonvet holds one document's values at a time: 2 to 17 times its size, the most for
+- **Memory.** jsonvet holds one document's values at a time: 2 to 19 times its size, the most for
   a file of small numbers. A JSON Lines file holds one line's values, or one per thread, and each line
   with errors adds about 700 bytes. When only `items` checks a top-level array's elements, or only
   `properties`, `patternProperties` and `additionalProperties` check a top-level object's members,
