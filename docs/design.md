@@ -246,7 +246,8 @@ Each type is `#[non_exhaustive]` or has private fields, so a new variant or fiel
 change. The `#[doc(hidden)]` items are public for jsonvet-cli only, and can change in any release:
 `parse`, `parse_with`, `parse_lines`, `join_lines`, `line_parts`, `Lines`, `Event`, `EventKind`,
 `json_path`, `PathStep`, `key_text`, `did_you_mean`, `closest`, `MESSAGES`, `fill`,
-`Problem::message_with`, `is_hidden`, `format`, `FormatError`, `FormatOptions` and `Indent`.
+`Problem::message_with`, `is_hidden`, `fix`, `Fix`, `Fixed`, `try_fix`, `report`, `format`,
+`FormatError`, `FormatOptions` and `Indent`.
 
 `format` is the formatter behind `jsonvet fmt`. It checks the text first and returns the report if
 there is a syntax error. Then it reads its own token stream, so the check path is unchanged: it

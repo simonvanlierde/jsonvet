@@ -46,6 +46,8 @@ Add this to `.pre-commit-config.yaml` (for [pre-commit](https://pre-commit.com) 
     - id: jsonvet
 ```
 
+To fix what has a safe fix as well (`args: [--fix]`), see [Fixing](docs/usage.md#fixing).
+
 It checks files by name: `.json`, `.jsonc`, `.json5`, `.jsonl`, `.ndjson`, `.geojson`, `.jsonld`,
 `.hujson`, `.jwcc`, `.code-workspace`, `.code-snippets`, `.webmanifest` and `.babelrc`.
 

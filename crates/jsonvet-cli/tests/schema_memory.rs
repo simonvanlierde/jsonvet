@@ -24,9 +24,9 @@ static ALLOCATOR: PeakAlloc = PeakAlloc;
 const FILE_BYTES: usize = 10 << 20;
 
 /// The most heap one run may take at its peak, per byte of the file, beyond what was in use
-/// before it. Folding the parser's events as they come takes 18 bytes per byte here: the file's
-/// text and its values. Holding every event would take 34, so a return to that fails.
-const MAX_BYTES_PER_BYTE: usize = 24;
+/// before it. Folding the parser's events as they come takes 10 bytes per byte here: the file's
+/// text and its values. Holding every event as well would add 16, so a return to that fails.
+const MAX_BYTES_PER_BYTE: usize = 14;
 
 /// The same for a JSON Lines file, split across threads, each line folded as it is read. That
 /// takes 1 byte per byte, the file's text. Parts that kept their events would take 17.
@@ -123,7 +123,7 @@ fn schema_memory_stays_under_its_bound_on_a_valid_10_mb_file() {
     assert_under(peak, MAX_BYTES_PER_BYTE);
 }
 
-/// An error sends jsonvet back over the file to place it.
+/// An error is placed from the document's tree.
 #[test]
 fn schema_memory_stays_under_its_bound_placing_an_error_in_a_10_mb_file() {
     let schema = r#"{"minItems": 1, "items": {"properties": {"x": {"not": {"const": 7}}}}}"#;
@@ -133,8 +133,55 @@ fn schema_memory_stays_under_its_bound_placing_an_error_in_a_10_mb_file() {
     assert_under(peak, MAX_BYTES_PER_BYTE);
 }
 
+/// Several errors at the root, each about the whole document: none may copy it.
+#[test]
+fn schema_memory_stays_under_its_bound_with_several_errors_on_the_whole_file() {
+    let all: Vec<String> = (0..10).map(|n| format!("{{\"maxItems\": {n}}}")).collect();
+    let schema = format!("{{\"allOf\": [{}]}}", all.join(", "));
+    let (peak, code, out) = peak("root-errors", &schema, false);
+    assert_eq!(code, Ok(1), "{out}");
+    assert_under(peak, MAX_BYTES_PER_BYTE);
+}
+
+/// `enum` on containers compares each candidate with the document's values where they are.
+#[test]
+fn enum_on_containers_takes_no_more_time_than_a_plain_check() {
+    use std::time::Instant;
+    let _counting = counting();
+    let dir = folder("enum-time");
+    let text = rows(2 << 20, "[", ", ", "]");
+    fs::write(dir.join("file.json"), text).expect("write the file");
+    let time = |schema: &str| {
+        fs::write(dir.join("schema.json"), schema).expect("write the schema");
+        let start = Instant::now();
+        let mut out = Vec::new();
+        let code = jsonvet_cli::run_with(
+            vec![
+                OsString::from("--no-config"),
+                OsString::from("--schema"),
+                OsString::from(dir.join("schema.json")),
+                OsString::from(dir.join("file.json")),
+            ],
+            false,
+            Terminal::default(),
+            &mut out,
+        );
+        (start.elapsed(), code)
+    };
+    let (plain, code) = time(r#"{"items": {"type": "object"}}"#);
+    assert_eq!(code, Ok(0));
+    let candidates: Vec<String> = (0..50).map(|n| n.to_string()).collect();
+    let schema = format!("{{\"enum\": [{}, []]}}", candidates.join(", "));
+    let (with_enum, code) = time(&schema);
+    assert_eq!(code, Ok(1));
+    assert!(
+        with_enum < plain * 8,
+        "enum took {with_enum:?}, a plain check {plain:?}"
+    );
+}
+
 /// A JSON Lines file this size is split across threads, one part per thread, and an error on
-/// line 8 sends its part back over its lines to place it.
+/// line 8 is placed from its line's tree.
 #[test]
 fn schema_memory_stays_under_its_bound_on_a_split_10_mb_json_lines_file() {
     let schema = r#"{"type": "object", "properties": {"x": {"not": {"const": 7}}}}"#;

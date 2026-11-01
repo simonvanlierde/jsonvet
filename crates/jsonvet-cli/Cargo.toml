@@ -38,6 +38,9 @@ jsonvet = { path = "../jsonvet", version = "=3.2.0" }
 # No default features: they fetch remote `$ref`s over HTTP and read them from disk.
 jsonschema = { version = "0.60.1", default-features = false }
 lexopt = "0.3.2"
+# The type of an error's lazily read value, which jsonschema's `Json` trait names but does not
+# re-export (ADR 0014). Its version is jsonschema's, so it moves with it.
+jsonschema-value = { version = "=0.60.1", default-features = false }
 # jsonschema's own `$ref` resolution, so the schema size check follows the `$ref`s it does.
 referencing = { version = "0.60.1", default-features = false }
 serde_json = "1.0.154"
