@@ -34,8 +34,12 @@ fn workdir(files: &[(&str, &str)]) -> PathBuf {
 /// Run jsonvet in `dir` with `input` on standard input: exit code, stdout, stderr.
 fn run(dir: &Path, args: &[&str], input: &str) -> (i32, String, String) {
     let mut command = Command::new(env!("CARGO_BIN_EXE_jsonvet"));
-    // Settings from the machine running the tests must not apply.
-    command.env_remove("XDG_CONFIG_HOME").env("HOME", dir);
+    // Settings from the machine running the tests must not apply. The user config lives in
+    // `dir/.config` on every OS: through HOME elsewhere, through APPDATA on Windows.
+    command
+        .env_remove("XDG_CONFIG_HOME")
+        .env("HOME", dir)
+        .env("APPDATA", dir.join(".config"));
     let mut child = command
         .args(args)
         .current_dir(dir)
