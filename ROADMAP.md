@@ -10,6 +10,12 @@ a promise, and none of it has a date. Released work is in [CHANGELOG.md](CHANGEL
 - **CRLF line ends for `--fix`:** convert them with the other safe fixes.
 - **4.0: drop the check-json5 compatibility.** The `check-json5` binary and package, `--strict`
   and the old hook id go away. The 3.x releases keep them.
+- **Editor support:** an editor extension that shows jsonvet's problems as you type and fixes or
+  formats from the editor, with range formatting, so formatting a selection leaves the rest of the
+  file as it is.
+- **Inline suppressions:** a comment such as `// jsonvet-ignore duplicate-key` turns a rule off
+  for the next line, in the dialects that allow comments. A suppression that no longer hides
+  anything is reported, so stale ones don't pile up.
 - **Schemas from a catalog, opt-in only:** look up a schema for a file in a SchemaStore-style
   catalog, with a local cache. jsonvet stays offline unless you turn this on.
 
