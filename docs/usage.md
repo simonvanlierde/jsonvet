@@ -100,6 +100,9 @@ On a panic, jsonvet prints the message and where it happened to standard error, 
 the [issue tracker](https://github.com/simonvanlierde/jsonvet/issues), and exits 101. Output not
 yet written is lost, and the verdict for the files checked so far is not given.
 
+On exit 2 or 101 the run may stop part way, so a SARIF or JSON document on standard output may be cut
+off. Do not upload it.
+
 jsonvet reads regular files, and follows a symlink to one. A device, FIFO or socket prints
 `error: not a regular file`. When the output pipe closes early, as in `jsonvet … | head -1`,
 jsonvet stops quietly, with the verdict for the files it has checked.
@@ -299,7 +302,8 @@ jsonvet --format sarif $(git ls-files '*.json') > jsonvet.sarif
 - GitHub keeps only 5,000 results of a run with more than 25,000. So jsonvet writes the first
   25,000, and counts the rest in a tool notification and on stderr.
 
-The exit status and `--max-warnings` work as with text, and no annotations are printed. The README
+The exit status and `--max-warnings` work as with text, and no annotations are printed. On exit 2
+or 101 the document may be cut off, so do not upload it. The README
 has an [upload workflow](../README.md#github-code-scanning).
 
 ## JSON
