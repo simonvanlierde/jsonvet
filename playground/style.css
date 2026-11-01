@@ -108,7 +108,14 @@ button { font: inherit; color: inherit; }
 .conf-h { margin: 0; color: var(--faint); }
 .conf-text { margin: 4px 0 4px; padding: 8px 10px; overflow-x: auto; white-space: pre; background: var(--tint); font-size: 13px; line-height: 1.55; scrollbar-color: var(--rule-strong) transparent; }
 .conf-text.none { color: var(--faint); font-style: italic; }
-.conf-copy { color: var(--faint); font: 13px/1.6 var(--mono); }
+/* The copy icon sits in the code block's top-right corner; the text keeps clear of it. */
+.conf-code { position: relative; }
+.conf-code .conf-text { padding-right: 36px; }
+.conf-copy { position: absolute; top: 4px; right: 4px; display: grid; place-items: center; width: 26px; height: 26px; padding: 0; color: var(--faint); background: var(--tint); border: 0; cursor: pointer; }
+.conf-copy:hover { color: var(--ink); }
+.conf-copy svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+.conf-copy .i-done, .conf-copy.done .i-copy { display: none; }
+.conf-copy.done .i-done { display: block; }
 
 /* The proof: the set text on the left, the margin with the corrections on the right. */
 /* A galley's measure: the text column stops after 80 characters and the margin takes the rest, so notes sit close to their lines. */

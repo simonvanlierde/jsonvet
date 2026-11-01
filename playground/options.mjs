@@ -111,12 +111,16 @@ export function mountOptions({ tool, button, pop, values, dialect, onChange, say
   copy.addEventListener("click", async () => {
     try {
       await navigator.clipboard.writeText(code.textContent);
-      copy.textContent = "Copied";
+      copy.title = "Copied";
+      copy.classList.add("done");
     } catch {
-      copy.textContent = "Copy failed";
+      copy.title = "Copy failed";
     }
-    say(`${copy.textContent}.`);
-    setTimeout(() => (copy.textContent = "Copy"), 1500);
+    say(`${copy.title}.`);
+    setTimeout(() => {
+      copy.title = "Copy";
+      copy.classList.remove("done");
+    }, 1500);
   });
 
   // Fixed under the button; style.css keeps it inside the viewport, and the phone's sheet ignores it.

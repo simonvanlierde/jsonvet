@@ -202,7 +202,7 @@ applies to the dialect: a faint label and a compact control, between dashed rule
 2, 4, tab) and an on/off setting (bracket spacing, drop duplicate keys, normalize JSON5, JSON5 only)
 are segmented controls with `role="radiogroup"`, one tab stop each and arrow keys inside; the
 chosen part has the tint and a 2px ink bar at its foot, like a stage. A number (width) is a small
-field. The foot shows the same settings as real config on the tint, with Copy: a `[format]` table
+field. The foot shows the same settings as real config on the tint, with a copy icon in its corner: a `[format]` table
 for `jsonvet.toml`, or the `jsonvet --fix` flags. At the defaults it says there is nothing to set.
 Esc closes it and returns focus to the button. The settings come from one table in
 `settings.mjs`, so a new setting is a new row.
