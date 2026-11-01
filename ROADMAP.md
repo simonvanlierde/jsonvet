@@ -7,13 +7,9 @@ a promise, and none of it has a date. Released work is in [CHANGELOG.md](CHANGEL
 
 ## Planned
 
-- **`--fix` for safe fixes:** a byte order mark, trailing commas in JSON and JSONC, a missing final
-  newline in JSON Lines, CRLF line ends. Duplicate keys only behind an explicit unsafe option.
-- **A formatter that keeps comments** in JSONC and JSON5, with a `jsonvet-format` hook.
+- **CRLF line ends for `--fix`:** convert them with the other safe fixes.
 - **4.0: drop the check-json5 compatibility.** The `check-json5` binary and package, `--strict`
   and the old hook id go away. The 3.x releases keep them.
-- **Less memory for `--schema`:** check the document without copying it into a `serde_json`
-  value, which also gives byte positions for the values that fail.
 - **Schemas from a catalog, opt-in only:** look up a schema for a file in a SchemaStore-style
   catalog, with a local cache. jsonvet stays offline unless you turn this on.
 

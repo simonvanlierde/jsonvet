@@ -43,6 +43,8 @@ version for a new option or output, the patch version for a fix.
 
 ### Changed
 
+- `--schema` now reports a single JSON or JSON5 document over 4 GiB as not checked
+  ([limits](docs/usage.md#json-schema-limits)).
 - `--schema` takes about a third of the memory and half the time on large files, because it checks
   the file's values where they are instead of copying them first; the errors it reports are the
   same ([limits](docs/usage.md#json-schema-limits)).

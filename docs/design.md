@@ -142,10 +142,12 @@ it and quote nothing in their errors
 ([0012](decisions/0012-schema-paths-stay-in-the-project.md)).
 
 The library's `parse_with` hands the CLI each value as an event with its byte offset. The CLI
-folds the events into `serde_json` values and validates each document as soon as it is complete,
-keeping no events. If a document has errors, the CLI reads it again and maps each error's JSON
-Pointer back to the offset of its value. A pointer reads the same for `[0]` and `["0"]`, so a
-segment counts as an index only where it steps into an array. Messages name the value by
+builds its own tree of the document from the events, which borrows strings and keys from the text,
+and validates each document as soon as it is complete, keeping no events
+([0014](decisions/0014-schema-checks-the-documents-own-nodes.md)). When a document has errors, the
+CLI looks up each error's instance path in that tree and reads the offset of the value there. A
+path reads the same for `[0]` and `["0"]`, so a segment counts as an index only where it steps
+into an array. Messages name the value by
 JSONPath, through the same code as `duplicate-key`.
 
 A crafted schema or file can cost far more than its size. The limits are fixed caps, not a

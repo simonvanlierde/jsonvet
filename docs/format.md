@@ -42,8 +42,9 @@ By dialect:
 - JSON and I-JSON: the layout above, and no trailing commas.
 - JSONC and JWCC: comments stay. jsonvet adds no trailing comma. In JWCC, a trailing comma stays
   where the container has several lines, and goes where it fits on one.
-- JSON5: written as it was (quotes, unquoted keys, hex, `+1`, `.5`, `Infinity`, `NaN`, trailing
-  commas), unless `normalize-json5` is on.
+- JSON5: written as it was (quotes, unquoted keys, hex, `+1`, `.5`, `Infinity`, `NaN`), unless
+  `normalize-json5` is on. A trailing comma stays where the container has several lines, and goes
+  where it fits on one.
 - JSON Lines: each record on one line as `{"a": 1, "b": [1, 2]}`, with no space inside the
   braces. The width does not apply.
 

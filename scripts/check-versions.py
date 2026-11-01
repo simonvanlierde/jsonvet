@@ -28,6 +28,7 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+REV_DOCS = ["README.md", "docs/usage.md", "docs/format.md"]  # each shows one hook `rev:`
 PINS = 2  # setup.py and the compatibility package each pin jsonvet once
 
 
@@ -54,11 +55,15 @@ def main() -> int:
     ]
     cli = tomllib.loads((ROOT / "crates" / "jsonvet-cli" / "Cargo.toml").read_text())
     cli_pin = cli["dependencies"]["jsonvet"]["version"].removeprefix("=")
-    revs = re.findall(r"^\s*rev: v(\S+)\s*$", (ROOT / "README.md").read_text(), re.MULTILINE)
+    revs = [
+        rev
+        for doc in REV_DOCS
+        for rev in re.findall(r"^\s*rev: v(\S+)\s*$", (ROOT / doc).read_text(), re.MULTILINE)
+    ]
     found = {"Cargo.toml": pep440(cargo), "compat version": compat["version"]}
     found.update({f"pin {i + 1}": pin for i, pin in enumerate(pins)})
     found["cli crate pin"] = pep440(cli_pin)
-    found.update({f"README rev {i + 1}": pep440(rev) for i, rev in enumerate(revs)})
+    found.update({f"hook rev {i + 1}": pep440(rev) for i, rev in enumerate(revs)})
     for where, version in found.items():
         print(f"{where:16} {version}")
     heading = f"## [{cargo}]"
@@ -81,7 +86,7 @@ def main() -> int:
     print(f"{'README speed-up':16} {claim}x, table {largest}")
     if (
         len(pins) != PINS
-        or len(revs) != 1
+        or len(revs) != len(REV_DOCS)
         or len(set(found.values())) != 1
         or not has_heading
         or len(set(msrvs.values())) != 1

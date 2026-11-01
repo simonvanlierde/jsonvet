@@ -336,6 +336,9 @@ Action skips symlinks, and by default submodules. With the default `files`, run 
 first. With no JSON files, the step passes with a warning. Windows limits a command line to 32,767
 characters, so with thousands of JSON files on a Windows runner, narrow `files`.
 
+Do not pass `--fix` in `args`. The runner is thrown away, so the fixes are lost. The step can still
+pass, and the SARIF file reports the files after fixing.
+
 By default the Action installs the release that matches its own tag: `@v3` gets the newest 3.x on
 PyPI, and `@v3.0.0` gets 3.0.0. Pinned to a commit or a branch, it installs the release named in
 that commit's `Cargo.toml`, not the code in it. Before it installs the wheel, it checks that the

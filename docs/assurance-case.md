@@ -50,7 +50,10 @@ Actions is reported upstream (SECURITY.md, "Scope").
   options. A schema path that leaves the project is an error even if nothing is there. The Action
   stops if a wheel's attestation fails, and only an explicit `verify: false` skips the check.
 - **Least privilege.** The library has no file or network access; the CLI reads only what it is
-  given or finds by the config search, and never writes. Workflows start from `contents: read`.
+  given or finds by the config search. It writes only with `--fix` or `jsonvet fmt`, and only the
+  files it was given or found in a folder walk, through a temporary file in the same folder and a
+  rename. It follows a symlink named on the command line and leaves the link in place; a folder
+  walk follows none. Workflows start from `contents: read`.
   `id-token: write` goes only to the release jobs that attest or publish, the Pages `deploy` job,
   and the CodSpeed and Scorecard jobs, which upload their results with it.
 - **Economy of mechanism.** One parser serves all six dialects
