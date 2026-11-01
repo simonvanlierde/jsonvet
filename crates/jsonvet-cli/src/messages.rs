@@ -141,6 +141,14 @@ const ENGLISH: &[(&str, &str)] = &[
     ("summary.problems.one", "{count} problem"),
     ("summary.problems.other", "{count} problems"),
     ("summary.fixed", "fixed {problems} in {files}"),
+    (
+        "fmt.input-too-large",
+        "not formatted: the file is over 512 MiB",
+    ),
+    (
+        "fmt.output-too-large",
+        "not formatted: the output would be {size}",
+    ),
     ("write.failed", "cannot write the file: {error}"),
     ("write.read-only", "the file is read-only"),
     ("summary.none", "no problems in {files}"),
@@ -587,6 +595,7 @@ mod tests {
             "defaults.",
             "error.",
             "explain",
+            "fmt.",
             "hint.",
             "list.",
             "output.",

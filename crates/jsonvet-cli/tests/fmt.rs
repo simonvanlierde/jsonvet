@@ -486,6 +486,10 @@ fn an_output_that_would_be_huge_is_refused_and_the_file_left_alone() {
         err.contains("deep.json: not formatted: the output would be 1"),
         "{err}"
     );
+    assert_eq!(
+        err.lines().next(),
+        Some("deep.json: not formatted: the output would be 162.0 MB")
+    );
     assert_eq!(read(&dir, "deep.json"), text);
     let (code, out, _) = run(&dir, &["fmt", "-"], &text);
     assert_eq!((code, out.as_str()), (1, ""));

@@ -80,6 +80,24 @@ pub(crate) fn run(
     Ok(u8::from(failed || (check_only && changed)))
 }
 
+/// The catalog text for a file the formatter refused for its size. Sizes are in decimal units,
+/// rounded to a tenth.
+fn refusal(error: &jsonvet::FormatError<'_>) -> String {
+    match error {
+        jsonvet::FormatError::InputTooLarge => messages::text("fmt.input-too-large").to_owned(),
+        jsonvet::FormatError::OutputTooLarge { bytes } => {
+            let (unit, tenths) = if *bytes >= 1_000_000_000 {
+                ("GB", (bytes + 50_000_000) / 100_000_000)
+            } else {
+                ("MB", (bytes + 50_000) / 100_000)
+            };
+            let size = format!("{}.{} {unit}", tenths / 10, tenths % 10);
+            messages::fill("fmt.output-too-large", &[("size", &size)])
+        }
+        other => other.to_string(),
+    }
+}
+
 /// Format one of the files; an `Err` is a problem with the config, which ends the run.
 fn one(
     file: &OsString,
@@ -126,14 +144,14 @@ fn one(
                     "{name}:{}:{}: {}",
                     at.line,
                     at.column,
-                    printable(&problem.to_string())
+                    printable(&messages::problem(problem))
                 ));
             }
             done.failed = true;
             return Ok(done);
         }
         Err(other) => {
-            done.problems.push(format!("{name}: {other}"));
+            done.problems.push(format!("{name}: {}", refusal(&other)));
             done.failed = true;
             return Ok(done);
         }
