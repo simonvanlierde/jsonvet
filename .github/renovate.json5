@@ -82,6 +82,15 @@
       groupName: "uv",
     },
     {
+      // jsonvet-cli implements jsonschema's `Json` trait over its own nodes (ADR 0014), and
+      // jsonschema-value and referencing are versioned in step with jsonschema, so a 0.x bump of
+      // one, major or not, moves all three.
+      matchPackageNames: ["jsonschema", "jsonschema-value", "referencing"],
+      matchManagers: ["cargo"],
+      groupName: "jsonschema",
+      matchUpdateTypes: ["major", "minor", "patch", "digest", "pin", "pinDigest"],
+    },
+    {
       // The matrix's parsers and images: pinned exactly, bumped once a quarter, never merged
       // without a re-run. CI's `run.py --check` fails until results/versions.json matches.
       matchFileNames: ["conformance/**"],

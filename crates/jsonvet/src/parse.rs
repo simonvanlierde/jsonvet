@@ -60,9 +60,51 @@ pub(crate) fn walk<'a>(
     config: &Config,
     sink: Option<&mut dyn FnMut(Event<'a>)>,
 ) -> Vec<Problem> {
+    walk_scan::<false>(text, lines, config, sink, None)
+}
+
+/// What `--fix` needs besides the problems. With it, a trailing comma is noted here and read
+/// past instead of ending the check, so one pass finds every one.
+#[derive(Default)]
+pub(crate) struct Scan {
+    /// The offset of each trailing comma a dialect forbids.
+    pub(crate) commas: Vec<usize>,
+    /// Each object member that is followed by a `,`, in the order their commas appear.
+    pub(crate) members: Vec<Member>,
+    /// The offset of the last `,` read.
+    last_comma: usize,
+    /// Where the current member's key starts, for each open object: kept here so the check
+    /// path carries none of it.
+    starts: Vec<usize>,
+}
+
+/// One object member, up to the `,` after it.
+pub(crate) struct Member {
+    /// Where its key starts.
+    pub(crate) start: usize,
+    /// Just past its value.
+    pub(crate) end: usize,
+    /// The offset of the `,` after it.
+    pub(crate) comma: usize,
+}
+
+/// Check the whole `text` as [`check`] does, and note what the fixes need.
+pub(crate) fn scan(text: &str, config: &Config) -> (Vec<Problem>, Scan) {
+    let mut scan = Scan::default();
+    let problems = walk_scan::<true>(text, 0..text.len(), config, None, Some(&mut scan));
+    (problems, scan)
+}
+
+fn walk_scan<'a, 's, const SCAN: bool>(
+    text: &'a str,
+    lines: std::ops::Range<usize>,
+    config: &Config,
+    sink: Option<&'s mut dyn FnMut(Event<'a>)>,
+    scan: Option<&'s mut Scan>,
+) -> Vec<Problem> {
     let dialect = config.dialect();
     let text = &text[..lines.end];
-    let mut parser = Parser {
+    let mut parser = Parser::<SCAN> {
         text,
         bytes: text.as_bytes(),
         pos: lines.start,
@@ -77,6 +119,7 @@ pub(crate) fn walk<'a>(
         stack: Vec::new(),
         depth: 0,
         events: sink,
+        scan,
     };
     if lines.start == 0 {
         parser.byte_order_mark(config.severity(Rule::ByteOrderMark));
@@ -133,7 +176,7 @@ impl Fail {
     }
 }
 
-struct Parser<'a, 's> {
+struct Parser<'a, 's, const SCAN: bool> {
     text: &'a str,
     bytes: &'a [u8],
     pos: usize,
@@ -152,6 +195,8 @@ struct Parser<'a, 's> {
     depth: usize,
     /// Where each value goes as it is read, when the caller asked for them.
     events: Option<&'s mut dyn FnMut(Event<'a>)>,
+    /// What the fixes need, when they are wanted.
+    scan: Option<&'s mut Scan>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -278,7 +323,7 @@ enum State {
     Done,
 }
 
-impl<'a> Parser<'a, '_> {
+impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
     fn peek(&self) -> Option<u8> {
         self.bytes.get(self.pos).copied()
     }
@@ -555,6 +600,17 @@ impl<'a> Parser<'a, '_> {
         let object = self.top().is_some_and(|f| f.container == Container::Object);
         match self.peek() {
             Some(b',') => {
+                if SCAN && let Some(scan) = self.scan.as_deref_mut() {
+                    scan.last_comma = self.pos;
+                    if object {
+                        let start = self.depth.checked_sub(1).and_then(|d| scan.starts.get(d));
+                        scan.members.push(Member {
+                            start: start.copied().unwrap_or(0),
+                            end: value_end,
+                            comma: self.pos,
+                        });
+                    }
+                }
                 self.pos += 1;
                 if let Some(frame) = self.top_mut() {
                     frame.element_index += 1;
@@ -590,10 +646,14 @@ impl<'a> Parser<'a, '_> {
 
     fn close(&mut self, close: char, after_comma: bool) -> Result<State, Fail> {
         if after_comma && !self.dialect.trailing_commas() {
-            return Err(self.fail(SyntaxKind::TrailingComma {
-                close,
-                dialect: self.dialect,
-            }));
+            if SCAN && let Some(scan) = self.scan.as_deref_mut() {
+                scan.commas.push(scan.last_comma);
+            } else {
+                return Err(self.fail(SyntaxKind::TrailingComma {
+                    close,
+                    dialect: self.dialect,
+                }));
+            }
         }
         self.emit(self.pos, EventKind::End);
         self.pos += 1;
@@ -717,6 +777,17 @@ impl<'a> Parser<'a, '_> {
             self.emit(start, EventKind::Key(key.clone()));
         }
         self.check_duplicate(start, &key);
+        if SCAN
+            && let Some(scan) = self.scan.as_deref_mut()
+            && let Some(top) = self.depth.checked_sub(1)
+        {
+            if scan.starts.len() <= top {
+                scan.starts.resize(top + 1, 0);
+            }
+            if let Some(slot) = scan.starts.get_mut(top) {
+                *slot = start;
+            }
+        }
         if let Some(frame) = self.top_mut() {
             frame.current_key = key;
         }
@@ -1234,16 +1305,15 @@ impl<'a> Parser<'a, '_> {
         // The two common runs before a token are skipped here, as the call costs more than they
         // do: one space, as after `:`, and a line break plus an indent of spaces.
         if self.peek() == Some(b' ')
-            && self
-                .bytes
-                .get(self.pos + 1)
+            && self.bytes[self.pos..]
+                .get(1)
                 .is_some_and(|&b| ends_trivia(b))
         {
             self.pos += 1;
             return Ok(());
         }
         if self.peek() == Some(b'\n') && !self.json_lines {
-            let rest = &self.bytes[self.pos + 1..];
+            let rest = &self.bytes[self.pos..][1..];
             if let Some(run) = rest.iter().position(|&b| b != b' ')
                 && ends_trivia(rest[run])
             {

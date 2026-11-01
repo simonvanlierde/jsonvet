@@ -736,6 +736,7 @@ dependencies = [
  "insta",
  "memchr",
  "proptest",
+ "serde_json",
  "unicode-properties",
 ]
 
@@ -749,6 +750,7 @@ dependencies = [
  "ignore",
  "insta",
  "jsonschema",
+ "jsonschema-value",
  "jsonvet",
  "lexopt",
  "memchr",

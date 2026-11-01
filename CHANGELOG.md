@@ -10,6 +10,11 @@ version for a new option or output, the patch version for a fix.
 
 ### Added
 
+- `--fix` rewrites files with the fixes that are safe: it removes a byte order mark and trailing
+  commas where the dialect forbids them, and adds a missing final newline to JSON Lines. It then
+  reports what is left, and the exit status follows it. `--unsafe-fixes` also drops duplicate
+  keys, keeping the last. Standard input is fixed to standard output, and a pre-commit or prek
+  hook takes `args: [--fix]` ([fixing](docs/usage.md#fixing)).
 - In GitHub Actions, a run that finds problems ends with a notice annotation that counts them,
   since GitHub shows only the first 10 annotations of a type for a step
   ([output](docs/usage.md#output)).
@@ -33,7 +38,11 @@ version for a new option or output, the patch version for a fix.
 
 ### Changed
 
-- A file that the paths on the command line reach more than once is now checked and reported once, instead of once for each time ([folders](docs/usage.md#folders)).
+- `--schema` takes about a third of the memory and half the time on large files, because it checks
+  the file's values where they are instead of copying them first; the errors it reports are the
+  same ([limits](docs/usage.md#json-schema-limits)).
+- A file that the paths on the command line reach more than once is now checked and reported
+  once, instead of once for each time ([folders](docs/usage.md#folders)).
 - The playground sets your text as a proof: each problem is marked at its token with the
   correction in the margin, all six dialects give their verdict at once, and the page times each
   check in your browser, with a 2.7 MB file to try. It keeps the text in a share link without
@@ -63,11 +72,14 @@ version for a new option or output, the patch version for a fix.
 - `--schema` compiles a schema's patterns once, not twice, when every document passes. A schema
   that jsonvet checks one member or element at a time used to build that second copy up front; it
   is now built when the first document fails. At the pattern caps, a run whose files pass takes
-  3.5 s and 1.4 GB instead of 7.2 s and 2.7 GB. A failing document, or a pattern with a lookahead
+  3.5 s and 1.4 GB instead of 7.5 s and 2.7 GB. A failing document, or a pattern with a lookahead
   or back-reference, still takes about 2.7 GB.
 
 ### Fixed
 
+- A file whose `$schema` key is written with an escape, such as `"\u0024schema"` or JSON5's
+  `"\x24schema"`, is now checked against its schema. Before, jsonvet skipped the schema and the
+  file passed. A file like that can now fail where it passed before.
 - Escaped surrogate pairs (`\uD800..\uDFFF`) in unquoted JSON5 identifiers are decoded into their
   unicode code point, matching the JSON5 specification.
 
@@ -141,9 +153,6 @@ Most users need no change. Check these if they apply to you:
 
 ### Fixed
 
-- A file whose `$schema` key is written with an escape, such as `"\u0024schema"` or JSON5's
-  `"\x24schema"`, is now checked against its schema. Before, jsonvet skipped the schema and the
-  file passed.
 - `--schema` no longer fails a file because a string in it is too costly to match against a
   pattern the schema never applies there. jsonvet tried every pattern on every string, so any Expo
   `app.json` with a string of 5,000 characters or more failed against SchemaStore's schema.
