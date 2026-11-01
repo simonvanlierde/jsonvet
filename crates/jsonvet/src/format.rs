@@ -820,7 +820,13 @@ impl<'a> Parser<'a> {
         self.advance();
         let first = self.comments();
         let (open_trailing, mut pending) = self.split_trailing(first);
-        let mut forced = !open_trailing.is_empty();
+        // An object the author began on a new line stays expanded, as in Prettier. With a
+        // comment before the first key the object is expanded anyway.
+        let mut forced = !open_trailing.is_empty()
+            || (object
+                && pending.is_empty()
+                && matches!(self.kind(), Some(Kind::Open | Kind::Atom))
+                && self.cur.is_some_and(|t| t.nl > 0));
         let open_trailing = self.store(open_trailing);
         let mut members = Vec::new();
         let mut commented = Vec::new();

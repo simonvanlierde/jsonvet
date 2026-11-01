@@ -611,3 +611,100 @@ fn an_output_over_sixteen_times_the_text_is_refused_with_its_size() {
             .starts_with("not formatted: the output would be 16")
     );
 }
+
+// ---- the author's line break after an object's brace ----
+
+fn out(dialect: Dialect, options: &FormatOptions, text: &str) -> String {
+    format(text, &Config::new(dialect), options).expect("formats")
+}
+
+#[test]
+fn an_object_with_a_line_break_before_its_first_key_stays_expanded() {
+    let d = FormatOptions::default();
+    let json = |text: &str| out(Dialect::Json, &d, text);
+    assert_eq!(json("{\n\"a\": 1}"), "{\n  \"a\": 1\n}\n");
+    assert_eq!(json("{\n\n\"a\": 1}"), "{\n  \"a\": 1\n}\n");
+    assert_eq!(json("{\r\n\"a\": 1}"), "{\r\n  \"a\": 1\r\n}\r\n");
+    // No break before the first key: the width rule decides, whatever else breaks.
+    assert_eq!(json("{\"a\":\n1,\n\"b\": 2}"), "{ \"a\": 1, \"b\": 2 }\n");
+    assert_eq!(json("{\"a\": 1}"), "{ \"a\": 1 }\n");
+    // An empty object stays `{}`.
+    assert_eq!(json("{\n}"), "{}\n");
+    // The break sits on the object that has it; arrays keep the width rule.
+    assert_eq!(json("[\n1, 2]"), "[1, 2]\n");
+    assert_eq!(json("[\n{\"a\": 1}]"), "[{ \"a\": 1 }]\n");
+    assert_eq!(
+        json("{\"a\": 1,\n\"b\": {\"c\": 2}}"),
+        "{ \"a\": 1, \"b\": { \"c\": 2 } }\n"
+    );
+    // An expanded object breaks the containers around it, and not the ones inside it.
+    assert_eq!(json("[{\n\"a\": [1]}]"), "[\n  {\n    \"a\": [1]\n  }\n]\n");
+    assert_eq!(
+        json("{\"a\": {\n\"b\": 1}, \"c\": 2}"),
+        "{\n  \"a\": {\n    \"b\": 1\n  },\n  \"c\": 2\n}\n"
+    );
+    assert_eq!(
+        json("{\n\"a\": {\"b\": 1}}"),
+        "{\n  \"a\": { \"b\": 1 }\n}\n"
+    );
+    let bare = FormatOptions {
+        bracket_spacing: false,
+        ..FormatOptions::default()
+    };
+    assert_eq!(
+        out(Dialect::Json, &bare, "{\n\"a\": 1}"),
+        "{\n  \"a\": 1\n}\n"
+    );
+}
+
+#[test]
+fn the_line_break_rule_holds_in_every_dialect_but_json_lines() {
+    let d = FormatOptions::default();
+    for dialect in [
+        Dialect::IJson,
+        Dialect::Jsonc,
+        Dialect::Jwcc,
+        Dialect::Json5,
+    ] {
+        assert_eq!(
+            out(dialect, &d, "{\n\"a\": 1}"),
+            "{\n  \"a\": 1\n}\n",
+            "{dialect}"
+        );
+        assert_eq!(
+            out(dialect, &d, "{\"a\":\n1}"),
+            "{ \"a\": 1 }\n",
+            "{dialect}"
+        );
+    }
+    assert_eq!(
+        out(Dialect::Jwcc, &d, "{\n\"a\": 1,}"),
+        "{\n  \"a\": 1,\n}\n"
+    );
+    assert_eq!(out(Dialect::Json5, &d, "{\n a: 1}"), "{\n  a: 1\n}\n");
+    assert_eq!(out(Dialect::Json5, &d, "{\u{2028}a: 1}"), "{\n  a: 1\n}\n");
+    assert_eq!(
+        out(Dialect::Json5, &normalized(), "{\n'a': 1}"),
+        "{\n  a: 1,\n}\n"
+    );
+    assert_eq!(
+        out(Dialect::Jsonc, &d, "{\r\"a\": 1}"),
+        "{\r  \"a\": 1\r}\r"
+    );
+    // JSON Lines: every record is compact, and a break cannot be inside one.
+    assert_eq!(out(Dialect::JsonLines, &d, "{ \"a\": 1}\n"), "{\"a\": 1}\n");
+}
+
+#[test]
+fn an_expanded_object_formats_the_same_the_second_time() {
+    for dialect in [Dialect::Json, Dialect::Jsonc, Dialect::Json5] {
+        for text in [
+            "{\n\"a\": [1, {\n\"b\": 2}]}",
+            "[{\n}, {\"a\":\n1}]",
+            "{\n\"a\": {\n\"b\": {\n}}}",
+        ] {
+            check_promises(text, dialect, &FormatOptions::default()).unwrap();
+            check_promises(text, dialect, &width(1)).unwrap();
+        }
+    }
+}
