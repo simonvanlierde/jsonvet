@@ -111,6 +111,16 @@ exclude_re = [
   "path.rs:\\d+:14: replace match guard i >= tail with true in path_of$",
   # No two braces are at the same place in a glob.
   "editorconfig.rs:.* replace < with <= in alternatives$",
+  # The index of the document's first event is kept but never read.
+  "schema/fold.rs:60:19: replace \\+= with \\*= in Fold<'e>::event$",
+  # Speed only: the hash only sorts the items into buckets, which `equal` then compares, and
+  # items that are equal hash alike however it is made.
+  "schema/nodes.rs:.* in hash$",
+  "schema/nodes.rs:.* replace hash with \\(\\)$",
+  "schema/nodes.rs:407:.* in <impl Array<'a, Own> for Elems<'a>>::is_unique$",
+  # Only a temporary name taken already, by the same process id and counter, counts the tries.
+  # Any other error gives up after eight tries instead of one, with the same message.
+  "write.rs:36:(64|73|86): ",
   # Speed only: without the problems the scan found, the report runs the check again and finds the
   # same.
   "jsonvet-cli/src/lib.rs:.* delete match arm Some\\(Err\\(problems\\)\\) in fix_chunk$",

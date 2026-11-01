@@ -656,7 +656,7 @@ fn read_again(bytes: &[u8], tag: u32) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::super::fold::documents;
+    use super::super::fold::{Fold, documents};
     use super::*;
     use jsonvet::{Config, Dialect};
     use serde_json::json;
@@ -664,6 +664,114 @@ mod tests {
     #[test]
     fn the_end_of_a_container_at_the_most_does_not_saturate() {
         assert_eq!(offset(MAX_OFFSET + 1) as usize, MAX_OFFSET + 1);
+    }
+
+    /// The second record of a JSON Lines text, which starts past offset 0.
+    const RECORDS: &str = "1\n[true, {\"a\": [2]}, null]\n";
+
+    fn with_second_record(f: impl Fn(&Tree<'_>)) {
+        let (_, events) = jsonvet::parse(RECORDS, &Config::new(Dialect::JsonLines));
+        let events = events.unwrap_or_default();
+        let mut fold = Fold::new(RECORDS, Dialect::JsonLines);
+        let documents: Vec<_> = events.iter().filter_map(|e| fold.event(e)).collect();
+        assert_eq!(documents.len(), 2);
+        f(&documents[1].tree);
+    }
+
+    #[test]
+    fn a_later_record_keeps_its_offsets_and_its_text() {
+        with_second_record(|tree| {
+            assert_eq!(tree.place(&[(vec![], vec![])])[0].0, 2);
+            let lazy = tree.root().lazy_value();
+            assert!(matches!(lazy, LazyInstance::Deferred { .. }));
+            assert_eq!(lazy.get().as_ref(), &json!([true, {"a": [2]}, null]));
+            let object = tree.root().at(["1"]).expect("an object");
+            let lazy = object.lazy_value();
+            assert!(matches!(lazy, LazyInstance::Deferred { .. }));
+            assert_eq!(lazy.get().as_ref(), &json!({"a": [2]}));
+        });
+    }
+
+    #[test]
+    fn an_index_below_the_length_and_written_plainly_names_an_element() {
+        with_second_record(|tree| {
+            let path = |segment: &str| {
+                tree.place(&[(vec![segment.to_owned()], vec![])])[0]
+                    .1
+                    .clone()
+            };
+            assert_eq!(path("0"), "$[0]");
+            assert_eq!(path("2"), "$[2]");
+            assert_eq!(path("3"), "$[\"3\"]");
+            assert_eq!(path("01"), "$[\"01\"]");
+        });
+    }
+
+    #[test]
+    fn a_path_walks_objects_and_arrays_and_stops_at_anything_else() {
+        with_second_record(|tree| {
+            let root = tree.root();
+            let at = |path: &[&str]| {
+                root.at(path.iter().copied())
+                    .map(|n| n.to_value().into_owned())
+            };
+            assert_eq!(at(&["1", "a", "0"]), Some(json!(2)));
+            assert_eq!(at(&["1"]), Some(json!({"a": [2]})));
+            assert_eq!(at(&["x"]), None);
+            assert_eq!(at(&["9"]), None);
+            assert_eq!(at(&["0", "a"]), None);
+        });
+    }
+
+    #[test]
+    fn a_node_equals_the_value_it_was_read_from_and_no_other() {
+        let text = r#"[true, false, null, "s", 1, [1], {"a": 1}]"#;
+        let (_, events) = jsonvet::parse(text, &Config::new(Dialect::Json));
+        let events = events.unwrap_or_default();
+        let document = documents(&events).next().expect("a document");
+        let values = [
+            json!(true),
+            json!(false),
+            json!(null),
+            json!("s"),
+            json!(1),
+            json!([1]),
+            json!({"a": 1}),
+        ];
+        let nodes: Vec<_> = document
+            .tree
+            .root()
+            .as_array()
+            .expect("an array")
+            .elements()
+            .collect();
+        for (i, node) in nodes.iter().enumerate() {
+            for (j, value) in values.iter().enumerate() {
+                assert_eq!(node.equals_value(value), i == j, "{i} {j}");
+            }
+        }
+    }
+
+    #[test]
+    fn only_null_is_null() {
+        let validator = jsonschema::options_for::<Own>()
+            .build(&json!({"type": "null"}))
+            .expect("a schema");
+        let constant = jsonschema::options_for::<Own>()
+            .build(&json!({"const": null}))
+            .expect("a schema");
+        for (text, null) in [
+            ("null", true),
+            ("\"s\"", false),
+            ("0", false),
+            ("[]", false),
+        ] {
+            let (_, events) = jsonvet::parse(text, &Config::new(Dialect::Json));
+            let events = events.unwrap_or_default();
+            let document = documents(&events).next().expect("a document");
+            assert_eq!(validator.is_valid(document.tree.root()), null, "{text}");
+            assert_eq!(constant.is_valid(document.tree.root()), null, "{text}");
+        }
     }
 
     #[test]

@@ -543,3 +543,34 @@ fn an_editorconfig_section_with_braces_the_wrong_way_round_is_one_glob() {
         (0, "{ \"a\": 1 }\n", "")
     );
 }
+
+#[test]
+fn indent_tab_in_the_format_table_indents_with_tabs() {
+    let dir = workdir(&[("jsonvet.toml", "[format]\nindent = \"tab\"\nwidth = 10\n")]);
+    let (code, out, _) = run(
+        &dir,
+        &["fmt", "--stdin-filename", "a.json"],
+        "{\"a\": [1, 2]}",
+    );
+    assert_eq!(
+        (code, out.as_str()),
+        (0, "{\n\t\"a\": [\n\t\t1,\n\t\t2\n\t]\n}\n")
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_folder_that_takes_no_new_file_is_reported_and_the_file_left_alone() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = workdir(&[("sub/a.json", UGLY)]);
+    let sub = dir.join("sub");
+    fs::set_permissions(&sub, fs::Permissions::from_mode(0o555)).expect("chmod");
+    let (code, out, err) = run(&dir, &["fmt", "sub/a.json"], "");
+    fs::set_permissions(&sub, fs::Permissions::from_mode(0o755)).expect("chmod");
+    // A user that can write anywhere, such as root, is not refused.
+    if code == 1 {
+        assert_eq!(out, "");
+        assert!(err.contains("sub/a.json: "), "{err}");
+        assert_eq!(read(&dir, "sub/a.json"), UGLY);
+    }
+}

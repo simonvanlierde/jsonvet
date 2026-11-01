@@ -339,6 +339,15 @@ mod tests {
     }
 
     #[test]
+    fn fix_lists_every_fix_it_made() {
+        let out = fix("{\"a\": [1,], \"b\": 2,}", "json", false, &[]).unwrap_or_default();
+        assert_eq!(
+            out,
+            r#"{"text":"{\"a\": [1], \"b\": 2}","fixes":[{"rule":"syntax","index":8,"safe":true},{"rule":"syntax","index":18,"safe":true}]}"#
+        );
+    }
+
+    #[test]
     fn fix_keeps_duplicate_keys_unless_asked() {
         let text = "{\"a\": 1, \"a\": 2}";
         assert_eq!(fix(text, "json", false, &[]).as_deref(), Ok("null"));

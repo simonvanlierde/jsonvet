@@ -1162,6 +1162,28 @@ mod tests {
     }
 
     #[test]
+    fn every_kind_of_value_is_counted_at_the_bytes_it_is_written_in() {
+        let shapes: [fn(&str) -> String; 7] = [
+            |p| format!(r#"[true,false,null,"{p}"]"#),
+            |p| format!(r#"[[true],[false],[null],["{p}"]]"#),
+            |p| format!(r#"{{"a":true,"b":false,"c":null,"d":"{p}"}}"#),
+            |p| format!(r#"{{"a":[1,2],"b":{{"c":"{p}"}}}}"#),
+            |p| format!(r#"["{p}",true]"#),
+            |p| format!(r#"["{p}",-1.5,12]"#),
+            |p| format!(r#"{{"{p}":null}}"#),
+        ];
+        for shape in shapes {
+            let base =
+                serde_json::to_string(&serde_json::from_str::<Value>(&shape("")).expect("json"))
+                    .expect("json")
+                    .len();
+            let pad = "x".repeat(MAX_MESSAGE - base);
+            assert!(text_fits(&shape(&pad)), "{}", shape(&pad));
+            assert!(!text_fits(&shape(&format!("{pad}x"))), "{}", shape(&pad));
+        }
+    }
+
+    #[test]
     fn a_large_nested_value_is_named_not_quoted() {
         let validator = jsonschema::validator_for(&json!({"type": "string"})).expect("a schema");
         let long = "x".repeat(300);

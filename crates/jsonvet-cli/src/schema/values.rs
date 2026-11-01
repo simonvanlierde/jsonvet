@@ -139,6 +139,17 @@ mod tests {
     use jsonvet::{Config, Dialect};
     use proptest::prelude::*;
 
+    #[test]
+    fn keys_that_only_read_the_same_after_lone_surrogates_are_not_checked() {
+        let unchecked = |text: &str| {
+            let (_, events) = jsonvet::parse(text, &Config::new(Dialect::Json5));
+            let events = events.unwrap_or_default();
+            documents(&events).next().map(|d| d.unchecked.is_some())
+        };
+        assert_eq!(unchecked(r#"{"\ud800": 1, "\ud801": 2}"#), Some(true));
+        assert_eq!(unchecked(r#"{"\ud800": 1, "\ud800": 2}"#), Some(false));
+    }
+
     fn same(text: &str) {
         let (_, events) = jsonvet::parse(text, &Config::new(Dialect::Json5));
         let events = events.unwrap_or_default();
