@@ -33,6 +33,7 @@ version for a new option or output, the patch version for a fix.
 
 ### Changed
 
+- A file that the paths on the command line reach more than once is now checked and reported once, instead of once for each time ([folders](docs/usage.md#folders)).
 - The playground sets your text as a proof: each problem is marked at its token with the
   correction in the margin, all six dialects give their verdict at once, and the page times each
   check in your browser, with a 2.7 MB file to try. It keeps the text in a share link without

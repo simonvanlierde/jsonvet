@@ -45,6 +45,8 @@ A file or folder you name is always checked, even when an ignore file or `exclud
 `exclude` has no effect on the hook or the Action, which name each file: use the hook's own
 `exclude:` and the Action's `files` input there.
 
+A file that the arguments reach more than once, as a repeated name, a folder and a file in it, or a symlink, is checked once, under the name it was first given by.
+
 ## Output
 
 Each problem is one line: `file:line:col: severity[rule] message`. On a terminal, each problem shows
