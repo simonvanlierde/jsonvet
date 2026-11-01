@@ -91,6 +91,7 @@ let fixSummary;
 let snippets;
 // What fix() found for the current text, with unsafe fixes included: the notes show which
 // corrections have one, and the button counts the ones it would apply.
+// `null` above BIG characters, where they are not looked for before a click.
 let fixes = [];
 let hosts;
 let jsonvetVersion = "";
@@ -273,7 +274,7 @@ function note(p, n, problems) {
   ruleItem.append(rule);
   meta.append(ruleItem);
   if (relText) meta.append(el("span", "", relText));
-  const own = fixesFor(p, fixes, problems);
+  const own = fixesFor(p, fixes ?? [], problems);
   if (own.length) {
     const slot = el("span");
     if (own.every((f) => f.safe) || fixValues.unsafe) {
@@ -323,7 +324,7 @@ function run() {
   current = problems;
   // A fix is a second scan of the text: not for a text that waits for a pause in typing.
   try {
-    fixes = text.length > BIG ? [] : (JSON.parse(runFix(text, dialect, true, none))?.fixes ?? []);
+    fixes = text.length > BIG ? null : (JSON.parse(runFix(text, dialect, true, none))?.fixes ?? []);
   } catch {
     fixes = [];
   }
@@ -651,6 +652,12 @@ function act(kind, only = none) {
 
 // The Fix button counts the fixes it would apply; it stays focusable at zero so it can say why.
 function fixState() {
+  if (fixes === null) {
+    fixButton.textContent = "Fix";
+    fixButton.setAttribute("aria-disabled", "false");
+    fixButton.setAttribute("aria-label", "Fix: apply the fixes in this long text");
+    return;
+  }
   const n = fixes.filter((f) => f.safe || fixValues.unsafe).length;
   fixButton.textContent = n ? `Fix ${n}` : "Fix";
   fixButton.setAttribute("aria-disabled", String(!n));
@@ -715,12 +722,16 @@ for (const button of document.querySelectorAll(".copy")) {
   button.addEventListener("click", async () => {
     try {
       await navigator.clipboard.writeText($(button.dataset.copy).textContent);
-      button.textContent = "Copied";
+      button.title = "Copied";
+      button.classList.add("done");
     } catch {
-      button.textContent = "Copy failed";
+      button.title = "Copy failed";
     }
-    shareStatus.textContent = `${button.textContent}.`;
-    setTimeout(() => (button.textContent = "Copy"), 1500);
+    shareStatus.textContent = `${button.title}.`;
+    setTimeout(() => {
+      button.title = "Copy";
+      button.classList.remove("done");
+    }, 1500);
   });
 }
 

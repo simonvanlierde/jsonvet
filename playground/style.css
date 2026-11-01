@@ -110,10 +110,11 @@ button { font: inherit; color: inherit; }
 .conf-text.none { color: var(--faint); font-style: italic; }
 /* The copy icon sits in the code block's top-right corner; the text keeps clear of it. */
 .conf-code { position: relative; }
-.conf-code .conf-text { padding-right: 36px; }
+.conf-code .conf-text, .panel .conf-code pre { padding-right: 36px; }
+.panel .conf-code { flex: 1; min-width: 0; }
 .conf-copy { position: absolute; top: 4px; right: 4px; display: grid; place-items: center; width: 26px; height: 26px; padding: 0; color: var(--faint); background: var(--tint); border: 0; cursor: pointer; }
 .conf-copy:hover { color: var(--ink); }
-.conf-copy svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+.conf-copy svg, .theme svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
 .conf-copy .i-done, .conf-copy.done .i-copy { display: none; }
 .conf-copy.done .i-done { display: block; }
 
@@ -216,9 +217,12 @@ kbd { padding: 0 4px; font-size: .8em; border: 1px solid var(--rule-strong); bor
 .tabs button:focus-visible { outline-offset: -1px; }
 .panel { display: flex; align-items: flex-start; gap: 14px; margin-top: 12px; max-width: 46rem; }
 .panel pre { flex: 1; min-width: 0; margin: 0; padding: 10px 12px; overflow-x: auto; font-size: 13.5px; line-height: 1.55; background: var(--tint); scrollbar-color: var(--rule-strong) transparent; }
-.panel .copy { font: 13px/1.6 var(--mono); color: var(--faint); }
 
 /* The colophon. */
+/* The theme toggle shows the theme in use: a sun on light paper, a moon on dark. */
+.theme { display: inline-grid; place-items: center; width: 1.6em; height: 1.6em; padding: 0; vertical-align: -0.35em; color: var(--faint); background: none; border: 0; cursor: pointer; }
+.theme:hover { color: var(--ink); }
+.theme[data-theme="dark"] .i-sun, .theme:not([data-theme="dark"]) .i-moon { display: none; }
 .colophon { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 24px; margin-top: 28px; padding-block: 10px 20px; border-top: 1px solid var(--rule); }
 .colophon p { margin-block: 0; }
 .colophon .quiet { flex-basis: 100%; margin-bottom: 4px; color: var(--faint); font-size: .9375rem; font-style: italic; }

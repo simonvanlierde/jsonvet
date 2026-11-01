@@ -20,6 +20,7 @@
 <meta name="theme-color" content="#fbfaf5" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1b1915" media="(prefers-color-scheme: dark)">
 <link rel="stylesheet" href="style.css">
+<script src="theme.js"></script>
 </head>
 <body>
 <header class="wrap slug">
@@ -133,23 +134,29 @@
       <button type="button" role="tab" id="tab-cli" aria-selected="false" aria-controls="panel-cli" tabindex="-1">Command line</button>
     </div>
     <div class="panel" role="tabpanel" id="panel-hook" aria-labelledby="tab-hook">
-      <pre id="hook" role="group" tabindex="0" aria-label="Hook for .pre-commit-config.yaml"></pre>
-      <button type="button" class="copy link" data-copy="hook" aria-describedby="tab-hook">Copy</button>
+      <div class="conf-code">
+        <pre id="hook" role="group" tabindex="0" aria-label="Hook for .pre-commit-config.yaml"></pre>
+        <button type="button" class="copy conf-copy" data-copy="hook" aria-label="Copy" title="Copy" aria-describedby="tab-hook"><svg class="i-copy" viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M10.5 3.5v-1a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1"/></svg><svg class="i-done" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg></button>
+      </div>
     </div>
     <div class="panel" role="tabpanel" id="panel-action" aria-labelledby="tab-action" hidden>
-      <pre id="action" role="group" tabindex="0" aria-label="Step for a GitHub workflow"></pre>
-      <button type="button" class="copy link" data-copy="action" aria-describedby="tab-action">Copy</button>
+      <div class="conf-code">
+        <pre id="action" role="group" tabindex="0" aria-label="Step for a GitHub workflow"></pre>
+        <button type="button" class="copy conf-copy" data-copy="action" aria-label="Copy" title="Copy" aria-describedby="tab-action"><svg class="i-copy" viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M10.5 3.5v-1a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1"/></svg><svg class="i-done" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg></button>
+      </div>
     </div>
     <div class="panel" role="tabpanel" id="panel-cli" aria-labelledby="tab-cli" hidden>
-      <pre id="cli" role="group" tabindex="0" aria-label="Shell command"></pre>
-      <button type="button" class="copy link" data-copy="cli" aria-describedby="tab-cli">Copy</button>
+      <div class="conf-code">
+        <pre id="cli" role="group" tabindex="0" aria-label="Shell command"></pre>
+        <button type="button" class="copy conf-copy" data-copy="cli" aria-label="Copy" title="Copy" aria-describedby="tab-cli"><svg class="i-copy" viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M10.5 3.5v-1a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1"/></svg><svg class="i-done" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg></button>
+      </div>
     </div>
     <p id="ci-note" class="aside"></p>
   </details>
 </main>
 <footer class="wrap colophon">
   <p class="quiet">Checks run in your browser: the text never leaves the page. JSON Schema checks are in the <a href="https://github.com/simonvanlierde/jsonvet#readme">command-line tool</a>.</p>
-  <p class="slug-part"><span>jsonvet<span id="version"></span></span><span><a href="https://github.com/simonvanlierde/jsonvet/blob/main/LICENSE">MIT licence</a></span></p>
+  <p class="slug-part"><span>jsonvet<span id="version"></span></span><span><a href="https://github.com/simonvanlierde/jsonvet/blob/main/LICENSE">MIT licence</a></span><span><button type="button" id="theme" class="theme" aria-label="Switch theme" title="Switch theme"><svg class="i-sun" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.06 1.06M11.54 11.54l1.06 1.06M3.4 12.6l1.06-1.06M11.54 4.46l1.06-1.06"/></svg><svg class="i-moon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 9.6A5.5 5.5 0 0 1 6.4 2.5a5.5 5.5 0 1 0 7.1 7.1z"/></svg></button></span></p>
   <p class="slug-part"><span><a href="https://github.com/simonvanlierde">Simon van Lierde</a></span><span><a href="https://github.com/simonvanlierde/jsonvet">source on GitHub</a></span><span><a href="https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md">docs</a></span><span><a href="https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#speed">speed figures</a></span></p>
 </footer>
 <noscript><p>The playground needs JavaScript and WebAssembly.</p></noscript>

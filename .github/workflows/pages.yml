@@ -81,14 +81,15 @@ jobs:
       # keeps its CSP and has no inline script or style.
       - name: Smoke test the wasm
         run: node playground/smoke.mjs
-      # The page loads main.mjs, its styles and (through it) the wasm glue and the wasm with the
-      # commit in the URL, so a cached file from the last deploy never meets a new one.
+      # The page loads main.mjs, theme.js, its styles and (through main.mjs) the wasm glue and the
+      # wasm with the commit in the URL, so a cached file from the last deploy never meets a new one.
       - name: Stamp the commit on the page's files
         env:
           COMMIT: ${{ github.sha }}
         run: |
-          sed -i "s|\"main.mjs\"|\"main.mjs?v=${COMMIT}\"|; s|\"style.css\"|\"style.css?v=${COMMIT}\"|" playground/index.html
+          sed -i "s|\"main.mjs\"|\"main.mjs?v=${COMMIT}\"|; s|\"theme.js\"|\"theme.js?v=${COMMIT}\"|; s|\"style.css\"|\"style.css?v=${COMMIT}\"|" playground/index.html
           grep -q "main.mjs?v=${COMMIT}" playground/index.html
+          grep -q "theme.js?v=${COMMIT}" playground/index.html
           grep -q "style.css?v=${COMMIT}" playground/index.html
       # Chrome is on the runner: load the stamped page from a local server and read its status.
       - name: Load the page in Chrome
