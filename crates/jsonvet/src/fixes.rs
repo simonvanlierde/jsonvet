@@ -53,6 +53,11 @@ pub fn fix(text: &str, config: &Config, unsafe_fixes: bool) -> Option<Fixed> {
     if problems.iter().any(|p| p.rule() == Rule::Syntax) {
         return None;
     }
+    // The file's own line ending, from its first one; JSON Lines knows only LF and CRLF.
+    let eol = match text.find('\n') {
+        Some(i) if text[..i].ends_with('\r') => "\r\n",
+        _ => "\n",
+    };
     let mut groups = Vec::new();
     for problem in &problems {
         match problem.rule() {
@@ -60,7 +65,7 @@ pub fn fix(text: &str, config: &Config, unsafe_fixes: bool) -> Option<Fixed> {
                 let edit = if problem.rule() == Rule::ByteOrderMark {
                     Edit::delete(problem.offset()..problem.end())
                 } else {
-                    Edit::insert(problem.offset(), "\n")
+                    Edit::insert(problem.offset(), eol)
                 };
                 groups.push(Group::new(
                     problem.rule(),

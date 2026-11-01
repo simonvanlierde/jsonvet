@@ -69,6 +69,19 @@ fn adds_the_final_newline_to_json_lines_only() {
 }
 
 #[test]
+fn the_final_newline_follows_the_file_s_own_line_ending() {
+    assert_eq!(
+        safe("[1]\r\n[2]", Dialect::JsonLines).as_deref(),
+        Some("[1]\r\n[2]\r\n")
+    );
+    // The first line ending decides; a lone CR is not a line ending in JSON Lines.
+    assert_eq!(
+        safe("[1]\n[2]\r\n[3]", Dialect::JsonLines).as_deref(),
+        Some("[1]\n[2]\r\n[3]\n")
+    );
+}
+
+#[test]
 fn duplicate_keys_are_an_unsafe_fix() {
     let text = "{\"a\": 1, \"a\": 2}";
     assert_eq!(safe(text, Dialect::Json), None);
