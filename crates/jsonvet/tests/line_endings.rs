@@ -500,3 +500,105 @@ fn the_final_newline_follows_the_first_ending_with_the_rule_off() {
         Some("[1]\n[2]\r\n[3]\n")
     );
 }
+
+fn formatted(text: &str, dialect: Dialect) -> Option<String> {
+    format(text, &Config::new(dialect), &FormatOptions::default()).ok()
+}
+
+#[test]
+fn fmt_writes_the_endings_inside_a_block_comment_as_its_own() {
+    let out = formatted("[\n1, /*\r\n*/ 2]\n", Dialect::Jsonc).unwrap_or_default();
+    assert_eq!(out, "[\n  1,\n  /*\n*/ 2\n]\n");
+    assert_eq!(mixed(&out, Dialect::Jsonc), []);
+    let out = formatted("[\r\n1, /*\n a\r b\r\n*/ 2]\r\n", Dialect::Jsonc).unwrap_or_default();
+    assert_eq!(out, "[\r\n  1,\r\n  /*\r\n a\r\n b\r\n*/ 2\r\n]\r\n");
+    assert_eq!(mixed(&out, Dialect::Jsonc), []);
+}
+
+#[test]
+fn fmt_writes_json5_line_continuations_as_its_own_ending() {
+    let out = formatted("[\n\"a\\\r\nb\"]\n", Dialect::Json5).unwrap_or_default();
+    assert_eq!(out, "[\"a\\\nb\"]\n");
+    assert_eq!(mixed(&out, Dialect::Json5), []);
+}
+
+#[test]
+fn fmt_keeps_the_text_of_a_jwcc_line_comment() {
+    // The CR is comment text, not an ending, so it stays and the file's ending is LF.
+    let out = formatted("// a\rb\n[1,\n2]\n", Dialect::Jwcc).unwrap_or_default();
+    assert_eq!(out, "// a\rb\n[1, 2]\n");
+    assert_eq!(mixed(&out, Dialect::Jwcc), []);
+}
+
+#[test]
+fn fmt_picks_the_ending_the_rule_sees_first() {
+    // The CR in the comment is not an ending, so the first ending is the CRLF.
+    let text = "// a\rb\r\n[1,\n2]\n";
+    let out = formatted(text, Dialect::Jwcc).unwrap_or_default();
+    assert_eq!(out, "// a\rb\r\n[1, 2]\r\n");
+    assert_eq!(
+        fixed(text, Dialect::Jwcc).as_deref(),
+        Some("// a\rb\r\n[1,\r\n2]\r\n")
+    );
+    // With the rule off, the choice is the same.
+    let off = Config::new(Dialect::Jwcc).rule(Rule::MixedLineEndings, Severity::Off);
+    assert_eq!(
+        format(text, &off, &FormatOptions::default()).unwrap_or_default(),
+        out
+    );
+}
+
+/// Which kinds of line ending `text` holds: a lone LF, a CRLF, a lone CR.
+fn kinds(text: &str) -> [bool; 3] {
+    let list = endings(text);
+    let has = |s: &str| list.iter().any(|&(at, len)| &text[at..at + len] == s);
+    [has("\n"), has("\r\n"), has("\r")]
+}
+
+proptest! {
+    /// Whatever the white space and comments between values, `--fix` and `fmt` write the same
+    /// kind of ending, and the formatted text has a single kind.
+    #[test]
+    fn fix_and_fmt_choose_the_same_ending(
+        gaps in proptest::collection::vec(
+            prop_oneof![
+                Just(""), Just(" "), Just("\n"), Just("\r\n"), Just("\r"), Just("/*\r\n*/"),
+                Just("/*\n*/"), Just(" // c\r\n"), Just(" // c\rd\n"), Just(" // c\n"),
+            ],
+            1..8,
+        ),
+        dialect in prop_oneof![
+            Just(Dialect::Json), Just(Dialect::Jsonc), Just(Dialect::Json5), Just(Dialect::Jwcc)
+        ],
+    ) {
+        let mut text = String::from("[");
+        for (i, gap) in gaps.iter().enumerate() {
+            if i > 0 {
+                text.push(',');
+            }
+            text.push_str(gap);
+            text.push('1');
+        }
+        text.push_str("]\n");
+        let Some(by_fmt) = formatted(&text, dialect) else { return Ok(()); };
+        prop_assert_eq!(mixed(&by_fmt, dialect), vec![], "{:?}", by_fmt);
+        let by_fix = fixed(&text, dialect).unwrap_or_else(|| text.clone());
+        let after = formatted(&by_fix, dialect).unwrap_or_default();
+        // The comments are the same text in both, so only the endings the tools wrote differ.
+        prop_assert_eq!(kinds(&by_fmt), kinds(&after), "{:?} {:?}", by_fmt, after);
+        prop_assert_eq!(&formatted(&by_fmt, dialect).unwrap_or_default(), &by_fmt);
+    }
+}
+
+#[test]
+fn a_json5_syntax_error_from_fmt_counts_its_line_separators() {
+    // U+2028 starts a line in JSON5, so the stray `x` is on line 2.
+    let Err(jsonvet::FormatError::Syntax(report)) = format(
+        "[1,\u{2028}x]",
+        &Config::new(Dialect::Json5),
+        &FormatOptions::default(),
+    ) else {
+        panic!("a syntax error");
+    };
+    assert_eq!(report.location(report.problems()[0].offset()).line, 2);
+}

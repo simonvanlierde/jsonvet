@@ -13,7 +13,8 @@
 use std::borrow::Cow;
 use std::fmt;
 
-use crate::{Config, Dialect, Report, Rule, check};
+use crate::parse::check_ending;
+use crate::{Config, Dialect, Report, Rule};
 
 /// How one level of nesting is indented.
 ///
@@ -130,26 +131,15 @@ pub fn format<'a>(
     if text.len() > MAX_TEXT {
         return Err(FormatError::InputTooLarge);
     }
-    let report = check(text, config);
-    if report.problems().iter().any(|p| p.rule() == Rule::Syntax) {
-        return Err(FormatError::Syntax(report));
+    let (problems, eol) = check_ending(text, config);
+    if problems.iter().any(|p| p.rule() == Rule::Syntax) {
+        return Err(FormatError::Syntax(Report::new(
+            text,
+            problems,
+            config.dialect() == Dialect::Json5,
+        )));
     }
-    drop(report);
     let dialect = config.dialect();
-    let eol = if dialect == Dialect::JsonLines {
-        if text.find('\n').is_some_and(|i| text[..i].ends_with('\r')) {
-            "\r\n"
-        } else {
-            "\n"
-        }
-    } else {
-        match first_line_ending(text) {
-            // A JWCC line comment ends only at LF, so a lone CR after one would swallow the
-            // next line.
-            "\r" if dialect == Dialect::Jwcc => "\n",
-            eol => eol,
-        }
-    };
     let (bom, body) = match text.strip_prefix('\u{feff}') {
         Some(body) => ("\u{feff}", body),
         None => ("", text),
@@ -172,6 +162,7 @@ pub fn format<'a>(
             over: counting,
             col: 0,
             eol,
+            json5: dialect == Dialect::Json5,
             options,
             trailing,
             pad,
@@ -219,15 +210,6 @@ pub fn format<'a>(
 
 /// The most text the 32-bit offsets, with one bit kept for rewritten strings, can point into.
 const MAX_TEXT: usize = 512 << 20;
-
-/// The first line ending in the text: `\r\n`, `\n` or a lone `\r`. `\n` if it has none.
-fn first_line_ending(text: &str) -> &'static str {
-    match text.find(['\n', '\r']) {
-        Some(i) if text[i..].starts_with("\r\n") => "\r\n",
-        Some(i) if text[i..].starts_with('\r') => "\r",
-        _ => "\n",
-    }
-}
 
 fn narrow(n: usize) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)
@@ -941,6 +923,8 @@ struct Writer<'o> {
     /// The column of the end of the line being written.
     col: usize,
     eol: &'o str,
+    /// Whether strings can hold line continuations (JSON5).
+    json5: bool,
     options: &'o FormatOptions,
     trailing: Trailing,
     /// Whether an object on one line has a space inside its braces.
@@ -996,6 +980,34 @@ impl Writer<'_> {
                 .sum::<usize>();
     }
 
+    /// A string, number or key. In JSON5 a string can hold line continuations.
+    fn put_atom(&mut self, s: &str) {
+        if self.json5 {
+            self.put_text(s);
+        } else {
+            self.put(s);
+        }
+    }
+
+    /// `s` with each line ending in it written as the file's own, so the output has one kind:
+    /// a block comment and a JSON5 line continuation hold some. A `//` comment keeps its text,
+    /// where in JWCC a CR is not an ending.
+    fn put_text(&mut self, s: &str) {
+        if s.starts_with("//") || memchr::memchr2(b'\n', b'\r', s.as_bytes()).is_none() {
+            return self.put(s);
+        }
+        let mut out = String::with_capacity(s.len());
+        let mut rest = s;
+        while let Some(i) = rest.find(['\n', '\r']) {
+            out.push_str(&rest[..i]);
+            out.push_str(self.eol);
+            let len = if rest[i..].starts_with("\r\n") { 2 } else { 1 };
+            rest = &rest[i + len..];
+        }
+        out.push_str(rest);
+        self.put(&out);
+    }
+
     fn put_char(&mut self, c: char) {
         let mut buf = [0; 4];
         self.put(c.encode_utf8(&mut buf));
@@ -1038,7 +1050,7 @@ impl Writer<'_> {
             } else if started {
                 self.put(" ");
             }
-            self.put(t.comment(c));
+            self.put_text(t.comment(c));
             (started, new_line) = (true, c.has(NL_AFTER));
         }
         if let Some(value) = doc.value {
@@ -1058,7 +1070,7 @@ impl Writer<'_> {
             } else {
                 self.put(" ");
             }
-            self.put(t.comment(c));
+            self.put_text(t.comment(c));
         }
         if started {
             self.newline();
@@ -1068,7 +1080,7 @@ impl Writer<'_> {
     /// `suffix` is the width of what must follow the value on its last line, such as a comma.
     fn value(&mut self, t: &Tree<'_>, value: Value, depth: usize, suffix: usize) {
         let Some(index) = value.container() else {
-            self.put(t.atom(Span {
+            self.put_atom(t.atom(Span {
                 start: value.start,
                 len: value.len,
             }));
@@ -1088,7 +1100,7 @@ impl Writer<'_> {
     fn flat_value(&mut self, t: &Tree<'_>, value: Value) {
         match value.container() {
             Some(index) => self.flat(t, &t.containers[index]),
-            None => self.put(t.atom(Span {
+            None => self.put_atom(t.atom(Span {
                 start: value.start,
                 len: value.len,
             })),
@@ -1106,7 +1118,7 @@ impl Writer<'_> {
                 self.put(", ");
             }
             if let Some(key) = m.key() {
-                self.put(t.atom(key));
+                self.put_atom(t.atom(key));
                 self.put(": ");
             }
             self.flat_value(t, m.value);
@@ -1128,7 +1140,7 @@ impl Writer<'_> {
         self.put_char(if c.object { '{' } else { '[' });
         for &o in t.list(c.open_trailing) {
             self.put(" ");
-            self.put(t.comment(o));
+            self.put_text(t.comment(o));
         }
         let mut extras = t.extras[t.extras.partition_point(|(j, _)| *j < c.members.start)..]
             .iter()
@@ -1145,7 +1157,7 @@ impl Writer<'_> {
                     } else {
                         self.put(" ");
                     }
-                    self.put(t.comment(l));
+                    self.put_text(t.comment(l));
                     (first, new_line) = (false, l.has(NL_AFTER));
                 }
             }
@@ -1165,7 +1177,7 @@ impl Writer<'_> {
             self.member(t, m, extra, inner, suffix);
             for &b in before_comma {
                 self.put(" ");
-                self.put(t.comment(b));
+                self.put_text(t.comment(b));
             }
             if comma {
                 self.put(",");
@@ -1173,13 +1185,13 @@ impl Writer<'_> {
             if let Some(extra) = extra {
                 for &tr in t.list(extra.trailing) {
                     self.put(" ");
-                    self.put(t.comment(tr));
+                    self.put_text(t.comment(tr));
                 }
             }
         }
         for &tl in t.list(c.tail) {
             self.line(inner, tl.has(BLANK) && !first);
-            self.put(t.comment(tl));
+            self.put_text(t.comment(tl));
             first = false;
         }
         self.line(depth, false);
@@ -1197,11 +1209,11 @@ impl Writer<'_> {
     ) {
         let mut value_depth = depth;
         if let Some(key) = m.key() {
-            self.put(t.atom(key));
+            self.put_atom(t.atom(key));
             if let Some(extra) = extra {
                 for &b in t.list(extra.before_colon) {
                     self.put(" ");
-                    self.put(t.comment(b));
+                    self.put_text(t.comment(b));
                 }
             }
             self.put(":");
@@ -1214,7 +1226,7 @@ impl Writer<'_> {
                 } else {
                     self.put(" ");
                 }
-                self.put(t.comment(a));
+                self.put_text(t.comment(a));
                 new_line = a.has(LINE) || (i + 1 == after.len() && a.has(NL_AFTER));
             }
             if new_line {

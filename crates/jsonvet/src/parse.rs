@@ -60,7 +60,7 @@ pub(crate) fn walk<'a>(
     config: &Config,
     sink: Option<&mut dyn FnMut(Event<'a>)>,
 ) -> Vec<Problem> {
-    walk_scan::<false>(text, lines, config, sink, None)
+    walk_scan::<false>(text, lines, config, sink, None).0
 }
 
 /// What `--fix` needs besides the problems. With it, a trailing comma is noted here and read
@@ -128,7 +128,7 @@ pub(crate) struct Member {
 /// Check the whole `text` as [`check`] does, and note what the fixes need.
 pub(crate) fn scan(text: &str, config: &Config) -> (Vec<Problem>, Scan) {
     let mut scan = Scan::default();
-    let problems = walk_scan::<true>(text, 0..text.len(), config, None, Some(&mut scan));
+    let problems = walk_scan::<true>(text, 0..text.len(), config, None, Some(&mut scan)).0;
     (problems, scan)
 }
 
@@ -138,7 +138,7 @@ fn walk_scan<'a, 's, const SCAN: bool>(
     config: &Config,
     sink: Option<&'s mut dyn FnMut(Event<'a>)>,
     scan: Option<&'s mut Scan>,
-) -> Vec<Problem> {
+) -> (Vec<Problem>, Option<Eol>) {
     let dialect = config.dialect();
     let text = &text[..lines.end];
     let mut parser = Parser::<SCAN> {
@@ -203,7 +203,27 @@ fn walk_scan<'a, 's, const SCAN: bool>(
     if let (Some(scan), Some(first)) = (parser.scan.as_deref_mut(), parser.endings.first) {
         scan.target = Some(target_ending(first, dialect));
     }
-    parser.problems
+    (parser.problems, parser.endings.first)
+}
+
+/// Check `text` as [`check`] does, and give the line ending `jsonvet fmt` writes: the file's
+/// first one as the mixed-line-endings rule sees it, with the rule's fix target for JWCC, and LF
+/// for a file with none.
+pub(crate) fn check_ending(text: &str, config: &Config) -> (Vec<Problem>, &'static str) {
+    // The rule's first ending is what is wanted, so it is looked at even where the rule is off.
+    let on;
+    let config = if config.severity(Rule::MixedLineEndings).is_on() {
+        config
+    } else {
+        on = config
+            .clone()
+            .rule(Rule::MixedLineEndings, Severity::Warning);
+        &on
+    };
+    let (problems, first) = walk_scan::<false>(text, 0..text.len(), config, None, None);
+    // No CR-bearing ending seen means every ending is an LF.
+    let eol = first.map_or(Eol::Lf, |first| target_ending(first, config.dialect()));
+    (problems, eol.text())
 }
 
 /// Bit 2 (value 4) is set in a CR (0x0D) and not in a space, tab or LF.

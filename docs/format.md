@@ -33,8 +33,10 @@ The pre-commit hook is `jsonvet-format`:
   container go.
 - Strings and numbers are never changed. No escape is added or removed.
 - The file ends with exactly one newline. Line endings follow the first line ending in the file:
-  `\r\n`, `\n` or a lone `\r`. JWCC uses `\n` in place of a lone `\r`, because a JWCC line comment
-  ends only at `\n`. A byte order mark stays.
+  `\r\n`, `\n` or a lone `\r`, as the [mixed-line-endings](usage.md#mixed-line-endings) rule sees
+  it. JWCC uses `\n` in place of a lone `\r`, because a JWCC line comment ends only at `\n`.
+  Line endings inside block comments and JSON5 line continuations follow the same one. A byte
+  order mark stays.
 - A second run changes nothing.
 
 By dialect:

@@ -494,3 +494,13 @@ fn an_output_that_would_be_huge_is_refused_and_the_file_left_alone() {
     let (code, out, _) = run(&dir, &["fmt", "-"], &text);
     assert_eq!((code, out.as_str()), (1, ""));
 }
+
+#[test]
+fn fmt_check_passes_on_what_fix_wrote() {
+    // The CR in the comment is comment text, so the first ending is the CRLF for both tools.
+    let dir = workdir(&[("a.jwcc", "// a\rb\r\n[1, 2]\n")]);
+    assert_eq!(run(&dir, &["--fix", "a.jwcc"], "").0, 0);
+    assert_eq!(read(&dir, "a.jwcc"), "// a\rb\r\n[1, 2]\r\n");
+    assert_eq!(run(&dir, &["fmt", "--check", "a.jwcc"], "").0, 0);
+    assert_eq!(read(&dir, "a.jwcc"), "// a\rb\r\n[1, 2]\r\n");
+}

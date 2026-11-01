@@ -439,8 +439,7 @@ fn problems(text: &str, config: &Config) -> Vec<String> {
     let mut found: Vec<String> = check(text, config)
         .problems()
         .iter()
-        // The formatter gives the file one line ending, so a mix in the input goes.
-        .filter(|p| !matches!(p.rule(), Rule::MissingFinalNewline | Rule::MixedLineEndings))
+        .filter(|p| p.rule() != Rule::MissingFinalNewline)
         .map(|p| format!("{}: {p}", p.rule()))
         .collect();
     found.sort();
@@ -562,7 +561,10 @@ fn a_lone_cr_never_ends_a_jwcc_line_comment_in_the_output() {
     for text in ["{\r\"a\": 1 // c\n}", "{\r\"a\": 1, // c\n\"b\": 2}"] {
         let out = format(text, &jwcc, &FormatOptions::default()).unwrap();
         assert!(!out.contains('\r'), "{out:?}");
-        assert_eq!(problems(&out, &jwcc), problems(text, &jwcc), "{out:?}");
+        // The input mixes endings and the output does not; nothing else changes.
+        let mut before = problems(text, &jwcc);
+        before.retain(|p| !p.starts_with("mixed-line-endings"));
+        assert_eq!(problems(&out, &jwcc), before, "{out:?}");
     }
 }
 
