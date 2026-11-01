@@ -56,9 +56,7 @@ def main() -> int:
     cli = tomllib.loads((ROOT / "crates" / "jsonvet-cli" / "Cargo.toml").read_text())
     cli_pin = cli["dependencies"]["jsonvet"]["version"].removeprefix("=")
     revs = [
-        rev
-        for doc in REV_DOCS
-        for rev in re.findall(r"^\s*rev: v(\S+)\s*$", (ROOT / doc).read_text(), re.MULTILINE)
+        rev for doc in REV_DOCS for rev in re.findall(r"^\s*rev: v(\S+)\s*$", (ROOT / doc).read_text(), re.MULTILINE)
     ]
     found = {"Cargo.toml": pep440(cargo), "compat version": compat["version"]}
     found.update({f"pin {i + 1}": pin for i, pin in enumerate(pins)})
