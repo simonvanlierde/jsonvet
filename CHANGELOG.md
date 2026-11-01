@@ -8,6 +8,13 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
+### Fixed
+
+- `--fix --format json -` and `--format sarif` no longer add the `fixed N problems` line after
+  the report on standard error, so standard error parses as JSON ([fixing](docs/usage.md#fixing)).
+- The GitHub Action's description is short enough for the GitHub Marketplace again, so the
+  release is listed there.
+
 ## [3.3.0] - 2026-11-01
 
 Most users need no change. Check this if it applies to you:

@@ -262,7 +262,9 @@ pub fn run_with(
             break outcome;
         }
     };
-    let written = written.and_then(|()| fixed.finish(&mut out));
+    // A JSON or SARIF report on standard error is all of it, so the count stays out.
+    let count = !stdin_fix || args.format == Format::Text;
+    let written = written.and_then(|()| fixed.finish(count, &mut out));
     conclude(written, &schemas, &counts, args.max_warnings)
 }
 
@@ -584,9 +586,10 @@ struct FixRun {
 }
 
 impl FixRun {
-    /// Print the count to standard error, then standard input's fixed text to `out`.
-    fn finish(&self, out: &mut impl Write) -> io::Result<()> {
-        if let Some(summary) = self.summary() {
+    /// Print the count to standard error when `count` is set, then standard input's fixed text to
+    /// `out`.
+    fn finish(&self, count: bool, out: &mut impl Write) -> io::Result<()> {
+        if count && let Some(summary) = self.summary() {
             eprintln!("{summary}");
         }
         match &self.stdin {

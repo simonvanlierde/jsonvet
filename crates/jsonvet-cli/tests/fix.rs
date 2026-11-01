@@ -205,6 +205,18 @@ fn json_output_stays_a_document() {
     assert_eq!(read(&dir, "a.json"), "[1]");
 }
 
+#[test]
+fn json_output_of_standard_input_stays_a_document() {
+    // The fixed text takes standard output, so the report is all of standard error.
+    let dir = workdir(&[]);
+    for format in ["json", "sarif"] {
+        let args = ["--fix", "--format", format, "--stdin-filename", "x.json"];
+        let (code, out, err) = run_stdin(&dir, &args, "[1,]\n");
+        assert_eq!((code, out.as_str()), (0, "[1]\n"), "{err}");
+        serde_json::from_str::<serde_json::Value>(&err).expect("JSON on standard error");
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn a_read_only_file_is_left_alone_and_fails_the_run() {

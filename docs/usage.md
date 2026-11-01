@@ -36,6 +36,8 @@ lists the files that would change and writes nothing ([formatting](format.md)).
 `--fix` rewrites each file with the fixes that are safe, then checks the result and reports what
 is left. The exit status comes from those problems, so a run that fixes everything exits 0. When
 it fixed something, it prints a count to standard error, such as `fixed 3 problems in 2 files`.
+With standard input and `--format json` or `sarif` the report takes standard error, so the count
+is left out.
 
 | Problem                                                           | Fix                          | Safe |
 | ----------------------------------------------------------------- | ---------------------------- | ---- |
