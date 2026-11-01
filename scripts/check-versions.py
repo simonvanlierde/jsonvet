@@ -17,6 +17,9 @@ README's "up to N times faster than check-json5 1.4.1" must name the table's lar
 The minimum supported Rust has three places too: `rust-version` in Cargo.toml, the toolchain of
 ci.yml's msrv job and `cargo +X` in the justfile's msrv recipe.
 
+action.yml's description must stay under 125 characters, or the release cannot be listed on the
+GitHub Marketplace. The tag fixes it for good, so the check runs before one.
+
 The CHANGELOG rule holds on main and on a release branch alike. Main keeps the last release's
 version until a release commit bumps it, so `## [X.Y.Z]` exists there already; the release commit
 moves the Unreleased entries under a new `## [X.Y.Z]` heading in the same change that bumps the
@@ -27,6 +30,9 @@ import re
 import sys
 import tomllib
 from pathlib import Path
+
+# The GitHub Marketplace refuses an action whose description has 125 characters or more.
+MARKETPLACE_ABOUT = 125
 
 ROOT = Path(__file__).resolve().parent.parent
 REV_DOCS = ["README.md", "docs/usage.md", "docs/format.md"]  # each shows one hook `rev:`
@@ -82,6 +88,8 @@ def main() -> int:
     largest = max((row[5].strip() for row in rows), key=lambda up: int(up.rstrip("x").replace(",", "")), default=None)
     claim = first(r"up to \**([\d,]+)\s+times faster\**\s+than check-json5 1\.4\.1", "README.md")
     print(f"{'README speed-up':16} {claim}x, table {largest}")
+    about = first(r"^description: ([^\n]*)", "action.yml") or ""
+    print(f"{'action about':16} {len(about)} characters")
     if (
         len(pins) != PINS
         or any(len(found_revs) != 1 for found_revs in revs_per_doc.values())
@@ -90,6 +98,7 @@ def main() -> int:
         or len(set(msrvs.values())) != 1
         or speed != minor
         or f"{claim}x" != largest
+        or not 0 < len(about) < MARKETPLACE_ABOUT
     ):
         print("versions differ", file=sys.stderr)
         return 1
