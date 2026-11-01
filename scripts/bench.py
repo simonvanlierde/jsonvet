@@ -211,7 +211,14 @@ def main() -> int:
             for name in names:
                 hyperfine += ["-n", name, f"{tools[name]} {listed}"]
             subprocess.run(hyperfine, cwd=files, check=True, capture_output=True)  # noqa: S603
-            return {r["command"]: r["median"] for r in json.loads(result.read_text())["results"]}
+            # Hyperfine v1 put `-n` in "command"; v2 puts it in "name".
+            # Hyperfine v1 stored "median" directly; v2 nests it under summary.time_wall_clock.
+            return {
+                (r.get("name") or r["command"]): (
+                    float(r["median"]) if "median" in r else float(r["summary"]["time_wall_clock"]["median"])
+                )
+                for r in json.loads(result.read_text())["results"]
+            }
 
         header = ["Case", "check-json5 1.0.1", "check-json5 1.4.1", f"jsonvet {release}", "Speed-up over 1.4.1"]
         rows = [[*header, "over 1.0.1"]]
