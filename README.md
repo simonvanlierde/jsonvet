@@ -20,7 +20,7 @@ package.json:2:14: error[syntax] missing `,`
 events.jsonl:12:1: error[syntax] blank line; JSON Lines needs a value on every line
 ```
 
-It replaces check-json5, a Python hook, and is up to 1,395 times faster than check-json5 1.4.1
+It replaces check-json5, a Python hook, and is up to **1,395 times faster** than check-json5 1.4.1
 on JSON5 files ([figures](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#speed)).
 
 **Try it in your browser:** the [playground](https://simonvanlierde.com/jsonvet/) checks, fixes
