@@ -246,7 +246,7 @@ Each type is `#[non_exhaustive]` or has private fields, so a new variant or fiel
 change. The `#[doc(hidden)]` items are public for jsonvet-cli only, and can change in any release:
 `parse`, `parse_with`, `parse_lines`, `join_lines`, `line_parts`, `Lines`, `Event`, `EventKind`,
 `json_path`, `PathStep`, `key_text`, `did_you_mean`, `closest`, `MESSAGES`, `fill`,
-`Problem::message_with` and `is_hidden`.
+`Problem::message_with`, `is_hidden`, `fix`, `Fix` and `Fixed`.
 
 The text is `&str`, so every offset falls on a character boundary. `check` never panics and has no
 error mode: the problems in the file are its output. A `Report` is `Send` but not `Sync`, because
