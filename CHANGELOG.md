@@ -8,6 +8,8 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-11-01
+
 ### Added
 
 - A `mixed-line-endings` rule warns once per file about the first line ending that differs from
@@ -657,7 +659,8 @@ hook's output, or imports `pre_commit_hooks.check_json5`, needs a change (see Ch
 
 - Renamed from `pre-commit-check-json5` to `check-json5`.
 
-[Unreleased]: https://github.com/simonvanlierde/jsonvet/compare/v3.2.0...HEAD
+[Unreleased]: https://github.com/simonvanlierde/jsonvet/compare/v3.3.0...HEAD
+[3.3.0]: https://github.com/simonvanlierde/jsonvet/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/simonvanlierde/jsonvet/compare/v3.1.1...v3.2.0
 [3.1.1]: https://github.com/simonvanlierde/jsonvet/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/simonvanlierde/jsonvet/compare/v3.0.0...v3.1.0
