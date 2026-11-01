@@ -3,7 +3,7 @@
 # for fuzzing, and the `rust-version` in Cargo.toml for `just msrv`.
 [tools]
 just = "1"
-uv = "0.13.0"
+uv = "0.13.5"
 prek = "0.5.5"
 hyperfine = "1"
 node = "24" # the playground tests, and the smoke test of its wasm

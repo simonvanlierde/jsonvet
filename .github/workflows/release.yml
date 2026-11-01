@@ -32,7 +32,7 @@ env:
   # compiler. Renovate bumps it; CI's hook job builds with the same one.
   RELEASE_RUST: "1.99.0"
   # The uv every job sets up, as in ci.yml and mise.toml. Renovate bumps all three.
-  PINNED_UV: "0.13.0"
+  PINNED_UV: "0.13.5"
 
 jobs:
   # The tag must name the same release as the crates and the hook placeholder's pin.

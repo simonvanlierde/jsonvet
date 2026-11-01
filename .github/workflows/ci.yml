@@ -23,7 +23,7 @@ env:
   # The Rust that builds the release wheels; keep it equal to RELEASE_RUST in release.yml.
   RELEASE_RUST: "1.99.0"
   # The uv every job sets up, as in release.yml and mise.toml. Renovate bumps all three.
-  PINNED_UV: "0.13.0"
+  PINNED_UV: "0.13.5"
 
 jobs:
   lint:
