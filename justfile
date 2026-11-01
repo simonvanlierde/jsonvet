@@ -82,6 +82,22 @@ fuzz TARGET:
 mutants:
     ulimit -v 8388608 2>/dev/null || echo "no memory cap on this system"; cargo mutants --workspace --no-shuffle
 
+# CI cannot move a tag past workflow changes (CONTRIBUTING.md), so this runs by hand. A draft
+# or pre-release stops it.
+# Once the release is published: point `v3`, which `uses: ...@v3` follows, at the newest vX.Y.Z.
+major:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    git fetch --quiet --tags --force origin
+    # Pre-releases have a `-` in the tag.
+    tag=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | sed '/-/d' | head -1)
+    if [ -z "$tag" ] || [ "$(gh release view "$tag" --json isDraft,isPrerelease -q '.isDraft or .isPrerelease')" != false ]; then
+        echo "$tag is not published yet: approve its release.yml run first" >&2
+        exit 1
+    fi
+    git push --force origin "$tag^{commit}:refs/tags/${tag%%.*}"
+    echo "${tag%%.*} now points at $tag"
+
 # Time jsonvet against check-json5 1.4.1 (needs hyperfine).
 bench *ARGS:
     cargo build --release -p jsonvet-cli

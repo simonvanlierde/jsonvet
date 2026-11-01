@@ -219,11 +219,10 @@ A pre-release has a `-` in its tag (`v3.1.0-rc.1`). cargo-release bumps only the
 Edit the other places by hand, with the PEP 440 form (`3.2.0rc1`) in `setup.py` and the
 compatibility package.
 
-Once the release is published, move the major tag (`v3`), which `uses: simonvanlierde/jsonvet@v3`
-follows: `git push --force origin vX.Y.Z^{commit}:refs/tags/v3`. Do it only when the new tag is
-the newest `vX.*.*`, not for a pre-release or a patch to an older minor. The workflow's token
-cannot move a tag past changes to `.github/workflows/`, and one that could would give CI write
-access to the workflows.
+Once the release is published, run `just major`. It moves the major tag (`v3`), which
+`uses: simonvanlierde/jsonvet@v3` follows, to the newest `vX.Y.Z`, so a pre-release or a patch to
+an older minor leaves it alone. The workflow's token cannot move a tag past changes to
+`.github/workflows/`, and one that could would give CI write access to the workflows.
 
 ## Sign off your commits
 
