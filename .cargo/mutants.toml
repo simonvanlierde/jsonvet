@@ -3,6 +3,11 @@
 # The CLI's tests also catch mutants in the library.
 test_workspace = true
 
+# A mutant that loops forever, as the formatter's lexer gives, costs this many times the unmutated
+# run before it counts as caught: the default 5 made it 235 s each. The suite takes about the same
+# time under a mutant that survives, so twice leaves room for a slow runner.
+timeout_multiplier = 2
+
 # Mutants that change no behaviour, so no test can catch them (docs/design.md, "Mutations").
 # Matched by column, not line, so they survive edits elsewhere in the file. Any other mutant
 # that survives fails the weekly run.
@@ -71,4 +76,37 @@ exclude_re = [
   # Any other false schema is reported at its own value, which the comparison after the guard
   # turns away.
   "schema/mod.rs:.* replace match guard error .* with true in unexpected",
+  # The formatter, `jsonvet fmt`. Memory and speed only: the room given in advance to the output
+  # string and the vectors, and the tree of a JSON Lines record, which is cleared before the next
+  # (the records are pieces of the same text either way).
+  "format.rs:\\d+:(36|49): replace (\\+ with (\\*|-)|/ with (%|\\*)) in format$",
+  "format.rs:.* in Parser<'a>::reserve$",
+  "format.rs:.* replace Parser<'a>::reset with \\(\\)",
+  # The white space a JSON Lines record is trimmed of is skipped by the lexer anyway.
+  "format.rs:\\d+:70: replace \\|\\| with && in format$",
+  # Only JSON5 text has a U+2028 or U+2029 outside a string or comment that passes the check,
+  # so the other dialects never reach that arm.
+  "format.rs:\\d+:44: replace match guard dialect == Dialect::Json5 with true in Lexer<'_>::next$",
+  # A `/` outside a string that starts neither kind of comment is a syntax error, which the
+  # formatter never reads.
+  "format.rs:.* replace match guard bytes.get\\(i \\+ 1\\) == Some\\(&b'\\*'\\) with true in Lexer<'_>::next$",
+  # The same: a token that is no atom where a value goes is a syntax error.
+  "format.rs:.* replace match guard tok.kind == Kind::Atom with true in Parser<'a>::value$",
+  # OR of a bit that an offset in a text under 512 MiB never has.
+  "format.rs:\\d+:56: replace \\| with \\^ in Parser<'a>::atom$",
+  # A container cannot be 4 GiB wide in a text under 512 MiB.
+  "format.rs:\\d+:36: replace - with / in Parser<'a>::container$",
+  # Nothing reaches it: the count pass has no output to drop, and the second pass writes what
+  # the first one counted, which is within the limit. A JSON Lines output is at most about twice
+  # its text, and the limit is 16 times.
+  "format.rs:.* in Writer<'_>::spill$",
+  "format.rs:.* replace Writer<'_>::spill with \\(\\)$",
+  # A decimal of 308 digits, or 308 characters with a point, is below the largest double, so the
+  # parse the guard saves would say the same.
+  "parse.rs:\\d+:(38|39): replace > with >= in Parser<.*>::check_decimal$",
+  # `bounded` reads about 129 segments from either end, since each is two bytes or more, so how
+  # many are kept past that, and what the middle slot holds, never shows.
+  "path.rs:\\d+:(35|55): replace \\+ with (\\*|-) in path_of$",
+  "path.rs:\\d+:16: replace < with <= in path_of$",
+  "path.rs:\\d+:14: replace match guard i >= tail with true in path_of$",
 ]

@@ -4094,3 +4094,20 @@ fn a_folder_reached_through_a_symlink_is_checked_once() {
         "{out}"
     );
 }
+
+#[test]
+fn a_folder_inside_another_is_checked_once_whichever_comes_first() {
+    let dir = workdir(&[
+        ("top/a.json", "{\"a\":1,\"a\":2}\n"),
+        ("top/sub/b.json", "{\"b\":1,\"b\":2}\n"),
+    ]);
+    for args in [["top", "top/sub"], ["top/sub", "top"]] {
+        let (code, out) = jsonvet(&dir, &args);
+        assert_eq!(code, 1, "{out}");
+        assert_eq!(
+            out.lines().filter(|l| l.contains("b.json:")).count(),
+            1,
+            "{out}"
+        );
+    }
+}

@@ -494,3 +494,13 @@ fn an_output_that_would_be_huge_is_refused_and_the_file_left_alone() {
     let (code, out, _) = run(&dir, &["fmt", "-"], &text);
     assert_eq!((code, out.as_str()), (1, ""));
 }
+
+#[test]
+fn an_output_over_a_gigabyte_is_refused_with_its_size_in_gigabytes() {
+    let depth = 9_000;
+    let text = format!("{}1{}", "[".repeat(depth), "]".repeat(depth));
+    let dir = workdir(&[("jsonvet.toml", "[format]\nindent = 16\n")]);
+    let (code, out, err) = run(&dir, &["fmt", "--stdin-filename", "deep.json"], &text);
+    assert_eq!((code, out.as_str()), (1, ""));
+    assert!(err.ends_with("the output would be 1.3 GB\n"), "{err}");
+}

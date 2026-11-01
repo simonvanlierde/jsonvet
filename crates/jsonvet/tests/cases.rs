@@ -327,6 +327,8 @@ fn decimal_numbers_overflow_exactly_where_a_double_does() {
     assert_eq!(message("9".repeat(309)), overflow);
     assert_eq!(message(format!("-{}", "9".repeat(309))), overflow);
     assert_eq!(message("9".repeat(308)), unsafe_integer);
+    // 309 digits still fit when they start with 1: 1e308 is under the largest double.
+    assert_eq!(message(format!("1{}", "0".repeat(308))), unsafe_integer);
     assert_eq!(message(format!("{}.5", "9".repeat(309))), overflow);
     assert_eq!(message(format!("1{}.5", "0".repeat(307))), None);
     assert_eq!(message(format!("0.{}", "9".repeat(400))), None);
@@ -471,6 +473,34 @@ fn duplicate_key_paths_stay_short_however_deep_the_key() {
     let message = report.problems()[0].to_string();
     let levels = "[0]".repeat(42);
     assert_eq!(message, format!("duplicate key ${levels}…{levels}.a"));
+}
+
+#[test]
+fn a_duplicate_key_far_from_the_root_shows_the_ends_of_its_path() {
+    let depth = 300;
+    let text = format!(
+        "{}{{\"k\":0,\"k\":1}}{}",
+        "{\"a\":".repeat(depth),
+        "}".repeat(depth)
+    );
+    let report = check(&text, &Config::new(Dialect::Json));
+    let levels = ".a".repeat(63);
+    assert_eq!(
+        report.problems()[0].to_string(),
+        format!("duplicate key ${levels}…{levels}.k")
+    );
+}
+
+#[test]
+fn a_report_made_from_known_problems_counts_lines_as_check_does() {
+    // A raw U+2028 in a string ends a line in JSON5 only.
+    let text = "{\"s\": \"a\u{2028}b\",\n \"s\": 2}";
+    for (dialect, line) in [(Dialect::Json, 2), (Dialect::Json5, 3)] {
+        let config = Config::new(dialect);
+        let problems = check(text, &config).problems().to_vec();
+        let report = jsonvet::report(text, problems, &config);
+        assert_eq!(report.location(report.problems()[0].offset()).line, line);
+    }
 }
 
 /// Printed as they are, bidi controls would reorder how the rest of the message displays.
