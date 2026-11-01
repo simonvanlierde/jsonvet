@@ -749,6 +749,7 @@ dependencies = [
  "ignore",
  "insta",
  "jsonschema",
+ "jsonschema-value",
  "jsonvet",
  "lexopt",
  "memchr",

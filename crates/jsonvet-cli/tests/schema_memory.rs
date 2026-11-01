@@ -133,6 +133,53 @@ fn schema_memory_stays_under_its_bound_placing_an_error_in_a_10_mb_file() {
     assert_under(peak, MAX_BYTES_PER_BYTE);
 }
 
+/// Several errors at the root, each about the whole document: none may copy it.
+#[test]
+fn schema_memory_stays_under_its_bound_with_several_errors_on_the_whole_file() {
+    let all: Vec<String> = (0..10).map(|n| format!("{{\"maxItems\": {n}}}")).collect();
+    let schema = format!("{{\"allOf\": [{}]}}", all.join(", "));
+    let (peak, code, out) = peak("root-errors", &schema, false);
+    assert_eq!(code, Ok(1), "{out}");
+    assert_under(peak, MAX_BYTES_PER_BYTE);
+}
+
+/// `enum` on containers compares each candidate with the document's values where they are.
+#[test]
+fn enum_on_containers_takes_no_more_time_than_a_plain_check() {
+    use std::time::Instant;
+    let _counting = counting();
+    let dir = folder("enum-time");
+    let text = rows(2 << 20, "[", ", ", "]");
+    fs::write(dir.join("file.json"), text).expect("write the file");
+    let time = |schema: &str| {
+        fs::write(dir.join("schema.json"), schema).expect("write the schema");
+        let start = Instant::now();
+        let mut out = Vec::new();
+        let code = jsonvet_cli::run_with(
+            vec![
+                OsString::from("--no-config"),
+                OsString::from("--schema"),
+                OsString::from(dir.join("schema.json")),
+                OsString::from(dir.join("file.json")),
+            ],
+            false,
+            Terminal::default(),
+            &mut out,
+        );
+        (start.elapsed(), code)
+    };
+    let (plain, code) = time(r#"{"items": {"type": "object"}}"#);
+    assert_eq!(code, Ok(0));
+    let candidates: Vec<String> = (0..50).map(|n| n.to_string()).collect();
+    let schema = format!("{{\"enum\": [{}, []]}}", candidates.join(", "));
+    let (with_enum, code) = time(&schema);
+    assert_eq!(code, Ok(1));
+    assert!(
+        with_enum < plain * 8,
+        "enum took {with_enum:?}, a plain check {plain:?}"
+    );
+}
+
 /// A JSON Lines file this size is split across threads, one part per thread, and an error on
 /// line 8 is placed from its line's tree.
 #[test]

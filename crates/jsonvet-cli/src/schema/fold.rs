@@ -48,10 +48,23 @@ pub(super) struct Fold<'e> {
 }
 
 impl<'e> Fold<'e> {
+    /// A fold of the documents in `source`, a text in `dialect`.
+    pub(super) fn new(source: &'e str, dialect: jsonvet::Dialect) -> Self {
+        Fold {
+            build: Builder::new(source, dialect),
+            ..Fold::default()
+        }
+    }
+
     /// Take the next event, and give back the document it completes, if any.
     pub(super) fn event(&mut self, event: &Event<'e>) -> Option<Document<'e>> {
         let i = self.seen;
         self.seen += 1;
+        // The tree keeps offsets in 32 bits: a document that far into a text is not checked.
+        if event.offset > super::nodes::MAX_OFFSET {
+            self.unchecked
+                .get_or_insert((event.offset, messages::text("schema.too-far")));
+        }
         if self.stack.is_empty() {
             self.first = (i, event.offset);
         }
@@ -87,8 +100,10 @@ impl<'e> Fold<'e> {
                 return None;
             }
             EventKind::End => match self.stack.pop() {
-                Some(Open::Array(start, at)) => self.build.end_array(start, at),
-                Some(Open::Object(start, at, ..)) => self.build.end_object(start, at),
+                Some(Open::Array(start, at)) => self.build.end_array(start, at, event.offset + 1),
+                Some(Open::Object(start, at, ..)) => {
+                    self.build.end_object(start, at, event.offset + 1)
+                }
                 None => return None,
             },
             EventKind::Null => self.build.scalar(Value::Null, event.offset),
@@ -131,7 +146,9 @@ impl<'e> Fold<'e> {
                         }
                     }
                 }
-                self.build.members.push((key, node, *offset));
+                self.build
+                    .members
+                    .push((key, node, super::nodes::offset(*offset)));
             }
         }
         None

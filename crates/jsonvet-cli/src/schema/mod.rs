@@ -16,7 +16,9 @@ use std::sync::{Arc, OnceLock};
 
 use jsonschema::error::ValidationErrorKind;
 use jsonschema::json::{Array, Json, Node, Object};
-use jsonschema::{PatternOptions, ReferencingError, ValidationError, ValidationOptions, Validator};
+use jsonschema::{
+    JsonType, PatternOptions, ReferencingError, ValidationError, ValidationOptions, Validator,
+};
 use jsonvet::{Config, Dialect, Event, Report, Rule, Severity};
 use serde_json::{Map, Value};
 
@@ -190,10 +192,16 @@ impl Quiet {
     /// `error`'s message without text from the schema, unless its kind quotes none: the keyword
     /// it fails, and where that is in the schema if known. For the part of a split schema checked
     /// on each element or member, `moved` is where that part came from.
-    fn message(&self, error: &ValidationError<'_>, moved: Option<&str>) -> String {
+    fn message(
+        &self,
+        error: &ValidationError<'_>,
+        moved: Option<&str>,
+        node: Option<Nd<'_>>,
+    ) -> String {
         use ValidationErrorKind as K;
         match error.kind() {
-            K::PropertyNames { error } => return self.message(error, moved),
+            // The error inside is about a name, not the value at the path.
+            K::PropertyNames { error } => return self.message(error, moved, None),
             K::AdditionalItems { .. }
             | K::AdditionalProperties { .. }
             | K::AnyOf { .. }
@@ -208,7 +216,7 @@ impl Quiet {
             | K::Type { .. }
             | K::UnevaluatedItems { .. }
             | K::UnevaluatedProperties { .. }
-            | K::UniqueItems => return message(error),
+            | K::UniqueItems => return message_at(error, node),
             K::BacktrackLimitExceeded { .. }
             | K::RegexEngineFailure { .. }
             | K::Constant { .. }
@@ -742,6 +750,7 @@ impl Schema {
         self.check_with(
             |sink| jsonvet::parse_with(text, &config, sink),
             |report| report.problems().iter().any(|p| p.rule() == Rule::Syntax),
+            (text, config.dialect()),
         )
     }
 
@@ -757,6 +766,7 @@ impl Schema {
         self.check_with(
             |sink| jsonvet::parse_lines(text, lines.clone(), &config, Some(sink)),
             jsonvet::Lines::syntax_error,
+            (text, config.dialect()),
         )
     }
 
@@ -766,8 +776,9 @@ impl Schema {
         &self,
         read: impl FnOnce(&mut dyn FnMut(Event<'t>)) -> R,
         syntax_error: impl FnOnce(&R) -> bool,
+        (text, dialect): (&'t str, Dialect),
     ) -> (R, Vec<(usize, String, bool)>) {
-        let mut checking = self.checking();
+        let mut checking = self.checking(text, dialect);
         let first = read(&mut |event| checking.event(&event));
         if syntax_error(&first) {
             return (first, Vec::new());
@@ -775,10 +786,10 @@ impl Schema {
         (first, checking.errors)
     }
 
-    fn checking<'e>(&self) -> Checking<'_, 'e> {
+    fn checking<'e>(&self, text: &'e str, dialect: Dialect) -> Checking<'_, 'e> {
         Checking {
             schema: self,
-            fold: Fold::default(),
+            fold: Fold::new(text, dialect),
             errors: Vec::new(),
         }
     }
@@ -878,9 +889,13 @@ impl Schema {
         error: &ValidationError<'_>,
     ) -> Vec<Found> {
         if !backtracked(error) {
-            return found(index, value, error, || match &self.quiet {
-                Some(quiet) => quiet.message(error, compiled.moved),
-                None => message(error),
+            return found(index, value, error, || {
+                let path: Vec<String> = segments(error.instance_path().as_str()).collect();
+                let node = value.at(path.iter().map(String::as_str));
+                match &self.quiet {
+                    Some(quiet) => quiet.message(error, compiled.moved, node),
+                    None => message_at(error, node),
+                }
             });
         }
         let path = pointer_path(index, error);
@@ -1003,14 +1018,70 @@ fn split(
 }
 
 /// An error's message, quoting the value it is about only when that is short.
+#[cfg(test)]
 fn message(error: &ValidationError<'_>) -> String {
-    if fits(error.instance()) {
+    message_at(error, None)
+}
+
+/// [`message`], told the `node` the error is about if it is known, so that a value too big to
+/// quote is not read out of the text just to find that out.
+fn message_at(error: &ValidationError<'_>, node: Option<Nd<'_>>) -> String {
+    let short = node.map_or_else(|| fits(error.instance()), |node| fits_node(&node));
+    if short {
         let message = error.to_string();
         if message.len() <= MAX_MESSAGE {
             return message;
         }
     }
     error.masked().to_string()
+}
+
+/// Whether `node` as compact JSON takes [`MAX_MESSAGE`] bytes or fewer, counted as `serde_json`
+/// writes it, and stopping at the first byte past that.
+fn fits_node(node: &Nd<'_>) -> bool {
+    struct Left(usize);
+    impl Left {
+        fn take(&mut self, n: usize) -> bool {
+            self.0.checked_sub(n).map(|rest| self.0 = rest).is_some()
+        }
+
+        fn string(&mut self, text: &str) -> bool {
+            self.take(2)
+                && text.chars().all(|c| {
+                    self.take(match c {
+                        '"' | '\\' | '\u{8}' | '\u{c}' | '\n' | '\r' | '\t' => 2,
+                        c if c < ' ' => 6,
+                        c => c.len_utf8(),
+                    })
+                })
+        }
+
+        fn node(&mut self, node: &Nd<'_>) -> bool {
+            match node.json_type() {
+                JsonType::Null => self.take(4),
+                JsonType::Boolean => self.take(if node.as_boolean() == Some(true) {
+                    4
+                } else {
+                    5
+                }),
+                JsonType::String => node.as_string().is_some_and(|s| self.string(&s)),
+                JsonType::Array => node.as_array().is_some_and(|array| {
+                    self.take(2 + array.len().saturating_sub(1))
+                        && array.elements().all(|item| self.node(&item))
+                }),
+                JsonType::Object => node.as_object().is_some_and(|object| {
+                    self.take(2 + object.len().saturating_sub(1))
+                        && object.members().all(|(key, value)| {
+                            self.string(key) && self.take(1) && self.node(&value)
+                        })
+                }),
+                _ => node
+                    .as_number()
+                    .is_some_and(|n| self.take(n.to_string().len())),
+            }
+        }
+    }
+    Left(MAX_MESSAGE).node(node)
 }
 
 /// Whether `value` as compact JSON takes [`MAX_MESSAGE`] bytes or fewer. Writing stops at the
@@ -1048,7 +1119,7 @@ fn cut(mut message: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::limits::{Reach, registry};
-    use super::{Compiled, MAX_MESSAGE, Schema, cut, fits, message, split};
+    use super::{Compiled, MAX_MESSAGE, Schema, cut, documents, fits, fits_node, message, split};
     use jsonvet::{Config, Dialect};
     use proptest::prelude::*;
     use serde_json::{Value, json};
@@ -1277,6 +1348,17 @@ mod tests {
         assert_eq!(errors.len(), 2);
         assert_eq!(errors[0].0, 20);
         assert_eq!(errors[1].0, 43);
+    }
+
+    proptest! {
+        #[test]
+        fn a_tree_fits_when_its_value_does(value in any_json()) {
+            let text = serde_json::to_string(&value).unwrap_or_default();
+            let (_, events) = jsonvet::parse(&text, &Config::new(Dialect::Json));
+            let events = events.unwrap_or_default();
+            let document = documents(&events).next().expect("a document");
+            prop_assert_eq!(fits_node(&document.tree.root()), fits(&value), "{}", text);
+        }
     }
 
     proptest! {

@@ -227,6 +227,10 @@ const ENGLISH: &[(&str, &str)] = &[
          U+FFFD",
     ),
     (
+        "schema.too-far",
+        "this value is more than 4 GiB into the file, past where jsonvet places schema errors",
+    ),
+    (
         "schema.unchecked",
         "{reason}, so this document is not checked against the schema",
     ),

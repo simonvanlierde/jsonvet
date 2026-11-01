@@ -3,9 +3,16 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::OnceLock;
 
+use jsonschema::JsonType as T;
+use jsonschema::json::cmp;
 use jsonschema::json::{Array, Json, Node, NodeIdentity, Object};
-use jsonvet::{PathStep, json_path};
+use jsonschema_value::LazyInstance;
+
+use super::fold::documents;
+use jsonvet::{Config, Dialect, PathStep, json_path};
 use serde_json::{Map, Number, Value};
 
 /// jsonschema's name for this representation of a document.
@@ -18,9 +25,11 @@ enum Entry<'e> {
     Bool(bool),
     Number(Number),
     String(Cow<'e, str>),
-    Array(u32, u32),
+    /// The range of its elements, and the offset just past its `]`.
+    Array(u32, u32, u32),
     /// Its members are sorted by key with duplicates gone, as a `serde_json::Map` keeps them.
-    Object(u32, u32),
+    /// The same for its members and its `}`.
+    Object(u32, u32, u32),
 }
 
 /// One document's values. Strings are borrowed from the text unless they hold an escape.
@@ -28,17 +37,28 @@ enum Entry<'e> {
 pub(super) struct Tree<'e> {
     entries: Vec<Entry<'e>>,
     /// The offset of each entry's first byte in the text.
-    at: Vec<usize>,
+    at: Vec<u32>,
     elems: Vec<u32>,
     members: Vec<Member<'e>>,
     /// The key as written, by the entry of its value, for a key that holds U+FFFD: a lone
     /// surrogate in the text is U+FFFD in the key's text.
     raws: HashMap<u32, Cow<'e, [u8]>>,
     root: u32,
+    /// The text the offsets are in, and its dialect's index in [`Dialect::ALL`], so that a
+    /// container can be read again from its span. Empty when the tree is not to be read again.
+    source: &'e str,
+    dialect: u32,
+}
+
+/// An offset in the text, as the tree keeps it. [`MAX_OFFSET`] is the most a tree is built for.
+pub(super) const MAX_OFFSET: usize = u32::MAX as usize;
+
+pub(super) fn offset(at: usize) -> u32 {
+    u32::try_from(at).unwrap_or(u32::MAX)
 }
 
 /// An object member: its key, its value's entry, and the offset of its key in the text.
-type Member<'e> = (Cow<'e, str>, u32, usize);
+type Member<'e> = (Cow<'e, str>, u32, u32);
 
 /// What [`Tree`] is built with while a document's events come in: the children of every open
 /// container, until it ends.
@@ -50,6 +70,20 @@ pub(super) struct Builder<'e> {
 }
 
 impl<'e> Builder<'e> {
+    /// A builder for trees of the document `source`, in `dialect`.
+    pub(super) fn new(source: &'e str, dialect: Dialect) -> Self {
+        let dialect = Dialect::ALL.iter().position(|d| *d == dialect);
+        let tree = Tree {
+            source,
+            dialect: dialect.and_then(|d| u32::try_from(d).ok()).unwrap_or(0),
+            ..Tree::default()
+        };
+        Builder {
+            tree,
+            ..Builder::default()
+        }
+    }
+
     /// Keep the key of the member whose value is `node` as written.
     pub(super) fn raw(&mut self, node: u32, raw: Cow<'e, [u8]>) {
         self.tree.raws.insert(node, raw);
@@ -70,21 +104,21 @@ impl<'e> Builder<'e> {
 
     fn add(&mut self, entry: Entry<'e>, at: usize) -> u32 {
         self.tree.entries.push(entry);
-        self.tree.at.push(at);
+        self.tree.at.push(offset(at));
         u32::try_from(self.tree.entries.len() - 1).unwrap_or(u32::MAX)
     }
 
     /// End the array whose children began at `start` in [`Builder::elems`].
-    pub(super) fn end_array(&mut self, start: usize, at: usize) -> u32 {
+    pub(super) fn end_array(&mut self, start: usize, at: usize, end: usize) -> u32 {
         let from = u32::try_from(self.tree.elems.len()).unwrap_or(u32::MAX);
         self.tree.elems.extend(self.elems.drain(start..));
         let to = u32::try_from(self.tree.elems.len()).unwrap_or(u32::MAX);
-        self.add(Entry::Array(from, to), at)
+        self.add(Entry::Array(from, to, offset(end)), at)
     }
 
     /// End the object whose members began at `start` in [`Builder::members`]. A later member of
     /// a key replaces an earlier one.
-    pub(super) fn end_object(&mut self, start: usize, at: usize) -> u32 {
+    pub(super) fn end_object(&mut self, start: usize, at: usize, end: usize) -> u32 {
         let from = u32::try_from(self.tree.members.len()).unwrap_or(u32::MAX);
         self.members[start..].sort_by(|a, b| a.0.cmp(&b.0));
         for member in self.members.drain(start..) {
@@ -95,14 +129,17 @@ impl<'e> Builder<'e> {
             }
         }
         let to = u32::try_from(self.tree.members.len()).unwrap_or(u32::MAX);
-        self.add(Entry::Object(from, to), at)
+        self.add(Entry::Object(from, to, offset(end)), at)
     }
 
     pub(super) fn finish(&mut self, root: u32) -> Tree<'e> {
         self.elems.clear();
         self.members.clear();
+        let (source, dialect) = (self.tree.source, self.tree.dialect);
         let mut tree = std::mem::take(&mut self.tree);
         tree.root = root;
+        self.tree.source = source;
+        self.tree.dialect = dialect;
         tree
     }
 }
@@ -134,12 +171,12 @@ impl<'e> Tree<'e> {
         let mut lost = false;
         for segment in path {
             let next = match (lost, &self.entries[node as usize]) {
-                (false, Entry::Array(from, to)) => segment
+                (false, Entry::Array(from, to, _)) => segment
                     .parse::<usize>()
                     .ok()
                     .filter(|i| i.to_string() == *segment && (*from as usize + i) < *to as usize)
                     .map(|i| (self.elems[*from as usize + i], PathStep::Index(i))),
-                (false, Entry::Object(from, to)) => {
+                (false, Entry::Object(from, to, _)) => {
                     let members = self.members_of(*from, *to);
                     let found =
                         members.binary_search_by(|(k, ..)| k.as_ref().cmp(segment.as_str()));
@@ -160,18 +197,32 @@ impl<'e> Tree<'e> {
             }
         }
         let offset = match (&self.entries[node as usize], lost) {
-            (Entry::Object(from, to), false) => {
+            (Entry::Object(from, to, _), false) => {
                 let members = self.members_of(*from, *to);
                 keys.iter()
                     .filter_map(|key| {
                         let at = members.binary_search_by(|(k, ..)| k.as_ref().cmp(key.as_str()));
-                        at.ok().map(|at| members[at].2)
+                        at.ok().map(|at| members[at].2 as usize)
                     })
                     .min()
             }
             _ => None,
         };
-        (offset.unwrap_or(self.at[node as usize]), json_path(steps))
+        (
+            offset.unwrap_or(self.at[node as usize] as usize),
+            json_path(steps),
+        )
+    }
+
+    /// The text of the container at `index`, if the tree keeps its text.
+    fn span(&self, index: u32) -> Option<&'e [u8]> {
+        let (Entry::Array(_, _, end) | Entry::Object(_, _, end)) = self.entries[index as usize]
+        else {
+            return None;
+        };
+        self.source
+            .as_bytes()
+            .get(self.at[index as usize] as usize..end as usize)
     }
 
     fn members_of(&self, from: u32, to: u32) -> &[Member<'e>] {
@@ -184,13 +235,13 @@ impl<'e> Tree<'e> {
             Entry::Bool(b) => Value::Bool(*b),
             Entry::Number(n) => Value::Number(n.clone()),
             Entry::String(s) => Value::String(s.to_string()),
-            Entry::Array(from, to) => Value::Array(
+            Entry::Array(from, to, _) => Value::Array(
                 self.elems[*from as usize..*to as usize]
                     .iter()
                     .map(|&child| self.value_at(child))
                     .collect(),
             ),
-            Entry::Object(from, to) => Value::Object(
+            Entry::Object(from, to, _) => Value::Object(
                 self.members_of(*from, *to)
                     .iter()
                     .map(|(key, child, _)| (key.to_string(), self.value_at(*child)))
@@ -318,6 +369,28 @@ impl<'a> Array<'a, Own> for Elems<'a> {
     fn elements(&self) -> ElemIter<'a> {
         ElemIter(self.0, self.1.iter())
     }
+
+    fn is_unique(&self) -> bool {
+        let items: Vec<Nd<'a>> = self.elements().collect();
+        // As jsonschema does: pairwise for a few, else by hash.
+        if items.len() <= 15 {
+            return items
+                .iter()
+                .enumerate()
+                .all(|(i, a)| items[i + 1..].iter().all(|b| !equal(a, b)));
+        }
+        let mut seen: HashMap<u64, Vec<usize>> = HashMap::with_capacity(items.len());
+        for (i, item) in items.iter().enumerate() {
+            let mut hasher = DefaultHasher::new();
+            hash(item, &mut hasher);
+            let bucket = seen.entry(hasher.finish()).or_default();
+            if bucket.iter().any(|&j| equal(&items[j], item)) {
+                return false;
+            }
+            bucket.push(i);
+        }
+        true
+    }
 }
 
 impl<'a> Node<'a, Own> for Nd<'a> {
@@ -328,7 +401,7 @@ impl<'a> Node<'a, Own> for Nd<'a> {
     fn as_object(&self) -> Option<Members<'a>> {
         match self {
             Nd::At(tree, _, only) => match self.entry()? {
-                Entry::Object(from, to) => {
+                Entry::Object(from, to, _) => {
                     let all = tree.members_of(*from, *to);
                     let shown = match only {
                         Some(i) => &all[*i as usize..=*i as usize],
@@ -344,7 +417,7 @@ impl<'a> Node<'a, Own> for Nd<'a> {
 
     fn as_array(&self) -> Option<Elems<'a>> {
         match (self, self.entry()?) {
-            (Nd::At(tree, ..), Entry::Array(from, to)) => {
+            (Nd::At(tree, ..), Entry::Array(from, to, _)) => {
                 Some(Elems(tree, &tree.elems[*from as usize..*to as usize]))
             }
             _ => None,
@@ -391,6 +464,49 @@ impl<'a> Node<'a, Own> for Nd<'a> {
         }
     }
 
+    fn equals_value(&self, expected: &Value) -> bool {
+        match (self.entry(), expected) {
+            (None, Value::String(expected)) => matches!(self, Nd::Text(text) if text == expected),
+            (Some(Entry::Null), Value::Null) => true,
+            (Some(Entry::Bool(a)), Value::Bool(b)) => a == b,
+            (Some(Entry::Number(a)), Value::Number(b)) => cmp::equal_numbers(&a, b),
+            (Some(Entry::String(a)), Value::String(b)) => a == b,
+            (Some(Entry::Array(..)), Value::Array(items)) => self.as_array().is_some_and(|array| {
+                array.len() == items.len()
+                    && array
+                        .elements()
+                        .zip(items)
+                        .all(|(node, item)| node.equals_value(item))
+            }),
+            (Some(Entry::Object(..)), Value::Object(members)) => {
+                self.as_object().is_some_and(|object| {
+                    object.len() == members.len()
+                        && members.iter().all(|(key, item)| {
+                            object.get(key).is_some_and(|node| node.equals_value(item))
+                        })
+                })
+            }
+            _ => false,
+        }
+    }
+
+    fn lazy_value(&self) -> LazyInstance<'a> {
+        // A container is read again from the text if an error asks for it, so errors that
+        // never show their value cost no copy of it.
+        match self {
+            Nd::At(tree, index, None) => tree.span(*index).map_or_else(
+                || LazyInstance::Ready(self.to_value()),
+                |bytes| LazyInstance::Deferred {
+                    bytes,
+                    tag: tree.dialect,
+                    make: read_again,
+                    cell: OnceLock::new(),
+                },
+            ),
+            _ => LazyInstance::Ready(self.to_value()),
+        }
+    }
+
     fn to_value(&self) -> Cow<'a, Value> {
         Cow::Owned(match self {
             Nd::Text(text) => Value::String((*text).to_owned()),
@@ -414,9 +530,88 @@ impl<'a> Node<'a, Own> for Nd<'a> {
                     .wrapping_mul(2)
                     .wrapping_add(u32::from(only.is_some())),
             )),
-            Nd::Text(_) => None,
+            // The text's own address, which no tree's is: a `$ref` loop through a name is found.
+            Nd::Text(text) => Some(NodeIdentity::tagged(text.as_ptr() as usize, u32::MAX)),
         }
     }
+}
+
+/// Two values are equal as JSON Schema says: numbers by value, objects without their order.
+fn equal(a: &Nd<'_>, b: &Nd<'_>) -> bool {
+    match (a.json_type(), b.json_type()) {
+        (T::Number, T::Number) => match (a.as_number(), b.as_number()) {
+            (Some(a), Some(b)) => cmp::equal_numbers(&a, b),
+            _ => false,
+        },
+        (T::String, T::String) => a.as_string() == b.as_string(),
+        (T::Boolean, T::Boolean) => a.as_boolean() == b.as_boolean(),
+        (T::Null, T::Null) => true,
+        (T::Array, T::Array) => match (a.as_array(), b.as_array()) {
+            (Some(a), Some(b)) => {
+                a.len() == b.len() && a.elements().zip(b.elements()).all(|(a, b)| equal(&a, &b))
+            }
+            _ => false,
+        },
+        (T::Object, T::Object) => match (a.as_object(), b.as_object()) {
+            (Some(a), Some(b)) => {
+                a.len() == b.len()
+                    && a.members()
+                        .all(|(key, a)| b.get(&key.to_owned()).is_some_and(|b| equal(&a, &b)))
+            }
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+/// A hash that equal values share: `0` and `-0.0` alike, and integers as the doubles they equal.
+fn hash(node: &Nd<'_>, state: &mut DefaultHasher) {
+    match node.json_type() {
+        T::Null => state.write_u8(0),
+        T::Boolean => node.as_boolean().hash(state),
+        T::Number => {
+            if let Some(number) = node.as_number() {
+                match number.as_f64() {
+                    Some(0.0) => 0_u64.hash(state),
+                    Some(f) => f.to_bits().hash(state),
+                    None => number.as_u64().hash(state),
+                }
+            }
+        }
+        T::String => node.as_string().hash(state),
+        T::Array => {
+            for item in node.as_array().into_iter().flat_map(|a| a.elements()) {
+                hash(&item, state);
+            }
+        }
+        _ => {
+            let mut all = 0_u64;
+            for (key, value) in node.as_object().into_iter().flat_map(|o| o.members()) {
+                let mut member = DefaultHasher::new();
+                key.hash(&mut member);
+                hash(&value, &mut member);
+                all ^= member.finish();
+            }
+            state.write_u64(all);
+        }
+    }
+}
+
+/// The value of a container's text, read as `LazyInstance` asks: with the dialect at index `tag`.
+fn read_again(bytes: &[u8], tag: u32) -> Value {
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        return Value::Null;
+    };
+    let dialect = match Dialect::ALL.get(tag as usize) {
+        Some(Dialect::JsonLines) | None => Dialect::Json,
+        Some(dialect) => *dialect,
+    };
+    let config = Config::new(dialect).max_depth(super::SCHEMA_MAX_DEPTH);
+    let (_, events) = jsonvet::parse(text, &config);
+    let events = events.unwrap_or_default();
+    documents(&events)
+        .next()
+        .map_or(Value::Null, |document| document.tree.value())
 }
 
 #[cfg(test)]
@@ -443,5 +638,188 @@ mod tests {
             .build(&schema)
             .expect("a schema");
         assert!(validator.is_valid(root));
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unreadable_literal,
+    clippy::needless_raw_string_hashes,
+    clippy::cast_possible_truncation,
+    clippy::unicode_not_nfc,
+    reason = "test inputs are written as they are in files"
+)]
+mod differential {
+    use super::super::fold::documents;
+    use super::*;
+    use jsonschema::json::SerdeJson;
+    use jsonvet::{Config, Dialect};
+    use serde_json::json;
+    use std::path::Path;
+
+    fn errs_serde(v: &jsonschema::Validator<SerdeJson>, x: &Value) -> Vec<String> {
+        v.iter_errors(x)
+            .map(|e| {
+                format!(
+                    "{} | {} | {} | {}",
+                    e.instance_path().as_str(),
+                    e.schema_path().as_str(),
+                    e,
+                    e.instance()
+                )
+            })
+            .collect()
+    }
+    fn errs_own(v: &jsonschema::Validator<Own>, x: Nd<'_>) -> Vec<String> {
+        v.iter_errors(x)
+            .map(|e| {
+                format!(
+                    "{} | {} | {} | {}",
+                    e.instance_path().as_str(),
+                    e.schema_path().as_str(),
+                    e,
+                    e.instance()
+                )
+            })
+            .collect()
+    }
+
+    /// Returns number of mismatches.
+    fn compare(schema: &Value, text: &str, dialect: Dialect, label: &str) -> usize {
+        let Ok(s) = jsonschema::options_for::<SerdeJson>()
+            .offline()
+            .build(schema)
+        else {
+            return 0;
+        };
+        let o = jsonschema::options_for::<Own>()
+            .offline()
+            .build(schema)
+            .expect("own builds when serde does");
+        let (_, events) = jsonvet::parse(text, &Config::new(dialect));
+        let events = events.unwrap_or_default();
+        let mut bad = 0;
+        for doc in documents(&events) {
+            let value = doc.tree.value();
+            let root = doc.tree.root();
+            if s.is_valid(&value) != o.is_valid(root)
+                || errs_serde(&s, &value) != errs_own(&o, root)
+            {
+                eprintln!(
+                    "MISMATCH {label}\n serde: {:?}\n own:   {:?}",
+                    errs_serde(&s, &value),
+                    errs_own(&o, root)
+                );
+                bad += 1;
+            }
+            if let Value::Object(m) = &value {
+                for (i, (k, v)) in m.iter().enumerate() {
+                    let one = Value::Object(Map::from_iter([(k.clone(), v.clone())]));
+                    let view = root.only(i as u32);
+                    if s.is_valid(&one) != o.is_valid(view)
+                        || errs_serde(&s, &one) != errs_own(&o, view)
+                    {
+                        eprintln!("MISMATCH one-member {label} key {k}");
+                        bad += 1;
+                    }
+                }
+            }
+        }
+        bad
+    }
+
+    #[test]
+    fn schemastore_corpus_matches_serde() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/schemastore");
+        let (mut n, mut bad) = (0, 0);
+        for dir in std::fs::read_dir(&root)
+            .unwrap()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_dir())
+        {
+            let schema: Value =
+                serde_json::from_str(&std::fs::read_to_string(dir.join("schema.json")).unwrap())
+                    .unwrap();
+            for part in ["valid", "invalid", "extra"] {
+                let Ok(rd) = std::fs::read_dir(dir.join(part)) else {
+                    continue;
+                };
+                for f in rd.flatten() {
+                    let text = std::fs::read_to_string(f.path()).unwrap();
+                    n += 1;
+                    bad += compare(
+                        &schema,
+                        &text,
+                        Dialect::Json5,
+                        &f.path().display().to_string(),
+                    );
+                }
+            }
+        }
+        eprintln!("compared {n} files, {bad} mismatches");
+        assert_eq!(bad, 0);
+    }
+
+    #[test]
+    fn edge_cases_match_serde() {
+        let schemas = [
+            json!({"enum": [1, 1.0, -0.0, {"a": 1}, [1], "\u{e9}"]}),
+            json!({"items": {"enum": [0, 1, 1e2, 18446744073709551615u64]}}),
+            json!({"uniqueItems": true}),
+            json!({"items": {"multipleOf": 0.1}}),
+            json!({"items": {"multipleOf": 3}}),
+            json!({"const": {"a": 1, "b": [1.0, {}]}}),
+            json!({"type": "object", "properties": {"a": {"type": "integer"}, "b": {"maxLength": 1}}, "required": ["c", "d", "e"], "additionalProperties": false}),
+            json!({"propertyNames": {"maxLength": 1}, "minProperties": 2, "maxProperties": 1}),
+            json!({"propertyNames": {"$ref": "#/$defs/l"}, "$defs": {"l": {"$ref": "#/$defs/l"}}}),
+            json!({"$ref": "#/$defs/n", "$defs": {"n": {"anyOf": [{"type": "integer"}, {"type": "array", "items": {"$ref": "#/$defs/n"}}, {"type": "object", "additionalProperties": {"$ref": "#/$defs/n"}}]}}}),
+            json!({"unevaluatedProperties": false, "properties": {"a": true}}),
+            json!({"items": {"type": "integer"}}),
+            json!({"maxLength": 2, "pattern": "^a"}),
+            json!({"oneOf": [{"type": "object"}, {"required": ["a"]}]}),
+            json!({"contains": {"const": 1}, "minContains": 2}),
+            // A `$ref` loop under `propertyNames` ends in jsonschema's cycle guard.
+            json!({"propertyNames": {"$ref": "#/$defs/l"}, "$defs": {"l": {"allOf": [{"$ref": "#/$defs/l"}], "minLength": 0}}}),
+            // Several errors at the root, each quoting the whole document or not.
+            json!({"allOf": (0..10).map(|n| json!({"maxItems": n})).collect::<Vec<_>>()}),
+            // `enum` on containers.
+            json!({"items": {"enum": [0, 1, 2, [], {}, {"a": 1}, [1.0], {"b": [1, {"c": null}]}]}}),
+            json!({"enum": [[{"a": 1}, {"a": 2}], 5]}),
+            json!({"const": [{"a": 1.0}, {"a": 2}]}),
+            json!({"uniqueItems": true, "items": {"type": ["object", "array", "integer"]}}),
+            json!({"dependentRequired": {"a": ["b"]}, "patternProperties": {"^x": {"type": "string"}}}),
+        ];
+        let docs = [
+            r#"{"b": 1, "a": [true], "b": "last"}"#,
+            r#"{"a": 1, "a": 2, "x1": 3, "": 0, "é": 1, "é": 2}"#,
+            r#"[1, 1.0, -0, 0, -0.0, 1e2, 100, 1E+2, 18446744073709551615, 18446744073709551616, -9223372036854775809, 0.30000000000000004, 1e308]"#,
+            r#"[{}, [], "", {"a":1,"b":2}, {"b":2,"a":1}, [1.0], [1]]"#,
+            r#""\ud800 é \n \"""#,
+            r#"{"\ud800": 1, "\udc00": 2}"#,
+            r#"{}"#,
+            r#"[]"#,
+            r#""ab""#,
+            r#"0.3"#,
+            r#"[0.3, 0.7, 9, 9.0, 1e400]"#,
+            r#"{"x": 1, "a": 1, "y": {"z": [1, {"q": "r"}]}}"#,
+            r#"[{"a": 1}, {"a": 1.0}, {"a": 2}, [1], [1.0], {"b": [1, {"c": null}]}, {"b": [1, {"c": null}]}]"#,
+            r#"[{"a": 1}, {"a": 2}, [], {}, 1, 2, 3, "x", "y", 1.5, 2.5, true, false, null, [0], [[0]], {"k": {}}]"#,
+            r#"[[{"a": 1}, {"a": 2}], 5]"#,
+        ];
+        let json5 = [
+            r#"[0x10, +1, .5, 5., Infinity, -Infinity, NaN, 0x7FFFFFFFFFFFFFFFFF]"#,
+            r#"{a: 1, 'b': 2, a: 3}"#,
+        ];
+        let mut bad = 0;
+        for s in &schemas {
+            for d in &docs {
+                bad += compare(s, d, Dialect::Json, &format!("{s} on {d}"));
+            }
+            for d in &json5 {
+                bad += compare(s, d, Dialect::Json5, &format!("{s} on {d}"));
+            }
+        }
+        assert_eq!(bad, 0);
     }
 }
