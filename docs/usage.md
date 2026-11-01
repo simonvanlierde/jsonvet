@@ -363,8 +363,32 @@ jsonvet --format sarif $(git ls-files '*.json') > jsonvet.sarif
   25,000, and counts the rest in a tool notification and on stderr.
 
 The exit status and `--max-warnings` work as with text, and no annotations are printed. On exit 2
-or 101 the document may be cut off, so do not upload it. The README
-has an [upload workflow](../README.md#github-code-scanning).
+or 101 the document may be cut off, so do not upload it.
+
+### Code scanning
+
+The Action's `sarif` input writes the document for you to upload to GitHub code scanning:
+
+```yaml
+jobs:
+  jsonvet:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: simonvanlierde/jsonvet@v3
+        with:
+          sarif: jsonvet.sarif
+      # Upload when jsonvet found problems too: that is when the step fails.
+      - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        if: success() || failure()
+        with:
+          sarif_file: jsonvet.sarif
+```
 
 ## JSON
 

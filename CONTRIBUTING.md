@@ -97,8 +97,8 @@ licence and has no RustSec advisory or unmaintained notice. Renovate bumps the p
   goes in `Dialect::ALL` (`crates/jsonvet/src/dialect.rs`) and the `--help` text. Add either to
   the README's table.
 - **Conformance matrix.** `just matrix` runs one set of inputs through 18 other parsers in docker
-  containers, then renders `docs/conformance.md` and the README block. Commit
-  `conformance/results/` and both rendered files. CI fails when the report is stale, or when
+  containers, then renders `docs/conformance.md`. Commit
+  `conformance/results/` and the rendered file. CI fails when the report is stale, or when
   `conformance/results/versions.json` disagrees with the pinned parsers. After a pin change, run
   `just matrix-lock` first ([details](conformance/README.md)).
 - **Fuzzing.** `just fuzz check` (or `diff_serde_json`, `diff_json5`, `parse`, `fix`) runs a target

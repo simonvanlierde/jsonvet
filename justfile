@@ -56,7 +56,7 @@ check: lint test
 msrv:
     cargo +1.88 check --workspace --lib --bins --locked
 
-# Re-run the conformance matrix (needs docker), then render docs/conformance.md and the README block.
+# Re-run the conformance matrix (needs docker), then render docs/conformance.md.
 matrix:
     cargo build --release -p jsonvet-cli
     uv run conformance/run.py --jsonvet {{ target }}/release/jsonvet

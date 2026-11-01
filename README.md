@@ -72,6 +72,8 @@ repository's release workflow. Its inputs are in the
 [reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#github-action).
 
 The Action only checks. To check formatting too, add a step with `run: uvx jsonvet fmt --check .`.
+To see the problems in GitHub code scanning, set `sarif: jsonvet.sarif` and upload that file, as in
+[this workflow](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#code-scanning).
 
 ### Command line
 
@@ -194,32 +196,6 @@ so every `$ref` must point inside the schema file. Schema errors are always erro
 schema paths and the limits are in the
 [reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#json-schema-limits).
 
-## GitHub code scanning
-
-`--format sarif` prints a [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/) document
-for GitHub code scanning. The Action's `sarif` input writes one for you to upload:
-
-```yaml
-jobs:
-  jsonvet:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: simonvanlierde/jsonvet@v3
-        with:
-          sarif: jsonvet.sarif
-      # Upload when jsonvet found problems too: that is when the step fails.
-      - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
-        if: success() || failure()
-        with:
-          sarif_file: jsonvet.sarif
-```
-
 ## Coming from check-json5
 
 Bump `rev` to the newest tag. The `check-json5` hook id, the `check-json5` command and `--strict`
@@ -236,21 +212,8 @@ are now checked as JSONC, and `.hujson` and `.jwcc` files as JWCC. To keep the o
 The tests run on Linux, macOS and Windows, with fuzzing, mutation testing and a comparison with
 check-json5 1.4.1. A
 [conformance matrix](https://github.com/simonvanlierde/jsonvet/blob/main/docs/conformance.md)
-runs the same files against 18 other parsers in four languages:
-
-<!-- conformance:start -->
-
-| dialect | files | share of files where each parser gives the expected verdict |
-|---|---|---|
-| JSON5 | 166 | `js-json5` 100%, `jsonvet-json5` 100%, `rs-json5` 100%, `py-json5` 99%, `py-pyjson5` 99%, `rs-serde-json5` 94%, `go-json5` 91% |
-| JSONC | 9 | `js-jsonc-parser` 100%, `jsonvet-jsonc` 100%, `go-tidwall-jsonc` 89%, `js-strip-json-comments` 89%, `rs-jsonc-parser` 78% |
-| JWCC (HuJSON) | 10 | `jsonvet-jwcc` 100%, `go-hujson` 90% |
-| JSON Lines | 11 | `jsonvet-jsonl` 100%, `py-jsonlines` 82%, `go-json-stream` 64%, `rs-serde-json-stream` 64% |
-| Strict JSON (baseline) | 129 | `js-json-parse` 100%, `jsonvet-json` 100%, `rs-serde-json` 98%, `py-json` 96%, `py-jiter` 95% |
-
-Run on 2026-10-28. The full grid, and where each expected verdict comes from: [docs/conformance.md](https://github.com/simonvanlierde/jsonvet/blob/main/docs/conformance.md).
-
-<!-- conformance:end -->
+runs the same files against 18 other parsers in four languages, and shows where each one disagrees
+with the expected verdict.
 
 ## Development
 
