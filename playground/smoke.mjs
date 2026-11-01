@@ -2,7 +2,7 @@
 // crates/jsonvet-wasm/src/lib.rs expect, then checks the page keeps its CSP.
 // Run from the repository root, after wasm-bindgen wrote playground/pkg.
 import { readFileSync } from "node:fs";
-import init, { check, version } from "./pkg/jsonvet_wasm.js";
+import init, { check, fix, format, version } from "./pkg/jsonvet_wasm.js";
 
 await init({ module_or_path: readFileSync("playground/pkg/jsonvet_wasm_bg.wasm") });
 
@@ -29,6 +29,31 @@ for (const [text, dialect, expected] of cases) {
   const got = check(text, dialect);
   if (got !== expected) {
     console.error(`check(${JSON.stringify(text)}, ${dialect})\n  got      ${got}\n  expected ${expected}`);
+    failed = true;
+  }
+}
+
+// fix() and format() answer as the Rust tests in the wasm crate expect.
+const fixed = '{"text":"[1, 2]","fixes":[{"rule":"syntax","index":5,"safe":true}]}';
+const wasmCases = [
+  ["fix", fix("[1, 2,]", "json", false, new Uint32Array(0)), fixed],
+  ["fix of a clean text", fix("[1]", "json", true, new Uint32Array(0)), "null"],
+  ["fix of one place", fix("[1,]", "json", false, new Uint32Array([2])), '{"text":"[1]","fixes":[{"rule":"syntax","index":2,"safe":true}]}'],
+  ["format", format('{"a":[1,2]}', "json", 2, 80, true, false), '{ "a": [1, 2] }\n'],
+];
+for (const [name, got, expected] of wasmCases) {
+  if (got !== expected) {
+    console.error(`${name}\n  got      ${JSON.stringify(got)}\n  expected ${JSON.stringify(expected)}`);
+    failed = true;
+  }
+}
+try {
+  format("[1 2]", "json", 2, 80, true, false);
+  console.error("format of a syntax error did not refuse");
+  failed = true;
+} catch (e) {
+  if (!String(e).startsWith("1:")) {
+    console.error(`format refused with ${e}`);
     failed = true;
   }
 }

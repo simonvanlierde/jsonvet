@@ -189,6 +189,17 @@ triangle and the first problem's position; a tick when clean; "not checked" for 
 selected stage has the tint and a 2px ink bar at its foot. An italic hint under the row says what
 the dialect adds and which files the CLI checks in it.
 
+#### Actions
+
+A row of small mono controls between the stages and the proof, set like the slug: **Fix** with its
+count of fixes ("Fix 2") and a "drop duplicate keys too" box; **Format** with indent (2 spaces,
+4 spaces, tab), width (80), "bracket spacing" (on) and, in JSON5 only, "normalize JSON5". The two
+buttons are the page's only outlined controls: a 1px ink border, no fill, the tint on hover. Fix
+stays focusable at zero and says why when used. The result is an italic aside under the proof
+("Fixed 2 problems: ... Ctrl+Z undoes it.", "Already formatted.", or the syntax error that stopped
+Format), and the slug line gains "fixed in 0.2 ms" or "formatted in 1.1 ms". The groups wrap, and
+each takes a full row under 560px.
+
 #### Proof
 
 A textarea over two layers that never take input: the gutter (a fixed slot for a correction's
@@ -208,7 +219,9 @@ token is a quoted string, a run of word characters, or one character (`tokenEnd`
 Each correction is a list item: a button with the CLI's message in italic red (JSONPaths in mono)
 whose accessible name is its position, severity, message and related place, and a mono meta line
 with the position, "warning" when it is one, the rule id linked to its section in docs/usage.md,
-and "first at 6:5". A related place gets its own short note ("first copy 6:5"), hidden from screen
+"first at 6:5" and, for a correction with a fix, an underlined "apply" in ink (not pen: the pen
+marks the correction, not the cure). A fix that is not safe reads "unsafe fix" until the
+duplicate-keys box is ticked. A related place gets its own short note ("first copy 6:5"), hidden from screen
 readers. A thin red leader runs from the end of the row to the note, with an arrowhead at the
 text; a stacked note's leader bends at the margin's edge. Hovering or focusing a correction tints
 its rows and darkens its leader. In the list form, each note carries the number shown in the
@@ -226,7 +239,9 @@ after a syntax error, why the marks are off for a big text, and the drop and F8 
 A `details` fold, closed by default, with a tab list (pre-commit or prek hook, GitHub Action,
 command line), arrow keys between tabs. Each panel holds a focusable, scrolling `pre` on the tint
 and a "Copy" text button. The snippets use the version from the wasm's `version()` and add
-`--dialect DIALECT:*.json` for any dialect but JSON5.
+`--dialect DIALECT:*.json` for any dialect but JSON5. Each panel holds the check, then the same
+with `--fix`, then the format variant (the `jsonvet-format` hook, `jsonvet fmt --check` in a
+workflow step, `jsonvet fmt` on the command line), each under a `#` comment line.
 
 #### Colophon
 

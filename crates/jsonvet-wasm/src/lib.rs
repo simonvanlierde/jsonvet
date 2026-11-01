@@ -2,7 +2,7 @@
 
 use std::fmt::Write;
 
-use jsonvet::{Config, Dialect, RelatedKind};
+use jsonvet::{Config, Dialect, FormatError, FormatOptions, Indent, RelatedKind};
 use wasm_bindgen::prelude::wasm_bindgen;
 
 /// Check `text` in the dialect named `dialect` (a name or alias the CLI accepts, such as `json5`)
@@ -71,6 +71,93 @@ pub fn check(text: &str, dialect: &str) -> Result<String, String> {
     Ok(out)
 }
 
+/// Fix the problems in `text` that have a mechanical fix, as `--fix` does, or with `unsafe_fixes`
+/// also as `--unsafe-fixes` does (duplicate keys, keeping the last). Returns `null` when there is
+/// nothing to fix, or the text has a syntax error the fixes would not remove, otherwise an object
+/// with `text` (the fixed text) and `fixes`: each with `rule`, `index` (where the problem was in
+/// the original text, in UTF-16 units) and `safe`. `only`, when not empty, limits the fixes to
+/// those whose `index` it lists, which is how one correction's fix is applied.
+///
+/// # Errors
+///
+/// The message for an unknown dialect.
+#[wasm_bindgen]
+pub fn fix(text: &str, dialect: &str, unsafe_fixes: bool, only: &[u32]) -> Result<String, String> {
+    let config = Config::new(dialect.parse::<Dialect>().map_err(|e| e.to_string())?);
+    // The fixes name byte offsets: walk the text once to turn the listed UTF-16 indexes into them.
+    let bytes: Vec<usize> = if only.is_empty() {
+        Vec::new()
+    } else {
+        let (mut units, mut found) = (0_u32, Vec::new());
+        for (byte, c) in text.char_indices() {
+            if only.contains(&units) {
+                found.push(byte);
+            }
+            units += u32::try_from(c.len_utf16()).unwrap_or(2);
+        }
+        found
+    };
+    // Indexes that name no character leave nothing to fix, rather than every fix.
+    let only = (!only.is_empty()).then_some(bytes.as_slice());
+    let Ok(fixed) = jsonvet::try_fix_at(text, &config, unsafe_fixes, only) else {
+        return Ok("null".to_owned());
+    };
+    let mut out = String::from(r#"{"text":"#);
+    string(&mut out, &fixed.text);
+    out.push_str(r#","fixes":["#);
+    let mut at = Utf16::default();
+    for (i, fix) in fixed.fixes.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        let _ = write!(
+            out,
+            r#"{{"rule":"{}","index":{},"safe":{}}}"#,
+            fix.rule,
+            at.at(text, fix.offset.min(text.len())),
+            fix.safe
+        );
+    }
+    out.push_str("]}");
+    Ok(out)
+}
+
+/// Format `text` as `jsonvet fmt` does. `indent` is the spaces for one level, 0 for a tab; `width`
+/// the most columns a container may take on one line; `normalize_json5` applies to JSON5 only.
+///
+/// # Errors
+///
+/// The reason nothing was formatted: an unknown dialect, a syntax error (as `line:column message`),
+/// or a text whose output would be too large.
+#[wasm_bindgen]
+pub fn format(
+    text: &str,
+    dialect: &str,
+    indent: u32,
+    width: u32,
+    bracket_spacing: bool,
+    normalize_json5: bool,
+) -> Result<String, String> {
+    let config = Config::new(dialect.parse::<Dialect>().map_err(|e| e.to_string())?);
+    let options = FormatOptions {
+        indent: if indent == 0 {
+            Indent::Tab
+        } else {
+            Indent::Spaces(indent as usize)
+        },
+        width: width as usize,
+        normalize_json5,
+        bracket_spacing,
+    };
+    jsonvet::format(text, &config, &options).map_err(|e| match &e {
+        FormatError::Syntax(report) => report.problems().first().map_or_else(String::new, |p| {
+            let at = report.location(p.offset().min(text.len()));
+            format!("{}:{} {p}", at.line, at.column)
+        }),
+        e => e.to_string(),
+    })
+}
+
 /// The jsonvet version this build is from, such as `3.2.0`.
 #[wasm_bindgen]
 #[must_use]
@@ -120,7 +207,7 @@ fn string(out: &mut String, s: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{check, string};
+    use super::{check, fix, format, string};
 
     #[test]
     fn duplicate_key_in_json5() {
@@ -240,6 +327,104 @@ mod tests {
         let out = check("{}\n{\"a\":1,\"a\":2}\n", "jsonl").unwrap_or_default();
         assert!(out.starts_with(r#"[{"line":2,"column":8,"#), "{out}");
         assert_eq!(out.matches("\"rule\":").count(), 1, "{out}");
+    }
+
+    #[test]
+    fn fix_removes_a_trailing_comma_and_lists_it() {
+        let out = fix("[1, 2,]", "json", false, &[]).unwrap_or_default();
+        assert_eq!(
+            out,
+            r#"{"text":"[1, 2]","fixes":[{"rule":"syntax","index":5,"safe":true}]}"#
+        );
+    }
+
+    #[test]
+    fn fix_keeps_duplicate_keys_unless_asked() {
+        let text = "{\"a\": 1, \"a\": 2}";
+        assert_eq!(fix(text, "json", false, &[]).as_deref(), Ok("null"));
+        let out = fix(text, "json", true, &[]).unwrap_or_default();
+        assert!(out.starts_with(r#"{"text":"{\"a\": 2}","#), "{out}");
+        assert!(out.contains(r#""safe":false"#), "{out}");
+    }
+
+    #[test]
+    fn fix_with_only_applies_just_those_fixes() {
+        let text = "{\"😀\": [1,], \"b\": [2,]}";
+        // Indexes are UTF-16: the first comma is at 9, the second at 20.
+        let all = fix(text, "json", false, &[]).unwrap_or_default();
+        assert!(
+            all.contains(r#""index":9,"#) && all.contains(r#""index":20,"#),
+            "{all}"
+        );
+        let one = fix(text, "json", false, &[20]).unwrap_or_default();
+        assert!(
+            one.starts_with(r#"{"text":"{\"😀\": [1,], \"b\": [2]}""#),
+            "{one}"
+        );
+        assert_eq!(fix(text, "json", false, &[3]).as_deref(), Ok("null"));
+    }
+
+    #[test]
+    fn fix_leaves_a_syntax_error_and_an_unknown_dialect() {
+        assert_eq!(fix("[1 2]", "json", true, &[]).as_deref(), Ok("null"));
+        assert!(fix("{}", "yaml", false, &[]).is_err());
+    }
+
+    #[test]
+    fn format_uses_the_options() {
+        let text = "{\"a\":[1,2],\"b\":{}}";
+        assert_eq!(
+            format(text, "json", 2, 80, true, false).as_deref(),
+            Ok("{ \"a\": [1, 2], \"b\": {} }\n")
+        );
+        assert_eq!(
+            format(text, "json", 4, 10, false, false).as_deref(),
+            Ok("{\n    \"a\": [\n        1,\n        2\n    ],\n    \"b\": {}\n}\n")
+        );
+        let tab = format(text, "json", 0, 10, true, false).unwrap_or_default();
+        assert!(tab.contains("\n\t\"a\""), "{tab:?}");
+    }
+
+    #[test]
+    fn format_normalizes_json5_only_when_asked() {
+        let text = "{'a': 1}";
+        assert_eq!(
+            format(text, "json5", 2, 80, true, false).as_deref(),
+            Ok("{ 'a': 1 }\n")
+        );
+        assert_eq!(
+            format(text, "json5", 2, 80, true, true).as_deref(),
+            Ok("{ a: 1 }\n")
+        );
+    }
+
+    #[test]
+    fn format_says_why_it_refused() {
+        let err = format("{\n\"a\": [1 2]}", "json", 2, 80, true, false).unwrap_err();
+        assert!(err.starts_with("2:"), "{err}");
+        assert!(err.contains("missing `,`"), "{err}");
+        let deep = format(&"[".repeat(400), "json", 2, 80, true, false);
+        assert!(deep.is_err());
+        assert!(format("{}", "yaml", 2, 80, true, false).is_err());
+    }
+
+    #[test]
+    fn a_problem_and_its_fix_share_an_index() {
+        // The playground matches a correction to its fix by index. A trailing comma is the exception:
+        // the problem is at the closing bracket, the fix at the comma before it.
+        for (text, dialect) in [("\u{feff}[1]", "json"), ("{}", "jsonl")] {
+            let problems = check(text, dialect).unwrap_or_default();
+            let fixed = fix(text, dialect, false, &[]).unwrap_or_default();
+            let index = problems
+                .split(r#""index":"#)
+                .nth(1)
+                .and_then(|r| r.split(',').next());
+            let at = format!(r#""index":{},"#, index.unwrap_or("?"));
+            assert!(
+                fixed.contains(&at),
+                "{dialect} {text:?}: {problems} vs {fixed}"
+            );
+        }
     }
 
     #[test]

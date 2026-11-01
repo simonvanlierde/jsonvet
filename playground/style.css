@@ -73,6 +73,17 @@ button { font: inherit; color: inherit; }
 .hint { margin: 8px 0 0; max-width: 46rem; color: var(--faint); font-size: 1rem; font-style: italic; line-height: 1.45; }
 .hint code { font-style: normal; white-space: nowrap; }
 
+/* Fix and Format: the proofreader's actions, in the slug's small mono, above the proof. */
+.tools { display: flex; flex-wrap: wrap; gap: 8px 32px; margin-top: 14px; font: 13px/1.6 var(--mono); color: var(--faint); }
+.tool { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; }
+.act { padding: 3px 12px; min-height: 32px; font: 600 13px/1.4 var(--mono); color: var(--ink); background: none; border: 1px solid var(--ink); border-radius: 0; cursor: pointer; }
+.act:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--tint); }
+.act:disabled, .act[aria-disabled="true"] { color: var(--faint); border-color: var(--rule-strong); cursor: default; }
+.opt { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; }
+.opt input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--ink); }
+.opt select, .opt input[type="number"] { font: 13px/1.4 var(--mono); color: var(--ink); background: var(--paper); border: 1px solid var(--rule-strong); border-radius: 0; padding: 3px 6px; min-height: 32px; }
+.opt input[type="number"] { width: 6ch; }
+
 /* The proof: the set text on the left, the margin with the corrections on the right. */
 /* A galley's measure: the text column stops near 60 characters and the margin takes the rest, so notes sit close to their lines. */
 .proof { position: relative; display: grid; grid-template-columns: minmax(0, 36rem) minmax(18.5rem, 1fr); margin-top: 18px; }
@@ -123,6 +134,9 @@ textarea, textarea:focus-visible { padding: 8px 8px 8px 6px; border: 0; resize: 
 .meta > * + *::before { content: "·"; content: "·" / ""; margin-inline: .6ch; color: var(--dim); }
 .meta .rule { display: inline-block; padding-block: 3.5px; color: var(--faint); }
 .meta .rule:hover { color: var(--ink); }
+/* A correction with a fix: apply it from the margin. */
+.meta .apply { padding: 3.5px 0; font: inherit; color: var(--ink); }
+.meta .unsafe { color: var(--faint); }
 .note.rel { pointer-events: none; }
 .leaders { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; fill: none; stroke: var(--pen); stroke-width: 1; stroke-opacity: .3; }
 .leaders path.lit { stroke-width: 1.5; stroke-opacity: 1; }
@@ -179,6 +193,8 @@ noscript p { max-width: 1240px; margin: 0 auto; padding: 16px; color: var(--pen)
   .stages button:nth-child(n + 4) { border-top: 1px solid var(--rule); }
 }
 @media (max-width: 560px) {
+  .tool { width: 100%; }
+  .opt select, .opt input[type="number"] { font-size: 16px; }
   /* 16px, or iOS zooms in when the text area gets focus. */
   :root { --size: 16px; --lh: 22px; }
   .stages button { padding-inline: 8px; }
@@ -191,4 +207,6 @@ noscript p { max-width: 1240px; margin: 0 auto; padding: 16px; color: var(--pen)
   .stages button[aria-checked="true"] { border-bottom: 2px solid CanvasText; }
   .tabs button[aria-selected="true"] { border-bottom: 2px solid CanvasText; }
   .margin .note { background: Canvas; }
+  .act, .opt select, .opt input[type="number"] { border-color: CanvasText; }
+  .act:disabled, .act[aria-disabled="true"] { border-color: GrayText; color: GrayText; }
 }

@@ -71,6 +71,20 @@ pub fn try_fix(
     config: &Config,
     unsafe_fixes: bool,
 ) -> Result<Fixed, Option<Vec<Problem>>> {
+    try_fix_at(text, config, unsafe_fixes, None)
+}
+
+/// [`try_fix`], but with `only` set, just the fixes whose [`Fix::offset`] is in it: how the
+/// playground applies the one fix a correction names.
+///
+/// Public for jsonvet-wasm only and outside the semver contract: it can change in any release.
+#[doc(hidden)]
+pub fn try_fix_at(
+    text: &str,
+    config: &Config,
+    unsafe_fixes: bool,
+    only: Option<&[usize]>,
+) -> Result<Fixed, Option<Vec<Problem>>> {
     let (problems, scan) = parse::scan(text, config);
     // Without a trailing comma the scan reads the text as `check` does.
     let same = scan.commas.is_empty();
@@ -111,6 +125,9 @@ pub fn try_fix(
     }
     if unsafe_fixes {
         groups.extend(duplicate_groups(text, &problems, &scan));
+    }
+    if let Some(only) = only {
+        groups.retain(|g| only.contains(&g.offset));
     }
     // Outer edits come first, so a fix inside a dropped member is skipped whole.
     groups.sort_by_key(|g| (g.start, std::cmp::Reverse(g.end)));

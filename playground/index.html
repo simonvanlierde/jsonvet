@@ -33,6 +33,7 @@
   <p class="slug-part speed">
     <span id="took" hidden>checked in <em id="t1"></em></span>
     <span id="took-all" hidden>all six in <em id="t6"></em></span>
+    <span id="took-act" hidden><span id="act-verb"></span> in <em id="t-act"></em></span>
     <span id="try-wrap"><button type="button" id="try" class="link" disabled>try a 2.7 MB file</button></span>
     <span id="back-wrap" hidden><button type="button" id="back" class="link">back to the sample</button></span>
   </p>
@@ -51,6 +52,20 @@
       <button type="button" role="radio" aria-checked="false" tabindex="-1" data-dialect="jsonl"><span class="name">JSON Lines</span><span class="v"></span></button>
     </div>
     <p id="dialect-hint" class="hint"></p>
+  </div>
+  <div class="tools" role="group" aria-label="Fix and format the text">
+    <div class="tool">
+      <button type="button" id="fix" class="act" aria-disabled="true" aria-describedby="fix-help" disabled>Fix</button>
+      <label class="opt"><input type="checkbox" id="unsafe"> drop duplicate keys too</label>
+      <span id="fix-help" class="vh">Applies the safe fixes to the text. Duplicate keys are dropped only when ticked, keeping the last. Undo with Ctrl+Z.</span>
+    </div>
+    <div class="tool">
+      <button type="button" id="format" class="act" disabled>Format</button>
+      <label class="opt">indent <select id="indent"><option value="2">2 spaces</option><option value="4">4 spaces</option><option value="tab">tab</option></select></label>
+      <label class="opt">width <input id="width" type="number" inputmode="numeric" min="1" max="1000" value="80"></label>
+      <label class="opt"><input type="checkbox" id="spacing" checked> bracket spacing</label>
+      <label class="opt" id="norm-label" hidden><input type="checkbox" id="norm"> normalize JSON5</label>
+    </div>
   </div>
   <div class="proof" id="proof">
     <div class="editor" id="editor">
@@ -83,6 +98,7 @@
     <p id="said" class="vh" role="status"></p>
     <p id="first" class="first"></p>
   </div>
+  <p id="acted" class="aside" hidden></p>
   <p id="stopped" class="aside" hidden></p>
   <p id="big" class="aside" hidden></p>
   <p id="keys" class="aside">Edit the text, paste your own or drop a file on it. <kbd>F8</kbd> and <kbd>Shift</kbd>+<kbd>F8</kbd> in the text move to the next and previous problem.</p>

@@ -43,7 +43,7 @@ mod unicode;
 pub use dialect::{Dialect, UnknownDialect};
 pub use event::{Event, EventKind};
 #[doc(hidden)]
-pub use fixes::{Fix, Fixed, fix, try_fix};
+pub use fixes::{Fix, Fixed, fix, try_fix, try_fix_at};
 pub use format::{FormatError, FormatOptions, Indent, format};
 pub use messages::{MESSAGES, fill};
 pub use path::{PathStep, json_path, key_text};
