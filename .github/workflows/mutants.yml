@@ -16,12 +16,12 @@ env:
 jobs:
   mutants:
     runs-on: ubuntu-latest
-    # One runner could not finish the run in an hour, so twenty shards each take a twentieth. Round-robin
+    # One runner could not finish the run in an hour, so forty shards each take a fortieth. Round-robin
     # spreads the mutants that hang until the timeout, about two minutes each, over every shard.
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39]
     # The slowest shard took 42 minutes. If shards near the limit, add shards rather than raise
     # it: a timed-out shard is cancelled and reports no missed mutants at all.
     timeout-minutes: 60
@@ -46,7 +46,7 @@ jobs:
         # lose the job: each process gets 8 GiB of address space.
         run: |
           ulimit -v 8388608
-          cargo mutants --workspace --no-shuffle --shard "$SHARD/20" --sharding round-robin || [ $? -eq 3 ]
+          cargo mutants --workspace --no-shuffle --shard "$SHARD/40" --sharding round-robin || [ $? -eq 3 ]
           test ! -s mutants.out/missed.txt
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
