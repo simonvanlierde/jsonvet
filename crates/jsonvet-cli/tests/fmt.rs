@@ -138,7 +138,9 @@ fn check_writes_nothing_and_lists_the_files_that_would_change() {
     );
     // A directory stands for the files under it.
     assert_eq!(
-        run(&dir, &["fmt", "--check", "."], "").1,
+        run(&dir, &["fmt", "--check", "."], "")
+            .1
+            .replace(std::path::MAIN_SEPARATOR, "/"),
         "./a.json\n./b.jsonc\n"
     );
 }
