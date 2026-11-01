@@ -8,10 +8,13 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
+## [3.3.1] - 2026-11-02
+
 ### Fixed
 
-- `--fix --format json -` and `--format sarif` no longer add the `fixed N problems` line after
-  the report on standard error, so standard error parses as JSON ([fixing](docs/usage.md#fixing)).
+- `--fix` on standard input with `--format json` or `sarif` no longer adds the `fixed N problems`
+  line after the report on standard error, so standard error parses as JSON
+  ([fixing](docs/usage.md#fixing)).
 - The GitHub Action's description is short enough for the GitHub Marketplace again, so the
   release is listed there.
 
@@ -677,7 +680,8 @@ hook's output, or imports `pre_commit_hooks.check_json5`, needs a change (see Ch
 
 - Renamed from `pre-commit-check-json5` to `check-json5`.
 
-[Unreleased]: https://github.com/simonvanlierde/jsonvet/compare/v3.3.0...HEAD
+[Unreleased]: https://github.com/simonvanlierde/jsonvet/compare/v3.3.1...HEAD
+[3.3.1]: https://github.com/simonvanlierde/jsonvet/compare/v3.3.0...v3.3.1
 [3.3.0]: https://github.com/simonvanlierde/jsonvet/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/simonvanlierde/jsonvet/compare/v3.1.1...v3.2.0
 [3.1.1]: https://github.com/simonvanlierde/jsonvet/compare/v3.1.0...v3.1.1
