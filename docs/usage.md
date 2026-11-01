@@ -53,6 +53,7 @@ Rules:
   with its comma. Comments stay. It needs `--fix`.
 - The fixes of one run do not overlap: when a duplicate member is dropped, the fixes inside it go
   with it.
+- A large JSON Lines file is fixed whole on one thread, not split across cores as a check is.
 
 jsonvet writes a temporary file in the same folder, gives it the file's permissions, and renames
 it over the file, so a crash leaves the old text or the new one. A symlink is followed and stays
@@ -232,8 +233,8 @@ Good (i-json): {"a": "\ud83d\ude00"}
 ### byte-order-mark
 
 RFC 8259 says JSON text must not start with a byte order mark (U+FEFF), and many parsers fail on
-one. Save the file as UTF-8 without a BOM. `--fix` removes it. An error in `jsonl`, a warning in `json` and `i-json`,
-off otherwise.
+one. Save the file as UTF-8 without a BOM. `--fix` removes it. An error in `jsonl`, a warning in
+`json` and `i-json`, off otherwise.
 
 ```text
 Bad:  <U+FEFF>{"a": 1}
