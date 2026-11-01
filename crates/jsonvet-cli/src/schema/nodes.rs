@@ -151,15 +151,12 @@ impl<'e> Tree<'e> {
                 }
                 _ => None,
             };
-            match next {
-                Some((child, step)) => {
-                    node = child;
-                    steps.push(step);
-                }
-                None => {
-                    lost = true;
-                    steps.push(PathStep::Key(segment.as_bytes()));
-                }
+            if let Some((child, step)) = next {
+                node = child;
+                steps.push(step);
+            } else {
+                lost = true;
+                steps.push(PathStep::Key(segment.as_bytes()));
             }
         }
         let offset = match (&self.entries[node as usize], lost) {

@@ -123,7 +123,7 @@ fn schema_memory_stays_under_its_bound_on_a_valid_10_mb_file() {
     assert_under(peak, MAX_BYTES_PER_BYTE);
 }
 
-/// An error sends jsonvet back over the file to place it.
+/// An error is placed from the document's tree.
 #[test]
 fn schema_memory_stays_under_its_bound_placing_an_error_in_a_10_mb_file() {
     let schema = r#"{"minItems": 1, "items": {"properties": {"x": {"not": {"const": 7}}}}}"#;
@@ -134,7 +134,7 @@ fn schema_memory_stays_under_its_bound_placing_an_error_in_a_10_mb_file() {
 }
 
 /// A JSON Lines file this size is split across threads, one part per thread, and an error on
-/// line 8 sends its part back over its lines to place it.
+/// line 8 is placed from its line's tree.
 #[test]
 fn schema_memory_stays_under_its_bound_on_a_split_10_mb_json_lines_file() {
     let schema = r#"{"type": "object", "properties": {"x": {"not": {"const": 7}}}}"#;

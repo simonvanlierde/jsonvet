@@ -24,9 +24,10 @@ The second. `crates/jsonvet-cli/src/schema/nodes.rs` holds the tree and the trai
 validators are built with `jsonschema::options_for::<Own>()`. Objects keep their members sorted by
 key with later duplicates replacing earlier ones, so member order, counts and lookups match what
 `serde_json::Map` gave. The part of a schema checked on each member of an object sees a view of
-the object with one member, instead of a one-member copy. Errors still carry only an instance
-path, so offsets still come from the second walk over the events (`place.rs`); the tree has no
-byte offsets yet.
+the object with one member, instead of a one-member copy. Errors carry only an instance
+path, so each failing document's errors are placed by looking that path up in the tree, which
+keeps the offset of every value and key and the spelling of keys with lone surrogates. No second
+walk over the events is needed.
 
 ## Consequences
 
@@ -48,5 +49,4 @@ tests in `mod.rs`, the `schemastore` snapshots and the heap bounds in `tests/sch
 ## Revisit if
 
 A jsonschema release changes the traits in a way that costs more than a day, or its error type
-starts to carry the failing node, which would let offsets come from the tree and retire the second
-walk.
+starts to carry the failing node, which would save the path lookup.
