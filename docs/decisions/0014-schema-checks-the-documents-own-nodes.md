@@ -37,6 +37,8 @@ are kept in 32 bits, so a value more than 4 GiB into a text is reported as not c
 
 ## Consequences
 
+Each value is a 16-byte entry (a const assertion in `nodes.rs` holds it there): strings live in a side table and numbers are kept as the integer or float they are, so a file of small numbers takes 16 times its size at most.
+
 An escaped string is still decoded by the parser, so only strings without escapes are borrowed.
 A string is copied into an error when it fails; a container is read again only when asked for. The traits are pinned by the exact `jsonschema` version in `Cargo.toml`
 and `Cargo.lock`. When a release changes them, the build fails in `nodes.rs` and nowhere else:

@@ -15,16 +15,23 @@ use super::fold::documents;
 use jsonvet::{Config, Dialect, PathStep, json_path};
 use serde_json::{Map, Number, Value};
 
+// One entry per value: a change that grows it costs memory on every number in a large file.
+const _: () = assert!(std::mem::size_of::<Entry>() <= 16);
+
 /// jsonschema's name for this representation of a document.
 pub(super) struct Own;
 
 /// One value. A container holds the range of its children in [`Tree::elems`] or
 /// [`Tree::members`].
-enum Entry<'e> {
+enum Entry {
     Null,
     Bool(bool),
-    Number(Number),
-    String(Cow<'e, str>),
+    /// A number, in the three forms `serde_json::Number` keeps, so that it takes 8 bytes.
+    Pos(u64),
+    Neg(i64),
+    Float(f64),
+    /// Its index in [`Tree::strings`], which keeps the entry small.
+    String(u32),
     /// The range of its elements, and the offset just past its `]`.
     Array(u32, u32, u32),
     /// Its members are sorted by key with duplicates gone, as a `serde_json::Map` keeps them.
@@ -35,7 +42,8 @@ enum Entry<'e> {
 /// One document's values. Strings are borrowed from the text unless they hold an escape.
 #[derive(Default)]
 pub(super) struct Tree<'e> {
-    entries: Vec<Entry<'e>>,
+    entries: Vec<Entry>,
+    strings: Vec<Cow<'e, str>>,
     /// The offset of each entry's first byte in the text.
     at: Vec<u32>,
     elems: Vec<u32>,
@@ -104,19 +112,26 @@ impl<'e> Builder<'e> {
     }
 
     pub(super) fn string(&mut self, text: Cow<'e, str>, at: usize) -> u32 {
-        self.add(Entry::String(text), at)
+        let index = u32::try_from(self.tree.strings.len()).unwrap_or(u32::MAX);
+        self.tree.strings.push(text);
+        self.add(Entry::String(index), at)
     }
 
     pub(super) fn scalar(&mut self, value: Value, at: usize) -> u32 {
         let entry = match value {
             Value::Bool(b) => Entry::Bool(b),
-            Value::Number(n) => Entry::Number(n),
+            Value::Number(n) => match (n.as_u64(), n.as_i64(), n.as_f64()) {
+                (Some(u), ..) => Entry::Pos(u),
+                (None, Some(i), _) => Entry::Neg(i),
+                (None, None, Some(f)) => Entry::Float(f),
+                _ => Entry::Null,
+            },
             _ => Entry::Null,
         };
         self.add(entry, at)
     }
 
-    fn add(&mut self, entry: Entry<'e>, at: usize) -> u32 {
+    fn add(&mut self, entry: Entry, at: usize) -> u32 {
         self.tree.entries.push(entry);
         self.tree.at.push(offset(at - self.tree.base));
         u32::try_from(self.tree.entries.len() - 1).unwrap_or(u32::MAX)
@@ -247,8 +262,10 @@ impl<'e> Tree<'e> {
         match &self.entries[index as usize] {
             Entry::Null => Value::Null,
             Entry::Bool(b) => Value::Bool(*b),
-            Entry::Number(n) => Value::Number(n.clone()),
-            Entry::String(s) => Value::String(s.to_string()),
+            Entry::Pos(u) => Value::Number(Number::from(*u)),
+            Entry::Neg(i) => Value::Number(Number::from(*i)),
+            Entry::Float(f) => Number::from_f64(*f).map_or(Value::Null, Value::Number),
+            Entry::String(s) => Value::String(self.strings[*s as usize].to_string()),
             Entry::Array(from, to, _) => Value::Array(
                 self.elems[*from as usize..*to as usize]
                     .iter()
@@ -302,7 +319,7 @@ impl<'a> Nd<'a> {
             .unwrap_or_default()
     }
 
-    fn entry(&self) -> Option<&'a Entry<'a>> {
+    fn entry(&self) -> Option<&'a Entry> {
         match self {
             Nd::At(tree, index, _) => Some(&tree.entries[*index as usize]),
             Nd::Text(_) => None,
@@ -410,7 +427,7 @@ impl<'a> Array<'a, Own> for Elems<'a> {
 impl<'a> Node<'a, Own> for Nd<'a> {
     type Object = Members<'a>;
     type Array = Elems<'a>;
-    type Number = &'a Number;
+    type Number = Number;
 
     fn as_object(&self) -> Option<Members<'a>> {
         match self {
@@ -442,15 +459,20 @@ impl<'a> Node<'a, Own> for Nd<'a> {
         match self {
             Nd::Text(text) => Some(Cow::Borrowed(text)),
             Nd::At(..) => match self.entry()? {
-                Entry::String(s) => Some(Cow::Borrowed(s.as_ref())),
+                Entry::String(s) => match self {
+                    Nd::At(tree, ..) => Some(Cow::Borrowed(tree.strings[*s as usize].as_ref())),
+                    Nd::Text(_) => None,
+                },
                 _ => None,
             },
         }
     }
 
-    fn as_number(&self) -> Option<&'a Number> {
+    fn as_number(&self) -> Option<Number> {
         match self.entry()? {
-            Entry::Number(n) => Some(n),
+            Entry::Pos(u) => Some(Number::from(*u)),
+            Entry::Neg(i) => Some(Number::from(*i)),
+            Entry::Float(f) => Number::from_f64(*f),
             _ => None,
         }
     }
@@ -472,7 +494,7 @@ impl<'a> Node<'a, Own> for Nd<'a> {
             None | Some(Entry::String(_)) => T::String,
             Some(Entry::Null) => T::Null,
             Some(Entry::Bool(_)) => T::Boolean,
-            Some(Entry::Number(_)) => T::Number,
+            Some(Entry::Pos(_) | Entry::Neg(_) | Entry::Float(_)) => T::Number,
             Some(Entry::Array(..)) => T::Array,
             Some(Entry::Object(..)) => T::Object,
         }
@@ -483,8 +505,12 @@ impl<'a> Node<'a, Own> for Nd<'a> {
             (None, Value::String(expected)) => matches!(self, Nd::Text(text) if text == expected),
             (Some(Entry::Null), Value::Null) => true,
             (Some(Entry::Bool(a)), Value::Bool(b)) => a == b,
-            (Some(Entry::Number(a)), Value::Number(b)) => cmp::equal_numbers(&a, b),
-            (Some(Entry::String(a)), Value::String(b)) => a == b,
+            (Some(Entry::Pos(_) | Entry::Neg(_) | Entry::Float(_)), Value::Number(b)) => {
+                self.as_number().is_some_and(|a| cmp::equal_numbers(&a, b))
+            }
+            (Some(Entry::String(_)), Value::String(b)) => {
+                self.as_string().is_some_and(|a| a == b.as_str())
+            }
             (Some(Entry::Array(..)), Value::Array(items)) => self.as_array().is_some_and(|array| {
                 array.len() == items.len()
                     && array
@@ -554,7 +580,7 @@ impl<'a> Node<'a, Own> for Nd<'a> {
 fn equal(a: &Nd<'_>, b: &Nd<'_>) -> bool {
     match (a.json_type(), b.json_type()) {
         (T::Number, T::Number) => match (a.as_number(), b.as_number()) {
-            (Some(a), Some(b)) => cmp::equal_numbers(&a, b),
+            (Some(a), Some(b)) => cmp::equal_numbers(&a, &b),
             _ => false,
         },
         (T::String, T::String) => a.as_string() == b.as_string(),
