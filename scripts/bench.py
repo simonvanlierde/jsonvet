@@ -169,7 +169,8 @@ def write(table: list[str], runs: int, ref_runs: int, old_runs: int, largest: st
         "Every tool gives the same verdict in every case:"
     )
     DESIGN.write_text(text[:start] + "\n".join([textwrap.fill(intro, 100), "", *table]) + "\n" + text[end:])
-    claim = r"(up to )[\d,]+(\s+times faster than check-json5 1\.4\.1)"
+    # The README may set the claim in bold: "up to **N times faster** than".
+    claim = r"(up to \**)[\d,]+(\s+times faster\**\s+than check-json5 1\.4\.1)"
     README.write_text(re.sub(claim, rf"\g<1>{largest}\g<2>", README.read_text(), count=1))
 
 
