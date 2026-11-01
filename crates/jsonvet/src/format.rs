@@ -143,7 +143,12 @@ pub fn format<'a>(
             "\n"
         }
     } else {
-        first_line_ending(text)
+        match first_line_ending(text) {
+            // A JWCC line comment ends only at LF, so a lone CR after one would swallow the
+            // next line.
+            "\r" if dialect == Dialect::Jwcc => "\n",
+            eol => eol,
+        }
     };
     let (bom, body) = match text.strip_prefix('\u{feff}') {
         Some(body) => ("\u{feff}", body),

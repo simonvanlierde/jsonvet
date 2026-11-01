@@ -556,6 +556,16 @@ fn a_lone_cr_is_the_line_ending_when_it_is_the_first() {
 }
 
 #[test]
+fn a_lone_cr_never_ends_a_jwcc_line_comment_in_the_output() {
+    let jwcc = Config::new(Dialect::Jwcc);
+    for text in ["{\r\"a\": 1 // c\n}", "{\r\"a\": 1, // c\n\"b\": 2}"] {
+        let out = format(text, &jwcc, &FormatOptions::default()).unwrap();
+        assert!(!out.contains('\r'), "{out:?}");
+        assert_eq!(problems(&out, &jwcc), problems(text, &jwcc), "{out:?}");
+    }
+}
+
+#[test]
 fn braces_are_padded_by_default_and_the_padding_counts_toward_the_width() {
     let json = Config::new(Dialect::Json);
     let one = |n: usize| format!("{{\"k\": \"{}\"}}", "x".repeat(n));
