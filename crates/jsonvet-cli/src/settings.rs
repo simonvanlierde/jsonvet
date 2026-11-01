@@ -115,6 +115,9 @@ pub(crate) struct Settings {
     pub(crate) schemas: Vec<SchemaPattern>,
     /// The `[format]` table of a config file.
     pub(crate) format: FormatSettings,
+    /// Whether these come from the user's own config file, which sits below `.editorconfig` for
+    /// layout, rather than from the project's or one named with `--config`.
+    pub(crate) user: bool,
 }
 
 /// The `[format]` table: what `jsonvet fmt` is told to do, where a key is set.
@@ -123,6 +126,7 @@ pub(crate) struct FormatSettings {
     pub(crate) indent: Option<Indent>,
     pub(crate) width: Option<usize>,
     pub(crate) normalize_json5: Option<bool>,
+    pub(crate) bracket_spacing: Option<bool>,
 }
 
 /// A schema for the files matching a glob, from a config file.
@@ -151,6 +155,7 @@ impl Settings {
             indent: later.format.indent.or(self.format.indent),
             width: later.format.width.or(self.format.width),
             normalize_json5: later.format.normalize_json5.or(self.format.normalize_json5),
+            bracket_spacing: later.format.bracket_spacing.or(self.format.bracket_spacing),
         };
         self
     }
@@ -427,6 +432,7 @@ impl Resolver {
         let user = match user_config() {
             Some(path) => {
                 let mut own = load(&path, None)?;
+                own.user = true;
                 // Its globs are relative to the working directory, as in ruff: it sits in no
                 // project. Normalized, as `load` does for a file's own folder.
                 let cwd = glob::normalize(&self.cwd.to_string_lossy());
@@ -741,11 +747,16 @@ fn format_table(
                 format.width = Some(width.ok_or_else(|| wrong("config.format-width"))?);
             }
             ("normalize-json5", DeValue::Boolean(on)) => format.normalize_json5 = Some(*on),
+            ("bracket-spacing", DeValue::Boolean(on)) => format.bracket_spacing = Some(*on),
+            ("bracket-spacing", _) => return Err(wrong("config.format-bracket-spacing")),
             ("indent", _) => return Err(wrong("config.format-indent")),
             ("width", _) => return Err(wrong("config.format-width")),
             ("normalize-json5", _) => return Err(wrong("config.format-normalize")),
             (name, _) => {
-                let hint = messages::did_you_mean(name, ["indent", "width", "normalize-json5"]);
+                let hint = messages::did_you_mean(
+                    name,
+                    ["indent", "width", "normalize-json5", "bracket-spacing"],
+                );
                 return Err(at(
                     key.span().start,
                     &messages::fill(

@@ -42,6 +42,10 @@ const ENGLISH: &[(&str, &str)] = &[
         "error.stdin-twice",
         "`-` (standard input) can be given only once",
     ),
+    (
+        "error.fmt-option",
+        "`--{option}` is for checking and does not apply to `jsonvet fmt`",
+    ),
     ("error.unknown-option", "unknown option `{option}`"),
     ("error.not-utf8", "not valid UTF-8: {value}"),
     (
@@ -100,7 +104,7 @@ const ENGLISH: &[(&str, &str)] = &[
     ("config.format-type", "`format` must be a table"),
     (
         "config.format-unknown-key",
-        "unknown key `{key}`{hint} in `format`; expected indent, width or normalize-json5",
+        "unknown key `{key}`{hint} in `format`; expected indent, width, normalize-json5 or bracket-spacing",
     ),
     (
         "config.format-indent",
@@ -109,6 +113,10 @@ const ENGLISH: &[(&str, &str)] = &[
     (
         "config.format-width",
         "`format.width` must be a whole number of 1 or more",
+    ),
+    (
+        "config.format-bracket-spacing",
+        "`format.bracket-spacing` must be true or false",
     ),
     (
         "config.format-normalize",

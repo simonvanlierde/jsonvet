@@ -14,7 +14,10 @@ use proptest::prelude::*;
 fn fmt(dialect: Dialect, options: &FormatOptions, text: &str) -> String {
     match format(text, &Config::new(dialect), options) {
         Ok(out) => out,
-        Err(report) => format!("syntax error: {}", report.problems()[0]),
+        Err(jsonvet::FormatError::Syntax(report)) => {
+            format!("syntax error: {}", report.problems()[0])
+        }
+        Err(other) => other.to_string(),
     }
 }
 
@@ -221,7 +224,9 @@ fn a_syntax_error_is_reported_not_formatted() {
         &Config::new(Dialect::Json),
         &FormatOptions::default(),
     );
-    let report = err.expect_err("a syntax error");
+    let Err(jsonvet::FormatError::Syntax(report)) = err else {
+        panic!("a syntax error");
+    };
     assert_eq!(report.problems()[0].rule(), Rule::Syntax);
     assert!(
         format(
@@ -273,8 +278,8 @@ fn exactly_the_width_fits_and_one_more_breaks() {
     assert!(fits.contains(&format!("  \"k\": [\"{}\"]\n", "x".repeat(69))));
     // The whole document on one line when it fits.
     assert_eq!(
-        format("{\"a\": [1, 2]}", &json, &width(13)).unwrap(),
-        "{\"a\": [1, 2]}\n"
+        format("{\"a\": [1, 2]}", &json, &width(15)).unwrap(),
+        "{ \"a\": [1, 2] }\n"
     );
     assert_eq!(
         format("{\"a\": [1, 2], \"b\": 1}", &json, &width(20)).unwrap(),
@@ -450,7 +455,7 @@ fn events(text: &str, config: &Config) -> Vec<String> {
         .collect()
 }
 
-fn options(width: usize, indent: usize, normalize: bool) -> FormatOptions {
+fn options(width: usize, indent: usize, normalize: bool, pad: bool) -> FormatOptions {
     FormatOptions {
         indent: if indent == 0 {
             Indent::Tab
@@ -459,6 +464,7 @@ fn options(width: usize, indent: usize, normalize: bool) -> FormatOptions {
         },
         width,
         normalize_json5: normalize,
+        bracket_spacing: pad,
     }
 }
 
@@ -499,14 +505,14 @@ proptest! {
 
     #[test]
     fn formatting_twice_changes_nothing_and_loses_nothing(
-        (dialect, t, seed, trailing, width, indent, normalize) in prop::sample::select(vec![
+        (dialect, t, seed, trailing, width, indent, normalize, pad) in prop::sample::select(vec![
             Dialect::Json, Dialect::IJson, Dialect::Jsonc, Dialect::Jwcc, Dialect::Json5,
         ])
-        .prop_flat_map(|d| (Just(d), tree(d), any::<u64>(), any::<bool>(), prop::sample::select(vec![1, 12, 30, 80]), 0usize..5, any::<bool>()))
+        .prop_flat_map(|d| (Just(d), tree(d), any::<u64>(), any::<bool>(), prop::sample::select(vec![1, 12, 30, 80]), 0usize..5, any::<bool>(), any::<bool>()))
     ) {
         let trailing = trailing && matches!(dialect, Dialect::Jwcc | Dialect::Json5);
         let text = render(&t, dialect, seed, trailing);
-        if let Err(message) = check_promises(&text, dialect, &options(width, indent, normalize)) {
+        if let Err(message) = check_promises(&text, dialect, &options(width, indent, normalize, pad)) {
             prop_assert!(false, "{}", message);
         }
     }
@@ -538,4 +544,60 @@ proptest! {
         prop_assert_eq!(&format(&once, &config, &FormatOptions::default()).unwrap(), &once);
         prop_assert_eq!(problems(&text, &config), problems(&once, &config));
     }
+}
+
+#[test]
+fn a_lone_cr_is_the_line_ending_when_it_is_the_first() {
+    let jsonc = Config::new(Dialect::Jsonc);
+    let out = format("{\r// c\r\"a\": 1\r}\r", &jsonc, &FormatOptions::default()).unwrap();
+    assert_eq!(out, "{\r  // c\r  \"a\": 1\r}\r");
+    let out = format("{\r\n// c\n\"a\": 1}", &jsonc, &FormatOptions::default()).unwrap();
+    assert_eq!(out, "{\r\n  // c\r\n  \"a\": 1\r\n}\r\n");
+}
+
+#[test]
+fn braces_are_padded_by_default_and_the_padding_counts_toward_the_width() {
+    let json = Config::new(Dialect::Json);
+    let one = |n: usize| format!("{{\"k\": \"{}\"}}", "x".repeat(n));
+    let out = format(&one(69), &json, &FormatOptions::default()).unwrap();
+    assert_eq!(out.len(), 81, "80 columns and the newline: {out}");
+    assert!(out.starts_with("{ \"k\": "), "{out}");
+    let out = format(&one(70), &json, &FormatOptions::default()).unwrap();
+    assert!(out.starts_with("{\n  \"k\": "), "{out}");
+    let bare = FormatOptions {
+        bracket_spacing: false,
+        ..FormatOptions::default()
+    };
+    let out = format(&one(70), &json, &bare).unwrap();
+    assert!(out.starts_with("{\"k\": "), "{out}");
+    assert_eq!(
+        format("[{}, {\"a\": [{}]}]", &json, &FormatOptions::default()).unwrap(),
+        "[{}, { \"a\": [{}] }]\n"
+    );
+}
+
+#[test]
+fn an_output_over_sixteen_times_the_text_is_refused_with_its_size() {
+    let depth = 9_000;
+    let text = format!("{}1{}", "[".repeat(depth), "]".repeat(depth));
+    // 9,000 levels need more stack than a test thread has; the command runs on 64 MB.
+    let bytes = std::thread::Builder::new()
+        .stack_size(64 << 20)
+        .spawn(move || {
+            let json = Config::new(Dialect::Json);
+            match format(&text, &json, &FormatOptions::default()) {
+                Err(jsonvet::FormatError::OutputTooLarge { bytes }) => bytes,
+                other => panic!("too large: {other:?}"),
+            }
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+    // Two lines for each level, each indented by twice its depth: about 2 x 9,000 x 9,000.
+    assert!((150_000_000..170_000_000).contains(&bytes), "{bytes}");
+    assert!(
+        jsonvet::FormatError::OutputTooLarge { bytes }
+            .to_string()
+            .starts_with("not formatted: the output would be 16")
+    );
 }

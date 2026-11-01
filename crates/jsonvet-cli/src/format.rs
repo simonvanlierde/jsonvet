@@ -15,14 +15,22 @@ use crate::output::printable;
 use crate::settings::{FormatSettings, Resolver};
 use crate::{lock, read, read_stdin};
 
-/// The layout settings for one file: the defaults, then its `.editorconfig` files, then the
-/// `[format]` table of its config file.
-fn options(settings: &FormatSettings, style: editorconfig::Style) -> FormatOptions {
+/// The config's setting, or the editorconfig's where it has none; the other way round for the
+/// user's own config, which yields to the editorconfig.
+fn pick<T>(own: Option<T>, editor: Option<T>, user: bool) -> Option<T> {
+    if user { editor.or(own) } else { own.or(editor) }
+}
+
+/// The layout settings for one file: the defaults, then the user's own config file, then its
+/// `.editorconfig` files, then the `[format]` table of its project's config file. A setting
+/// from the project wins everywhere, so `--check` agrees on every machine.
+fn options(settings: &FormatSettings, user: bool, style: editorconfig::Style) -> FormatOptions {
     let defaults = FormatOptions::default();
     FormatOptions {
-        indent: settings.indent.or(style.indent).unwrap_or(defaults.indent),
-        width: settings.width.or(style.width).unwrap_or(defaults.width),
+        indent: pick(settings.indent, style.indent, user).unwrap_or(defaults.indent),
+        width: pick(settings.width, style.width, user).unwrap_or(defaults.width),
         normalize_json5: settings.normalize_json5.unwrap_or(defaults.normalize_json5),
+        bracket_spacing: settings.bracket_spacing.unwrap_or(defaults.bracket_spacing),
     }
 }
 
@@ -63,10 +71,11 @@ pub(crate) fn run(
             (resolver.for_file(path)?, resolver.search_dirs(path))
         };
         let config = settings.config_for(&shown.to_string_lossy());
-        let options = options(&settings.format, editorconfig::style(path, &dirs));
+        let style = editorconfig::style(path, &dirs);
+        let options = options(&settings.format, settings.user, style);
         let formatted = match jsonvet::format(&text, &config, &options) {
             Ok(formatted) => formatted,
-            Err(report) => {
+            Err(jsonvet::FormatError::Syntax(report)) => {
                 for problem in report
                     .problems()
                     .iter()
@@ -83,15 +92,21 @@ pub(crate) fn run(
                 failed = true;
                 continue;
             }
+            Err(other) => {
+                eprintln!("{name}: {other}");
+                failed = true;
+                continue;
+            }
         };
         if stdin && !check_only {
             out.write_all(formatted.as_bytes()).map_err(write_error)?;
         } else if formatted != text {
+            drop(text);
             changed = true;
             if check_only {
                 writeln!(out, "{name}").map_err(write_error)?;
-            } else if let Err(e) = write_atomic(path, &formatted) {
-                eprintln!("{name}: cannot write: {e}");
+            } else if let Err(message) = write_atomic(path, &formatted) {
+                eprintln!("{name}: {message}");
                 failed = true;
             }
         }
@@ -104,17 +119,22 @@ pub(crate) fn run(
 /// rename, so a crash leaves the old file or the new one. A symlink is followed, so the link
 /// stays; the file keeps its permissions. The temporary file is removed only when this call
 /// made it: a name already taken is never touched, and the next name is tried.
-fn write_atomic(path: &Path, text: &str) -> io::Result<()> {
-    let real = fs::canonicalize(path)?;
+fn write_atomic(path: &Path, text: &str) -> Result<(), String> {
+    let cannot = |e: io::Error| format!("cannot write: {e}");
+    let real = fs::canonicalize(path).map_err(cannot)?;
+    let permissions = fs::metadata(&real).map_err(cannot)?.permissions();
+    // The rename would replace a file its owner made read-only, so say no first.
+    if permissions.readonly() {
+        return Err("the file is read-only".to_owned());
+    }
     let dir = real.parent().unwrap_or(Path::new("."));
     let name = real.file_name().unwrap_or_default().to_string_lossy();
-    let permissions = fs::metadata(&real)?.permissions();
     for n in 0..1000 {
         let tmp = dir.join(format!(".{name}.jsonvet-{}-{n}.tmp", std::process::id()));
         let mut file = match OpenOptions::new().write(true).create_new(true).open(&tmp) {
             Ok(file) => file,
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
-            Err(e) => return Err(e),
+            Err(e) => return Err(cannot(e)),
         };
         let written = file
             .write_all(text.as_bytes())
@@ -127,12 +147,9 @@ fn write_atomic(path: &Path, text: &str) -> io::Result<()> {
         if done.is_err() {
             let _ = fs::remove_file(&tmp);
         }
-        return done;
+        return done.map_err(cannot);
     }
-    Err(io::Error::new(
-        io::ErrorKind::AlreadyExists,
-        "no free temporary file name",
-    ))
+    Err("cannot write: no free temporary file name".to_owned())
 }
 
 #[cfg(test)]
@@ -152,13 +169,19 @@ mod tests {
             indent: None,
             width: Some(60),
             normalize_json5: Some(true),
+            bracket_spacing: None,
         };
-        let got = options(&settings, style);
+        let got = options(&settings, false, style);
+        assert_eq!((got.indent, got.width), (Indent::Tab, 60));
+        // The user's config yields to the editorconfig.
+        let got = options(&settings, true, style);
+        assert_eq!((got.indent, got.width), (Indent::Tab, 100));
+        let got = options(&settings, false, style);
         assert_eq!(
             (got.indent, got.width, got.normalize_json5),
             (Indent::Tab, 60, true)
         );
-        let got = options(&FormatSettings::default(), Style::default());
+        let got = options(&FormatSettings::default(), false, Style::default());
         assert_eq!(
             (got.indent, got.width, got.normalize_json5),
             (Indent::Spaces(2), 80, false)

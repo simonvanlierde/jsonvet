@@ -163,6 +163,7 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
             break;
         };
         match arg {
+            Long(name) if fmt && CHECK_ONLY.contains(&name) => return Err(fmt_option(name)),
             Long("dialect") => settings
                 .dialects
                 .push(DialectPattern::parse(&value(&mut parser)?)?),
@@ -241,6 +242,21 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
         schema,
         stdin_filename,
     })))
+}
+
+/// The options that are for checking, and an error under `jsonvet fmt`.
+const CHECK_ONLY: &[&str] = &[
+    "format",
+    "color",
+    "schema",
+    "max-warnings",
+    "error",
+    "warn",
+    "ignore",
+];
+
+fn fmt_option(name: &str) -> String {
+    messages::fill("error.fmt-option", &[("option", &name)])
 }
 
 /// The next argument if it can only be a file: not UTF-8, or an existing file named like
