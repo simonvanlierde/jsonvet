@@ -426,7 +426,7 @@ function others(text, long) {
 // The notes that sit beside a row: one for each problem, and one for each related place.
 const placed = () => [...list.children, ...sheet.children].filter((n) => n.dataset.row);
 
-// Places the notes in the margin beside their rows, stacked where they would overlap, or lists
+// Places the notes in the margin beside their rows, moved apart where they would overlap, or lists
 // them under the proof when they do not fit; then sizes the editor to the text.
 function layout() {
   const lh = lineHeight();
@@ -439,7 +439,8 @@ function layout() {
   proof.classList.toggle("listed", !inMargin);
   if (inMargin && notes.length) {
     const heights = notes.map((n) => n.offsetHeight);
-    const tops = stack(notes.map((n) => PAD + (n.dataset.row - 1) * lh), heights, NOTE_GAP);
+    const room = Math.max(textHeight, 8 * lh + 2 * PAD) - PAD;
+    const tops = stack(notes.map((n) => PAD + (n.dataset.row - 1) * lh), heights, NOTE_GAP, 0, room);
     bottom = tops.at(-1) + heights.at(-1) + PAD;
     if (bottom > Math.max(textHeight, cap)) {
       inMargin = false;

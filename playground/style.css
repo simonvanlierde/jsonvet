@@ -163,12 +163,14 @@ textarea, textarea:focus-visible { padding: 8px 8px 8px 6px; border: 0; resize: 
 .margin ol { margin: 0; padding: 0; list-style: none; }
 .note { color: var(--pen); font: italic 16px/var(--lh) var(--serif); }
 .proof:not(.listed) .note { position: absolute; left: 30px; right: 10px; padding: 0 4px; background: var(--paper); }
-.note button { all: unset; box-sizing: border-box; display: block; cursor: pointer; overflow-wrap: anywhere; }
+.note > button { all: unset; box-sizing: border-box; display: block; cursor: pointer; overflow-wrap: anywhere; }
 .note button:hover .msg { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: .2em; }
 .note button:focus-visible { outline-offset: 2px; outline: 2px solid var(--ink); }
 .note .msg code { font-style: normal; font-size: .82em; }
 .note .n { display: none; }
 .meta { display: flex; flex-wrap: wrap; align-items: baseline; font: normal 12.5px/1.5 var(--mono); color: var(--faint); }
+/* An item never breaks inside, so its own dot cannot be left behind on the line above. */
+.meta > * { white-space: nowrap; }
 .meta .rule { display: inline-block; padding-block: 3.5px; color: var(--faint); }
 .meta .rule:hover { color: var(--ink); }
 /* A correction with a fix: apply it from the margin. */
