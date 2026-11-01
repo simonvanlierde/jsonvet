@@ -32,32 +32,32 @@ typography:
     lineHeight: 1.5
   verdict:
     fontFamily: "Charter, Bitstream Charter, Sitka Text, Cambria, Iowan Old Style, Georgia, serif"
-    fontSize: "1.0625rem"
+    fontSize: "1.125rem"
     fontWeight: 400
   note:
     fontFamily: "Charter, Bitstream Charter, Sitka Text, Cambria, Iowan Old Style, Georgia, serif"
-    fontSize: "15px"
+    fontSize: "16px"
     fontStyle: "italic"
-    lineHeight: "20px"
+    lineHeight: "22px"
   aside:
     fontFamily: "Charter, Bitstream Charter, Sitka Text, Cambria, Iowan Old Style, Georgia, serif"
-    fontSize: "0.9375rem"
+    fontSize: "1rem"
     fontStyle: "italic"
   text:
     fontFamily: "ui-monospace, Cascadia Code, Source Code Pro, Menlo, Consolas, Liberation Mono, monospace"
-    fontSize: "14px"
-    lineHeight: "20px"
+    fontSize: "15px"
+    lineHeight: "22px"
   text-narrow:
     fontFamily: "ui-monospace, Cascadia Code, Source Code Pro, Menlo, Consolas, Liberation Mono, monospace"
     fontSize: "16px"
     lineHeight: "22px"
   slug:
     fontFamily: "ui-monospace, Cascadia Code, Source Code Pro, Menlo, Consolas, Liberation Mono, monospace"
-    fontSize: "12px"
+    fontSize: "13px"
     lineHeight: 1.6
   data:
     fontFamily: "ui-monospace, Cascadia Code, Source Code Pro, Menlo, Consolas, Liberation Mono, monospace"
-    fontSize: "11.5px"
+    fontSize: "12.5px"
     lineHeight: 1.5
 rounded:
   none: "0"
@@ -139,15 +139,14 @@ title block, dimension lines, crop marks or heavier strokes.
 System fonts only (the CSP allows only the page's own files). A serif stack for prose and the
 corrections, a mono stack for the text and every string the CLI prints.
 
-- **Prose** (serif 1rem): the verdict, "Use this check", tabs; the stages' names a little smaller
-  (0.9375rem).
-- **Note** (italic serif 15px / 20px): margin corrections. Its line height equals the text's, so a
+- **Prose** (serif 1rem): the verdict, "Use this check", tabs, and the stages' names.
+- **Note** (italic serif 16px / 22px): margin corrections. Its line height equals the text's, so a
   note's first line sits on its row.
-- **Aside** (italic serif 0.9375rem): the dialect hint, the syntax-stop note, the keyboard hint,
+- **Aside** (italic serif 1rem): the dialect hint, the syntax-stop note, the keyboard hint,
   the CI note.
-- **Text** (mono 14px / 20px; 16px / 22px under 560px so iOS does not zoom): the editor, gutter
+- **Text** (mono 15px / 22px; 16px / 22px under 560px so iOS does not zoom): the editor, gutter
   and mark layer share it exactly, or the marks drift off their characters.
-- **Slug** (mono 12px): the job line and the colophon. **Data** (mono 11.5px): stage verdicts,
+- **Slug** (mono 13px): the job line and the colophon. **Data** (mono 12.5px): stage verdicts,
   note meta lines, list numbers.
 
 Timings, positions and counts use tabular figures.

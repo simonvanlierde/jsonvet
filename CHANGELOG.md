@@ -48,6 +48,10 @@ version for a new option or output, the patch version for a fix.
 - A file whose `$schema` names a path that does not exist is still checked without a schema, but
   jsonvet now says so: one note on stderr per missing schema, such as one under a `node_modules`
   that was never installed. The exit code is unchanged.
+- Decimal digits in numbers are scanned in a slice loop, reducing instruction counts by 2.2% on
+  `canada-x20.json` and 1.1% on `numbers.json`.
+- Text in the browser playground is a bit larger, with a 15px text size and 22px line height on
+  desktop, and the drafting grid lines up with the 22px row height.
 - `--format sarif` writes each result as it is found instead of holding them all until the
   end, so a run at the 25,000-result cap peaks at 7.4 MB instead of 39.4 MB. The `invocations`
   member, which counts results past the cap, now comes after `results` in the run.
@@ -56,6 +60,11 @@ version for a new option or output, the patch version for a fix.
   is now built when the first document fails. At the pattern caps, a run whose files pass takes
   3.5 s and 1.4 GB instead of 7.2 s and 2.7 GB. A failing document, or a pattern with a lookahead
   or back-reference, still takes about 2.7 GB.
+
+### Fixed
+
+- Escaped surrogate pairs (`\uD800..\uDFFF`) in unquoted JSON5 identifiers are decoded into their
+  unicode code point, matching the JSON5 specification.
 
 ## [3.2.0] - 2026-10-28
 
