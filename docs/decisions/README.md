@@ -27,3 +27,4 @@ a link or a renamed test is fine.
 | [0011](0011-release-tooling.md) | cargo-release bumps the version, the tag starts the rest | 2026-10-21 |
 | [0012](0012-schema-paths-stay-in-the-project.md) | Schema paths from a project stay in it, and their errors quote nothing | 2026-10-23 |
 | [0013](0013-messages-in-a-plain-catalog.md) | Messages in a plain catalog, picked from the locale, with machine output in English | 2026-10-28 |
+| [0014](0014-schema-checks-the-documents-own-nodes.md) | `--schema` checks the document's own nodes, through jsonschema's `Json` trait | 2026-11-01 |

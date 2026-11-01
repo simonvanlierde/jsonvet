@@ -4,6 +4,7 @@
 
 mod fold;
 mod limits;
+mod nodes;
 mod place;
 pub(crate) mod select;
 
@@ -14,6 +15,7 @@ use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
 use jsonschema::error::ValidationErrorKind;
+use jsonschema::json::{Array, Json, Node, Object};
 use jsonschema::{PatternOptions, ReferencingError, ValidationError, ValidationOptions, Validator};
 use jsonvet::{Config, Dialect, Event, Report, Rule, Severity};
 use serde_json::{Map, Value};
@@ -22,6 +24,7 @@ use crate::messages;
 use crate::settings::Settings;
 use fold::{Fold, documents};
 use limits::{MAX_SCHEMA_DEPTH, PATTERN_BYTES, Reach, registry};
+use nodes::{Nd, Own, Tree};
 use place::{Place, place, place_found, pointer_path, segments};
 
 /// How deep a file checked against a schema is read. Past it, the file has a syntax error.
@@ -296,7 +299,7 @@ struct Split {
 
 /// A validator and the schema it was built from, which its errors' schema paths point into.
 struct Compiled {
-    validator: Validator,
+    validator: Validator<Own>,
     schema: Value,
     /// For the part of a split schema checked on each element or member: the path in the
     /// whole schema that its [`EACH`] stands for.
@@ -305,7 +308,7 @@ struct Compiled {
 
 impl Compiled {
     /// `value`'s errors, after a quicker check that it has any.
-    fn errors<'i>(&'i self, value: &'i Value) -> impl Iterator<Item = ValidationError<'i>> {
+    fn errors<'i>(&'i self, value: Nd<'i>) -> impl Iterator<Item = ValidationError<'i>> {
         let invalid = !self.validator.is_valid(value);
         invalid
             .then(|| self.validator.iter_errors(value))
@@ -360,35 +363,39 @@ fn costly(what: &str, regex: Option<&str>) -> String {
 /// whether every regex it uses suits the `regex` crate. Each build compiles every regex it uses,
 /// so such a schema is built with that crate, which fancy-regex would hand them to anyway, rather
 /// than compiled a second time to find that out.
-fn build(schema: &Value) -> (Result<Validator, ValidationError<'_>>, bool) {
-    if let Ok(validator) = options(true).build(schema) {
+fn build(schema: &Value) -> (Result<Validator<Own>, ValidationError<'_>>, bool) {
+    if let Ok(validator) = options::<Own>(true).build(schema) {
         return (Ok(validator), true);
     }
-    (options(false).build(schema), false)
+    (options::<Own>(false).build(schema), false)
 }
 
 /// The options a schema is built with: for the `regex` crate if it is `linear`, else [`fancy`].
-fn options(linear: bool) -> ValidationOptions<'static> {
+fn options<F: Json>(linear: bool) -> ValidationOptions<'static, Arc<dyn jsonschema::Retrieve>, F> {
     if !linear {
         return fancy();
     }
-    jsonschema::options().offline().with_pattern_options(
-        PatternOptions::regex()
-            .size_limit(PATTERN_BYTES)
-            .dfa_size_limit(PATTERN_BYTES),
-    )
+    jsonschema::options_for::<F>()
+        .offline()
+        .with_pattern_options(
+            PatternOptions::regex()
+                .size_limit(PATTERN_BYTES)
+                .dfa_size_limit(PATTERN_BYTES),
+        )
 }
 
 /// The options for a schema with a regex the `regex` crate cannot compile. fancy-regex
 /// backtracks for back-references and lookaround, and its default limit of a million lets one
 /// 30-byte string take 30 ms.
-fn fancy() -> ValidationOptions<'static> {
-    jsonschema::options().offline().with_pattern_options(
-        PatternOptions::fancy_regex()
-            .backtrack_limit(BACKTRACK_LIMIT)
-            .size_limit(PATTERN_BYTES)
-            .dfa_size_limit(PATTERN_BYTES),
-    )
+fn fancy<F: Json>() -> ValidationOptions<'static, Arc<dyn jsonschema::Retrieve>, F> {
+    jsonschema::options_for::<F>()
+        .offline()
+        .with_pattern_options(
+            PatternOptions::fancy_regex()
+                .backtrack_limit(BACKTRACK_LIMIT)
+                .size_limit(PATTERN_BYTES)
+                .dfa_size_limit(PATTERN_BYTES),
+        )
 }
 
 /// A regex of a schema that is not `linear`, as the schema `{"pattern": p}`, compiled the first
@@ -404,7 +411,7 @@ impl Regex {
         self.validator
             .get_or_init(|| {
                 let schema = serde_json::json!({ "pattern": self.text });
-                fancy().build(&schema).ok()
+                fancy::<jsonschema::json::SerdeJson>().build(&schema).ok()
             })
             .as_ref()
     }
@@ -495,7 +502,7 @@ impl Errors {
 /// unexpected properties, up to one more than [`MAX_ERRORS`]; otherwise one.
 fn found(
     index: Option<usize>,
-    value: &Value,
+    value: Nd<'_>,
     error: &ValidationError<'_>,
     message: impl FnOnce() -> String,
 ) -> Vec<Found> {
@@ -532,7 +539,7 @@ fn found(
 /// The keys an `additionalProperties` error is about, to report one error each: those it lists,
 /// or every key for `"additionalProperties": false` with no `properties` or `patternProperties`
 /// beside it, which jsonschema reports once as a false schema at the object's first value.
-fn unexpected(value: &Value, error: &ValidationError<'_>) -> Option<Vec<String>> {
+fn unexpected(value: Nd<'_>, error: &ValidationError<'_>) -> Option<Vec<String>> {
     match error.kind() {
         ValidationErrorKind::AdditionalProperties { unexpected } => Some(unexpected.clone()),
         ValidationErrorKind::FalseSchema
@@ -542,9 +549,10 @@ fn unexpected(value: &Value, error: &ValidationError<'_>) -> Option<Vec<String>>
                 .ends_with("/additionalProperties") =>
         {
             // A `false` under `properties` with that name is about the value itself.
-            let object = value.pointer(error.instance_path().as_str())?;
-            let members = object.as_object()?;
-            (object != error.instance().as_ref()).then(|| members.keys().cloned().collect())
+            let path: Vec<String> = segments(error.instance_path().as_str()).collect();
+            let object = value.at(path.iter().map(String::as_str))?;
+            object.as_object()?;
+            (*object.to_value() != **error.instance()).then(|| object.keys())
         }
         _ => None,
     }
@@ -591,7 +599,7 @@ impl<'e> Checking<'_, 'e> {
             self.documents.push(Checked::Unchecked(offset, reason));
             return;
         }
-        let found = self.schema.collect(&document.value);
+        let found = self.schema.collect(&document.tree);
         if !found.kept.is_empty() {
             self.documents
                 .push(Checked::Found(document.events, document.offset, found));
@@ -738,7 +746,7 @@ impl Schema {
         if let Some((offset, reason)) = document.unchecked {
             return Err(at(offset, &reason));
         }
-        let schema = &document.value;
+        let schema = &document.tree.value();
         let outside = |error: &ReferencingError| match error {
             ReferencingError::Unretrievable { .. } if quiet => {
                 Some(messages::fill("schema.ref-outside", &[("path", &name)]))
@@ -791,7 +799,8 @@ impl Schema {
         {
             return Err(message);
         }
-        let (offset, _) = place_found(events, &found(None, schema, &error, String::new))[0];
+        let root = document.tree.root();
+        let (offset, _) = place_found(events, &found(None, root, &error, String::new))[0];
         // A regex too large to compile is reported as no regex at all.
         if matches!(error.kind(), ValidationErrorKind::Format { format } if format == "regex") {
             let mb = PATTERN_BYTES >> 20;
@@ -894,7 +903,8 @@ impl Schema {
 
     /// The first [`MAX_ERRORS`] errors in `value`, which stop being asked for once there is one
     /// too many.
-    fn collect(&self, value: &Value) -> Errors {
+    fn collect(&self, tree: &Tree<'_>) -> Errors {
+        let value = tree.root();
         let mut errors = Errors::default();
         // One pass over the whole document finds a valid one quickest. A regex that can stop at
         // the backtrack limit makes that pass slow instead, as explained below.
@@ -906,13 +916,15 @@ impl Schema {
         // A split schema is also checked for validity a part at a time: jsonschema checks a
         // value again for each outcome of a regex match it cannot finish, so one pass over a
         // whole document repeats every costly match in it, past the error cap.
-        let parts = match value {
-            Value::Array(_) => self.split(false),
-            Value::Object(_) => self.split(true),
-            _ => None,
+        let parts = if value.as_array().is_some() {
+            self.split(false)
+        } else if value.as_object().is_some() {
+            self.split(true)
+        } else {
+            None
         };
-        match (value, parts) {
-            (Value::Array(items), Some(Split { whole, each })) => {
+        match (value.as_array(), value.as_object(), parts) {
+            (Some(items), _, Some(Split { whole, each })) => {
                 // jsonschema checks `contains` after `items`, and the rest before.
                 let mut after = Vec::new();
                 for error in whole.errors(value) {
@@ -926,7 +938,7 @@ impl Schema {
                         return errors;
                     }
                 }
-                for (i, item) in items.iter().enumerate() {
+                for (i, item) in items.elements().enumerate() {
                     for error in each.errors(item) {
                         if !errors.add(self.found(each, Some(i), item, &error)) {
                             return errors;
@@ -935,16 +947,16 @@ impl Schema {
                 }
                 errors.add(after);
             }
-            (Value::Object(members), Some(Split { whole, each })) => {
+            (_, Some(members), Some(Split { whole, each })) => {
                 for error in whole.errors(value) {
                     if !errors.add(self.found(whole, None, value, &error)) {
                         return errors;
                     }
                 }
-                for (key, member) in members {
-                    let one = Value::Object(Map::from_iter([(key.clone(), member.clone())]));
-                    for error in each.errors(&one) {
-                        if !errors.add(self.found(each, None, &one, &error)) {
+                for position in 0..members.len() {
+                    let one = value.only(u32::try_from(position).unwrap_or(u32::MAX));
+                    for error in each.errors(one) {
+                        if !errors.add(self.found(each, None, one, &error)) {
                             return errors;
                         }
                     }
@@ -967,7 +979,7 @@ impl Schema {
         let parts = if members { &self.members } else { &self.items };
         parts
             .get_or_init(|| {
-                let options = options(self.linear);
+                let options = options::<Own>(self.linear);
                 split(&self.compiled.schema, self.kept, members, &options)
             })
             .as_ref()
@@ -980,7 +992,7 @@ impl Schema {
         &self,
         compiled: &Compiled,
         index: Option<usize>,
-        value: &Value,
+        value: Nd<'_>,
         error: &ValidationError<'_>,
     ) -> Vec<Found> {
         if !backtracked(error) {
@@ -1053,7 +1065,12 @@ impl Schema {
 /// NOTE: each part compiles its regexes again, as jsonschema keeps compiled regexes per build, so
 /// [`Schema::split`] calls this only once a document needs it; [`limits::patterns`] bounds what
 /// that costs.
-fn split(schema: &Value, kept: bool, members: bool, options: &ValidationOptions) -> Option<Split> {
+fn split(
+    schema: &Value,
+    kept: bool,
+    members: bool,
+    options: &ValidationOptions<'_, Arc<dyn jsonschema::Retrieve>, Own>,
+) -> Option<Split> {
     let all = schema.as_object()?;
     let (moved, also): (&[&str], &[&str]) = if members {
         (&ON_MEMBERS, &["unevaluatedProperties"])
@@ -1251,7 +1268,7 @@ mod tests {
 
     /// `text`'s schema errors under `schema`, checked in one pass and, if it can be, split.
     fn one_pass_and_split(schema: &Value, text: &str) -> (Errors, Option<Errors>) {
-        let options = jsonschema::options();
+        let options = jsonschema::options_for::<crate::schema::Own>();
         let registry = registry(schema).expect("a registry");
         let kept = Reach::new(schema).measure(&registry).is_ok_and(|kept| kept);
         let checked = |items, members| {
@@ -1349,7 +1366,7 @@ mod tests {
             "properties": {"a": {"type": "integer"}},
             "required": ["a"]
         });
-        let options = jsonschema::options();
+        let options = jsonschema::options_for::<crate::schema::Own>();
         let schema = Schema {
             compiled: Compiled {
                 validator: options.build(&schema_val).expect("a schema"),

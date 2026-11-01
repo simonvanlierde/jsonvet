@@ -33,6 +33,9 @@ version for a new option or output, the patch version for a fix.
 
 ### Changed
 
+- `--schema` takes about a third of the memory and half the time on large files, because it checks
+  the file's values where they are instead of copying them first; the errors it reports are the
+  same ([limits](docs/usage.md#json-schema-limits)).
 - The playground sets your text as a proof: each problem is marked at its token with the
   correction in the margin, all six dialects give their verdict at once, and the page times each
   check in your browser, with a 2.7 MB file to try. It keeps the text in a share link without
