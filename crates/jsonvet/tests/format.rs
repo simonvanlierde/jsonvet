@@ -614,3 +614,238 @@ fn an_output_over_sixteen_times_the_text_is_refused_with_its_size() {
             .starts_with("not formatted: the output would be 16")
     );
 }
+
+// ---- the author's line break after an object's brace ----
+
+fn out(dialect: Dialect, options: &FormatOptions, text: &str) -> String {
+    format(text, &Config::new(dialect), options).expect("formats")
+}
+
+#[test]
+fn an_object_with_a_line_break_before_its_first_key_stays_expanded() {
+    let d = FormatOptions::default();
+    let json = |text: &str| out(Dialect::Json, &d, text);
+    assert_eq!(json("{\n\"a\": 1}"), "{\n  \"a\": 1\n}\n");
+    assert_eq!(json("{\n\n\"a\": 1}"), "{\n  \"a\": 1\n}\n");
+    assert_eq!(json("{\r\n\"a\": 1}"), "{\r\n  \"a\": 1\r\n}\r\n");
+    // No break before the first key: the width rule decides, whatever else breaks.
+    assert_eq!(json("{\"a\":\n1,\n\"b\": 2}"), "{ \"a\": 1, \"b\": 2 }\n");
+    assert_eq!(json("{\"a\": 1}"), "{ \"a\": 1 }\n");
+    // An empty object stays `{}`.
+    assert_eq!(json("{\n}"), "{}\n");
+    // The break sits on the object that has it; arrays keep the width rule.
+    assert_eq!(json("[\n1, 2]"), "[1, 2]\n");
+    assert_eq!(json("[\n{\"a\": 1}]"), "[{ \"a\": 1 }]\n");
+    assert_eq!(
+        json("{\"a\": 1,\n\"b\": {\"c\": 2}}"),
+        "{ \"a\": 1, \"b\": { \"c\": 2 } }\n"
+    );
+    // An expanded object breaks the containers around it, and not the ones inside it.
+    assert_eq!(json("[{\n\"a\": [1]}]"), "[\n  {\n    \"a\": [1]\n  }\n]\n");
+    assert_eq!(
+        json("{\"a\": {\n\"b\": 1}, \"c\": 2}"),
+        "{\n  \"a\": {\n    \"b\": 1\n  },\n  \"c\": 2\n}\n"
+    );
+    assert_eq!(
+        json("{\n\"a\": {\"b\": 1}}"),
+        "{\n  \"a\": { \"b\": 1 }\n}\n"
+    );
+    let bare = FormatOptions {
+        bracket_spacing: false,
+        ..FormatOptions::default()
+    };
+    assert_eq!(
+        out(Dialect::Json, &bare, "{\n\"a\": 1}"),
+        "{\n  \"a\": 1\n}\n"
+    );
+}
+
+#[test]
+fn the_line_break_rule_holds_in_every_dialect_but_json_lines() {
+    let d = FormatOptions::default();
+    for dialect in [
+        Dialect::IJson,
+        Dialect::Jsonc,
+        Dialect::Jwcc,
+        Dialect::Json5,
+    ] {
+        assert_eq!(
+            out(dialect, &d, "{\n\"a\": 1}"),
+            "{\n  \"a\": 1\n}\n",
+            "{dialect}"
+        );
+        assert_eq!(
+            out(dialect, &d, "{\"a\":\n1}"),
+            "{ \"a\": 1 }\n",
+            "{dialect}"
+        );
+    }
+    assert_eq!(
+        out(Dialect::Jwcc, &d, "{\n\"a\": 1,}"),
+        "{\n  \"a\": 1,\n}\n"
+    );
+    assert_eq!(out(Dialect::Json5, &d, "{\n a: 1}"), "{\n  a: 1\n}\n");
+    assert_eq!(out(Dialect::Json5, &d, "{\u{2028}a: 1}"), "{\n  a: 1\n}\n");
+    assert_eq!(
+        out(Dialect::Json5, &normalized(), "{\n'a': 1}"),
+        "{\n  a: 1,\n}\n"
+    );
+    assert_eq!(
+        out(Dialect::Jsonc, &d, "{\r\"a\": 1}"),
+        "{\r  \"a\": 1\r}\r"
+    );
+    // JSON Lines: every record is compact, and a break cannot be inside one.
+    assert_eq!(out(Dialect::JsonLines, &d, "{ \"a\": 1}\n"), "{\"a\": 1}\n");
+}
+
+#[test]
+fn an_expanded_object_formats_the_same_the_second_time() {
+    for dialect in [Dialect::Json, Dialect::Jsonc, Dialect::Json5] {
+        for text in [
+            "{\n\"a\": [1, {\n\"b\": 2}]}",
+            "[{\n}, {\"a\":\n1}]",
+            "{\n\"a\": {\n\"b\": {\n}}}",
+        ] {
+            check_promises(text, dialect, &FormatOptions::default()).unwrap();
+            check_promises(text, dialect, &width(1)).unwrap();
+        }
+    }
+}
+
+// ---- block comments move with their start ----
+
+#[test]
+fn a_block_comment_keeps_its_lines_in_step_with_its_start() {
+    let d = FormatOptions::default();
+    let c = |text: &str| out(Dialect::Jsonc, &d, text);
+    // Moved right by two columns.
+    assert_eq!(
+        c("[1,\n/* a\n   b */\n2]"),
+        "[\n  1,\n  /* a\n     b */\n  2\n]\n"
+    );
+    // A line with no indent gets the whole move.
+    assert_eq!(
+        c("[1,\n/* a\nb */\n2]"),
+        "[\n  1,\n  /* a\n  b */\n  2\n]\n"
+    );
+    // Moved left by two: the lines give up two spaces.
+    assert_eq!(
+        c("{\n    /* a\n     * b\n     */\n\"x\": 1}"),
+        "{\n  /* a\n   * b\n   */\n  \"x\": 1\n}\n"
+    );
+    // A line with exactly the whitespace to give is shifted; one with a column less stays.
+    assert_eq!(
+        c("{\n    /* a\n  b\n */\n\"x\": 1}"),
+        "{\n  /* a\nb\n */\n  \"x\": 1\n}\n"
+    );
+    // A blank line or a line of only spaces is not touched.
+    assert_eq!(
+        c("[1,\n/* a\n\n  \n b */\n2]"),
+        "[\n  1,\n  /* a\n\n  \n   b */\n  2\n]\n"
+    );
+    // Not at the start of its line: the column is where the comment began.
+    assert_eq!(
+        c("{\n\"a\":/* x\n   y */ 1}"),
+        "{\n  \"a\": /* x\n      y */ 1\n}\n"
+    );
+    // Before the document.
+    assert_eq!(c("  /* a\n   b */\n{}"), "/* a\n b */\n{}\n");
+    assert_eq!(c("\u{feff}/* a\n b */ [1]"), "\u{feff}/* a\n b */ [1]\n");
+    // Line comments and one-line block comments are left alone.
+    assert_eq!(
+        c("[1,\n// a\n   // b\n/* c */\n2]"),
+        "[\n  1,\n  // a\n  // b\n  /* c */\n  2\n]\n"
+    );
+    // The file's line ending is kept inside the comment, and a shift keeps it too.
+    assert_eq!(
+        c("[1,\r\n/* a\r\n   b */\r\n2]"),
+        "[\r\n  1,\r\n  /* a\r\n     b */\r\n  2\r\n]\r\n"
+    );
+    assert_eq!(
+        c("[1,\r/* a\r   b */\r2]"),
+        "[\r  1,\r  /* a\r     b */\r  2\r]\r"
+    );
+}
+
+#[test]
+fn a_block_comment_shifts_only_by_whole_indent_characters() {
+    let tab = FormatOptions {
+        indent: Indent::Tab,
+        ..FormatOptions::default()
+    };
+    let c = |options: &FormatOptions, text: &str| out(Dialect::Jsonc, options, text);
+    // Right by four columns: one tab goes before a line that starts with a tab.
+    assert_eq!(
+        c(&tab, "[1,\n/* a\n\t b */\n2]"),
+        "[\n\t1,\n\t/* a\n\t\t b */\n\t2\n]\n"
+    );
+    // A line that starts with spaces stays, when the indent is a tab.
+    assert_eq!(
+        c(&tab, "[1,\n/* a\n   b */\n2]"),
+        "[\n\t1,\n\t/* a\n   b */\n\t2\n]\n"
+    );
+    // Left by four columns: a tab goes.
+    assert_eq!(
+        c(&tab, "[\n\t\t/* a\n\t\t b */\n1]"),
+        "[\n\t/* a\n\t b */\n\t1\n]\n"
+    );
+    // A shift that is not a whole number of tabs leaves the lines.
+    assert_eq!(
+        c(&tab, "{\n\"a\":  /* x\n\ty */ 1}"),
+        "{\n\t\"a\": /* x\n\ty */ 1\n}\n"
+    );
+    // Spaces output: a line that starts with a tab stays.
+    assert_eq!(
+        c(&FormatOptions::default(), "[1,\n/* a\n\t b */\n2]"),
+        "[\n  1,\n  /* a\n\t b */\n  2\n]\n"
+    );
+}
+
+#[test]
+fn shifted_block_comments_format_the_same_the_second_time() {
+    let tab = FormatOptions {
+        indent: Indent::Tab,
+        ..FormatOptions::default()
+    };
+    for options in [FormatOptions::default(), tab, width(1)] {
+        for dialect in [Dialect::Jsonc, Dialect::Jwcc, Dialect::Json5] {
+            for text in [
+                "[1,\n/* a\n   b */\n2]",
+                "{\n      /* a\n       * b\n       */\n\"x\":/* c\n d */ [ /* e\n f */ 1]}",
+                "{\"a\": /* x\n\ty */ 1, \"b\": {\n/* z\n  w */\n\"c\": 2}}",
+                "  /* a\n   b */ {} /* t\n   u */",
+                "\u{feff}[1,\n/* a\n   b */\n2]",
+            ] {
+                check_promises(text, dialect, &options).unwrap();
+            }
+        }
+    }
+}
+
+#[test]
+fn shifting_a_comment_counts_toward_the_output_size_limit() {
+    // 3,000 levels of nesting hold a comment of 20,000 lines. Each line moves right by 3,000
+    // columns, which is 60 MB the text does not show, on top of 18 MB for the nesting.
+    let depth = 3_000;
+    let comment = format!("/*{}*/", "\n x".repeat(20_000));
+    let text = format!("{}{comment}1{}", "[".repeat(depth), "]".repeat(depth));
+    let result = std::thread::Builder::new()
+        .stack_size(64 << 20)
+        .spawn(move || {
+            format(
+                &text,
+                &Config::new(Dialect::Jsonc),
+                &FormatOptions::default(),
+            )
+            .map(|s| s.len())
+            .map_err(|e| e.to_string())
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+    let err = result.expect_err("too large");
+    assert!(
+        err.starts_with("not formatted: the output would be 7"),
+        "{err}"
+    );
+}

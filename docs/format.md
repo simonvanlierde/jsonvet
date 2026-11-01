@@ -26,11 +26,19 @@ The pre-commit hook is `jsonvet-format`:
 - A container goes on one line if it fits in the line width. If not, each member gets its own
   line. An empty container is `{}` or `[]`. A one-line object has a space inside its braces,
   `{ "a": [1, 2] }`, and a one-line array has none. The spaces count toward the width.
+- An object stays expanded if you put a line break between its `{` and its first key, even when
+  it would fit on one line, and so do the containers around it. Arrays follow the width only.
+  JSON Lines records are always one line.
 - A comment inside a container puts that container, and the ones around it, on separate lines.
 - A line comment stays at the end of its line. A block comment stays where it was next to its
   tokens. A comment on its own line stays on its own line.
 - Blank lines between members stay, but at most one. Blank lines at the start and end of a
   container go.
+- A block comment over several lines moves its later lines by as many columns as the comment
+  itself moved. A line follows only if it has no indent or its indent starts with the formatter's
+  indent character (a space, or a tab with `indent = "tab"`), and the move is a whole number of them; a line
+  that cannot follow, a blank line, and a move that is not a whole number of tabs leave the
+  lines as written. Line comments and one-line block comments are not touched.
 - Strings and numbers are never changed. No escape is added or removed.
 - The file ends with exactly one newline. Line endings follow the first line ending in the file:
   `\r\n`, `\n` or a lone `\r`, as the [mixed-line-endings](usage.md#mixed-line-endings) rule sees
@@ -143,6 +151,5 @@ is more, jsonvet works out its size without building it, prints
 
 ## Not done yet
 
-- Keeping the author's line breaks, range formatting, and sorting keys.
-- Re-indenting the lines inside a block comment. They stay as written.
+- Range formatting and sorting keys.
 - Filling a number array across lines, as Prettier does.

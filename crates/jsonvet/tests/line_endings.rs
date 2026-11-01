@@ -511,7 +511,8 @@ fn fmt_writes_the_endings_inside_a_block_comment_as_its_own() {
     assert_eq!(out, "[\n  1,\n  /*\n*/ 2\n]\n");
     assert_eq!(mixed(&out, Dialect::Jsonc), []);
     let out = formatted("[\r\n1, /*\n a\r b\r\n*/ 2]\r\n", Dialect::Jsonc).unwrap_or_default();
-    assert_eq!(out, "[\r\n  1,\r\n  /*\r\n a\r\n b\r\n*/ 2\r\n]\r\n");
+    // The comment moves one column left, and its lines with it.
+    assert_eq!(out, "[\r\n  1,\r\n  /*\r\na\r\nb\r\n*/ 2\r\n]\r\n");
     assert_eq!(mixed(&out, Dialect::Jsonc), []);
 }
 
