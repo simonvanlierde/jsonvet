@@ -1103,8 +1103,11 @@ mod tests {
         for threads in [1, 3, 16] {
             let squares = parallel(&items, threads, || false, |i| i * i);
             assert_eq!(squares, items.iter().map(|i| i * i).collect::<Vec<_>>());
-            // Stopped from the start, it still does the first item.
-            assert_eq!(parallel(&items, threads, || true, |&i| i), [0]);
+            // Stopped from the start, it still does the first item, and a thread that looks
+            // before another has taken it may take one more.
+            let stopped = parallel(&items, threads, || true, |&i| i);
+            assert!(stopped.len() <= threads, "{stopped:?}");
+            assert_eq!(stopped, (0..stopped.len()).collect::<Vec<_>>());
             let done = AtomicUsize::new(0);
             let some = parallel(
                 &items,

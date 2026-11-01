@@ -753,6 +753,13 @@ mod tests {
     }
 
     #[test]
+    fn a_name_node_equals_the_same_text_only() {
+        assert!(Nd::Text("abc").equals_value(&json!("abc")));
+        assert!(!Nd::Text("abc").equals_value(&json!("abd")));
+        assert!(!Nd::Text("abc").equals_value(&json!(1)));
+    }
+
+    #[test]
     fn only_null_is_null() {
         let validator = jsonschema::options_for::<Own>()
             .build(&json!({"type": "null"}))
