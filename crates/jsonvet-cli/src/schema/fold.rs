@@ -60,13 +60,14 @@ impl<'e> Fold<'e> {
     pub(super) fn event(&mut self, event: &Event<'e>) -> Option<Document<'e>> {
         let i = self.seen;
         self.seen += 1;
-        // The tree keeps offsets in 32 bits: a document that far into a text is not checked.
-        if event.offset > super::nodes::MAX_OFFSET {
-            self.unchecked
-                .get_or_insert((event.offset, messages::text("schema.too-far")));
-        }
         if self.stack.is_empty() {
             self.first = (i, event.offset);
+            self.build.begin(event.offset);
+        }
+        // The tree keeps offsets from the document's start in 32 bits.
+        if event.offset - self.first.1 > super::nodes::MAX_OFFSET {
+            self.unchecked
+                .get_or_insert((event.offset, messages::text("schema.too-far")));
         }
         let node = match &event.kind {
             EventKind::Key(key) => {
@@ -148,7 +149,7 @@ impl<'e> Fold<'e> {
                 }
                 self.build
                     .members
-                    .push((key, node, super::nodes::offset(*offset)));
+                    .push((key, node, self.build.relative(*offset)));
             }
         }
         None
@@ -202,6 +203,7 @@ fn number(text: &str) -> Option<Value> {
 #[cfg(test)]
 pub(super) mod tests {
     use super::{documents, number};
+    use crate::messages;
     use jsonvet::{Config, Dialect};
     use proptest::prelude::*;
     use serde_json::{Value, json};
@@ -241,6 +243,45 @@ pub(super) mod tests {
         assert_eq!(number("NaN"), None);
         assert_eq!(number("-Infinity"), None);
         assert_eq!(number("1e999"), None);
+    }
+
+    /// The events of `text`, each moved on by the matching entry of `moves`.
+    fn moved(text: &'static str, moves: &[usize]) -> Vec<jsonvet::Event<'static>> {
+        let (_, events) = jsonvet::parse(text, &Config::new(Dialect::Json));
+        let mut events = events.unwrap_or_default();
+        for (event, by) in events.iter_mut().zip(moves) {
+            event.offset += by;
+        }
+        events
+    }
+
+    fn first_document(events: &[jsonvet::Event<'static>]) -> super::Document<'static> {
+        let mut fold = super::Fold::new("", Dialect::JsonLines);
+        events
+            .iter()
+            .find_map(|event| fold.event(event))
+            .expect("a document")
+    }
+
+    #[test]
+    fn a_record_far_into_a_json_lines_file_is_checked() {
+        let far = u32::MAX as usize + 10;
+        let events = moved("[true]", &[far, far, far]);
+        assert!(first_document(&events).unchecked.is_none());
+    }
+
+    #[test]
+    fn a_value_too_far_into_one_document_is_not_checked_and_says_why() {
+        let events = moved("[true]", &[0, 0, super::super::nodes::MAX_OFFSET - 4]);
+        let reason = first_document(&events).unchecked.map(|(_, reason)| reason);
+        assert_eq!(reason, Some(messages::text("schema.too-far")));
+    }
+
+    #[test]
+    fn the_end_of_a_container_at_the_most_is_checked() {
+        // The `]` of "[true]" is at 5.
+        let events = moved("[true]", &[0, 0, super::super::nodes::MAX_OFFSET - 5]);
+        assert!(first_document(&events).unchecked.is_none());
     }
 
     /// Any JSON value, with numbers `serde_json` reads exactly without its `float_roundtrip`

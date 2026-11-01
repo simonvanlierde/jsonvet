@@ -396,6 +396,10 @@ exists is in [design.md](design.md#--schema).
   document at once: about 420 bytes each, and more for one that holds part of the schema, such as
   an `anyOf` error. A file checked against its own `$schema` counts the same as one checked with
   `--schema`. It may also be held while the other threads read their files, one file per thread.
+- **Document size.** A single JSON or JSON5 document more than 4 GiB long is reported as not
+  checked, since the values keep their places in 32 bits counted from the document's start. It
+  would also take tens of gigabytes to check. A JSON Lines file can be any size: each line counts
+  from its own start.
 - **Regexes.** A pattern with a back-reference or lookaround may backtrack 5,000 times per string.
   A string or key that needs more, where the pattern decides the result, is an error saying the
   pattern could not be checked. A document that also has an error either way reports only that

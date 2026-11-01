@@ -48,10 +48,14 @@ pub(super) struct Tree<'e> {
     /// container can be read again from its span. Empty when the tree is not to be read again.
     source: &'e str,
     dialect: u32,
+    /// The offset of the document's first byte, which the offsets in the tree count from, so that
+    /// only a document itself, not its place in a long file, is limited to 32 bits.
+    base: usize,
 }
 
-/// An offset in the text, as the tree keeps it. [`MAX_OFFSET`] is the most a tree is built for.
-pub(super) const MAX_OFFSET: usize = u32::MAX as usize;
+/// An offset below the start of the document, as the tree keeps it. [`MAX_OFFSET`] is the most a
+/// tree is built for, one under what fits, so that the end of a container still does.
+pub(super) const MAX_OFFSET: usize = u32::MAX as usize - 1;
 
 pub(super) fn offset(at: usize) -> u32 {
     u32::try_from(at).unwrap_or(u32::MAX)
@@ -84,6 +88,16 @@ impl<'e> Builder<'e> {
         }
     }
 
+    /// Begin a document whose first byte is at `base`.
+    pub(super) fn begin(&mut self, base: usize) {
+        self.tree.base = base;
+    }
+
+    /// An offset in the text, as the open document's tree keeps it.
+    pub(super) fn relative(&self, at: usize) -> u32 {
+        offset(at - self.tree.base)
+    }
+
     /// Keep the key of the member whose value is `node` as written.
     pub(super) fn raw(&mut self, node: u32, raw: Cow<'e, [u8]>) {
         self.tree.raws.insert(node, raw);
@@ -104,7 +118,7 @@ impl<'e> Builder<'e> {
 
     fn add(&mut self, entry: Entry<'e>, at: usize) -> u32 {
         self.tree.entries.push(entry);
-        self.tree.at.push(offset(at));
+        self.tree.at.push(offset(at - self.tree.base));
         u32::try_from(self.tree.entries.len() - 1).unwrap_or(u32::MAX)
     }
 
@@ -113,7 +127,7 @@ impl<'e> Builder<'e> {
         let from = u32::try_from(self.tree.elems.len()).unwrap_or(u32::MAX);
         self.tree.elems.extend(self.elems.drain(start..));
         let to = u32::try_from(self.tree.elems.len()).unwrap_or(u32::MAX);
-        self.add(Entry::Array(from, to, offset(end)), at)
+        self.add(Entry::Array(from, to, offset(end - self.tree.base)), at)
     }
 
     /// End the object whose members began at `start` in [`Builder::members`]. A later member of
@@ -129,7 +143,7 @@ impl<'e> Builder<'e> {
             }
         }
         let to = u32::try_from(self.tree.members.len()).unwrap_or(u32::MAX);
-        self.add(Entry::Object(from, to, offset(end)), at)
+        self.add(Entry::Object(from, to, offset(end - self.tree.base)), at)
     }
 
     pub(super) fn finish(&mut self, root: u32) -> Tree<'e> {
@@ -202,14 +216,14 @@ impl<'e> Tree<'e> {
                 keys.iter()
                     .filter_map(|key| {
                         let at = members.binary_search_by(|(k, ..)| k.as_ref().cmp(key.as_str()));
-                        at.ok().map(|at| members[at].2 as usize)
+                        at.ok().map(|at| self.base + members[at].2 as usize)
                     })
                     .min()
             }
             _ => None,
         };
         (
-            offset.unwrap_or(self.at[node as usize] as usize),
+            offset.unwrap_or(self.base + self.at[node as usize] as usize),
             json_path(steps),
         )
     }
@@ -222,7 +236,7 @@ impl<'e> Tree<'e> {
         };
         self.source
             .as_bytes()
-            .get(self.at[index as usize] as usize..end as usize)
+            .get(self.base + self.at[index as usize] as usize..self.base + end as usize)
     }
 
     fn members_of(&self, from: u32, to: u32) -> &[Member<'e>] {
@@ -622,6 +636,11 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn the_end_of_a_container_at_the_most_does_not_saturate() {
+        assert_eq!(offset(MAX_OFFSET + 1) as usize, MAX_OFFSET + 1);
+    }
+
+    #[test]
     fn duplicate_keys_count_once_and_one_member_can_be_shown_alone() {
         let text = r#"{"b": 1, "a": [true], "b": "last"}"#;
         let (_, events) = jsonvet::parse(text, &Config::new(Dialect::Json));
@@ -650,7 +669,7 @@ mod tests {
     reason = "test inputs are written as they are in files"
 )]
 mod differential {
-    use super::super::fold::documents;
+    use super::super::fold::Fold;
     use super::*;
     use jsonschema::json::SerdeJson;
     use jsonvet::{Config, Dialect};
@@ -698,8 +717,14 @@ mod differential {
             .expect("own builds when serde does");
         let (_, events) = jsonvet::parse(text, &Config::new(dialect));
         let events = events.unwrap_or_default();
+        // Trees that know their text, so error values are read again from it as in `--schema`.
+        let mut fold = Fold::new(text, dialect);
+        let docs: Vec<_> = events
+            .iter()
+            .filter_map(|event| fold.event(event))
+            .collect();
         let mut bad = 0;
-        for doc in documents(&events) {
+        for doc in docs {
             let value = doc.tree.value();
             let root = doc.tree.root();
             if s.is_valid(&value) != o.is_valid(root)
@@ -818,6 +843,50 @@ mod differential {
             }
             for d in &json5 {
                 bad += compare(s, d, Dialect::Json5, &format!("{s} on {d}"));
+            }
+        }
+        assert_eq!(bad, 0);
+    }
+
+    /// Documents in every dialect, with the places the re-read of a container could go wrong: a
+    /// bracket in a comment, trailing commas, JSON5 spellings, and records that do not start a line.
+    #[test]
+    fn dialect_cases_match_serde() {
+        let schemas = [
+            json!({"uniqueItems": true}),
+            json!({"maxItems": 1, "maxProperties": 1}),
+            json!({"type": "string"}),
+            json!({"properties": {"a": {"type": "string"}}, "additionalProperties": {"type": "string"}}),
+            json!({"items": {"enum": [1, [1], {"a": 2}, "x"]}}),
+        ];
+        let many = |pair: &str| format!("[{pair}, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]");
+        let mut cases: Vec<(Dialect, String)> = vec![
+            (Dialect::Jsonc, "{\"a\": [1, 2 /* ] } */], // } ]\n \"b\": {\"c\": 1 /* } */}}".into()),
+            (Dialect::Jsonc, "[ /* [ */ {\"a\": 1}, // ]\n {\"a\": \"]\"} ]".into()),
+            (Dialect::Jwcc, "[1, {\"a\": 2,}, [3,],]".into()),
+            (Dialect::Jwcc, "{\"a\": [1, 1,], \"b\": {},}".into()),
+            (Dialect::Json5, "{unquoted: 0x1F, 'single': +1, half: .5, \"s\": \"\\ud800\", /* } */ list: [1, 2,], // ]\n}".into()),
+            (Dialect::Json5, "[0x10, +1, .5, 5., 'it\\'s', \"\\ud800\", {a: 1, a: 2, 'a': 3}, /* ] */ 0x10]".into()),
+            (Dialect::JsonLines, "{\"a\": 1, \"a\": 2}\n  {\"k\": [1, 1]}\n\t[1, 1.0]\n{\"a\": \"x\", \"a\": 1}\n".into()),
+            (Dialect::JsonLines, "  [1]  \n   {\"a\": [1, 2], \"a\": [1]}\n".into()),
+        ];
+        // Numbers that are equal as numbers, with and without the hash.
+        for pair in [
+            "1, 1.0",
+            "0, -0.0",
+            "9007199254740993, 9007199254740992",
+            "18446744073709551615, 18446744073709551616",
+            "-9223372036854775808, -9223372036854775808.0",
+            "1e2, 100",
+            "{\"a\": 1}, {\"a\": 1.0}",
+        ] {
+            cases.push((Dialect::Json, format!("[{pair}]")));
+            cases.push((Dialect::Json, many(pair)));
+        }
+        let mut bad = 0;
+        for schema in &schemas {
+            for (dialect, text) in &cases {
+                bad += compare(schema, text, *dialect, &format!("{schema} on {text}"));
             }
         }
         assert_eq!(bad, 0);
