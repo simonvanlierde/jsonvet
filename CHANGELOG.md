@@ -10,6 +10,11 @@ version for a new option or output, the patch version for a fix.
 
 ### Added
 
+- `--fix` rewrites files with the fixes that are safe: it removes a byte order mark and trailing
+  commas where the dialect forbids them, and adds a missing final newline to JSON Lines. It then
+  reports what is left, and the exit status follows it. `--unsafe-fixes` also drops duplicate
+  keys, keeping the last. Standard input is fixed to standard output, and a pre-commit or prek
+  hook takes `args: [--fix]` ([fixing](docs/usage.md#fixing)).
 - In GitHub Actions, a run that finds problems ends with a notice annotation that counts them,
   since GitHub shows only the first 10 annotations of a type for a step
   ([output](docs/usage.md#output)).
