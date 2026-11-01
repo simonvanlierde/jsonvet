@@ -42,6 +42,7 @@ Most users need no change. Check this if it applies to you:
   bracket spacing you pick. Each has an options popover that shows the same settings as
   `jsonvet.toml` or CLI flags. Both can be undone with Ctrl+Z, and the "Use this check" snippets show
   `--fix` and `jsonvet fmt`.
+- The playground has a light and dark theme toggle in its footer, which it remembers.
 - In GitHub Actions, a run that finds problems ends with a notice annotation that counts them,
   since GitHub shows only the first 10 annotations of a type for a step
   ([output](docs/usage.md#output)).
