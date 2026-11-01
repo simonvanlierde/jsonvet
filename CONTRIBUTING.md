@@ -177,7 +177,7 @@ A release changes the version in these places, in one commit on a branch:
 2. the `=x.y.z` pin on `jsonvet` in `crates/jsonvet-cli/Cargo.toml`
 3. the pin in `setup.py`
 4. `version` and the `jsonvet==` pin in `compat/check-json5/pyproject.toml`
-5. `rev: vX.Y.Z` in the README's hook example
+5. `rev: vX.Y.Z` in the hook examples in `README.md`, `docs/usage.md` and `docs/format.md`
 6. in `CHANGELOG.md`, the Unreleased entries moved under a new `## [X.Y.Z] - date` heading, and
    the compare links at the bottom
 

@@ -5,8 +5,9 @@
 
 The crates' version (Cargo.toml), the `=x.y.z` pin of the library in the CLI crate, the wheel pin
 in the hook placeholder (setup.py), the check-json5 compatibility package's version and pin
-(compat/check-json5/pyproject.toml), the `rev:` in the README's hook example and a heading in the
-CHANGELOG must name the same release, or a hook install would pull another version than the tag.
+(compat/check-json5/pyproject.toml), the `rev:` in the hook examples (README.md, docs/usage.md and
+docs/format.md) and a heading in the CHANGELOG must name the same release, or a hook install would
+pull another version than the tag.
 
 The speed table in docs/design.md, which `scripts/bench.py --write` fills in, must name the
 release's minor version (`jsonvet 3.2` for 3.2.x), so each minor release measures again. The
@@ -55,9 +56,8 @@ def main() -> int:
     ]
     cli = tomllib.loads((ROOT / "crates" / "jsonvet-cli" / "Cargo.toml").read_text())
     cli_pin = cli["dependencies"]["jsonvet"]["version"].removeprefix("=")
-    revs = [
-        rev for doc in REV_DOCS for rev in re.findall(r"^\s*rev: v(\S+)\s*$", (ROOT / doc).read_text(), re.MULTILINE)
-    ]
+    revs_per_doc = {doc: re.findall(r"^\s*rev: v(\S+)\s*$", (ROOT / doc).read_text(), re.MULTILINE) for doc in REV_DOCS}
+    revs = [rev for found_revs in revs_per_doc.values() for rev in found_revs]
     found = {"Cargo.toml": pep440(cargo), "compat version": compat["version"]}
     found.update({f"pin {i + 1}": pin for i, pin in enumerate(pins)})
     found["cli crate pin"] = pep440(cli_pin)
@@ -84,7 +84,7 @@ def main() -> int:
     print(f"{'README speed-up':16} {claim}x, table {largest}")
     if (
         len(pins) != PINS
-        or len(revs) != len(REV_DOCS)
+        or any(len(found_revs) != 1 for found_revs in revs_per_doc.values())
         or len(set(found.values())) != 1
         or not has_heading
         or len(set(msrvs.values())) != 1
