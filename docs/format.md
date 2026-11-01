@@ -114,9 +114,9 @@ Number forms stay as written. The setting does nothing for the other dialects.
 `jsonvet fmt` takes `--check`, `--dialect`, `--strict`, `--config`, `--no-config` and
 `--stdin-filename`, which work as for a check. The options for checking (`--format`, `--color`,
 `--schema`, `--max-warnings`, `--error`, `--warn` and `--ignore`) are a usage error under `fmt`.
-With no files, `jsonvet fmt` does nothing, as a bare `jsonvet` does. With `--check` nothing is written. Each file that
-would change is printed, and the exit status is 1 if there is one. Standard input goes to
-standard output; with `--check` it prints only its name.
+With no files, `jsonvet fmt` does nothing, as a bare `jsonvet` does. With `--check` nothing is
+written. Each file that would change is printed, and the exit status is 1 if there is one.
+Standard input goes to standard output; with `--check` it prints only its name.
 
 Exit status: 0 when every file is formatted or was rewritten, 1 when a file has a syntax error,
 cannot be read or written, or with `--check` would change, and 2 for a usage error.

@@ -13,7 +13,8 @@ version for a new option or output, the patch version for a fix.
 - `jsonvet fmt [--check] [FILE]...` formats JSON, JSONC, JWCC, JSON5 and JSON Lines files and
   keeps their comments. A container stays on one line if it fits in 80 columns, and otherwise
   takes one member per line. Indent, width and the space inside braces (`{ "a": 1 }`) come from
-  `.editorconfig` or a `[format]` table in `jsonvet.toml`. There is a `jsonvet-format` pre-commit hook ([formatting](docs/format.md)).
+  `.editorconfig` or a `[format]` table in `jsonvet.toml`. There is a `jsonvet-format` pre-commit
+  hook ([formatting](docs/format.md)).
 - In GitHub Actions, a run that finds problems ends with a notice annotation that counts them,
   since GitHub shows only the first 10 annotations of a type for a step
   ([output](docs/usage.md#output)).

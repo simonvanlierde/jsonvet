@@ -13,7 +13,7 @@ use crate::editorconfig;
 use crate::messages;
 use crate::output::printable;
 use crate::settings::{FormatSettings, Resolver};
-use crate::{lock, read, read_stdin};
+use crate::{lock, parallel, read, read_stdin};
 
 /// The config's setting, or the editorconfig's where it has none; the other way round for the
 /// user's own config, which yields to the editorconfig.
@@ -34,10 +34,21 @@ fn options(settings: &FormatSettings, user: bool, style: editorconfig::Style) ->
     }
 }
 
-/// Format each of `files`, naming standard input `stdin_name`. Standard input goes to `out`,
-/// and with `check_only` nothing is written but the names of the files that would change.
-/// Problems go to standard error. Exit status 1 for a file that cannot be read or has a
-/// syntax error, and with `check_only` for a file that would change.
+/// What formatting one file gave: the lines for standard error, the text for `out`, and
+/// whether the file failed or would change.
+#[derive(Default)]
+struct Done {
+    problems: Vec<String>,
+    out: String,
+    failed: bool,
+    changed: bool,
+}
+
+/// Format each of `files` on all the cores, naming standard input `stdin_name`.
+/// Standard input goes to `out`, and with `check_only` nothing is written but the names of the
+/// files that would change. Problems go to standard error. Everything is printed in the order
+/// of `files`. Exit status 1 for a file that cannot be read or has a syntax error, and with
+/// `check_only` for a file that would change.
 pub(crate) fn run(
     files: &[OsString],
     check_only: bool,
@@ -47,72 +58,99 @@ pub(crate) fn run(
 ) -> Result<u8, String> {
     let stdin_name = stdin_name.unwrap_or_else(|| STDIN.into());
     let write_error = |e: io::Error| messages::fill("error.write", &[("error", &e)]);
+    let styles = editorconfig::Cache::default();
+    let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
+    let done = parallel(
+        files,
+        threads,
+        || false,
+        |file| one(file, &stdin_name, check_only, resolver, &styles),
+    );
     let (mut failed, mut changed) = (false, false);
-    for file in files {
-        let stdin = file == STDIN;
-        let shown = if stdin { &stdin_name } else { file };
-        let name = printable(&shown.to_string_lossy());
-        let text = if stdin {
-            read_stdin()
-        } else {
-            read(Path::new(file))
-        };
-        let text = match text {
-            Ok(text) => text,
-            Err(message) => {
-                eprintln!("{name}: {message}");
-                failed = true;
-                continue;
-            }
-        };
-        let path = Path::new(shown);
-        let (settings, dirs) = {
-            let mut resolver = lock(resolver);
-            (resolver.for_file(path)?, resolver.search_dirs(path))
-        };
-        let config = settings.config_for(&shown.to_string_lossy());
-        let style = editorconfig::style(path, &dirs);
-        let options = options(&settings.format, settings.user, style);
-        let formatted = match jsonvet::format(&text, &config, &options) {
-            Ok(formatted) => formatted,
-            Err(jsonvet::FormatError::Syntax(report)) => {
-                for problem in report
-                    .problems()
-                    .iter()
-                    .filter(|p| p.rule() == Rule::Syntax)
-                {
-                    let at = report.location(problem.offset());
-                    eprintln!(
-                        "{name}:{}:{}: {}",
-                        at.line,
-                        at.column,
-                        printable(&problem.to_string())
-                    );
-                }
-                failed = true;
-                continue;
-            }
-            Err(other) => {
-                eprintln!("{name}: {other}");
-                failed = true;
-                continue;
-            }
-        };
-        if stdin && !check_only {
-            out.write_all(formatted.as_bytes()).map_err(write_error)?;
-        } else if formatted != text {
-            drop(text);
-            changed = true;
-            if check_only {
-                writeln!(out, "{name}").map_err(write_error)?;
-            } else if let Err(message) = write_atomic(path, &formatted) {
-                eprintln!("{name}: {message}");
-                failed = true;
-            }
+    for done in done {
+        let done = done?;
+        for problem in &done.problems {
+            eprintln!("{problem}");
         }
+        out.write_all(done.out.as_bytes()).map_err(write_error)?;
+        failed |= done.failed;
+        changed |= done.changed;
     }
     out.flush().map_err(write_error)?;
     Ok(u8::from(failed || (check_only && changed)))
+}
+
+/// Format one of the files; an `Err` is a problem with the config, which ends the run.
+fn one(
+    file: &OsString,
+    stdin_name: &OsString,
+    check_only: bool,
+    resolver: &Mutex<Resolver>,
+    styles: &editorconfig::Cache,
+) -> Result<Done, String> {
+    let mut done = Done::default();
+    let stdin = file == STDIN;
+    let shown = if stdin { stdin_name } else { file };
+    let name = printable(&shown.to_string_lossy());
+    let text = if stdin {
+        read_stdin()
+    } else {
+        read(Path::new(file))
+    };
+    let text = match text {
+        Ok(text) => text,
+        Err(message) => {
+            done.problems.push(format!("{name}: {message}"));
+            done.failed = true;
+            return Ok(done);
+        }
+    };
+    let path = Path::new(shown);
+    let (settings, dirs) = {
+        let mut resolver = lock(resolver);
+        (resolver.for_file(path)?, resolver.search_dirs(path))
+    };
+    let config = settings.config_for(&shown.to_string_lossy());
+    let style = styles.style(path, &dirs);
+    let options = options(&settings.format, settings.user, style);
+    let formatted = match jsonvet::format(&text, &config, &options) {
+        Ok(formatted) => formatted,
+        Err(jsonvet::FormatError::Syntax(report)) => {
+            for problem in report
+                .problems()
+                .iter()
+                .filter(|p| p.rule() == Rule::Syntax)
+            {
+                let at = report.location(problem.offset());
+                done.problems.push(format!(
+                    "{name}:{}:{}: {}",
+                    at.line,
+                    at.column,
+                    printable(&problem.to_string())
+                ));
+            }
+            done.failed = true;
+            return Ok(done);
+        }
+        Err(other) => {
+            done.problems.push(format!("{name}: {other}"));
+            done.failed = true;
+            return Ok(done);
+        }
+    };
+    if stdin && !check_only {
+        done.out = formatted;
+    } else if formatted != text {
+        drop(text);
+        done.changed = true;
+        if check_only {
+            done.out = format!("{name}\n");
+        } else if let Err(message) = write_atomic(path, &formatted) {
+            done.problems.push(format!("{name}: {message}"));
+            done.failed = true;
+        }
+    }
+    Ok(done)
 }
 
 /// Replace the file at `path` with `text` through a temporary file in the same folder and a
@@ -157,7 +195,7 @@ mod tests {
     use super::{options, write_atomic};
     use crate::editorconfig::Style;
     use crate::settings::FormatSettings;
-    use jsonvet::Indent;
+    use jsonvet::{FormatOptions, Indent};
 
     #[test]
     fn settings_beat_editorconfig_beat_defaults() {
@@ -176,11 +214,12 @@ mod tests {
         // The user's config yields to the editorconfig.
         let got = options(&settings, true, style);
         assert_eq!((got.indent, got.width), (Indent::Tab, 100));
-        let got = options(&settings, false, style);
+        // Settings the config leaves out fall back to the defaults, whoever asks.
         assert_eq!(
-            (got.indent, got.width, got.normalize_json5),
-            (Indent::Tab, 60, true)
+            got.bracket_spacing,
+            FormatOptions::default().bracket_spacing
         );
+        assert!(got.normalize_json5);
         let got = options(&FormatSettings::default(), false, Style::default());
         assert_eq!(
             (got.indent, got.width, got.normalize_json5),

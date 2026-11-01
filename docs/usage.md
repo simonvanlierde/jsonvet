@@ -21,11 +21,13 @@ The details behind the [README](../README.md). Why things work this way is in
                            schemas from settings or a file's own local $schema
 --stdin-filename PATH      the name standard input (`-`) goes by
 --config FILE, --no-config
+jsonvet fmt FILE...       format files instead of checking them, see [formatting](format.md)
 --list-rules               list the rules with their default severities
 --explain RULE             explain a rule, with an example
 ```
 
-`jsonvet --help` prints the same list with more detail.
+`jsonvet --help` prints the same list with more detail. `jsonvet fmt` also takes `--check`, which
+lists the files that would change and writes nothing ([formatting](format.md)).
 
 ## Folders
 
@@ -258,8 +260,8 @@ dialect = "jwcc"
   replaces them all. A schema here that jsonvet cannot read or use is a usage error, even when no
   file matches its glob. In a config file the search finds, the schema must be inside the project
   ([JSON Schema limits](#json-schema-limits)).
-- `format` is a table of `indent`, `width`, `normalize-json5` and `bracket-spacing` for `jsonvet fmt`
-  ([formatting](format.md#settings)).
+- `format` is a table of `indent`, `width`, `normalize-json5` and `bracket-spacing` for
+  `jsonvet fmt` ([formatting](format.md#settings)).
 
 ## GitHub Action
 

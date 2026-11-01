@@ -2,7 +2,9 @@
 //! `max_line_length`, from sections with a simple glob (`*`, `*.json`, `*.{json,jsonc}`), and
 //! `root = true`. A section with a path in its glob, or any other key, is skipped.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use jsonvet::Indent;
 
@@ -23,30 +25,49 @@ struct Props {
     max_line_length: Option<String>,
 }
 
-/// The style for `file` from the `.editorconfig` files in `dirs`, nearest first. The search
-/// stops after the first file with `root = true`; a nearer file wins over a farther one.
-pub(crate) fn style(file: &Path, dirs: &[PathBuf]) -> Style {
-    let name = file
-        .file_name()
-        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-    let target = Target::new(&name);
-    let mut texts = Vec::new();
-    for dir in dirs {
-        let Ok(text) = crate::read_small(&dir.join(".editorconfig"), crate::MAX_CONFIG_BYTES)
-        else {
-            continue;
-        };
-        let root = is_root(&text);
-        texts.push(text);
-        if root {
-            break;
+/// The `.editorconfig` texts read so far, by folder, so a run reads each folder's once. A
+/// folder with none is kept too.
+#[derive(Default)]
+pub(crate) struct Cache(Mutex<HashMap<PathBuf, Option<Arc<str>>>>);
+
+impl Cache {
+    fn text(&self, dir: &Path) -> Option<Arc<str>> {
+        let found = |map: &HashMap<PathBuf, Option<Arc<str>>>| map.get(dir).cloned();
+        let lock = || self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(text) = found(&lock()) {
+            return text;
         }
+        // Read outside the lock; two threads reading the same folder at once is harmless.
+        let text = crate::read_small(&dir.join(".editorconfig"), crate::MAX_CONFIG_BYTES)
+            .ok()
+            .map(Arc::from);
+        lock().insert(dir.to_owned(), text.clone());
+        text
     }
-    let mut props = Props::default();
-    for text in texts.iter().rev() {
-        apply(text, &target, &mut props);
+
+    /// The style for `file` from the `.editorconfig` files in `dirs`, nearest first. The
+    /// search stops after the first file with `root = true`; a nearer file wins over a farther
+    /// one.
+    pub(crate) fn style(&self, file: &Path, dirs: &[PathBuf]) -> Style {
+        let name = file
+            .file_name()
+            .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+        let target = Target::new(&name);
+        let mut texts = Vec::new();
+        for dir in dirs {
+            let Some(text) = self.text(dir) else { continue };
+            let root = is_root(&text);
+            texts.push(text);
+            if root {
+                break;
+            }
+        }
+        let mut props = Props::default();
+        for text in texts.iter().rev() {
+            apply(text, &target, &mut props);
+        }
+        resolve(&props)
     }
-    resolve(&props)
 }
 
 fn is_root(text: &str) -> bool {

@@ -247,3 +247,33 @@ fn exclude_and_dialect_patterns_on_many_files() {
         "a pattern costs {each} instructions on each file"
     );
 }
+
+/// Run `jsonvet fmt --check .` on `files` small files spread over ten folders, five levels
+/// below a root with an `.editorconfig`.
+fn fmt_check_in_nested_folders(files: usize) -> u64 {
+    let deep = "a/b/c/d/e";
+    let names: Vec<String> = (0..files)
+        .map(|i| format!("{deep}/{}/f{i}.json", i % 10))
+        .collect();
+    let mut tree: Vec<(&str, &str)> = names.iter().map(|n| (n.as_str(), "{\"a\": 1}\n")).collect();
+    tree.push((".editorconfig", "root = true\n[*.json]\nindent_size = 2\n"));
+    let dir = workdir("fmt-nested", &[]);
+    for (file, text) in &tree {
+        let path = dir.join(file);
+        fs::create_dir_all(path.parent().expect("a parent")).expect("create the folder");
+        fs::write(path, text).expect("write file");
+    }
+    instructions(
+        Path::new(env!("CARGO_BIN_EXE_jsonvet")),
+        &["fmt", "--check", "."],
+        &dir,
+    )
+}
+
+#[test]
+#[ignore = "needs valgrind: just scaling"]
+fn fmt_check_on_many_files_in_nested_folders() {
+    // The results of all files are gathered and printed in order, and each folder's
+    // `.editorconfig` is read once: the work stays linear in the files.
+    assert_linear(200, fmt_check_in_nested_folders);
+}
