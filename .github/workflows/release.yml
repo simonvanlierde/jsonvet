@@ -30,7 +30,7 @@ permissions:
 env:
   # The Rust that builds the published wheels, pinned so a rebuild of a tag gives the same
   # compiler. Renovate bumps it; CI's hook job builds with the same one.
-  RELEASE_RUST: "1.99.0"
+  RELEASE_RUST: "1.99.1"
   # The uv every job sets up, as in ci.yml and mise.toml. Renovate bumps all three.
   PINNED_UV: "0.13.5"
 
@@ -43,7 +43,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           version: ${{ env.PINNED_UV }}
           enable-cache: false
@@ -123,7 +123,7 @@ jobs:
           working-directory: crates/jsonvet-cli
           command: sdist
           args: --out ../../dist
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           version: ${{ env.PINNED_UV }}
           enable-cache: false
@@ -168,7 +168,7 @@ jobs:
         with:
           name: check-json5
           path: compat-dist/
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           version: ${{ env.PINNED_UV }}
           enable-cache: false
@@ -213,7 +213,7 @@ jobs:
         with:
           pattern: wheels-*
           path: wheels/
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           version: ${{ env.PINNED_UV }}
           enable-cache: false
@@ -222,7 +222,7 @@ jobs:
           toolchain: stable
       # After the toolchain: the script asks cargo for the crate's binaries.
       - run: uv run scripts/release-archives.py wheels release
-      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
         with:
           tool: cargo-cyclonedx@0.5.9
       # The SBOM lands next to the Cargo.toml, named after the crate.
@@ -360,7 +360,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: stable
-      - uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
+      - uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
         id: auth
       - name: Publish the crates that crates.io does not have yet
         env:
