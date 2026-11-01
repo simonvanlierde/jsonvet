@@ -2,7 +2,7 @@
   "@context": "https://w3id.org/codemeta/3.0",
   "@type": "SoftwareSourceCode",
   "name": "jsonvet",
-  "description": "A linter for JSON, I-JSON, JSONC, JWCC (HuJSON), JSON5 and JSON Lines. It reports syntax errors, duplicate keys, each dialect's rules and JSON Schema errors, all with exact positions. The schema comes from --schema, a config file or a file's own $schema. On a terminal, each problem shows as a code frame, and --color controls the color. It also writes SARIF for GitHub code scanning and JSON for scripts and editors. A playground runs it in the browser as WebAssembly. It ships as a pre-commit hook, PyPI wheels, Rust crates, release binaries and a GitHub Action. The repository includes a conformance matrix of JSON5, JSONC, JWCC and JSON Lines parsers.",
+  "description": "A linter for JSON, I-JSON, JSONC, JWCC (HuJSON), JSON5 and JSON Lines. It reports syntax errors, duplicate keys, each dialect's rules and JSON Schema errors, all with exact positions. The schema comes from --schema, a config file or a file's own $schema. On a terminal, each problem shows as a code frame with a help: link to the rule's documentation, and --color controls the color. With --fix it rewrites files to remove a byte order mark or trailing commas and add a missing final newline, and --unsafe-fixes also drops duplicate keys. jsonvet fmt formats files and keeps their comments, with settings from .editorconfig or the config file. It also writes SARIF for GitHub code scanning and JSON, with a published JSON Schema, for scripts and editors. Messages come from a catalog, so a translation is one file. jsonvet never fetches anything from the network. A playground runs it in the browser as WebAssembly. It ships as a pre-commit hook, PyPI wheels, Rust crates, release binaries and a GitHub Action. The repository includes a conformance matrix of JSON5, JSONC, JWCC and JSON Lines parsers.",
   "author": [
     {
       "@type": "Person",
@@ -27,6 +27,10 @@
     "pre-commit",
     "pre-commit-hook",
     "github-action",
+    "formatter",
+    "fixer",
+    "hujson",
+    "i-json",
     "sarif",
     "validator",
     "webassembly"
