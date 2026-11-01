@@ -156,7 +156,9 @@ def machine() -> str:
     cpuinfo = Path("/proc/cpuinfo")
     if cpuinfo.exists() and (found := re.search(r"^model name\s*: (.+)$", cpuinfo.read_text(), re.MULTILINE)):
         model = re.sub(r"^(AMD|Intel\(R\)) |\(\w+\)| w/ .*| CPU .*|\s+\d+-Core Processor", "", found[1]).strip()
-    return f"{os.cpu_count()} cores of a {model} under {platform.system()}"
+    # The CPUs this process may run on: under taskset or a pinned slot, fewer than the machine has.
+    cores = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count()
+    return f"{cores} cores of a {model} under {platform.system()}"
 
 
 def write(table: list[str], runs: int, ref_runs: int, old_runs: int, largest: str) -> None:
