@@ -8,6 +8,12 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
+### Changed
+
+- The license is now `MIT OR Apache-2.0`, was MIT. This is the Rust convention: Apache-2.0 adds a
+  patent grant, and every MIT grant stays. The crates, the wheels and the release archives carry
+  both texts as `LICENSE-MIT` and `LICENSE-APACHE`.
+
 ## [3.3.1] - 2026-11-02
 
 ### Fixed

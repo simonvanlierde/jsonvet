@@ -258,7 +258,7 @@ workflow step, `jsonvet fmt` on the command line), each under a `#` comment line
 
 #### Colophon
 
-The privacy and JSON Schema sentence in small italic, then two mono lines: "jsonvet <version> · MIT
+The privacy and JSON Schema sentence in small italic, then two mono lines: "jsonvet <version> · MIT or Apache-2.0
 licence" and "Simon van Lierde · source on GitHub · docs · speed figures".
 
 ### Do's and Don'ts

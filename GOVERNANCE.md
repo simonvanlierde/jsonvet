@@ -35,7 +35,7 @@ can change the repository and the packages.
 A named person can take over the GitHub repository. The recovery details for PyPI, crates.io and
 Zenodo are in an emergency-access vault.
 
-The code, the release history and the docs are public under the MIT license, so anyone can fork the
+The code, the release history and the docs are public under the MIT and Apache-2.0 licenses, so anyone can fork the
 project. Installed copies, the pre-commit hook and the GitHub Action keep working without upkeep,
 because each release is pinned on PyPI and crates.io.
 

@@ -13,7 +13,7 @@
   ],
   "codeRepository": "https://github.com/simonvanlierde/jsonvet",
   "issueTracker": "https://github.com/simonvanlierde/jsonvet/issues",
-  "license": "https://spdx.org/licenses/MIT",
+  "license": ["https://spdx.org/licenses/MIT", "https://spdx.org/licenses/Apache-2.0"],
   "programmingLanguage": "Rust",
   "identifier": "https://doi.org/10.5281/zenodo.23461825",
   "keywords": [

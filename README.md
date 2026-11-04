@@ -6,7 +6,7 @@
 [![PyPI](https://img.shields.io/pypi/v/jsonvet)](https://pypi.org/project/jsonvet/)
 [![crates.io](https://img.shields.io/crates/v/jsonvet)](https://crates.io/crates/jsonvet)
 [![Marketplace](https://img.shields.io/badge/marketplace-jsonvet-blue?logo=github)](https://github.com/marketplace/actions/jsonvet)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/simonvanlierde/jsonvet/blob/main/LICENSE)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-green)](#credits-and-license)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/simonvanlierde/jsonvet/badge)](https://scorecard.dev/viewer/?uri=github.com/simonvanlierde/jsonvet)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15798/badge)](https://www.bestpractices.dev/projects/15798)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23461825.svg)](https://doi.org/10.5281/zenodo.23461825)
@@ -252,5 +252,11 @@ repository" button.
 
 I (Simon van Lierde) started this as a fork of [check-json5](https://gitlab.com/bmares/check-json5)
 by Ben Mares, which is based on the [pre-commit-hooks](https://github.com/pre-commit/pre-commit-hooks)
-repository by Anthony Sottile and contributors. It is
-[MIT-licensed](https://github.com/simonvanlierde/jsonvet/blob/main/LICENSE), like both of them.
+repository by Anthony Sottile and contributors, both MIT-licensed.
+
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT license](LICENSE-MIT)
+at your option. Ben Mares's copyright notice stays in the MIT text.
+
+Unless you explicitly state otherwise, any contribution you intentionally submit for inclusion in
+jsonvet, as defined in the Apache-2.0 license, is dual licensed as above, without any additional
+terms or conditions.

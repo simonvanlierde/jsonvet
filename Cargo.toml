@@ -9,7 +9,7 @@ version = "3.3.1"
 edition = "2024"
 # 1.88 for let-chains in `if` conditions.
 rust-version = "1.88"
-license = "MIT"
+license = "MIT OR Apache-2.0"
 authors = ["Simon van Lierde"]
 repository = "https://github.com/simonvanlierde/jsonvet"
 homepage = "https://github.com/simonvanlierde/jsonvet"

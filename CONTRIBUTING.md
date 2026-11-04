@@ -227,7 +227,7 @@ an older minor leaves it alone. The workflow's token cannot move a tag past chan
 ## Sign off your commits
 
 Every commit in a pull request carries a `Signed-off-by:` line, which says you wrote the change
-or have the right to submit it under the MIT license: the
+or have the right to submit it under the MIT and Apache-2.0 licenses: the
 [Developer Certificate of Origin 1.1](https://developercertificate.org/). `git commit -s` adds
 it. `git rebase --signoff upstream/main` adds it to commits you already made. The `DCO sign-off`
 check fails any pull request with a commit that lacks it, the maintainer's and Renovate's

@@ -7,7 +7,7 @@ Usage: uv run scripts/release-archives.py WHEEL_DIR OUT_DIR
 
 The wheels already hold the binary (maturin bindings = "bin"), so the archives ship the same bytes
 that PyPI does. Each archive is named jsonvet-<Rust target>.tar.gz, or .zip on Windows, and holds
-every `[[bin]]` of crates/jsonvet-cli (with `.exe` on Windows) and LICENSE at its root. The names
+every `[[bin]]` of crates/jsonvet-cli (with `.exe` on Windows) and the two license files at its root. The names
 are what `[package.metadata.binstall]` there expects, and cargo-binstall refuses an archive that
 lacks one of the crate's binaries. It fails unless every target below gets exactly one archive
 holding all of them.
@@ -80,17 +80,18 @@ def binaries_of(wheel: Path, names: list[str]) -> list[tuple[str, bytes]]:
     return [found[name] for name in names]
 
 
-def pack(out: Path, target: str, binaries: list[tuple[str, bytes]], license_text: bytes) -> Path:
+def pack(out: Path, target: str, binaries: list[tuple[str, bytes]], licenses: dict[str, bytes]) -> Path:
     """Write the archive for one target and return its path."""
     if target.endswith("windows-msvc"):
         path = out / f"jsonvet-{target}.zip"
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
             for name, data in binaries:
                 archive.writestr(name, data)
-            archive.writestr("LICENSE", license_text)
+            for name, data in licenses.items():
+                archive.writestr(name, data)
         return path
     path = out / f"jsonvet-{target}.tar.gz"
-    files = [(name, data, 0o755) for name, data in binaries] + [("LICENSE", license_text, 0o644)]
+    files = [(name, data, 0o755) for name, data in binaries] + [(n, d, 0o644) for n, d in licenses.items()]
     with tarfile.open(path, "w:gz") as archive:
         for name, content, mode in files:
             info = tarfile.TarInfo(name)
@@ -104,7 +105,7 @@ def main() -> int:
     """Exit 1 unless every target got exactly one archive."""
     wheel_dir, out = Path(sys.argv[1]), Path(sys.argv[2])
     out.mkdir(parents=True, exist_ok=True)
-    license_text = (ROOT / "LICENSE").read_bytes()
+    licenses = {n: (ROOT / n).read_bytes() for n in ("LICENSE-MIT", "LICENSE-APACHE")}
     names = bin_names()
     done: dict[str, str] = {}
     for wheel in sorted(wheel_dir.rglob("jsonvet-*.whl")):
@@ -113,7 +114,7 @@ def main() -> int:
             print(f"{wheel.name} and {done[target]} are both for {target}")
             return 1
         done[target] = wheel.name
-        print(pack(out, target, binaries_of(wheel, names), license_text))
+        print(pack(out, target, binaries_of(wheel, names), licenses))
     missing = {target for _, _, target in TARGETS} - done.keys()
     if missing:
         print(f"no wheel for {', '.join(sorted(missing))}")
