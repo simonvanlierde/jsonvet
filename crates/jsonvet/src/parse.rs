@@ -356,6 +356,8 @@ impl<'a> Keys<'a> {
             }
             list.push((key.clone(), at));
             if list.len() == LINEAR_KEYS + 1 {
+                // One allocation: growing key by key to 17 took four, rehashing each time.
+                self.index.reserve(2 * LINEAR_KEYS, |&(h, _)| spread(h));
                 for (i, (k, _)) in (0..).zip(list.iter()) {
                     let hash = short_hash(&self.state, k);
                     self.index
