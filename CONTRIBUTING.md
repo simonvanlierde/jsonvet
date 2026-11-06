@@ -66,6 +66,8 @@ Put each detail of the docs in one place and link to it: the README to get start
 `fix(parser): reject a lone CR in a JWCC comment`. A change in behaviour comes with a test that
 fails without it, and a bug fix with a test that reproduces the bug. A change that reopens a
 choice in [docs/decisions/](docs/decisions/README.md) brings the evidence its "Revisit if" asks for.
+A pull request over 500 changed lines (generated files excluded) gets a CI warning: split a
+refactor into its own pull request.
 
 ## Choosing dependencies
 
