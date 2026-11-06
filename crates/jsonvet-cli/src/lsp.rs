@@ -53,20 +53,35 @@ fn serve(connection: &Connection) -> Result<bool, String> {
     connection
         .initialize_finish(id, result)
         .map_err(|e| e.to_string())?;
+    let client = Client {
+        utf8,
+        versioned: params
+            .pointer("/capabilities/workspace/workspaceEdit/documentChanges")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+    };
     let send = |message: Message| connection.sender.send(message).map_err(|e| e.to_string());
     let mut documents = HashMap::new();
+    let mut shut_down = false;
     for message in &connection.receiver {
         match message {
-            Message::Request(request) => {
-                if connection
-                    .handle_shutdown(&request)
-                    .map_err(|e| e.to_string())?
-                {
-                    return Ok(true);
-                }
-                send(Message::Response(answer(&request, &documents, utf8)))?;
+            Message::Request(request) if request.method == "shutdown" => {
+                shut_down = true;
+                send(Message::Response(Response::new_ok(request.id, Value::Null)))?;
             }
-            Message::Notification(note) if note.method == "exit" => return Ok(false),
+            // After shutdown the protocol allows only `exit`: refuse requests, drop the rest.
+            Message::Request(request) if shut_down => {
+                send(Message::Response(Response::new_err(
+                    request.id,
+                    ErrorCode::InvalidRequest as i32,
+                    "the server is shutting down".to_owned(),
+                )))?;
+            }
+            Message::Request(request) => {
+                send(Message::Response(answer(&request, &documents, client)))?;
+            }
+            Message::Notification(note) if note.method == "exit" => return Ok(shut_down),
+            Message::Notification(_) if shut_down => {}
             Message::Notification(note) => {
                 if let Some(published) = update(&note, &mut documents, utf8) {
                     send(Message::Notification(published))?;
@@ -75,22 +90,38 @@ fn serve(connection: &Connection) -> Result<bool, String> {
             Message::Response(_) => {}
         }
     }
+    // The client went without saying exit.
     Ok(false)
+}
+
+/// What the client can take, from its capabilities.
+#[derive(Clone, Copy)]
+struct Client {
+    /// Positions in UTF-8 bytes, not UTF-16 units.
+    utf8: bool,
+    /// Workspace edits that name the version of the document they edit.
+    versioned: bool,
+}
+
+/// An open document: its text and the client's version of it, if it gave one.
+struct Document {
+    text: String,
+    version: Option<Value>,
 }
 
 /// Keep `documents` in step with an open, change or close, and return the document's new
 /// diagnostics.
 fn update(
     note: &Notification,
-    documents: &mut HashMap<String, String>,
+    documents: &mut HashMap<String, Document>,
     utf8: bool,
 ) -> Option<Notification> {
     let params = &note.params;
     let uri = params.pointer("/textDocument/uri")?.as_str()?.to_owned();
     let version = params
         .pointer("/textDocument/version")
-        .cloned()
-        .unwrap_or(Value::Null);
+        .filter(|v| !v.is_null())
+        .cloned();
     let diagnostics = match note.method.as_str() {
         "textDocument/didOpen" | "textDocument/didChange" => {
             let text = match note.method.as_str() {
@@ -106,7 +137,11 @@ fn update(
             .to_owned();
             let path = path_of(&uri)?;
             let diagnostics = diagnostics(&uri, &path, &text, utf8);
-            documents.insert(uri.clone(), text);
+            let document = Document {
+                text,
+                version: version.clone(),
+            };
+            documents.insert(uri.clone(), document);
             diagnostics
         }
         "textDocument/didClose" => {
@@ -115,14 +150,20 @@ fn update(
         }
         _ => return None,
     };
+    let mut published = json!({ "uri": uri, "diagnostics": diagnostics });
+    // Left out, not null, where the client gave none, as on a close.
+    if let Some(version) = version {
+        published["version"] = version;
+    }
     Some(Notification::new(
         "textDocument/publishDiagnostics".to_owned(),
-        json!({ "uri": uri, "version": version, "diagnostics": diagnostics }),
+        published,
     ))
 }
 
 /// The response to a request other than shutdown.
-fn answer(request: &Request, documents: &HashMap<String, String>, utf8: bool) -> Response {
+fn answer(request: &Request, documents: &HashMap<String, Document>, client: Client) -> Response {
+    let utf8 = client.utf8;
     let params = &request.params;
     let document = params
         .pointer("/textDocument/uri")
@@ -130,7 +171,7 @@ fn answer(request: &Request, documents: &HashMap<String, String>, utf8: bool) ->
         .and_then(|uri| Some((uri, documents.get(uri)?, path_of(uri)?)));
     let result = match (request.method.as_str(), document) {
         ("textDocument/codeAction", Some((uri, document, path))) => {
-            let lines = Lines::new(document, utf8);
+            let lines = Lines::new(&document.text, utf8);
             let range = lines.range(params.get("range"));
             let only = params.pointer("/context/only").and_then(Value::as_array);
             let wants = |kind: &str| {
@@ -143,14 +184,16 @@ fn answer(request: &Request, documents: &HashMap<String, String>, utf8: bool) ->
                     })
                 })
             };
-            code_actions(uri, &path, &lines, range, &wants)
+            // A client that takes it gets the version, so it drops edits to a newer text.
+            let version = document.version.as_ref().filter(|_| client.versioned);
+            code_actions((uri, version), &path, &lines, range, &wants)
         }
         ("textDocument/formatting", Some((_, document, path))) => {
-            let lines = Lines::new(document, utf8);
+            let lines = Lines::new(&document.text, utf8);
             formatting(&path, &lines, None)
         }
         ("textDocument/rangeFormatting", Some((_, document, path))) => {
-            let lines = Lines::new(document, utf8);
+            let lines = Lines::new(&document.text, utf8);
             let range = lines.range(params.get("range"));
             formatting(&path, &lines, Some(range))
         }
@@ -233,7 +276,7 @@ fn config_for(path: &Path) -> Result<Config, String> {
 
 /// A quick fix for each safe fix with a problem in `range`, and one action for them all.
 fn code_actions(
-    uri: &str,
+    (uri, version): (&str, Option<&Value>),
     path: &Path,
     lines: &Lines<'_>,
     range: Range<usize>,
@@ -251,16 +294,28 @@ fn code_actions(
             .into_iter()
             .map(|(span, new)| json!({ "range": lines.span(span), "newText": new }))
             .collect();
-        json!({
-            "title": title,
-            "kind": kind,
-            "edit": { "changes": { uri: edits } },
-        })
+        let edit = match version {
+            Some(version) => json!({ "documentChanges": [{
+                "textDocument": { "uri": uri, "version": version },
+                "edits": edits,
+            }]}),
+            None => json!({ "changes": { uri: edits } }),
+        };
+        json!({ "title": title, "kind": kind, "edit": edit })
     };
     let mut actions = Vec::new();
     if wants("quickfix") {
+        let report = jsonvet::check(text, &config);
         for fix in &all.fixes {
-            if !(range.start..=range.end).contains(&fix.offset) {
+            // The fix's problem may start after it, as a trailing comma's is the bracket after
+            // it: the nearest problem of its rule from the fix on, else the fix's own place.
+            let end = report
+                .problems()
+                .iter()
+                .find(|p| p.rule() == fix.rule && p.offset() >= fix.offset)
+                .map_or(fix.offset, jsonvet::Problem::end);
+            // Inclusive at both ends, so a caret that touches the problem counts.
+            if fix.offset > range.end || end < range.start {
                 continue;
             }
             let Ok(one) = jsonvet::try_fix_at(text, &config, false, Some(&[fix.offset])) else {
@@ -531,14 +586,20 @@ impl<'t> Lines<'t> {
 /// The path a `file:` URI names, or `None` for any other.
 fn path_of(uri: &str) -> Option<PathBuf> {
     let rest = uri.strip_prefix("file://")?;
-    // After the host, which is empty or `localhost`.
-    let path = &rest[rest.find('/')?..];
+    let rest = rest.split(['?', '#']).next().unwrap_or_default();
+    // A host other than none or `localhost` names another machine.
+    let path = match rest.find('/')? {
+        0 => rest,
+        at if &rest[..at] == "localhost" => &rest[at..],
+        _ => return None,
+    };
     let mut bytes = Vec::with_capacity(path.len());
     let mut iter = path.bytes();
     while let Some(byte) = iter.next() {
         if byte == b'%' {
-            let hex = [iter.next()?, iter.next()?];
-            bytes.push(u8::from_str_radix(std::str::from_utf8(&hex).ok()?, 16).ok()?);
+            let digit = |b: Option<u8>| char::from(b?).to_digit(16);
+            let (high, low) = (digit(iter.next())?, digit(iter.next())?);
+            bytes.push(u8::try_from(high * 16 + low).ok()?);
         } else {
             bytes.push(byte);
         }
@@ -596,6 +657,11 @@ mod tests {
         }
 
         fn request(&mut self, method: &str, params: Value) -> Value {
+            self.try_request(method, params).expect("no error")
+        }
+
+        /// The result of a request, or the code of the error it got.
+        fn try_request(&mut self, method: &str, params: Value) -> Result<Value, i32> {
             self.next += 1;
             let id = RequestId::from(self.next);
             let request = Request::new(id.clone(), method.to_owned(), params);
@@ -606,7 +672,7 @@ mod tests {
             loop {
                 match self.connection.receiver.recv().expect("a message") {
                     Message::Response(response) if response.id == id => {
-                        return response.response_result.expect("no error");
+                        return response.response_result.map_err(|e| e.code);
                     }
                     _ => {}
                 }
@@ -1027,6 +1093,13 @@ mod tests {
         }
         assert_eq!(path_of("untitled:Untitled-1"), None);
         assert_eq!(path_of("file:///%zz"), None);
+        // A sign is no hex digit, though `from_str_radix` takes one.
+        assert_eq!(path_of("file:///a%+f.json"), None);
+        // Another host is a network share, which is not a local path.
+        assert_eq!(path_of("file://server/share/x.json"), None);
+        let local = path_of("file:///x.json").expect("a path");
+        assert_eq!(path_of("file:///x.json?a=1#b"), Some(local.clone()));
+        assert_eq!(path_of("file:///x.json#b"), Some(local));
     }
 
     #[test]
@@ -1045,5 +1118,109 @@ mod tests {
         assert_eq!(response.response_result.map_err(|e| e.code), Err(-32601));
         client.notify("exit", Value::Null);
         assert_eq!(client.server.join().expect("no panic"), Ok(false));
+    }
+
+    #[test]
+    fn requests_after_shutdown_are_refused_and_exit_then_succeeds() {
+        let (mut client, _) = Client::start(&json!({}));
+        assert_eq!(client.request("shutdown", Value::Null), Value::Null);
+        client.notify("$/cancelRequest", json!({ "id": 1 }));
+        client.notify(
+            "textDocument/didClose",
+            json!({ "textDocument": { "uri": "file:///a.json" } }),
+        );
+        let params = json!({ "textDocument": { "uri": "file:///a.json" }, "options": {} });
+        assert_eq!(
+            client.try_request("textDocument/formatting", params),
+            Err(-32600)
+        );
+        client.notify("exit", Value::Null);
+        assert_eq!(client.server.join().expect("no panic"), Ok(true));
+    }
+
+    #[test]
+    fn the_end_of_input_after_shutdown_without_exit_fails() {
+        let (mut client, _) = Client::start(&json!({}));
+        assert_eq!(client.request("shutdown", Value::Null), Value::Null);
+        let Client {
+            connection, server, ..
+        } = client;
+        drop(connection);
+        assert_eq!(server.join().expect("no panic"), Ok(false));
+    }
+
+    #[test]
+    fn a_quick_fix_is_offered_anywhere_on_its_problem() {
+        let dir = folder("overlap");
+        let (mut client, _) = Client::start(&json!({}));
+        let mut titles = |name: &str, text: &str, range: Value| {
+            let file = uri(&dir.join(name));
+            client.open(&file, text);
+            let params = json!({
+                "textDocument": { "uri": file },
+                "range": range,
+                "context": { "diagnostics": [], "only": ["quickfix"] },
+            });
+            let actions = client.request("textDocument/codeAction", params);
+            actions
+                .as_array()
+                .expect("an array")
+                .iter()
+                .map(|a| a["title"].as_str().unwrap_or_default().to_owned())
+                .collect::<Vec<_>>()
+        };
+        // The diagnostic is on `]`, the comma the fix drops is before it.
+        assert_eq!(
+            titles("a.jsonc", "[1,2,]\n", range((0, 5), (0, 6))),
+            ["Remove the trailing comma"]
+        );
+        // A caret just after the byte order mark.
+        assert_eq!(
+            titles("b.jsonl", "\u{feff}[1]\n", range((0, 1), (0, 1))),
+            ["Remove the byte order mark"]
+        );
+        // Not on the next line.
+        assert_eq!(
+            titles("c.jsonc", "[1,2,]\n\n", range((1, 0), (1, 0))),
+            Vec::<String>::new()
+        );
+        client.stop();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_fix_names_the_version_it_edits_when_the_client_takes_one() {
+        let dir = folder("versions");
+        let file = uri(&dir.join("a.jsonc"));
+        let capabilities = json!({ "workspace": { "workspaceEdit": { "documentChanges": true } } });
+        let (mut client, _) = Client::start(&capabilities);
+        client.open(&file, "[1,]\n");
+        client.notify(
+            "textDocument/didChange",
+            json!({
+                "textDocument": { "uri": file, "version": 3 },
+                "contentChanges": [{ "text": "[1,2,]\n" }],
+            }),
+        );
+        client.diagnostics();
+        let params = json!({
+            "textDocument": { "uri": file },
+            "range": range((0, 0), (0, 6)),
+            "context": { "diagnostics": [] },
+        });
+        let actions = client.request("textDocument/codeAction", params);
+        let edit = &actions[0]["edit"];
+        assert_eq!(edit.get("changes"), None);
+        let change = &edit["documentChanges"][0];
+        assert_eq!(change["textDocument"], json!({ "uri": file, "version": 3 }));
+        assert_eq!(change["edits"][0]["newText"], "");
+        // Closing publishes no version: the document has none any more.
+        client.notify(
+            "textDocument/didClose",
+            json!({ "textDocument": { "uri": file } }),
+        );
+        assert_eq!(client.diagnostics().get("version"), None);
+        client.stop();
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
