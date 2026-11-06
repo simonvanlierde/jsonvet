@@ -323,11 +323,11 @@ struct Frame<'a> {
     element_index: usize,
 }
 
-/// `a == b`, but the first byte is compared inline, so keys of one length that differ there
-/// skip the `memcmp` call.
+/// `a == b`, but the first and last bytes are compared inline, so keys of one length that
+/// differ there, such as `opt1` and `opt2`, skip the `memcmp` call.
 #[inline]
 fn key_eq(a: &[u8], b: &[u8]) -> bool {
-    a.len() == b.len() && a.first() == b.first() && a == b
+    a.len() == b.len() && a.first() == b.first() && a.last() == b.last() && a == b
 }
 
 /// An object's keys with the offset of each, in the order they came.
