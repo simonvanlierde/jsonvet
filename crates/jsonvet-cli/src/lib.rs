@@ -885,8 +885,10 @@ fn read(path: &Path) -> Result<String, String> {
     let read = std::fs::metadata(path).and_then(|meta| {
         if meta.is_file() {
             // The size is known already: `fs::read`, and `File`'s own `read_to_end`, would ask
-            // the system for it again. `take` reads to the end without asking.
-            let mut bytes = Vec::with_capacity(usize::try_from(meta.len()).unwrap_or(0));
+            // the system for it again. `take` reads to the end without asking. A file too big for
+            // memory fails alone, as an error, rather than aborting the run.
+            let mut bytes = Vec::new();
+            bytes.try_reserve_exact(usize::try_from(meta.len()).unwrap_or(usize::MAX))?;
             std::fs::File::open(path)?
                 .take(u64::MAX)
                 .read_to_end(&mut bytes)
