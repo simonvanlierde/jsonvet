@@ -231,9 +231,11 @@ the walk checks those two in each folder before it enters it.
 ```text
 crates/jsonvet/        library: the parser, rules and positions. Depends on hashbrown, memchr and
                        unicode-properties.
-crates/jsonvet-cli/    binaries jsonvet and check-json5: arguments, config, output, and --schema
-                       (jsonschema, serde_json). Built into the PyPI wheels by maturin.
+crates/jsonvet-cli/    binaries jsonvet and check-json5: arguments, config, output, --schema
+                       (jsonschema, serde_json) and the language server, `jsonvet lsp`
+                       (lsp-server). Built into the PyPI wheels by maturin.
 crates/jsonvet-wasm/   the library as WebAssembly for the playground: two exports, `check` and `version`
+editors/vscode/        the VS Code extension: a thin client for `jsonvet lsp`, in TypeScript
 playground/            the browser playground: a static page around the wasm. Deployed by pages.yml.
 compat/check-json5/    the check-json5 package on PyPI: depends on jsonvet, nothing else
 setup.py               placeholder that pre-commit installs: pins the jsonvet wheel

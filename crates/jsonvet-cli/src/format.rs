@@ -5,7 +5,7 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::sync::Mutex;
 
-use jsonvet::{FormatOptions, Rule};
+use jsonvet::{Config, FormatOptions, Rule};
 
 use crate::args::STDIN;
 use crate::editorconfig;
@@ -32,6 +32,21 @@ fn options(settings: &FormatSettings, user: bool, style: editorconfig::Style) ->
         normalize_json5: settings.normalize_json5.unwrap_or(defaults.normalize_json5),
         bracket_spacing: settings.bracket_spacing.unwrap_or(defaults.bracket_spacing),
     }
+}
+
+/// The dialect and rules, and the layout, that `jsonvet fmt` uses for the file at `path`.
+pub(crate) fn setup(
+    path: &Path,
+    resolver: &Mutex<Resolver>,
+    styles: &editorconfig::Cache,
+) -> Result<(Config, FormatOptions), String> {
+    let (settings, dirs) = {
+        let mut resolver = lock(resolver);
+        (resolver.for_file(path)?, resolver.search_dirs(path))
+    };
+    let config = settings.config_for(&path.to_string_lossy());
+    let style = styles.style(path, &dirs);
+    Ok((config, options(&settings.format, settings.user, style)))
 }
 
 /// What formatting one file gave: the lines for standard error, the text for `out`, and
@@ -124,13 +139,7 @@ fn one(
         }
     };
     let path = Path::new(shown);
-    let (settings, dirs) = {
-        let mut resolver = lock(resolver);
-        (resolver.for_file(path)?, resolver.search_dirs(path))
-    };
-    let config = settings.config_for(&shown.to_string_lossy());
-    let style = styles.style(path, &dirs);
-    let options = options(&settings.format, settings.user, style);
+    let (config, options) = setup(path, resolver, styles)?;
     let formatted = match jsonvet::format(&text, &config, &options) {
         Ok(formatted) => formatted,
         Err(jsonvet::FormatError::Syntax(report)) => {
