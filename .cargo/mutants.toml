@@ -21,6 +21,9 @@ exclude_re = [
   "parse.rs:.* replace && with \\|\\| in Keys<'a>::first_or_insert",
   # Speed only: how many slots the key index reserves when an object passes LINEAR_KEYS keys.
   "parse.rs:\\d+:38: replace \\* with (/|\\+) in Keys<'a>::first_or_insert",
+  # Speed only: scanning the kept text again when no duplicate was dropped finds the same line
+  # endings, since no other fix touches one.
+  "fixes.rs:\\d+:24: replace && with \\|\\| in try_fix_at",
   # Speed only: which column-count branch runs.
   "report.rs:\\d+:26: replace - with \\+ in Report<'a>::location",
   # With `decode` off, the extra value goes to an event sink that is absent, or to a key path
