@@ -810,16 +810,29 @@ function clockStep() {
 }
 
 try {
-  ({ rowStarts, rowOf } = await import(`./lines.mjs${version}`));
-  ({ encode, decode } = await import(`./share.mjs${version}`));
-  ({ tokenEnd, stack, formatMs, lineCount } = await import(`./proof.mjs${version}`));
-  ({ hosts } = await import(`./hosts.mjs${version}`));
-  ({ fixesFor, fixSummary } = await import(`./actions.mjs${version}`));
-  const settings = await import(`./settings.mjs${version}`);
+  // Start the wasm download now, so it runs while the modules load.
+  const wasmFile = fetch(new URL(`./pkg/jsonvet_wasm_bg.wasm${version}`, import.meta.url));
+  const [lines, shareMod, proof, hostsMod, actions, settings, options, snippetsMod, wasm] = await Promise.all([
+    import(`./lines.mjs${version}`),
+    import(`./share.mjs${version}`),
+    import(`./proof.mjs${version}`),
+    import(`./hosts.mjs${version}`),
+    import(`./actions.mjs${version}`),
+    import(`./settings.mjs${version}`),
+    import(`./options.mjs${version}`),
+    import(`./snippets.mjs${version}`),
+    import(`./pkg/jsonvet_wasm.js${version}`),
+  ]);
+  ({ rowStarts, rowOf } = lines);
+  ({ encode, decode } = shareMod);
+  ({ tokenEnd, stack, formatMs, lineCount } = proof);
+  ({ hosts } = hostsMod);
+  ({ fixesFor, fixSummary } = actions);
   ({ formatArgs } = settings);
   fixValues = settings.defaults("fix");
   formatValues = settings.defaults("format");
-  const { mountOptions } = await import(`./options.mjs${version}`);
+  const { mountOptions } = options;
+  ({ snippets } = snippetsMod);
   // Without popover support (Safari before 17, Firefox before 125) the panels would sit open
   // over the page, so those browsers get the actions with their defaults and no options.
   if (!Object.hasOwn(HTMLElement.prototype, "popover")) {
@@ -830,9 +843,7 @@ try {
     mountOptions({ tool: "fix", button: $("fix-opts"), pop: $("fix-pop"), values: fixValues, dialect: () => dialect, onChange: () => loaded && run(), say }),
     mountOptions({ tool: "format", button: $("format-opts"), pop: $("format-pop"), values: formatValues, dialect: () => dialect, onChange() {}, say }),
   );
-  ({ snippets } = await import(`./snippets.mjs${version}`));
-  const wasm = await import(`./pkg/jsonvet_wasm.js${version}`);
-  await wasm.default({ module_or_path: new URL(`./pkg/jsonvet_wasm_bg.wasm${version}`, import.meta.url) });
+  await wasm.default({ module_or_path: wasmFile });
   check = wasm.check;
   runFix = wasm.fix;
   runFormat = wasm.format;
