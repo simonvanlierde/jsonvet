@@ -1,7 +1,8 @@
 // The options popover of a split button: one row per setting that applies to the dialect (from
 // settings.mjs), each a label and a compact control, and the real config that gives the same
 // result, with a copy button. `values` is the tool's live state: this module writes to it.
-import { changed, clean, configText, rowsFor, TOOLS } from "./settings.mjs";
+// Same ?v= as this file's own URL, so main.mjs and this module share one settings.mjs fetch.
+const { changed, clean, configText, rowsFor, TOOLS } = await import(`./settings.mjs${new URL(import.meta.url).search}`);
 
 function el(tag, cls, text) {
   const node = document.createElement(tag);
