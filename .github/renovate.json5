@@ -63,6 +63,12 @@
   lockFileMaintenance: { enabled: true },
   packageRules: [
     {
+      // vsce refuses @types/vscode newer than engines.vscode in editors/vscode, so they move together, by hand.
+      matchPackageNames: ["@types/vscode"],
+      matchUpdateTypes: ["major", "minor"],
+      enabled: false,
+    },
+    {
       // One pull request a month for everything outside the matrix; majors stay separate.
       matchUpdateTypes: ["minor", "patch", "digest", "pin", "pinDigest", "lockFileMaintenance"],
       groupName: "dependencies",
