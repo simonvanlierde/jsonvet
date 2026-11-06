@@ -8,6 +8,17 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
+<!-- TODO: 3.4.0 ships with a new speed table: run `uv run scripts/bench.py --write` before the release. -->
+
+### Added
+
+- `jsonvet lsp` runs a language server on standard input and output. It shows each open file's
+  problems as you type, checked with the settings and schema a `jsonvet` run would use for that
+  file, offers the safe fixes as quick fixes and as one `source.fixAll.jsonvet` action, and formats
+  a file as `jsonvet fmt` does. Formatting a selection changes only the text inside it. It works in
+  any editor with a Language Server Protocol client; [editors](docs/editors.md) shows Neovim
+  and Helix. A file named `lsp` now needs `./lsp`, as `fmt` does.
+
 ### Changed
 
 - The license is now `MIT OR Apache-2.0`, was MIT. This is the Rust convention: Apache-2.0 adds a

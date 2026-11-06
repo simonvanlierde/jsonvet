@@ -151,5 +151,7 @@ is more, jsonvet works out its size without building it, prints
 
 ## Not done yet
 
-- Range formatting and sorting keys.
+- Sorting keys.
+- Range formatting from the command line. The language server formats a range
+  ([editors](editors.md)).
 - Filling a number array across lines, as Prettier does.
