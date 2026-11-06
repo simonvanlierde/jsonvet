@@ -555,10 +555,20 @@ fn a_bad_per_file_rules_entry_is_a_config_error() {
         ),
         (
             "per-file-files.toml",
+            "per-file-rules = [{ syntax = \"off\" }]\n",
+        ),
+        (
+            "per-file-file.toml",
             "per-file-rules = [{ file = \"*.json\", syntax = \"off\" }]\n",
+        ),
+        (
+            "per-file-level.toml",
+            "[[per-file-rules]]\nfiles = \"*.json\"\nduplicate-key = 1\n",
         ),
         ("per-file-entry.toml", "per-file-rules = [1]\n"),
         ("per-file-glob.toml", "per-file-rules = [{ files = 1 }]\n"),
+        // The top-level table names itself the same way.
+        ("rule-level.toml", "rules = { syntax = 1 }\n"),
         ("d.json", "{}"),
     ]);
     for (config, message) in [
@@ -580,6 +590,16 @@ fn a_bad_per_file_rules_entry_is_a_config_error() {
             "per-file-files.toml:1:19",
             "each `per-file-rules` entry needs a `files` string",
         ),
+        (
+            "per-file-file.toml:1:21",
+            "unknown key `file` (did you mean `files`?) in a `per-file-rules` entry; expected \
+             files and rule ids",
+        ),
+        (
+            "per-file-level.toml:3:17",
+            "`per-file-rules.duplicate-key` must be a string",
+        ),
+        ("rule-level.toml:1:20", "`rules.syntax` must be a string"),
         (
             "per-file-glob.toml:1:29",
             "each `per-file-rules` entry needs a `files` string",

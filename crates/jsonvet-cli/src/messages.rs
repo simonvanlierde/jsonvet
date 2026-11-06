@@ -84,7 +84,7 @@ const ENGLISH: &[(&str, &str)] = &[
     ),
     ("config.tool-not-table", "`tool.jsonvet` must be a table"),
     ("config.no-tool-table", "no [tool.jsonvet] table"),
-    ("config.rule-not-string", "`rules.{id}` must be a string"),
+    ("config.rule-not-string", "`{table}.{id}` must be a string"),
     (
         "config.exclude-type",
         "`exclude` must be an array of strings",
@@ -131,6 +131,10 @@ const ENGLISH: &[(&str, &str)] = &[
     (
         "config.entry-unknown-key",
         "unknown key `{key}`{hint} in a `{array}` entry; expected {first} and {second}",
+    ),
+    (
+        "config.rule-entry-unknown-key",
+        "unknown key `{key}`{hint} in a `per-file-rules` entry; expected files and rule ids",
     ),
     (
         "config.entry-needs",

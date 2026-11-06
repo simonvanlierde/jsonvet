@@ -693,7 +693,7 @@ pub(crate) fn load(path: &Path, root: Option<&Path>) -> Result<Settings, String>
         let here = value.span().start;
         match (key.get_ref().as_ref(), value.get_ref()) {
             ("rules", DeValue::Table(rules)) => {
-                let rules = severities(rules.iter(), &at)?;
+                let rules = severities("rules", rules.iter(), &at)?;
                 settings.rules.push(RulePattern::every_file(rules));
             }
             ("per-file-rules", DeValue::Array(entries)) => {
@@ -763,8 +763,10 @@ pub(crate) const KEYS: [&str; 6] = [
     "format",
 ];
 
-/// A severity for each rule id, from the `rules` table or a `per-file-rules` entry.
+/// A severity for each rule id, from the `rules` table or a `per-file-rules` entry, which
+/// `table` names in errors.
 fn severities<'t>(
+    table: &str,
     rules: impl Iterator<Item = (&'t Spanned<Cow<'t, str>>, &'t Spanned<DeValue<'t>>)>,
     at: &dyn Fn(usize, &dyn std::fmt::Display) -> String,
 ) -> Result<Vec<(Rule, Severity)>, String> {
@@ -775,7 +777,10 @@ fn severities<'t>(
         let severity = severity.get_ref().as_str().ok_or_else(|| {
             at(
                 severity_at,
-                &messages::fill("config.rule-not-string", &[("id", id.get_ref())]),
+                &messages::fill(
+                    "config.rule-not-string",
+                    &[("table", &table), ("id", id.get_ref())],
+                ),
             )
         })?;
         let severity = parse_severity(severity).map_err(|e| at(severity_at, &e))?;
@@ -796,6 +801,19 @@ fn rule_entry(
         let e = messages::fill("config.entry-type", &[("array", &array)]);
         return Err(at(entry.span().start, &e));
     };
+    // A key that is no rule id but close to `files` is a typo for it, not an unknown rule.
+    if let Some(key) = table
+        .keys()
+        .find(|key| key.get_ref().parse::<Rule>().is_err() && key.get_ref() != "files")
+        && let hint = messages::did_you_mean(key.get_ref(), ["files"])
+        && !hint.is_empty()
+    {
+        let e = messages::fill(
+            "config.rule-entry-unknown-key",
+            &[("key", key.get_ref()), ("hint", &hint)],
+        );
+        return Err(at(key.span().start, &e));
+    }
     let files = table.get("files");
     let Some(files) = files.and_then(|files| files.get_ref().as_str()) else {
         let offset = files.map_or(entry.span().start, |files| files.span().start);
@@ -808,7 +826,7 @@ fn rule_entry(
     let rules = table.iter().filter(|(key, _)| key.get_ref() != "files");
     Ok(RulePattern {
         files: Some(Glob::new(files)),
-        rules: severities(rules, at)?,
+        rules: severities(array, rules, at)?,
         base,
     })
 }
