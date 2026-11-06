@@ -16,8 +16,12 @@ version for a new option or output, the patch version for a fix.
   problems as you type, checked with the settings and schema a `jsonvet` run would use for that
   file, offers the safe fixes as quick fixes and as one `source.fixAll.jsonvet` action, and formats
   a file as `jsonvet fmt` does. Formatting a selection changes only the text inside it. It works in
-  any editor with a Language Server Protocol client; [editors](docs/editors.md) shows Neovim
-  and Helix. A file named `lsp` now needs `./lsp`, as `fmt` does.
+  any editor with a Language Server Protocol client; [editors](docs/editors.md) shows VS Code,
+  Neovim and Helix. A file named `lsp` now needs `./lsp`, as `fmt` does.
+- A VS Code extension in `editors/vscode`, a thin client for `jsonvet lsp`. It runs `jsonvet` from
+  `PATH` or the `jsonvet.path` setting, and asks once per workspace whether to turn off VS Code's
+  own JSON validation, which reports some of the same problems
+  ([extension README](editors/vscode/README.md)). It is not on the Marketplace yet.
 
 ### Changed
 

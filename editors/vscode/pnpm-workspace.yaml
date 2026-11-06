@@ -1,0 +1,3 @@
+# esbuild runs from its platform package, so its install script, which only checks that, is not needed.
+allowBuilds:
+  esbuild: false

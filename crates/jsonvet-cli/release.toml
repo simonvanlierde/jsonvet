@@ -5,6 +5,7 @@ pre-release-replacements = [
   { file = "../../setup.py", search = "jsonvet==[^\"]+", replace = "jsonvet=={{version}}", exactly = 1 },
   { file = "../../compat/check-json5/pyproject.toml", search = "(?m)^version = \"[^\"]+\"", replace = "version = \"{{version}}\"", exactly = 1 },
   { file = "../../compat/check-json5/pyproject.toml", search = "jsonvet==[^\"]+", replace = "jsonvet=={{version}}", exactly = 1 },
+  { file = "../../editors/vscode/package.json", search = "\"version\": \"[^\"]+\"", replace = "\"version\": \"{{version}}\"", exactly = 1 },
   { file = "../../README.md", search = "rev: v\\S+", replace = "rev: v{{version}}", exactly = 1 },
   { file = "../../docs/usage.md", search = "rev: v\\S+", replace = "rev: v{{version}}", exactly = 1 },
   { file = "../../docs/format.md", search = "rev: v\\S+", replace = "rev: v{{version}}", exactly = 1 },

@@ -9,10 +9,6 @@ a promise, and none of it has a date. Released work is in [CHANGELOG.md](CHANGEL
 
 - **4.0: drop the check-json5 compatibility.** The `check-json5` binary and package, `--strict`
   and the old hook id go away. The 3.x releases keep them.
-- **A language server and a VS Code extension:** `jsonvet lsp` shows problems as you type, offers
-  the safe fixes and formats from the editor, with range formatting, so formatting a selection
-  leaves the rest of the file as it is. It works in any editor that speaks the Language Server
-  Protocol; the VS Code extension is a thin client for it.
 - **Rule settings per file:** a `files` glob with its own `rules`, in the shape `dialects` already
   uses, to turn a rule off for some files. It works in every dialect, including those without
   comments.
