@@ -82,6 +82,7 @@ uvx jsonvet .                    # check every JSON-like file under a folder, no
 uvx jsonvet --fix .              # also fix what has a safe fix, in place
 uvx jsonvet fmt .                # format the files, keeping their comments
 uvx jsonvet fmt --check .        # list files that need formatting; exit 1 if any
+jsonvet lsp                      # the language server, for your editor
 uv tool install jsonvet          # install it (or `pipx install jsonvet`)
 cargo install jsonvet-cli        # build it from source
 cargo binstall jsonvet-cli       # download the binary from the GitHub release
@@ -93,8 +94,9 @@ for Linux, macOS and Windows, with checksums and an SBOM
 ([verifying a release](https://github.com/simonvanlierde/jsonvet/blob/main/SECURITY.md#verifying-a-release)).
 A folder stands for the JSON-like files under it, skipping hidden and ignored files, and `-` reads
 standard input. The [reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#fixing)
-covers `--fix`, and [formatting](https://github.com/simonvanlierde/jsonvet/blob/main/docs/format.md)
-covers `jsonvet fmt`.
+covers `--fix`, [formatting](https://github.com/simonvanlierde/jsonvet/blob/main/docs/format.md)
+covers `jsonvet fmt`, and [editors](https://github.com/simonvanlierde/jsonvet/blob/main/docs/editors.md)
+covers `jsonvet lsp` in VS Code, Neovim, Helix and other editors.
 `jsonvet --help` lists every option, and the
 [reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md) has the details.
 
@@ -239,6 +241,7 @@ the full check and lint suite.
 
 - [Reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md),
   [formatting](https://github.com/simonvanlierde/jsonvet/blob/main/docs/format.md),
+  [editors](https://github.com/simonvanlierde/jsonvet/blob/main/docs/editors.md),
   [design](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md),
   [accessibility](https://github.com/simonvanlierde/jsonvet/blob/main/docs/accessibility.md) and
   [CHANGELOG](https://github.com/simonvanlierde/jsonvet/blob/main/CHANGELOG.md).

@@ -24,6 +24,7 @@ The details behind the [README](../README.md). Why things work this way is in
 --stdin-filename PATH      the name standard input (`-`) goes by
 --config FILE, --no-config
 jsonvet fmt FILE...       format files instead of checking them, see [formatting](format.md)
+jsonvet lsp               run the language server for editors, see [editors](editors.md)
 --list-rules               list the rules with their default severities
 --explain RULE             explain a rule, with an example
 ```

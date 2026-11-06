@@ -39,6 +39,9 @@ jsonvet = { path = "../jsonvet", version = "=3.3.1" }
 # No default features: they fetch remote `$ref`s over HTTP and read them from disk.
 jsonschema = { version = "0.60.1", default-features = false }
 lexopt = "0.3.2"
+# `jsonvet lsp`: the protocol's framing and handshake over standard input and output. Its
+# messages are read and built with serde_json, as lsp-types would add a second fluent-uri.
+lsp-server = "0.10.0"
 # The type of an error's lazily read value, which jsonschema's `Json` trait names but does not
 # re-export (ADR 0014). Its version is jsonschema's, so it moves with it.
 jsonschema-value = { version = "=0.60.1", default-features = false }

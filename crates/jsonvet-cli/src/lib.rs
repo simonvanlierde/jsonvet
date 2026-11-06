@@ -16,6 +16,7 @@ mod format;
 mod frame;
 mod glob;
 mod json;
+mod lsp;
 mod messages;
 mod output;
 mod rules;
@@ -85,7 +86,8 @@ fn run_here() -> ExitCode {
         "test panic"
     );
     let annotate = std::env::var_os("GITHUB_ACTIONS").is_some_and(|v| v == "true");
-    let stdout = io::stdout().lock();
+    // Not locked: `jsonvet lsp` writes to it from a thread of its own.
+    let stdout = io::stdout();
     let set = |name| std::env::var_os(name).is_some_and(|v| !v.is_empty());
     // NO_COLOR wins over FORCE_COLOR: asking for no color is the safer wish to honour.
     // FORCE_COLOR=0 and =false ask for no color, as Node and chalk read them.
@@ -165,6 +167,7 @@ pub fn run_with(
         Command::Version => return print(out, concat!("jsonvet ", env!("CARGO_PKG_VERSION"))),
         Command::ListRules => return print(out, &rules::list()),
         Command::Explain(text) => return print(out, &text),
+        Command::Lsp => return lsp::run(),
         Command::Check(args) => *args,
     };
     messages::english_only(args.format != Format::Text);
@@ -839,6 +842,44 @@ fn check<'t>(
             None => (jsonvet::check(text, &config), Vec::new()),
         },
     }
+}
+
+/// Check `text` as a run checks the file at `path`: with its settings and its schema, if any.
+/// `Err` is what ends such a run: a config file or schema that cannot be used.
+fn check_file<'t>(path: &Path, text: &'t str) -> Result<Checked<'t>, String> {
+    let resolver = Mutex::new(Resolver::new(
+        &args::ConfigSource::Search,
+        Settings::default(),
+    )?);
+    let settings_for = |path: &Path| lock(&resolver).for_file(path);
+    let schemas = Schemas::default();
+    let load = |path: &Path, quiet| {
+        schemas.get(path, quiet, |admit| {
+            Schema::load(path, &*settings_for(path)?, quiet, admit)
+        })
+    };
+    let root = |path: &Path| lock(&resolver).root(path);
+    let jobs = jobs(
+        vec![path.into()],
+        &OsStr::to_owned,
+        &settings_for,
+        None,
+        &load,
+    )?;
+    // One file in, one job out.
+    let Some(job @ ((settings, schema), _)) = jobs.first() else {
+        return Err(String::new());
+    };
+    let name = path.to_string_lossy();
+    let checked = match schema {
+        Some(schema) => check(&name, text, settings, Some(schema), 1, None),
+        None if with_schema(job, path.as_os_str(), text) => {
+            check_own_schema(&name, text, settings, &schemas, &root, &load, 1)
+        }
+        None => check(&name, text, settings, None, 1, None),
+    };
+    schemas.over()?;
+    Ok(checked)
 }
 
 /// How text output looks: code frames on a terminal and lines otherwise, so tools reading a pipe

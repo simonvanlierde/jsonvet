@@ -4246,3 +4246,67 @@ fn a_folder_inside_another_is_checked_once_whichever_comes_first() {
         );
     }
 }
+
+/// One message of the language server protocol, framed as it goes over a pipe.
+fn lsp_message(body: &serde_json::Value) -> Vec<u8> {
+    let body = body.to_string();
+    format!("Content-Length: {}\r\n\r\n{body}", body.len()).into_bytes()
+}
+
+#[test]
+fn lsp_checks_a_document_over_stdio_and_exits_0_after_shutdown() {
+    use serde_json::json;
+    use std::io::{BufRead, BufReader, Read, Write};
+    let dir = workdir(&[("jsonvet.toml", "")]);
+    let path = dir.join("a.json").to_string_lossy().replace('\\', "/");
+    let uri = format!("file:///{}", path.trim_start_matches('/'));
+    let mut child = command(env!("CARGO_BIN_EXE_jsonvet"))
+        .arg("lsp")
+        .current_dir(&dir)
+        .env("XDG_CONFIG_HOME", dir.join("no-user"))
+        .env("APPDATA", dir.join("no-user"))
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("run jsonvet lsp");
+    let mut input = child.stdin.take().expect("stdin");
+    let text = "{\"a\": 1, \"a\": 2}";
+    let messages = [
+        json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"capabilities": {}}}),
+        json!({"jsonrpc": "2.0", "method": "initialized", "params": {}}),
+        json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {"textDocument": {
+            "uri": uri, "languageId": "json", "version": 1, "text": text,
+        }}}),
+        json!({"jsonrpc": "2.0", "id": 2, "method": "shutdown"}),
+        json!({"jsonrpc": "2.0", "method": "exit"}),
+    ];
+    for message in &messages {
+        input.write_all(&lsp_message(message)).expect("written");
+    }
+    let start = std::time::Instant::now();
+    let mut output = BufReader::new(child.stdout.take().expect("stdout"));
+    let mut read = || -> serde_json::Value {
+        let mut length = 0;
+        loop {
+            let mut line = String::new();
+            output.read_line(&mut line).expect("a header");
+            match line.trim_end().split_once(": ") {
+                Some(("Content-Length", n)) => length = n.parse().expect("a length"),
+                None if line.trim_end().is_empty() => break,
+                _ => {}
+            }
+        }
+        let mut body = vec![0; length];
+        output.read_exact(&mut body).expect("a body");
+        serde_json::from_slice(&body).expect("JSON")
+    };
+    assert_eq!(read()["result"]["serverInfo"]["name"], "jsonvet");
+    let published = read();
+    assert_eq!(published["method"], "textDocument/publishDiagnostics");
+    let diagnostic = &published["params"]["diagnostics"][0];
+    assert_eq!(diagnostic["code"], "duplicate-key");
+    assert_eq!(read()["id"], 2);
+    drop(input);
+    assert_eq!(child.wait().expect("an exit").code(), Some(0));
+    no_hang(start);
+}

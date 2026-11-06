@@ -15,6 +15,7 @@ duplicate keys and the rules of each dialect.
 
 Usage: jsonvet [OPTIONS] [FILE]...
        jsonvet fmt [--check] [OPTIONS] [FILE]...
+       jsonvet lsp
 
 A FILE of - reads standard input. A directory stands for the files under it with an extension
 or name jsonvet checks by default. jsonvet skips hidden files there, and the files that
@@ -77,6 +78,10 @@ jsonvet fmt rewrites the files in place and keeps their comments. With --check i
 nothing, lists the files it would change and exits 1 if there are any. Standard input goes to
 standard output. A file named fmt needs ./fmt. Settings: docs/format.md in the repository.
 
+jsonvet lsp runs a language server on standard input and output, for editors: problems as you
+type, the safe fixes, and formatting. It takes settings as a check does. docs/editors.md in the
+repository shows how to set up an editor.
+
 Exit status: 0 when no file has an error, 1 when one does, 2 for a usage error, such as a
 schema that cannot be read or used. With --fix, the problems left decide.";
 
@@ -116,6 +121,8 @@ pub(crate) enum Command {
     ListRules,
     /// `--explain`'s text for the rule.
     Explain(String),
+    /// `jsonvet lsp`: the language server.
+    Lsp,
 }
 
 fn parse_format(name: &str) -> Result<Format, String> {
@@ -149,6 +156,16 @@ fn parse_color(when: &str) -> Result<Option<bool>, String> {
 }
 
 pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command, String> {
+    // `lsp` as the first argument is the subcommand; anywhere else it is a file.
+    let mut args = args.into_iter().peekable();
+    if args.next_if(|arg| arg == "lsp").is_some() {
+        return lsp(args);
+    }
+    check(args)
+}
+
+/// A check or `jsonvet fmt`, or what an option asks for instead.
+fn check(args: impl IntoIterator<Item = OsString>) -> Result<Command, String> {
     // `fmt` as the first argument is the subcommand; anywhere else it is a file.
     let mut args = args.into_iter().peekable();
     let fmt = args.next_if(|arg| arg == "fmt").is_some();
@@ -255,6 +272,18 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
         schema,
         stdin_filename,
     })))
+}
+
+/// `jsonvet lsp` with the arguments after `lsp`: `--stdio`, which names the transport the
+/// server always uses and some clients pass, and nothing else.
+fn lsp(mut args: impl Iterator<Item = OsString>) -> Result<Command, String> {
+    match args.find(|arg| arg != "--stdio") {
+        None => Ok(Command::Lsp),
+        Some(arg) => Err(messages::fill(
+            "error.lsp-option",
+            &[("option", &arg.to_string_lossy())],
+        )),
+    }
 }
 
 /// The options that are for checking, and an error under `jsonvet fmt`.
@@ -426,6 +455,19 @@ mod tests {
             parse(["--version"].iter().map(Into::into)),
             Ok(Command::Version)
         ));
+    }
+
+    #[test]
+    fn lsp_takes_only_stdio() {
+        let parsed = |args: &[&str]| parse(args.iter().map(Into::into));
+        assert!(matches!(parsed(&["lsp"]), Ok(Command::Lsp)));
+        assert!(matches!(parsed(&["lsp", "--stdio"]), Ok(Command::Lsp)));
+        assert_eq!(
+            parsed(&["lsp", "a.json"]).err(),
+            Some("`jsonvet lsp` takes no options or files, not `a.json`".to_owned())
+        );
+        // Anywhere but first, `lsp` is a file.
+        assert_eq!(check(&["a.json", "lsp"]).files, ["a.json", "lsp"]);
     }
 
     #[test]

@@ -47,6 +47,10 @@ const ENGLISH: &[(&str, &str)] = &[
         "`--{option}` is for checking and does not apply to `jsonvet fmt`",
     ),
     ("error.unsafe-fixes", "--unsafe-fixes needs --fix"),
+    (
+        "error.lsp-option",
+        "`jsonvet lsp` takes no options or files, not `{option}`",
+    ),
     ("error.unknown-option", "unknown option `{option}`"),
     ("error.not-utf8", "not valid UTF-8: {value}"),
     (
@@ -157,6 +161,15 @@ const ENGLISH: &[(&str, &str)] = &[
         "fmt.output-too-large",
         "not formatted: the output would be {size}",
     ),
+    ("lsp.fix", "Fix {rule}"),
+    ("lsp.fix.syntax", "Remove the trailing comma"),
+    ("lsp.fix.byte-order-mark", "Remove the byte order mark"),
+    ("lsp.fix.missing-final-newline", "Add the final newline"),
+    (
+        "lsp.fix.mixed-line-endings",
+        "Change every line ending to the file's first one",
+    ),
+    ("lsp.fix-all", "Fix every problem that has a safe fix"),
     ("write.failed", "cannot write the file: {error}"),
     ("write.read-only", "the file is read-only"),
     ("summary.none", "no problems in {files}"),
@@ -597,6 +610,7 @@ mod tests {
         let sources = [
             include_str!("args.rs"),
             include_str!("lib.rs"),
+            include_str!("lsp.rs"),
             include_str!("output.rs"),
             include_str!("rules.rs"),
             include_str!("format.rs"),
@@ -614,6 +628,7 @@ mod tests {
             "fmt.",
             "hint.",
             "list.",
+            "lsp.",
             "output.",
             "read.",
             "related.",
