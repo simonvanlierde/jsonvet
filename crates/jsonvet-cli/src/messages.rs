@@ -99,8 +99,12 @@ const ENGLISH: &[(&str, &str)] = &[
         "`dialects` must be an array of tables",
     ),
     (
+        "config.per-file-rules-type",
+        "`per-file-rules` must be an array of tables",
+    ),
+    (
         "config.unknown-key",
-        "unknown key `{key}`{hint}; expected rules, dialects, exclude, schemas or format",
+        "unknown key `{key}`{hint}; expected rules, per-file-rules, dialects, exclude, schemas or format",
     ),
     ("config.format-type", "`format` must be a table"),
     (
@@ -571,7 +575,7 @@ mod tests {
         assert!(ENGLISH.iter().all(|(_, text)| !text.is_empty()));
         assert!(jsonvet::MESSAGES.iter().all(|(_, text)| !text.is_empty()));
         // The ids the code builds from a name.
-        for key in ["exclude", "schemas", "rules", "dialects", "format"] {
+        for key in crate::settings::KEYS {
             assert!(!english(&format!("config.{key}-type")).is_empty(), "{key}");
         }
         for what in ["key", "string", "value"] {

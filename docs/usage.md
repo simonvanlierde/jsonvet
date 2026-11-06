@@ -328,12 +328,21 @@ usage error that names the closest known one.
 [rules]
 byte-order-mark = "error"
 
+[[per-file-rules]]
+files = "legacy/*.json"
+duplicate-key = "ignore"
+
 [[dialects]]
 files = ".vscode/*.json"
 dialect = "jwcc"
 ```
 
 - `rules` sets a severity per rule.
+- `per-file-rules` sets severities for the files a glob matches, in every dialect, including JSON
+  and JSON Lines, which have no comments: `per-file-rules = [{ files = "legacy/*.json",
+  duplicate-key = "ignore" }]`. Each entry holds a `files` glob and any rule ids from `rules`. A
+  rule takes the severity from `rules` first, then from each matching entry in order, so a later
+  entry wins, then from the command line.
 - `dialects` picks a dialect per glob. The last matching entry wins.
 - `exclude` lists globs for a folder walk to skip. A walk uses each folder's nearest config file.
 - `schemas` checks the files a glob matches against a schema on disk, as `--schema` does:

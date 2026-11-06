@@ -7,7 +7,7 @@ use lexopt::prelude::*;
 
 use crate::messages;
 use crate::output::Format;
-use crate::settings::{DialectPattern, Settings, parse_rule, parse_severity};
+use crate::settings::{DialectPattern, RulePattern, Settings, parse_rule, parse_severity};
 
 pub(crate) const HELP: &str = "\
 Check JSON, I-JSON, JSONC, JWCC (HuJSON), JSON5 and JSON Lines files for syntax errors,
@@ -189,8 +189,8 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
             }
             Long(severity @ ("error" | "warn" | "ignore")) => {
                 let severity = parse_severity(severity)?;
-                let rule = parse_rule(&value(&mut parser)?)?;
-                settings.rules.push((rule, severity));
+                let rule = (parse_rule(&value(&mut parser)?)?, severity);
+                settings.rules.push(RulePattern::every_file(vec![rule]));
             }
             Long("max-warnings") => {
                 let n = value(&mut parser)?;
@@ -342,7 +342,7 @@ fn rest(parser: &mut lexopt::Parser) -> OsString {
 mod tests {
     use std::collections::BTreeSet;
 
-    use super::{Command, ConfigSource, Format, HELP, parse};
+    use super::{Command, ConfigSource, Format, HELP, RulePattern, parse};
     use jsonvet::{Dialect, Rule, Severity};
 
     #[test]
@@ -439,7 +439,10 @@ mod tests {
         ]);
         assert_eq!(
             args.settings.rules,
-            [(Rule::DuplicateKey, Severity::Warning)]
+            [RulePattern::every_file(vec![(
+                Rule::DuplicateKey,
+                Severity::Warning
+            )])]
         );
         assert_eq!(args.max_warnings, Some(3));
         assert_eq!(args.config, ConfigSource::None);

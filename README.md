@@ -150,6 +150,9 @@ table in `pyproject.toml`:
 ```toml
 rules = { byte-order-mark = "ignore", missing-final-newline = "error" }
 
+# For the files a glob matches, after `rules`; the last matching entry wins.
+per-file-rules = [{ files = "legacy/*.json", duplicate-key = "ignore" }]
+
 # Checked in order; the last matching entry wins.
 dialects = [
   { files = ".vscode/*.json", dialect = "jsonc" },
