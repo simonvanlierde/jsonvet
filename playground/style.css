@@ -43,6 +43,8 @@ button { font: inherit; color: inherit; }
 .link { padding: 0; background: none; border: 0; cursor: pointer; }
 .link:hover:not(:disabled) { text-decoration-color: currentColor; }
 .link:disabled { cursor: default; text-decoration: none; }
+/* WCAG 2.2 target size (2.5.8): the footer links and the text buttons are at least 24px high. */
+.link, .colophon a { display: inline-block; min-height: 24px; line-height: 24px; }
 
 /* The slug: the proof's job line, in small mono, parts set off by middle dots. */
 .slug, .colophon .slug-part { font: 13px/1.6 var(--mono); color: var(--faint); }
@@ -220,7 +222,7 @@ kbd { padding: 0 4px; font-size: .8em; border: 1px solid var(--rule-strong); bor
 
 /* The colophon. */
 /* The theme toggle shows the theme in use: a sun on light paper, a moon on dark. */
-.theme { display: inline-grid; place-items: center; width: 1.6em; height: 1.6em; padding: 0; vertical-align: -0.35em; color: var(--faint); background: none; border: 0; cursor: pointer; }
+.theme { display: inline-grid; place-items: center; width: 1.6em; height: 1.6em; min-width: 24px; min-height: 24px; padding: 0; vertical-align: -0.35em; color: var(--faint); background: none; border: 0; cursor: pointer; }
 .theme:hover { color: var(--ink); }
 .theme[data-theme="dark"] .i-sun, .theme:not([data-theme="dark"]) .i-moon { display: none; }
 .colophon { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 24px; margin-top: 28px; padding-block: 10px 20px; border-top: 1px solid var(--rule); }
