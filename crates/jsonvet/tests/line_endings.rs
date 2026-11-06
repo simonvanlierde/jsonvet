@@ -684,3 +684,58 @@ fn fmt_syntax_reports_keep_the_configured_line_ending_severity() {
         assert_eq!(report.problems(), check(text, &config).problems());
     }
 }
+
+/// `text` fixed one note at a time, in document order, as the playground applies them.
+fn fixed_step_by_step(text: &str, config: &Config) -> String {
+    let mut text = text.to_owned();
+    while let Ok(all) = try_fix_at(&text, config, true, None) {
+        // A listed fix that does not apply alone stops here, and the comparison fails.
+        let Ok(one) = try_fix_at(&text, config, true, Some(&[all.fixes[0].offset])) else {
+            break;
+        };
+        text = one.text;
+    }
+    text
+}
+
+#[test]
+fn a_dropped_member_does_not_pick_the_line_ending() {
+    // The first ending goes with the first "a", so the CRs that stay set the ending.
+    let text = "{\"a\": 1,\r\n\"a\": 2,\"v\":\"x\"\r}\r";
+    let config = Config::new(Dialect::Jsonc);
+    let full = fix(text, &config, true).unwrap().text;
+    assert_eq!(full, "{\"a\": 2,\"v\":\"x\"\r}\r");
+    assert_eq!(fixed_step_by_step(text, &config), full);
+}
+
+proptest! {
+    /// Fixing every note at once gives the text that fixing them one at a time does.
+    #[test]
+    fn one_fix_equals_fixes_one_at_a_time(
+        members in proptest::collection::vec(
+            (
+                prop_oneof![Just("a"), Just("b")],
+                prop_oneof![Just(""), Just("\n"), Just("\r\n"), Just("\r")],
+            ),
+            1..6,
+        ),
+        last in prop_oneof![Just(""), Just("\n"), Just("\r\n"), Just("\r")],
+        dialect in prop_oneof![
+            Just(Dialect::Json), Just(Dialect::Jsonc), Just(Dialect::Json5), Just(Dialect::Jwcc)
+        ],
+    ) {
+        let mut text = String::from("{");
+        for (i, (key, gap)) in members.iter().enumerate() {
+            if i > 0 {
+                text.push(',');
+            }
+            text.push_str(gap);
+            text.push_str(&["\"", key, "\": ", &i.to_string()].concat());
+        }
+        text.push_str(last);
+        text.push('}');
+        let config = Config::new(dialect);
+        let full = fix(&text, &config, true).map_or_else(|| text.clone(), |f| f.text);
+        prop_assert_eq!(fixed_step_by_step(&text, &config), full, "{:?}", text);
+    }
+}

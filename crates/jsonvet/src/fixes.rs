@@ -150,17 +150,30 @@ pub fn try_fix_at(
         });
     }
     // The line endings go in last: an ending inside a dropped member is gone with it.
-    if let (Some(problem), Some(target)) = (
-        problems.iter().find(|p| p.rule() == Rule::MixedLineEndings),
-        scan.target,
-    ) && only.is_none_or(|only| only.contains(&problem.offset()))
-    {
+    let mixed = problems
+        .iter()
+        .find(|p| p.rule() == Rule::MixedLineEndings)
+        .map(Problem::offset)
+        .filter(|at| only.is_none_or(|only| only.contains(at)));
+    let (mut target, mut endings, mut kept) = (scan.target, scan.endings, None);
+    if mixed.is_some() && fixes.iter().any(|f| f.rule == Rule::DuplicateKey) {
+        // A dropped member can hold the first ending, so the endings that stay pick the target,
+        // as they do when the drop is fixed on its own first.
+        let text = apply(text, std::mem::take(&mut edits));
+        let (problems, scan) = parse::scan(&text, config);
+        target = scan
+            .target
+            .filter(|_| problems.iter().any(|p| p.rule() == Rule::MixedLineEndings));
+        endings = scan.endings;
+        kept = Some(text);
+    }
+    if let (Some(offset), Some(target)) = (mixed, target) {
         fixes.push(Fix {
             rule: Rule::MixedLineEndings,
-            offset: problem.offset(),
+            offset,
             safe: true,
         });
-        edits.extend(scan.endings.iter().map(|&(at, len)| Edit {
+        edits.extend(endings.iter().map(|&(at, len)| Edit {
             range: at..at + len,
             insert: target.text(),
             soft: true,
@@ -169,6 +182,15 @@ pub fn try_fix_at(
     if fixes.is_empty() {
         return Err(same.then_some(problems));
     }
+    fixes.sort_by_key(|f| f.offset);
+    Ok(Fixed {
+        text: apply(kept.as_deref().unwrap_or(text), edits),
+        fixes,
+    })
+}
+
+/// `text` with `edits` made, a line ending rewrite left out where it overlaps another edit.
+fn apply(text: &str, mut edits: Vec<Edit>) -> String {
     edits.sort_by_key(|e| (e.range.start, e.range.end));
     let mut reach = 0;
     edits.retain(|e| {
@@ -186,8 +208,7 @@ pub fn try_fix_at(
         from = edit.range.end;
     }
     out.push_str(&text[from..]);
-    fixes.sort_by_key(|f| f.offset);
-    Ok(Fixed { text: out, fixes })
+    out
 }
 
 struct Edit {

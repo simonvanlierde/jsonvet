@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc fdf38b197a50d396382bd9a4cd841b76fb8cf1b60f5621441a1571e7c25cbb34 # shrinks to gaps = [" // c\n", "/*\r\n*/"], dialect = Jsonc
+cc 0e53d70049095e06d24d346721ce781c2c4f0fd0720e14da2b2a937b262d1a3a # shrinks to members = [("b", ""), ("b", "\r")], last = "\n", dialect = Json

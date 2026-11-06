@@ -14,6 +14,11 @@ version for a new option or output, the patch version for a fix.
   patent grant, and every MIT grant stays. The crates, the wheels and the release archives carry
   both texts as `LICENSE-MIT` and `LICENSE-APACHE`.
 
+### Fixed
+
+- `--fix --unsafe-fixes` takes the line ending from the text it keeps, not from a dropped duplicate
+  member, so it gives the same text as the playground's one-at-a-time fixes.
+
 ## [3.3.1] - 2026-11-02
 
 ### Fixed
