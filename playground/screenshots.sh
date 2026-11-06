@@ -11,7 +11,7 @@ python3 -m http.server "$port" --bind 127.0.0.1 --directory playground >/dev/nul
 server=$!
 trap 'kill "$server"' EXIT
 sleep 1
-for size in desktop:1440,900 phone:400,900; do
+for size in desktop:1440,900 phone:390,900; do
     for scheme in light dark; do
         dark=()
         [ "$scheme" = dark ] && dark=(--force-dark-mode)

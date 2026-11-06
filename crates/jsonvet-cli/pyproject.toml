@@ -20,6 +20,8 @@ classifiers = [
 
 [project.urls]
 Source = "https://github.com/simonvanlierde/jsonvet"
+Documentation = "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md"
+Playground = "https://simonvanlierde.com/jsonvet/"
 Changelog = "https://github.com/simonvanlierde/jsonvet/blob/main/CHANGELOG.md"
 
 [tool.maturin]

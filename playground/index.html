@@ -20,6 +20,17 @@
 <meta name="theme-color" content="#fbfaf5" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1b1915" media="(prefers-color-scheme: dark)">
 <link rel="stylesheet" href="style.css">
+<link rel="modulepreload" href="main.mjs">
+<link rel="modulepreload" href="lines.mjs">
+<link rel="modulepreload" href="share.mjs">
+<link rel="modulepreload" href="proof.mjs">
+<link rel="modulepreload" href="hosts.mjs">
+<link rel="modulepreload" href="actions.mjs">
+<link rel="modulepreload" href="settings.mjs">
+<link rel="modulepreload" href="options.mjs">
+<link rel="modulepreload" href="snippets.mjs">
+<link rel="modulepreload" href="pkg/jsonvet_wasm.js">
+<link rel="preload" href="pkg/jsonvet_wasm_bg.wasm" as="fetch" crossorigin>
 <script src="theme.js"></script>
 </head>
 <body>
@@ -155,9 +166,9 @@
   </details>
 </main>
 <footer class="wrap colophon">
-  <p class="quiet">Checks run in your browser: the text never leaves the page. JSON Schema checks are in the <a href="https://github.com/simonvanlierde/jsonvet#readme">command-line tool</a>.</p>
+  <p class="quiet">Checks run in your browser, and no server sees your text. The text is also kept in this page's address after the <code>#</code>, so a link can share it, and so it ends up in your browser history. JSON Schema checks are in the <a href="https://github.com/simonvanlierde/jsonvet#readme">command-line tool</a>.</p>
   <p class="slug-part"><span>jsonvet<span id="version"></span></span><span><a href="https://github.com/simonvanlierde/jsonvet#credits-and-license">MIT or Apache-2.0 licence</a></span><span><button type="button" id="theme" class="theme" aria-label="Switch theme" title="Switch theme"><svg class="i-sun" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.06 1.06M11.54 11.54l1.06 1.06M3.4 12.6l1.06-1.06M11.54 4.46l1.06-1.06"/></svg><svg class="i-moon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 9.6A5.5 5.5 0 0 1 6.4 2.5a5.5 5.5 0 1 0 7.1 7.1z"/></svg></button></span></p>
-  <p class="slug-part"><span><a href="https://github.com/simonvanlierde">Simon van Lierde</a></span><span><a href="https://github.com/simonvanlierde/jsonvet">source on GitHub</a></span><span><a href="https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md">docs</a></span><span><a href="https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#speed">speed figures</a></span></p>
+  <p class="slug-part"><span><a href="https://github.com/simonvanlierde">Simon van Lierde</a></span><span><a href="https://github.com/simonvanlierde/jsonvet">source on GitHub</a></span><span><a href="https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md">docs</a></span><span><a href="https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#speed">speed figures</a></span><span><a href="https://github.com/simonvanlierde/jsonvet/blob/main/docs/accessibility.md">accessibility</a></span></p>
 </footer>
 <noscript><p>The playground needs JavaScript and WebAssembly.</p></noscript>
 <script type="module" src="main.mjs"></script>
