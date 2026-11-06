@@ -71,7 +71,7 @@ matrix-check:
     uv run conformance/report.py
     git diff --exit-code docs/conformance.md README.md
 
-# Fuzz one target for 20 minutes, as fuzz.yml does: check, diff_serde_json, diff_json5, parse or fix.
+# Fuzz one target for 20 minutes, as fuzz.yml does: check, diff_serde_json, diff_json5, parse, fix or config.
 fuzz TARGET:
     cd fuzz && cargo +nightly fuzz run -O {{ TARGET }} -- -max_total_time=1200 -print_final_stats=1
 
