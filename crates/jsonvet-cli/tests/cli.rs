@@ -1183,8 +1183,9 @@ fn a_symlink_is_the_same_file() {
     checked_once(&["a.json", "link.json"], "duplicate");
 }
 
-// A sparse file takes no disk space on Unix file systems; on NTFS it would need the full size.
-#[cfg(unix)]
+// Linux only: its overcommit check refuses the 1 TiB reservation at once, while macOS grants it
+// lazily and the read then fills memory. A sparse file takes no disk space here.
+#[cfg(target_os = "linux")]
 #[test]
 fn a_file_too_big_for_memory_fails_alone() {
     let dir = workdir(&[("ok.json", "{}")]);
