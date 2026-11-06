@@ -1,6 +1,7 @@
 //! What to check for each file: the dialect patterns and rule severities from the config file
 //! and the command line, in that order, so the command line wins.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -40,6 +41,27 @@ impl DialectPattern {
             dialect: parse_dialect(name)?,
             base: None,
         })
+    }
+}
+
+/// Rule severities for the files matching a pattern, or for every file when the pattern is
+/// `None`: the top-level `rules`, a `per-file-rules` entry, or an option on the command line.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct RulePattern {
+    pub(crate) files: Option<Glob>,
+    pub(crate) rules: Vec<(Rule, Severity)>,
+    /// The folder `files` is relative to, as for [`DialectPattern`].
+    pub(crate) base: Option<String>,
+}
+
+impl RulePattern {
+    /// Severities for every file.
+    pub(crate) fn every_file(rules: Vec<(Rule, Severity)>) -> Self {
+        RulePattern {
+            files: None,
+            rules,
+            base: None,
+        }
     }
 }
 
@@ -107,7 +129,9 @@ pub(crate) fn parse_rule(id: &str) -> Result<Rule, String> {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Settings {
     pub(crate) dialects: Vec<DialectPattern>,
-    pub(crate) rules: Vec<(Rule, Severity)>,
+    /// In the order they apply: a config file's `rules`, then its `per-file-rules`, then the
+    /// command line's.
+    pub(crate) rules: Vec<RulePattern>,
     /// Patterns for paths a directory walk skips, each with the absolute directory of the
     /// config file it comes from, normalized, which it is relative to.
     pub(crate) exclude: Vec<(Glob, String)>,
@@ -183,28 +207,25 @@ impl Settings {
     /// The checking config for one file: the last matching dialect pattern wins.
     pub(crate) fn config_for(&self, path: &str) -> Config {
         let auto = || Dialect::for_path(Path::new(path)).unwrap_or(Dialect::Json5);
-        let given = std::cell::OnceCell::new();
         let mut located = Located::new(path);
         let dialect = self
             .dialects
             .iter()
             .rev()
-            .find(|rule| match (&rule.files, &rule.base) {
-                (None, _) => true,
-                (Some(glob), None) => glob.matches(given.get_or_init(|| Target::new(path))),
-                (Some(glob), Some(base)) => {
-                    located.in_base(base).is_some_and(|path| glob.matches(path))
-                }
-            })
+            .find(|rule| located.matches(rule.files.as_ref(), rule.base.as_deref()))
             .and_then(|rule| rule.dialect)
             .unwrap_or_else(auto);
-        self.config(dialect)
+        self.config(path, dialect)
     }
 
-    /// The checking config for `dialect`, with the rule severities set.
-    pub(crate) fn config(&self, dialect: Dialect) -> Config {
+    /// The checking config for the file at `path` in `dialect`: the severity of each rule is the
+    /// one the last matching [`RulePattern`] gives it, else the dialect's default.
+    pub(crate) fn config(&self, path: &str, dialect: Dialect) -> Config {
+        let mut located = Located::new(path);
         self.rules
             .iter()
+            .filter(|entry| located.matches(entry.files.as_ref(), entry.base.as_deref()))
+            .flat_map(|entry| &entry.rules)
             .fold(Config::new(dialect), |config, &(rule, severity)| {
                 config.rule(rule, severity)
             })
@@ -216,6 +237,8 @@ impl Settings {
 /// against every entry.
 struct Located<'p> {
     path: &'p str,
+    /// The path as given, for the command line's patterns, once one needs it.
+    given: std::cell::OnceCell<Target>,
     /// The path made absolute and normalized, once a pattern needs it.
     absolute: std::cell::OnceCell<Option<String>>,
     /// The last folder asked for, and the path relative to it, if inside it.
@@ -226,8 +249,19 @@ impl<'p> Located<'p> {
     fn new(path: &'p str) -> Located<'p> {
         Located {
             path,
+            given: std::cell::OnceCell::new(),
             absolute: std::cell::OnceCell::new(),
             relative: None,
+        }
+    }
+
+    /// Whether the glob `files` matches the path: relative to `base`, the folder of the config
+    /// file it comes from, or as given, from the command line. No glob matches every path.
+    fn matches(&mut self, files: Option<&Glob>, base: Option<&'p str>) -> bool {
+        match (files, base) {
+            (None, _) => true,
+            (Some(glob), None) => glob.matches(self.given.get_or_init(|| Target::new(self.path))),
+            (Some(glob), Some(base)) => self.in_base(base).is_some_and(|path| glob.matches(path)),
         }
     }
 
@@ -439,6 +473,9 @@ impl Resolver {
                 for pattern in &mut own.dialects {
                     pattern.base = Some(cwd.clone());
                 }
+                for pattern in &mut own.rules {
+                    pattern.base = Some(cwd.clone());
+                }
                 for (_, base) in &mut own.exclude {
                     base.clone_from(&cwd);
                 }
@@ -605,8 +642,10 @@ fn has_jsonvet_table(text: &str) -> bool {
 /// `files` glob, relative to the config file's directory, and a `dialect`; and `exclude`, an
 /// array of globs, relative to the same directory, for paths a directory walk skips; and
 /// `schemas`, an array of tables with a `files` glob and a `schema` path, both relative to that
-/// directory. Any other key is an error, so a typo is never ignored. With a `root`, the file is
-/// a project's, and each schema must be inside `root` ([`confined`]).
+/// directory; and `per-file-rules`, an array of tables with a `files` glob, relative to that
+/// directory, and a severity for each rule id, which apply after `rules` wherever they are in the
+/// file. Any other key is an error, so a typo is never ignored. With a `root`, the file is a
+/// project's, and each schema must be inside `root` ([`confined`]).
 pub(crate) fn load(path: &Path, root: Option<&Path>) -> Result<Settings, String> {
     // A key or value from the file shows escaped, so it cannot start a line of its own on stderr.
     let in_file = |e: &dyn std::fmt::Display| printable(&format!("{}: {e}", path.display()));
@@ -649,10 +688,19 @@ pub(crate) fn load(path: &Path, root: Option<&Path>) -> Result<Settings, String>
     let folder = absolute.parent();
     let base = folder.map(|dir| glob::normalize(&dir.to_string_lossy()));
     let mut settings = Settings::default();
+    let mut per_file = Vec::new();
     for (key, value) in file {
         let here = value.span().start;
         match (key.get_ref().as_ref(), value.get_ref()) {
-            ("rules", DeValue::Table(rules)) => rules_table(rules, &at, &mut settings)?,
+            ("rules", DeValue::Table(rules)) => {
+                let rules = severities("rules", rules.iter(), &at)?;
+                settings.rules.push(RulePattern::every_file(rules));
+            }
+            ("per-file-rules", DeValue::Array(entries)) => {
+                for entry in entries {
+                    per_file.push(rule_entry(entry, base.clone(), &at)?);
+                }
+            }
             ("dialects", DeValue::Array(entries)) => {
                 for entry in entries {
                     let mut pattern = dialect_entry(entry).map_err(|(offset, e)| at(offset, &e))?;
@@ -686,14 +734,14 @@ pub(crate) fn load(path: &Path, root: Option<&Path>) -> Result<Settings, String>
             ("format", DeValue::Table(table)) => {
                 settings.format = format_table(table, &at)?;
             }
-            (key @ ("exclude" | "schemas" | "rules" | "dialects" | "format"), _) => {
+            (
+                key @ ("exclude" | "schemas" | "rules" | "per-file-rules" | "dialects" | "format"),
+                _,
+            ) => {
                 return Err(at(here, &messages::text(&format!("config.{key}-type"))));
             }
             (key_text, _) => {
-                let hint = messages::did_you_mean(
-                    key_text,
-                    ["rules", "dialects", "exclude", "schemas", "format"],
-                );
+                let hint = messages::did_you_mean(key_text, KEYS);
                 return Err(at(
                     key.span().start,
                     &messages::fill("config.unknown-key", &[("key", &key_text), ("hint", &hint)]),
@@ -701,28 +749,86 @@ pub(crate) fn load(path: &Path, root: Option<&Path>) -> Result<Settings, String>
             }
         }
     }
+    settings.rules.extend(per_file);
     Ok(settings)
 }
 
-/// The `rules` table: a severity for each rule id.
-fn rules_table(
-    rules: &DeTable<'_>,
+/// The keys a config file may hold.
+pub(crate) const KEYS: [&str; 6] = [
+    "rules",
+    "per-file-rules",
+    "dialects",
+    "exclude",
+    "schemas",
+    "format",
+];
+
+/// A severity for each rule id, from the `rules` table or a `per-file-rules` entry, which
+/// `table` names in errors.
+fn severities<'t>(
+    table: &str,
+    rules: impl Iterator<Item = (&'t Spanned<Cow<'t, str>>, &'t Spanned<DeValue<'t>>)>,
     at: &dyn Fn(usize, &dyn std::fmt::Display) -> String,
-    settings: &mut Settings,
-) -> Result<(), String> {
+) -> Result<Vec<(Rule, Severity)>, String> {
+    let mut found = Vec::new();
     for (id, severity) in rules {
         let rule = parse_rule(id.get_ref()).map_err(|e| at(id.span().start, &e))?;
         let severity_at = severity.span().start;
         let severity = severity.get_ref().as_str().ok_or_else(|| {
             at(
                 severity_at,
-                &messages::fill("config.rule-not-string", &[("id", id.get_ref())]),
+                &messages::fill(
+                    "config.rule-not-string",
+                    &[("table", &table), ("id", id.get_ref())],
+                ),
             )
         })?;
         let severity = parse_severity(severity).map_err(|e| at(severity_at, &e))?;
-        settings.rules.push((rule, severity));
+        found.push((rule, severity));
     }
-    Ok(())
+    Ok(found)
+}
+
+/// One `per-file-rules` entry: a table with a `files` string, relative to the folder `base`, and
+/// a severity for each rule id.
+fn rule_entry(
+    entry: &Spanned<DeValue<'_>>,
+    base: Option<String>,
+    at: &dyn Fn(usize, &dyn std::fmt::Display) -> String,
+) -> Result<RulePattern, String> {
+    let array = "per-file-rules";
+    let DeValue::Table(table) = entry.get_ref() else {
+        let e = messages::fill("config.entry-type", &[("array", &array)]);
+        return Err(at(entry.span().start, &e));
+    };
+    // A key that is no rule id but close to `files` is a typo for it, not an unknown rule.
+    if let Some(key) = table
+        .keys()
+        .find(|key| key.get_ref().parse::<Rule>().is_err() && key.get_ref() != "files")
+        && let hint = messages::did_you_mean(key.get_ref(), ["files"])
+        && !hint.is_empty()
+    {
+        let e = messages::fill(
+            "config.rule-entry-unknown-key",
+            &[("key", key.get_ref()), ("hint", &hint)],
+        );
+        return Err(at(key.span().start, &e));
+    }
+    let files = table.get("files");
+    let Some(files) = files.and_then(|files| files.get_ref().as_str()) else {
+        let offset = files.map_or(entry.span().start, |files| files.span().start);
+        let e = messages::fill(
+            "config.entry-needs",
+            &[("array", &array), ("key", &"files")],
+        );
+        return Err(at(offset, &e));
+    };
+    let rules = table.iter().filter(|(key, _)| key.get_ref() != "files");
+    Ok(RulePattern {
+        files: Some(Glob::new(files)),
+        rules: severities(array, rules, at)?,
+        base,
+    })
 }
 
 /// The `[format]` table: `indent` (a number of spaces, or "tab"), `width` and `normalize-json5`.

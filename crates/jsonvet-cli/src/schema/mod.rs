@@ -653,7 +653,7 @@ impl Schema {
         if config.dialect() == Dialect::JsonLines
             && Dialect::for_path(path) != Some(Dialect::JsonLines)
         {
-            config = settings.config(Dialect::Json5);
+            config = settings.config(&name, Dialect::Json5);
         }
         let config = config.max_depth(MAX_SCHEMA_DEPTH);
         let (report, events) = jsonvet::parse(&text, &config);

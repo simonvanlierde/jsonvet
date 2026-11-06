@@ -84,7 +84,7 @@ const ENGLISH: &[(&str, &str)] = &[
     ),
     ("config.tool-not-table", "`tool.jsonvet` must be a table"),
     ("config.no-tool-table", "no [tool.jsonvet] table"),
-    ("config.rule-not-string", "`rules.{id}` must be a string"),
+    ("config.rule-not-string", "`{table}.{id}` must be a string"),
     (
         "config.exclude-type",
         "`exclude` must be an array of strings",
@@ -99,8 +99,12 @@ const ENGLISH: &[(&str, &str)] = &[
         "`dialects` must be an array of tables",
     ),
     (
+        "config.per-file-rules-type",
+        "`per-file-rules` must be an array of tables",
+    ),
+    (
         "config.unknown-key",
-        "unknown key `{key}`{hint}; expected rules, dialects, exclude, schemas or format",
+        "unknown key `{key}`{hint}; expected rules, per-file-rules, dialects, exclude, schemas or format",
     ),
     ("config.format-type", "`format` must be a table"),
     (
@@ -127,6 +131,10 @@ const ENGLISH: &[(&str, &str)] = &[
     (
         "config.entry-unknown-key",
         "unknown key `{key}`{hint} in a `{array}` entry; expected {first} and {second}",
+    ),
+    (
+        "config.rule-entry-unknown-key",
+        "unknown key `{key}`{hint} in a `per-file-rules` entry; expected files and rule ids",
     ),
     (
         "config.entry-needs",
@@ -571,7 +579,7 @@ mod tests {
         assert!(ENGLISH.iter().all(|(_, text)| !text.is_empty()));
         assert!(jsonvet::MESSAGES.iter().all(|(_, text)| !text.is_empty()));
         // The ids the code builds from a name.
-        for key in ["exclude", "schemas", "rules", "dialects", "format"] {
+        for key in crate::settings::KEYS {
             assert!(!english(&format!("config.{key}-type")).is_empty(), "{key}");
         }
         for what in ["key", "string", "value"] {

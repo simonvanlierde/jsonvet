@@ -13,9 +13,6 @@ a promise, and none of it has a date. Released work is in [CHANGELOG.md](CHANGEL
   the safe fixes and formats from the editor, with range formatting, so formatting a selection
   leaves the rest of the file as it is. It works in any editor that speaks the Language Server
   Protocol; the VS Code extension is a thin client for it.
-- **Rule settings per file:** a `files` glob with its own `rules`, in the shape `dialects` already
-  uses, to turn a rule off for some files. It works in every dialect, including those without
-  comments.
 - **Inline suppressions:** in JSONC, JWCC and JSON5, the dialects that allow comments, a comment
   such as `// jsonvet-ignore duplicate-key` turns a rule off for the next line. A suppression that
   no longer hides anything is reported, so stale ones don't pile up.

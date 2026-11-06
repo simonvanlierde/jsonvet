@@ -505,6 +505,118 @@ fn config_severities_take_the_warn_and_off_aliases() {
 }
 
 #[test]
+fn per_file_rules_set_severities_for_the_files_they_match() {
+    let dup = "{\"a\": 1, \"a\": 2}\n";
+    let dir = workdir(&[
+        // `per-file-rules` comes first in the file, yet the top-level `rules` apply first.
+        (
+            "jsonvet.toml",
+            "per-file-rules = [\n  { files = \"legacy/*.json\", duplicate-key = \"ignore\" },\n  { files = \"legacy/b.json\", duplicate-key = \"warning\" },\n  { files = \"*.jsonl\", duplicate-key = \"off\" },\n]\nrules = { duplicate-key = \"error\" }\n",
+        ),
+        ("legacy/a.json", dup),
+        ("legacy/b.json", dup),
+        ("new/c.json", dup),
+        ("logs/d.jsonl", dup),
+    ]);
+    let files = [
+        "legacy/a.json",
+        "legacy/b.json",
+        "new/c.json",
+        "logs/d.jsonl",
+    ];
+    assert_eq!(
+        jsonvet(&dir, &files),
+        (
+            1,
+            "legacy/b.json:1:10: warning[duplicate-key] duplicate key $.a (first at 1:2)\nnew/c.json:1:10: error[duplicate-key] duplicate key $.a (first at 1:2)\n".to_owned()
+        )
+    );
+    // Its globs are relative to the config file, wherever jsonvet runs.
+    assert_eq!(
+        jsonvet(&dir.join("legacy"), &["a.json"]),
+        (0, String::new())
+    );
+    // The command line wins over every entry.
+    let (code, out) = jsonvet(&dir, &["--error", "duplicate-key", "legacy/a.json"]);
+    assert_eq!(code, 1, "{out}");
+}
+
+#[test]
+fn a_bad_per_file_rules_entry_is_a_config_error() {
+    let dir = workdir(&[
+        ("per-file.toml", "per-file-rules = 1\n"),
+        (
+            "per-file-rule.toml",
+            "[[per-file-rules]]\nfiles = \"*.json\"\nduplicate-keys = \"ignore\"\n",
+        ),
+        (
+            "per-file-severity.toml",
+            "per-file-rules = [{ files = \"*.json\", syntax = \"of\" }]\n",
+        ),
+        (
+            "per-file-files.toml",
+            "per-file-rules = [{ syntax = \"off\" }]\n",
+        ),
+        (
+            "per-file-file.toml",
+            "per-file-rules = [{ file = \"*.json\", syntax = \"off\" }]\n",
+        ),
+        (
+            "per-file-level.toml",
+            "[[per-file-rules]]\nfiles = \"*.json\"\nduplicate-key = 1\n",
+        ),
+        ("per-file-entry.toml", "per-file-rules = [1]\n"),
+        ("per-file-glob.toml", "per-file-rules = [{ files = 1 }]\n"),
+        // The top-level table names itself the same way.
+        ("rule-level.toml", "rules = { syntax = 1 }\n"),
+        ("d.json", "{}"),
+    ]);
+    for (config, message) in [
+        (
+            "per-file.toml:1:18",
+            "`per-file-rules` must be an array of tables",
+        ),
+        (
+            "per-file-rule.toml:3:1",
+            "unknown rule `duplicate-keys` (did you mean `duplicate-key`?); expected one of \
+             syntax, duplicate-key, invalid-number, invalid-code-point, byte-order-mark, \
+             missing-final-newline, mixed-line-endings",
+        ),
+        (
+            "per-file-severity.toml:1:48",
+            "unknown severity `of` (did you mean `off`?); expected error, warning or ignore",
+        ),
+        (
+            "per-file-files.toml:1:19",
+            "each `per-file-rules` entry needs a `files` string",
+        ),
+        (
+            "per-file-file.toml:1:21",
+            "unknown key `file` (did you mean `files`?) in a `per-file-rules` entry; expected \
+             files and rule ids",
+        ),
+        (
+            "per-file-level.toml:3:17",
+            "`per-file-rules.duplicate-key` must be a string",
+        ),
+        ("rule-level.toml:1:20", "`rules.syntax` must be a string"),
+        (
+            "per-file-glob.toml:1:29",
+            "each `per-file-rules` entry needs a `files` string",
+        ),
+        (
+            "per-file-entry.toml:1:19",
+            "each `per-file-rules` entry must be a table",
+        ),
+    ] {
+        let file = config.split(':').next().unwrap_or_default();
+        let (code, _, err) = jsonvet_stderr(&dir, &["--config", file, "d.json"]);
+        assert_eq!(code, 2);
+        assert_eq!(err, format!("jsonvet: {config}: {message}\n"));
+    }
+}
+
+#[test]
 fn config_globs_are_relative_to_the_config_file() {
     let toml = "dialects = [{ files = \"data/*.json\", dialect = \"json\" }]\n";
     let pyproject = format!("[tool.jsonvet]\n{toml}");
@@ -676,7 +788,7 @@ fn pyproject_tool_table_and_bad_configs() {
         // A key holding a newline stays on the line, so it cannot forge a workflow command.
         (
             "forged.toml:1:1",
-            "unknown key `\\n::error::x`; expected rules, dialects, exclude, schemas or format",
+            "unknown key `\\n::error::x`; expected rules, per-file-rules, dialects, exclude, schemas or format",
         ),
         // A typo gets its line and column, and the name it is closest to.
         (
@@ -687,7 +799,7 @@ fn pyproject_tool_table_and_bad_configs() {
         ),
         (
             "key.toml:2:3",
-            "unknown key `rule` (did you mean `rules`?); expected rules, dialects, exclude, schemas or format",
+            "unknown key `rule` (did you mean `rules`?); expected rules, per-file-rules, dialects, exclude, schemas or format",
         ),
         (
             "severity.toml:2:10",
@@ -3957,9 +4069,10 @@ mod file_reads {
         let dir = workdir(&[
             (
                 "user/jsonvet/jsonvet.toml",
-                "[rules]\nduplicate-key = \"warning\"\n\n[[dialects]]\nfiles = \"data/*.txt\"\ndialect = \"jsonl\"\n",
+                "[rules]\nduplicate-key = \"warning\"\n\n[[dialects]]\nfiles = \"data/*.txt\"\ndialect = \"jsonl\"\n\n[[per-file-rules]]\nfiles = \"data/*.json\"\nduplicate-key = \"ignore\"\n",
             ),
             ("p/x.json", DUP),
+            ("p/data/x.json", DUP),
             ("p/data/x.txt", "{}\n{}\n"),
             ("q/jsonvet.toml", ""),
             ("q/x.json", DUP),
@@ -3974,6 +4087,14 @@ mod file_reads {
         // Its globs are relative to the working directory.
         assert_eq!(run(&p, &user, &["data/x.txt"]).0, 0);
         assert_eq!(run(&p.join("data"), &user, &["x.txt"]).0, 1);
+        assert_eq!(
+            run(&p, &user, &["data/x.json"]),
+            (0, String::new(), String::new())
+        );
+        assert_eq!(
+            run(&p.join("data"), &user, &["x.json"]),
+            (0, warning.to_owned(), String::new())
+        );
         // A project config file replaces it, and the options skip it.
         let q = dir.join("q");
         assert_eq!(run(&q, &user, &["x.json"]).0, 1);
