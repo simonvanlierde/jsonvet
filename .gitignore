@@ -151,3 +151,4 @@ mutants.out*/
 
 # The playground's wasm-bindgen output, built by .github/workflows/pages.yml
 /playground/pkg/
+preview-out/
