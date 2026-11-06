@@ -1,5 +1,5 @@
 //! Wall-clock benchmarks of the library with divan, which `.github/workflows/codspeed.yml` runs
-//! under `CodSpeed` on every pull request: `check` in every dialect, `parse` with its events, `parse_with` and its sink, the
+//! under `CodSpeed` on pull requests that touch the crates: `check` in every dialect, `parse` with its events, `parse_with` and its sink, the
 //! JSON Lines split that jsonvet-cli runs on threads, and line and column lookups. Run them with
 //! `cargo bench -p jsonvet --bench codspeed`, or as CI does with `cargo codspeed build -p jsonvet
 //! --bench codspeed` and then `cargo codspeed run -p jsonvet`.

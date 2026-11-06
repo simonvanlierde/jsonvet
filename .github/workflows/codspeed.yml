@@ -2,21 +2,22 @@ name: codspeed
 
 # The divan benchmarks in crates/jsonvet/benches/codspeed.rs (the library) and
 # crates/jsonvet-cli/benches/codspeed.rs (`--schema`), under CodSpeed's CPU simulation and its memory
-# instrument, so each pull request gets a CPU and memory report against main. ci.yml's `bench` job
+# instrument, so each pull request that touches benchmarked code gets a CPU and memory report against main. ci.yml's `bench` job
 # gates on instruction counts; this adds memory, a history and flamegraphs. Unlike ci.yml, this
-# also runs on pushes to main: CodSpeed compares a pull request with the results of its base commit
-# on main.
+# also runs on every push to main: CodSpeed compares a pull request with the newest main commit
+# that has results.
 # workflow_dispatch lets CodSpeed backfill results for older commits.
 on:
   push:
     branches: [main]
-  # Only pull requests that can move a benchmark. Every push to main runs, since CodSpeed
-  # compares a pull request with its base commit's results.
+  # The CLI benchmark also reads tests/schemastore/, and .cargo/ sets build flags.
   pull_request:
     paths:
       - "crates/**"
       - "Cargo.toml"
       - "Cargo.lock"
+      - ".cargo/**"
+      - "tests/schemastore/**"
       - ".github/workflows/codspeed.yml"
   workflow_dispatch:
 

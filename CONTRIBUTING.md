@@ -44,7 +44,8 @@ when `GH_TOKEN` is set, so without it `just lint` can pass where CI fails.
 Other workflows:
 
 - On a pull request: `semver.yml` (`cargo semver-checks`), `fuzz.yml` (30 seconds a target),
-  `coverage.yml` (Codecov) and `codspeed.yml` (benchmarks).
+  `coverage.yml` (Codecov) and `codspeed.yml` (benchmarks, only when the crates, Cargo files or
+  SchemaStore fixtures change).
 - Every week: `fuzz.yml` and `mutants.yml` in full. Every Monday: `advisories.yml`, so a new
   RustSec advisory against `Cargo.lock` fails a run without waiting for a pull request.
 - `pages.yml` builds and tests the playground on a pull request that touches it, and deploys it
