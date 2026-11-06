@@ -12,7 +12,7 @@ rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 authors = ["Simon van Lierde"]
 repository = "https://github.com/simonvanlierde/jsonvet"
-homepage = "https://github.com/simonvanlierde/jsonvet"
+homepage = "https://simonvanlierde.com/jsonvet/"
 keywords = ["json", "json5", "jsonc", "lint", "pre-commit"]
 categories = ["command-line-utilities", "development-tools", "parser-implementations"]
 

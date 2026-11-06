@@ -21,7 +21,7 @@ events.jsonl:12:1: error[syntax] blank line; JSON Lines needs a value on every l
 ```
 
 It replaces check-json5, a Python hook, and is up to **2,201 times faster** than check-json5 1.4.1
-on JSON5 files ([figures](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#speed)).
+on JSON5 files, and 5-39x on JSON and JSONC ([figures](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#speed)).
 
 **Try it in your browser:** the [playground](https://simonvanlierde.com/jsonvet/) checks, fixes
 and formats the text you paste. Nothing to install, and the text stays on your machine.
@@ -52,7 +52,7 @@ Add this to `.pre-commit-config.yaml` (for [pre-commit](https://pre-commit.com) 
 
 `jsonvet-format` rewrites files, so a commit that changes one fails and you commit again. Add
 `args: [--fix]` to `jsonvet` to repair what has a safe fix
-([Fixing](docs/usage.md#fixing)). Both hooks are in the same block, but each works alone.
+([Fixing](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#fixing)). Both hooks are in the same block, but each works alone.
 
 It checks files by name: `.json`, `.jsonc`, `.json5`, `.jsonl`, `.ndjson`, `.geojson`, `.jsonld`,
 `.hujson`, `.jwcc`, `.code-workspace`, `.code-snippets`, `.webmanifest` and `.babelrc`.
@@ -78,17 +78,17 @@ To see the problems in GitHub code scanning, set `sarif: jsonvet.sarif` and uplo
 ### Command line
 
 ```bash
-uvx jsonvet config/*.json        # run it from PyPI without installing
-uvx jsonvet .                    # check every JSON-like file under a folder
+uvx jsonvet .                    # check every JSON-like file under a folder, no install needed
 uvx jsonvet --fix .              # also fix what has a safe fix, in place
 uvx jsonvet fmt .                # format the files, keeping their comments
 uvx jsonvet fmt --check .        # list files that need formatting; exit 1 if any
-pip install jsonvet              # install it as a Python package
+uv tool install jsonvet          # install it (or `pipx install jsonvet`)
 cargo install jsonvet-cli        # build it from source
 cargo binstall jsonvet-cli       # download the binary from the GitHub release
 ```
 
-Each [GitHub release](https://github.com/simonvanlierde/jsonvet/releases) also has the binary
+[uv](https://docs.astral.sh/uv/getting-started/installation/) provides `uvx`. Each
+[GitHub release](https://github.com/simonvanlierde/jsonvet/releases) also has a binary
 for Linux, macOS and Windows, with checksums and an SBOM
 ([verifying a release](https://github.com/simonvanlierde/jsonvet/blob/main/SECURITY.md#verifying-a-release)).
 A folder stands for the JSON-like files under it, skipping hidden and ignored files, and `-` reads
@@ -129,17 +129,20 @@ fail as JSON are config files with comments. To check a file as strict JSON, use
 
 ## Rules
 
-| Rule                    | Reports                                                        | Default                                          |
-| ----------------------- | -------------------------------------------------------------- | ------------------------------------------------ |
-| `syntax`                | the first syntax error; checking stops there                   | error                                            |
-| `duplicate-key`         | a key repeated in one object, with both positions and its path | error                                            |
-| `invalid-number`        | a number a double cannot hold, or an integer past ±(2⁵³ − 1)   | error in `i-json`, off elsewhere                 |
-| `invalid-code-point`    | a lone surrogate or a noncharacter in a string                 | error in `i-json`, off elsewhere                 |
-| `byte-order-mark`       | a byte order mark at the start of the file                     | warning in `json` and `i-json`, error in `jsonl` |
-| `missing-final-newline` | a JSON Lines file that does not end with a newline             | warning in `jsonl`                               |
-| `mixed-line-endings`    | a line ending that differs from the file's first one           | warning                                          |
+| Rule                    | Reports                                                           | Default                                          |
+| ----------------------- | ----------------------------------------------------------------- | ------------------------------------------------ |
+| `syntax`                | the first syntax error; checking stops there                      | error                                            |
+| `duplicate-key`         | a key repeated in one object, with both positions and its path    | error                                            |
+| `invalid-number`        | a number a double cannot hold, or an integer past ±(2⁵³ − 1)      | error in `i-json`, off elsewhere                 |
+| `invalid-code-point`    | a lone surrogate or a noncharacter in a string                    | error in `i-json`, off elsewhere                 |
+| `byte-order-mark`       | a byte order mark at the start of the file                        | warning in `json` and `i-json`, error in `jsonl` |
+| `missing-final-newline` | a JSON Lines file that does not end with a newline                | warning in `jsonl`                               |
+| `mixed-line-endings`    | a line ending that differs from the file's first one              | warning                                          |
+| `unreadable`            | a file that is missing, not a regular file, or not readable UTF-8 | error, always                                    |
+| `schema`                | a value the file's JSON Schema rejects                            | error, always                                    |
 
-Change a rule's severity with `--error`, `--warn` or `--ignore`. Warnings fail a run only past
+Change a rule's severity with `--error`, `--warn` or `--ignore`; `unreadable` and `schema` stay
+errors. Warnings fail a run only past
 `--max-warnings N`.
 
 ## Configuration
@@ -213,7 +216,8 @@ are now checked as JSONC, and `.hujson` and `.jwcc` files as JWCC. To keep the o
 The tests run on Linux, macOS and Windows, with fuzzing, mutation testing and a comparison with
 check-json5 1.4.1. A
 [conformance matrix](https://github.com/simonvanlierde/jsonvet/blob/main/docs/conformance.md)
-runs the same files against 18 other parsers in four languages, and shows where each one disagrees
+runs the same files against 18 other parsers in four languages (27 runs with jsonvet's own and the
+duplicate-key variants), and shows where each one disagrees
 with the expected verdict.
 
 ## Development
@@ -254,7 +258,7 @@ I (Simon van Lierde) started this as a fork of [check-json5](https://gitlab.com/
 by Ben Mares, which is based on the [pre-commit-hooks](https://github.com/pre-commit/pre-commit-hooks)
 repository by Anthony Sottile and contributors, both MIT-licensed.
 
-Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT license](LICENSE-MIT)
+Licensed under either of [Apache License, Version 2.0](https://github.com/simonvanlierde/jsonvet/blob/main/LICENSE-APACHE) or [MIT license](https://github.com/simonvanlierde/jsonvet/blob/main/LICENSE-MIT)
 at your option. Ben Mares's copyright notice stays in the MIT text.
 
 Unless you explicitly state otherwise, any contribution you intentionally submit for inclusion in
