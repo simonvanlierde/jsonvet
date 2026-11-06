@@ -26,6 +26,11 @@ options; `--stdio` is accepted, as some clients pass it. A file named `lsp` need
 The server checks the whole file on each change. A 4 MB file took 33 ms (2026-11-06, release
 build), so it does not wait for typing to stop.
 
+## VS Code
+
+The extension in [editors/vscode](../editors/vscode/README.md) is a thin client for `jsonvet lsp`.
+Its README says how to keep VS Code's own JSON validation from reporting the same problems twice.
+
 ## Neovim
 
 With Neovim 0.11 or later, in `init.lua`:

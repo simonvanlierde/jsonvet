@@ -56,6 +56,10 @@ check: lint test
 msrv:
     cargo +1.88 check --workspace --lib --bins --locked
 
+# Package the VS Code extension as editors/vscode/jsonvet-<version>.vsix. Nothing is published.
+vsix:
+    cd editors/vscode && cp ../../LICENSE-MIT ../../LICENSE-APACHE . && pnpm install --frozen-lockfile && pnpm run build && pnpm dlx @vscode/vsce@4.1.0 package --no-dependencies --skip-license
+
 # Re-run the conformance matrix (needs docker), then render docs/conformance.md.
 matrix:
     cargo build --release -p jsonvet-cli

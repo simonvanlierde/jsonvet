@@ -3,11 +3,11 @@
 # ///
 """Check that every place naming jsonvet's release version agrees.
 
-The crates' version (Cargo.toml), the `=x.y.z` pin of the library in the CLI crate, the wheel pin
-in the hook placeholder (setup.py), the check-json5 compatibility package's version and pin
-(compat/check-json5/pyproject.toml), the `rev:` in the hook examples (README.md, docs/usage.md and
-docs/format.md) and a heading in the CHANGELOG must name the same release, or a hook install would
-pull another version than the tag.
+The crates' version (Cargo.toml), the VS Code extension's (editors/vscode/package.json), the
+`=x.y.z` pin of the library in the CLI crate, the wheel pin in the hook placeholder (setup.py), the
+check-json5 compatibility package's version and pin (compat/check-json5/pyproject.toml), the `rev:`
+in the hook examples (README.md, docs/usage.md and docs/format.md) and a heading in the CHANGELOG
+must name the same release, or a hook install would pull another version than the tag.
 
 The speed table in docs/design.md, which `scripts/bench.py --write` fills in, must name the
 release's minor version (`jsonvet 3.2` for 3.2.x), so each minor release measures again. The
@@ -26,6 +26,7 @@ moves the Unreleased entries under a new `## [X.Y.Z]` heading in the same change
 version.
 """
 
+import json
 import re
 import sys
 import tomllib
@@ -67,6 +68,9 @@ def main() -> int:
     found = {"Cargo.toml": pep440(cargo), "compat version": compat["version"]}
     found.update({f"pin {i + 1}": pin for i, pin in enumerate(pins)})
     found["cli crate pin"] = pep440(cli_pin)
+    found["vscode extension"] = pep440(
+        json.loads((ROOT / "editors" / "vscode" / "package.json").read_text())["version"]
+    )
     found.update({f"hook rev {i + 1}": pep440(rev) for i, rev in enumerate(revs)})
     for where, version in found.items():
         print(f"{where:16} {version}")

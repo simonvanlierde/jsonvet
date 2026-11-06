@@ -1,0 +1,74 @@
+{
+  "name": "jsonvet",
+  "displayName": "jsonvet",
+  "description": "Problems, safe fixes and formatting for JSON, JSONC, JWCC, JSON5 and JSON Lines, from the jsonvet language server.",
+  "version": "3.3.1",
+  "publisher": "placeholder-publisher-id",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/simonvanlierde/jsonvet",
+    "directory": "editors/vscode"
+  },
+  "engines": {
+    "vscode": "^1.91.0"
+  },
+  "categories": [
+    "Linters",
+    "Formatters"
+  ],
+  "keywords": [
+    "json",
+    "jsonc",
+    "json5",
+    "jsonl",
+    "lint"
+  ],
+  "activationEvents": [
+    "onLanguage:json",
+    "onLanguage:jsonc",
+    "onLanguage:json5",
+    "onLanguage:jsonl"
+  ],
+  "main": "./out/extension.js",
+  "files": [
+    "out/extension.js",
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "jsonvet runs a program found on PATH, which in an untrusted folder could be one the folder holds."
+    }
+  },
+  "contributes": {
+    "configuration": {
+      "title": "jsonvet",
+      "properties": {
+        "jsonvet.path": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "The `jsonvet` program to run, such as `/usr/local/bin/jsonvet`. Empty: `jsonvet` on `PATH`. Takes effect after a reload."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --platform=node --format=cjs --external:vscode --minify --outfile=out/extension.js",
+    "check": "biome check && tsc --noEmit"
+  },
+  "dependencies": {
+    "vscode-languageclient": "11.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.4",
+    "@types/node": "20.19.43",
+    "@types/vscode": "1.91.0",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  },
+  "packageManager": "pnpm@12.17.0"
+}
