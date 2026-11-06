@@ -1,0 +1,36 @@
+name: pr-size
+
+# Trial until 2027-01-04: warn, never fail, when a pull request changes more than 500 lines
+# (additions plus deletions), files marked linguist-generated in .gitattributes left out.
+# scripts/pr-size-report.py measures the trial.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  pr-size:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Count changed lines
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          CAP: "500"
+        run: |-
+          total=0
+          while IFS=$'\t' read -r added deleted path; do
+            [[ $added == - ]] && continue # binary file
+            [[ $(git check-attr linguist-generated -- "$path") == *": true" ]] && continue
+            total=$((total + added + deleted))
+          done < <(git diff --numstat --no-renames "origin/${BASE_REF}...HEAD")
+          echo "Changed lines, generated files excluded: $total (cap $CAP)" >>"$GITHUB_STEP_SUMMARY"
+          if ((total > CAP)); then
+            echo "::warning title=Large pull request::This pull request changes $total lines (cap $CAP, generated files excluded). Split refactors into their own pull request."
+          fi
