@@ -4285,20 +4285,36 @@ fn lsp_checks_a_document_over_stdio_and_exits_0_after_shutdown() {
     }
     let start = std::time::Instant::now();
     let mut output = BufReader::new(child.stdout.take().expect("stdout"));
-    let mut read = || -> serde_json::Value {
-        let mut length = 0;
+    // Read on a thread, so a server that never answers fails the test instead of hanging it.
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
         loop {
-            let mut line = String::new();
-            output.read_line(&mut line).expect("a header");
-            match line.trim_end().split_once(": ") {
-                Some(("Content-Length", n)) => length = n.parse().expect("a length"),
-                None if line.trim_end().is_empty() => break,
-                _ => {}
+            let mut length = 0;
+            loop {
+                let mut line = String::new();
+                if output.read_line(&mut line).unwrap_or(0) == 0 {
+                    return;
+                }
+                match line.trim_end().split_once(": ") {
+                    Some(("Content-Length", n)) => length = n.parse().expect("a length"),
+                    None if line.trim_end().is_empty() => break,
+                    _ => {}
+                }
+            }
+            let mut body = vec![0; length];
+            output.read_exact(&mut body).expect("a body");
+            let message: serde_json::Value = serde_json::from_slice(&body).expect("JSON");
+            if sender.send(message).is_err() {
+                return;
             }
         }
-        let mut body = vec![0; length];
-        output.read_exact(&mut body).expect("a body");
-        serde_json::from_slice(&body).expect("JSON")
+    });
+    let mut read = || match receiver.recv_timeout(std::time::Duration::from_secs(10)) {
+        Ok(message) => message,
+        Err(e) => {
+            let _ = child.kill();
+            panic!("no message from jsonvet lsp: {e}");
+        }
     };
     assert_eq!(read()["result"]["serverInfo"]["name"], "jsonvet");
     let published = read();
