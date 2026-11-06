@@ -429,7 +429,8 @@ fn edits<'n>(old: &'n str, new: &'n str) -> Vec<(Range<usize>, &'n str)> {
                 (0..=skipped).find_map(|k| {
                     let (x, y) = (i + k, j + skipped - k);
                     let agree = |n| token(&olds, old, x + n) == token(&news, new, y + n);
-                    (x < olds.len() && y < news.len() && (0..run).all(agree)).then_some((x, y))
+                    // Past the end of both, the tokens agree as `None`s: stop before that.
+                    (x < olds.len() && (0..run).all(agree)).then_some((x, y))
                 })
             })
         };
@@ -640,6 +641,26 @@ mod tests {
         connection: Connection,
         server: std::thread::JoinHandle<Result<bool, String>>,
         next: i32,
+        /// The notifications a request's response came after.
+        skipped: Vec<String>,
+    }
+
+    /// The next message from the server, failing rather than hanging when a broken server sends
+    /// none.
+    fn receive(connection: &Connection) -> Message {
+        connection
+            .receiver
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("a message within 10 s")
+    }
+
+    /// The server's result once its connection closes, so a server that missed `exit` ends.
+    fn finish(
+        connection: Connection,
+        server: std::thread::JoinHandle<Result<bool, String>>,
+    ) -> Result<bool, String> {
+        drop(connection);
+        server.join().expect("no panic")
     }
 
     impl Client {
@@ -650,6 +671,7 @@ mod tests {
                 connection: client,
                 server,
                 next: 0,
+                skipped: Vec::new(),
             };
             let result = client.request("initialize", json!({ "capabilities": capabilities }));
             client.notify("initialized", json!({}));
@@ -670,10 +692,11 @@ mod tests {
                 .send(Message::Request(request))
                 .expect("sent");
             loop {
-                match self.connection.receiver.recv().expect("a message") {
+                match receive(&self.connection) {
                     Message::Response(response) if response.id == id => {
                         return response.response_result.map_err(|e| e.code);
                     }
+                    Message::Notification(note) => self.skipped.push(note.method),
                     _ => {}
                 }
             }
@@ -690,8 +713,7 @@ mod tests {
         /// The next diagnostics the server publishes.
         fn diagnostics(&self) -> Value {
             loop {
-                if let Message::Notification(note) =
-                    self.connection.receiver.recv().expect("a message")
+                if let Message::Notification(note) = receive(&self.connection)
                     && note.method == "textDocument/publishDiagnostics"
                 {
                     return note.params;
@@ -712,7 +734,7 @@ mod tests {
         fn stop(mut self) {
             assert_eq!(self.request("shutdown", Value::Null), Value::Null);
             self.notify("exit", Value::Null);
-            assert_eq!(self.server.join().expect("no panic"), Ok(true));
+            assert_eq!(finish(self.connection, self.server), Ok(true));
         }
     }
 
@@ -739,6 +761,10 @@ mod tests {
         let related = &diagnostic["relatedInformation"][0];
         assert_eq!(related["location"]["range"], range((0, 1), (0, 2)));
         assert_eq!(related["message"], "first copy");
+        let published = client.open(&uri(&dir.join("b.json")), "[1, 2\n");
+        let related = &published["diagnostics"][0]["relatedInformation"][0];
+        assert_eq!(related["location"]["range"], range((0, 0), (0, 1)));
+        assert_eq!(related["message"], "opened here");
         client.notify(
             "textDocument/didChange",
             json!({
@@ -813,6 +839,12 @@ mod tests {
         let diagnostic = &published["diagnostics"][0];
         assert_eq!(diagnostic["code"], "schema");
         assert_eq!(diagnostic["range"], range((1, 6), (1, 7)));
+        // As in a run, a JSON Lines file's `$schema` names no schema: each line is a document.
+        let published = client.open(
+            &uri(&dir.join("b.jsonl")),
+            "{\"$schema\": \"./s.json\", \"a\": 1}\n",
+        );
+        assert_eq!(published["diagnostics"], json!([]));
         client.stop();
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -823,6 +855,10 @@ mod tests {
         let dir = folder("positions");
         let text = "{\r\n\"😀\": 1,\r\"😀\": 2}";
         let file = uri(&dir.join("a.json"));
+        let only = json!({ "general": { "positionEncodings": ["utf-16"] } });
+        let (client, result) = Client::start(&only);
+        assert_eq!(result["capabilities"]["positionEncoding"], "utf-16");
+        client.stop();
         let (client, result) = Client::start(&json!({}));
         assert_eq!(result["capabilities"]["positionEncoding"], "utf-16");
         let published = client.open(&file, text);
@@ -1058,6 +1094,29 @@ mod tests {
     }
 
     #[test]
+    fn a_range_keeps_a_deletion_that_ends_where_it_does() {
+        let text = "[1,  2]\n";
+        let edits = vec![(4..5, "")];
+        assert_eq!(within(text, edits.clone(), &(0..5), |_| true), edits);
+        // An insertion there goes on what follows the range, so it is left out.
+        assert_eq!(within(text, vec![(5..5, " ")], &(0..5), |_| true), []);
+    }
+
+    #[test]
+    fn edits_find_a_shared_token_up_to_twice_the_lookahead_away() {
+        // `z` is 20 tokens in: anchored on it, the space added after it stays an edit of its own.
+        let old = "a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 a17 a18 a19 z b";
+        let at = old.find('z').expect("z");
+        assert_eq!(edits(old, "z  b"), [(0..at, ""), (at + 2..at + 2, " ")]);
+    }
+
+    #[test]
+    fn edits_step_past_each_shared_token_once() {
+        // Every token is the same, so taking one twice would anchor on it again.
+        assert_eq!(edits("1 1 1 1 1", "1 1  1 1 1"), [(4..4, " ")]);
+    }
+
+    #[test]
     fn edits_are_small_and_rebuild_the_new_text() {
         let cases = [
             ("{\"a\":1}", "{ \"a\": 1 }\n"),
@@ -1111,13 +1170,18 @@ mod tests {
             .sender
             .send(Message::Request(request))
             .expect("sent");
-        let Message::Response(response) = client.connection.receiver.recv().expect("a message")
-        else {
+        let Message::Response(response) = receive(&client.connection) else {
             panic!("not a response");
         };
         assert_eq!(response.response_result.map_err(|e| e.code), Err(-32601));
         client.notify("exit", Value::Null);
-        assert_eq!(client.server.join().expect("no panic"), Ok(false));
+        // Exit ends the server before its connection closes.
+        let started = std::time::Instant::now();
+        while !client.server.is_finished() {
+            assert!(started.elapsed().as_secs() < 10, "the server did not exit");
+            std::thread::yield_now();
+        }
+        assert_eq!(finish(client.connection, client.server), Ok(false));
     }
 
     #[test]
@@ -1134,8 +1198,10 @@ mod tests {
             client.try_request("textDocument/formatting", params),
             Err(-32600)
         );
+        // Nothing is published for the close after shutdown.
+        assert_eq!(client.skipped, Vec::<String>::new());
         client.notify("exit", Value::Null);
-        assert_eq!(client.server.join().expect("no panic"), Ok(true));
+        assert_eq!(finish(client.connection, client.server), Ok(true));
     }
 
     #[test]
@@ -1145,8 +1211,7 @@ mod tests {
         let Client {
             connection, server, ..
         } = client;
-        drop(connection);
-        assert_eq!(server.join().expect("no panic"), Ok(false));
+        assert_eq!(finish(connection, server), Ok(false));
     }
 
     #[test]
@@ -1178,6 +1243,11 @@ mod tests {
         assert_eq!(
             titles("b.jsonl", "\u{feff}[1]\n", range((0, 1), (0, 1))),
             ["Remove the byte order mark"]
+        );
+        // At the end of the bracket, past the line ending before it that also has a fix.
+        assert_eq!(
+            titles("d.jsonc", "[1,\r\n2,\n]\n", range((2, 1), (2, 1))),
+            ["Remove the trailing comma"]
         );
         // Not on the next line.
         assert_eq!(
