@@ -323,11 +323,11 @@ struct Frame<'a> {
     element_index: usize,
 }
 
-/// `a == b`, but the first byte is compared inline, so keys of one length that differ there
-/// skip the `memcmp` call.
+/// `a == b`, but the first and last bytes are compared inline, so keys of one length that
+/// differ there, such as `opt1` and `opt2`, skip the `memcmp` call.
 #[inline]
 fn key_eq(a: &[u8], b: &[u8]) -> bool {
-    a.len() == b.len() && a.first() == b.first() && a == b
+    a.len() == b.len() && a.first() == b.first() && a.last() == b.last() && a == b
 }
 
 /// An object's keys with the offset of each, in the order they came.
@@ -356,6 +356,8 @@ impl<'a> Keys<'a> {
             }
             list.push((key.clone(), at));
             if list.len() == LINEAR_KEYS + 1 {
+                // One allocation: growing key by key to 17 took four, rehashing each time.
+                self.index.reserve(2 * LINEAR_KEYS, |&(h, _)| spread(h));
                 for (i, (k, _)) in (0..).zip(list.iter()) {
                     let hash = short_hash(&self.state, k);
                     self.index
@@ -400,6 +402,18 @@ impl<'a> Keys<'a> {
 )]
 fn short_hash(state: &RandomState, key: &[u8]) -> u32 {
     state.hash_one(key) as u32
+}
+
+/// How many of the eight bytes in `word`, read little-endian, are ASCII digits before the first
+/// that is not. A digit is `0x30..=0x39`: its high nibble is 3, and adding 6 keeps it 3. Adding
+/// 6 carries into the next byte only from a byte of `0xFA` or more, which is no digit itself, so
+/// the bytes before the first non-digit are always right.
+fn digit_run(word: u64) -> usize {
+    const HIGH: u64 = 0xF0F0_F0F0_F0F0_F0F0;
+    const THREES: u64 = 0x3030_3030_3030_3030;
+    const SIXES: u64 = 0x0606_0606_0606_0606;
+    let other = ((word & HIGH) ^ THREES) | ((word.wrapping_add(SIXES) & HIGH) ^ THREES);
+    other.trailing_zeros() as usize / 8
 }
 
 /// `hash` in both halves of a `u64`: hashbrown picks the bucket from the low bits and its 7-bit
@@ -1371,6 +1385,18 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
     fn skip_digits(&mut self) -> bool {
         let rest = &self.bytes[self.pos..];
         let mut len = 0;
+        // Eight bytes at a time while eight are left, for long runs such as canada.json's
+        // `43.420273000000009`. A run of one digit, the most common, takes the byte loop.
+        if rest.get(1).is_some_and(u8::is_ascii_digit) {
+            while let Some(&eight) = rest.get(len..).and_then(<[u8]>::first_chunk::<8>) {
+                let digits = digit_run(u64::from_le_bytes(eight));
+                len += digits;
+                if digits < 8 {
+                    self.pos += len;
+                    return len > 0;
+                }
+            }
+        }
         while len < rest.len() && rest[len].is_ascii_digit() {
             len += 1;
         }
@@ -1727,7 +1753,33 @@ fn push_wtf8(buffer: &mut Vec<u8>, code_point: u32) {
 mod tests {
     use std::hash::RandomState;
 
-    use super::{Key, Keys, LINEAR_KEYS, plain_bytes, plain_run, short_hash, spread, string_stops};
+    use super::{
+        Key, Keys, LINEAR_KEYS, digit_run, plain_bytes, plain_run, short_hash, spread, string_stops,
+    };
+
+    #[test]
+    fn digit_run_stops_at_the_first_non_digit() {
+        // Every byte value at every position, after digits and before 0xFF, whose carry from
+        // adding 6 must not reach back.
+        for b in 0..=u8::MAX {
+            for at in 0..8 {
+                let mut word = [b'7'; 8];
+                word[at] = b;
+                word[at + 1..].fill(0xFF);
+                let expected = if b.is_ascii_digit() {
+                    (at + 1).min(8)
+                } else {
+                    at
+                };
+                assert_eq!(
+                    digit_run(u64::from_le_bytes(word)),
+                    expected,
+                    "{b:#x} at {at}"
+                );
+            }
+        }
+        assert_eq!(digit_run(u64::from_le_bytes(*b"12345678")), 8);
+    }
 
     // A hash that lost its spread still finds every duplicate, only in quadratic time, which a
     // test cannot time reliably. These pin the spread itself.

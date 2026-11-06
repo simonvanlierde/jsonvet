@@ -424,20 +424,28 @@ fn expand(
     threads: usize,
 ) -> Result<Vec<OsString>, String> {
     let mut files = Vec::with_capacity(args.len());
-    // Each argument costs a call to the system, so thousands of them are asked about in parallel.
-    let dirs = parallel(
+    // Each argument costs a call to the system, so thousands of them are asked about in parallel:
+    // whether it is a folder, and which file it is, for `unique`.
+    let found = parallel(
         &args,
         threads,
         || false,
-        |arg| arg != STDIN && Path::new(arg).is_dir(),
+        |arg| {
+            let meta = std::fs::metadata(arg);
+            let dir = arg != STDIN && meta.as_ref().is_ok_and(std::fs::Metadata::is_dir);
+            (dir, identity(arg, meta))
+        },
     );
+    // The identity of each of `files`, or `None` for a file a walk found.
+    let mut ids = Vec::with_capacity(args.len());
     // Folders that share no file need no check for repeats: the walk follows no symlinks.
     let mut roots = Vec::new();
     let mut distinct = true;
-    for (arg, dir) in args.into_iter().zip(dirs) {
+    for (arg, (dir, id)) in args.into_iter().zip(found) {
         if !dir {
             distinct = false;
             files.push(arg);
+            ids.push(Some(id));
             continue;
         }
         let start = files.len();
@@ -483,6 +491,7 @@ fn expand(
                 && Dialect::for_path(entry.path()).is_some()
             {
                 files.push(entry.into_path().into_os_string());
+                ids.push(None);
             }
         }
         if let Some(problem) = skipped
@@ -503,20 +512,21 @@ fn expand(
     if distinct && !roots.iter().enumerate().any(|(i, root)| overlap(i, root)) {
         return Ok(files);
     }
-    Ok(unique(files, threads))
+    Ok(unique(files, ids, threads))
 }
 
 /// What names a file apart from its spelling.
-#[derive(PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 enum Identity {
     #[cfg(unix)]
     Inode(u64, u64),
     Path(PathBuf),
 }
 
-fn identity(file: &OsStr) -> Identity {
+/// The identity of `file`, from `meta`, what `std::fs::metadata` said about it.
+fn identity(file: &OsStr, meta: io::Result<std::fs::Metadata>) -> Identity {
     #[cfg(unix)]
-    if let Ok(meta) = std::fs::metadata(file) {
+    if let Ok(meta) = meta {
         use std::os::unix::fs::MetadataExt;
         return Identity::Inode(meta.dev(), meta.ino());
     }
@@ -526,8 +536,22 @@ fn identity(file: &OsStr) -> Identity {
 
 /// `files` without any that is the same file as an earlier one, so that each is checked once,
 /// under its first spelling. Standard input can be given only once, as the arguments check.
-fn unique(files: Vec<OsString>, threads: usize) -> Vec<OsString> {
-    let ids = parallel(&files, threads, || false, |file| identity(file));
+/// `ids` holds each file's identity where it is known already.
+fn unique(files: Vec<OsString>, ids: Vec<Option<Identity>>, threads: usize) -> Vec<OsString> {
+    let ids: Vec<Identity> = if ids.iter().all(Option::is_some) {
+        ids.into_iter().flatten().collect()
+    } else {
+        let files: Vec<_> = files.iter().zip(ids).collect();
+        parallel(
+            &files,
+            threads,
+            || false,
+            |(file, id)| {
+                id.clone()
+                    .unwrap_or_else(|| identity(file, std::fs::metadata(file)))
+            },
+        )
+    };
     let mut seen = std::collections::HashSet::with_capacity(files.len());
     files
         .into_iter()
@@ -860,7 +884,15 @@ fn print_file(
 fn read(path: &Path) -> Result<String, String> {
     let read = std::fs::metadata(path).and_then(|meta| {
         if meta.is_file() {
-            std::fs::read(path).map(Some)
+            // The size is known already: `fs::read`, and `File`'s own `read_to_end`, would ask
+            // the system for it again. `take` reads to the end without asking. A file too big for
+            // memory fails alone, as an error, rather than aborting the run.
+            let mut bytes = Vec::new();
+            bytes.try_reserve_exact(usize::try_from(meta.len()).unwrap_or(usize::MAX))?;
+            std::fs::File::open(path)?
+                .take(u64::MAX)
+                .read_to_end(&mut bytes)
+                .map(|_| Some(bytes))
         } else {
             Ok(None)
         }
