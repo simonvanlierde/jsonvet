@@ -17,8 +17,8 @@ Only files on disk are checked: an untitled file has no path to pick its setting
 ## Problems shown twice
 
 VS Code's own JSON validation also reports syntax errors and duplicate keys in JSON and JSONC
-files, so those would show twice. The first time the extension starts in a workspace, it asks
-whether to turn that validation off there, which sets this in `.vscode/settings.json`:
+files, so those would show twice. The first time the extension starts in a workspace folder, it
+asks whether to turn that validation off there, which sets this in `.vscode/settings.json`:
 
 ```json
 { "json.validate.enable": false }

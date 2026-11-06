@@ -15,7 +15,8 @@ export async function activate(context: ExtensionContext): Promise<void> {
   }));
   client = new LanguageClient("jsonvet", "jsonvet", server, { documentSelector });
   await client.start();
-  await askAboutBuiltInValidation(context);
+  // Not awaited: the question waits for an answer, and activation should not.
+  void askAboutBuiltInValidation(context);
 }
 
 export function deactivate(): Promise<void> | undefined {
@@ -24,11 +25,11 @@ export function deactivate(): Promise<void> | undefined {
 
 // VS Code's own JSON validation also reports syntax errors and duplicate keys, so they would show
 // twice. Ask once per workspace whether to turn it off, as it also checks SchemaStore schemas,
-// which jsonvet does not fetch.
+// which jsonvet does not fetch. Without a folder open there is no workspace to set it in.
 async function askAboutBuiltInValidation(context: ExtensionContext): Promise<void> {
   const json = workspace.getConfiguration("json");
   const asked = "askedAboutBuiltInValidation";
-  if (!json.get<boolean>("validate.enable", true) || context.workspaceState.get(asked)) {
+  if (!workspace.workspaceFolders || !json.get<boolean>("validate.enable", true) || context.workspaceState.get(asked)) {
     return;
   }
   await context.workspaceState.update(asked, true);
@@ -40,7 +41,6 @@ async function askAboutBuiltInValidation(context: ExtensionContext): Promise<voi
     "Keep both",
   );
   if (choice === turnOff) {
-    const target = workspace.workspaceFolders ? ConfigurationTarget.Workspace : ConfigurationTarget.Global;
-    await json.update("validate.enable", false, target);
+    await json.update("validate.enable", false, ConfigurationTarget.Workspace);
   }
 }
