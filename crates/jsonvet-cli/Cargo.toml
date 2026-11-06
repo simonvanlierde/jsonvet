@@ -9,6 +9,7 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
+documentation = "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md"
 keywords.workspace = true
 categories.workspace = true
 

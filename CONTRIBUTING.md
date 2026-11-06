@@ -50,8 +50,8 @@ Other workflows:
 - `pages.yml` builds and tests the playground on a pull request that touches it, and deploys it
   from main. On a pull request it also keeps screenshots of the page (`playground/screenshots.sh`:
   desktop and phone, light and dark) as the `playground-screenshots` artifact for 14 days, and a
-  comment on the pull request links the newest one. `just playground` does the same build and tests, and serves it at
-  <http://127.0.0.1:8000>.
+  comment on the pull request links the newest one. `just playground [PORT]` does the same build and tests, and serves it at
+  <http://127.0.0.1:8000>, or at the PORT you pass.
 - `scorecard.yml` rates the repository for the OpenSSF Scorecard badge.
 
 Put each detail of the docs in one place and link to it: the README to get started,

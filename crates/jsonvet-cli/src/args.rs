@@ -63,9 +63,10 @@ Options:
   -V, --version                 Print the version.
 
 Rules: syntax, duplicate-key, invalid-number, invalid-code-point, byte-order-mark,
-missing-final-newline, mixed-line-endings (--list-rules says more). With a schema (--schema, the
-schemas setting or a local $schema in the file), errors also come under the rule schema; they
-are always errors, and --error, --warn, --ignore and settings files do not take schema.
+missing-final-newline, mixed-line-endings, unreadable, schema. unreadable (a file that cannot be
+read) and schema (a value the file's JSON Schema rejects, from --schema, the schemas setting or
+a local $schema) are always errors: --error, --warn, --ignore and settings files do not take
+them.
 
 Settings come from jsonvet.toml, or [tool.jsonvet] in pyproject.toml: for each file, the nearest
 one in its folder or a parent, up to the repository root (without .git, the working directory).
