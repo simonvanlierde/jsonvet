@@ -785,6 +785,41 @@ mod tests {
     }
 
     #[test]
+    fn per_file_rules_apply_to_diagnostics_and_fixes() {
+        let dir = folder("per-file-rules");
+        std::fs::write(
+            dir.join("jsonvet.toml"),
+            "rules = { byte-order-mark = \"error\" }\n\
+             per-file-rules = [\n\
+               { files = \"warning.json5\", byte-order-mark = \"warning\" },\n\
+               { files = \"ignored.json5\", byte-order-mark = \"ignore\" },\n\
+             ]\n",
+        )
+        .expect("written");
+        let (mut client, _) = Client::start(&json!({}));
+        for (name, severity) in [("error", 1), ("warning", 2), ("ignored", 0)] {
+            let file = uri(&dir.join(format!("{name}.json5")));
+            let published = client.open(&file, "\u{feff}{}");
+            if severity == 0 {
+                assert_eq!(published["diagnostics"], json!([]));
+            } else {
+                assert_eq!(published["diagnostics"][0]["code"], "byte-order-mark");
+                assert_eq!(published["diagnostics"][0]["severity"], severity);
+            }
+            let actions = client.request(
+                "textDocument/codeAction",
+                json!({ "textDocument": { "uri": file }, "range": range((0, 0), (0, 8)) }),
+            );
+            assert_eq!(
+                actions.as_array().expect("actions").is_empty(),
+                severity == 0
+            );
+        }
+        client.stop();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn the_dialect_and_rules_come_from_the_config_file() {
         let dir = folder("config");
         std::fs::write(
