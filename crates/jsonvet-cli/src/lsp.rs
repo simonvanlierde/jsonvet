@@ -18,8 +18,6 @@ use crate::{editorconfig, format, frame, messages, rules, sarif};
 
 /// The code action kind of the action that applies every safe fix, which editors can run on save.
 const FIX_ALL: &str = "source.fixAll.jsonvet";
-const MAX_DIAGNOSTICS: usize = 5_000;
-const MAX_QUICK_FIXES: usize = 20;
 
 /// Run the server until the client says exit: exit status 0 after a shutdown request, else 1,
 /// as the protocol asks.
@@ -61,7 +59,7 @@ fn serve(connection: &Connection) -> Result<bool, String> {
         "positionEncoding": if utf8 { "utf-8" } else { "utf-16" },
         // Full: every change is checked against the whole text anyway.
         "textDocumentSync": { "openClose": true, "change": 1 },
-        "codeActionProvider": { "codeActionKinds": ["quickfix", FIX_ALL] },
+        "codeActionProvider": { "codeActionKinds": ["quickfix", FIX_ALL], "resolveProvider": true },
         "documentFormattingProvider": true,
         "documentRangeFormattingProvider": true,
     });
@@ -84,12 +82,21 @@ fn serve(connection: &Connection) -> Result<bool, String> {
     }
     let client = Client {
         utf8,
+        resolve: params
+            .pointer("/capabilities/textDocument/codeAction/dataSupport")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+            && params
+                .pointer("/capabilities/textDocument/codeAction/resolveSupport/properties")
+                .and_then(Value::as_array)
+                .is_some_and(|properties| properties.iter().any(|p| p == "edit")),
         versioned: params
             .pointer("/capabilities/workspace/workspaceEdit/documentChanges")
             .and_then(Value::as_bool)
             .unwrap_or(false),
     };
     let mut documents = HashMap::new();
+    let mut revision = 0;
     let mut shut_down = false;
     for message in &connection.receiver {
         match message {
@@ -111,7 +118,7 @@ fn serve(connection: &Connection) -> Result<bool, String> {
             Message::Notification(note) if note.method == "exit" => return Ok(shut_down),
             Message::Notification(_) if shut_down => {}
             Message::Notification(note) => {
-                if let Some(published) = update(&note, &mut documents, utf8) {
+                if let Some(published) = update(&note, &mut documents, &mut revision, utf8) {
                     send(Message::Notification(published))?;
                 }
             }
@@ -129,12 +136,16 @@ struct Client {
     utf8: bool,
     /// Workspace edits that name the version of the document they edit.
     versioned: bool,
+    /// Code action data is preserved and the client resolves edits when it needs them.
+    resolve: bool,
 }
 
 /// An open document: its text and the client's version of it, if it gave one.
 struct Document {
     text: String,
     version: Option<Value>,
+    /// Unlike client versions, this does not restart when a file is reopened.
+    revision: u64,
 }
 
 /// Keep `documents` in step with an open, change or close, and return the document's new
@@ -142,6 +153,7 @@ struct Document {
 fn update(
     note: &Notification,
     documents: &mut HashMap<String, Document>,
+    revision: &mut u64,
     utf8: bool,
 ) -> Option<Notification> {
     let params = &note.params;
@@ -165,9 +177,11 @@ fn update(
             .to_owned();
             let path = path_of(&uri)?;
             let diagnostics = diagnostics(&uri, &path, &text, utf8);
+            *revision = revision.checked_add(1)?;
             let document = Document {
                 text,
                 version: version.clone(),
+                revision: *revision,
             };
             documents.insert(uri.clone(), document);
             diagnostics
@@ -191,6 +205,9 @@ fn update(
 
 /// The response to a request other than shutdown.
 fn answer(request: &Request, documents: &HashMap<String, Document>, client: Client) -> Response {
+    if request.method == "codeAction/resolve" {
+        return resolve_action(request, documents, client);
+    }
     let utf8 = client.utf8;
     let params = &request.params;
     let document = params
@@ -212,9 +229,7 @@ fn answer(request: &Request, documents: &HashMap<String, Document>, client: Clie
                     })
                 })
             };
-            // A client that takes it gets the version, so it drops edits to a newer text.
-            let version = document.version.as_ref().filter(|_| client.versioned);
-            code_actions((uri, version), &path, &lines, range, &wants)
+            code_actions((uri, document), &path, &lines, range, &wants, client)
         }
         ("textDocument/formatting", Some((_, document, path))) => {
             let lines = Lines::new(&document.text, utf8);
@@ -256,9 +271,8 @@ fn diagnostics(uri: &str, path: &Path, text: &str, utf8: bool) -> Vec<Value> {
             })];
         }
     };
-    let total = report.problems().len() + schema_errors.len();
     let mut diagnostics = Vec::new();
-    for problem in report.problems().iter().take(MAX_DIAGNOSTICS) {
+    for problem in report.problems() {
         let id = problem.rule().id();
         let mut diagnostic = json!({
             "range": lines.span(problem.offset()..problem.end()),
@@ -283,8 +297,7 @@ fn diagnostics(uri: &str, path: &Path, text: &str, utf8: bool) -> Vec<Value> {
         }
         diagnostics.push(diagnostic);
     }
-    let remaining = MAX_DIAGNOSTICS - diagnostics.len();
-    for (offset, message, summary) in schema_errors.into_iter().take(remaining) {
+    for (offset, message, summary) in schema_errors {
         let (start, end) = frame::one_char(&report, offset);
         let mut diagnostic = json!({
             "range": lines.span(start..end),
@@ -298,14 +311,6 @@ fn diagnostics(uri: &str, path: &Path, text: &str, utf8: bool) -> Vec<Value> {
         }
         diagnostics.push(diagnostic);
     }
-    if total > diagnostics.len() {
-        diagnostics.push(json!({
-            "range": lines.span(0..0),
-            "severity": 3,
-            "source": "jsonvet",
-            "message": messages::fill("lsp.more-problems", &[("count", &(total - diagnostics.len()))]),
-        }));
-    }
     diagnostics
 }
 
@@ -317,11 +322,12 @@ fn config_for(path: &Path) -> Result<Config, String> {
 
 /// A quick fix for each safe fix with a problem in `range`, and one action for them all.
 fn code_actions(
-    (uri, version): (&str, Option<&Value>),
+    (uri, document): (&str, &Document),
     path: &Path,
     lines: &Lines<'_>,
     range: Range<usize>,
     wants: &impl Fn(&str) -> bool,
+    client: Client,
 ) -> Value {
     let text = lines.text;
     let Ok(config) = config_for(path) else {
@@ -330,19 +336,21 @@ fn code_actions(
     let Ok(all) = jsonvet::try_fix(text, &config, false) else {
         return json!([]);
     };
-    let action = |title: String, kind: &str, fixed: &str| {
-        let edits: Vec<Value> = edits(text, fixed)
-            .into_iter()
-            .map(|(span, new)| json!({ "range": lines.span(span), "newText": new }))
-            .collect();
-        let edit = match version {
-            Some(version) => json!({ "documentChanges": [{
-                "textDocument": { "uri": uri, "version": version },
-                "edits": edits,
-            }]}),
-            None => json!({ "changes": { uri: edits } }),
-        };
-        json!({ "title": title, "kind": kind, "edit": edit })
+    let action = |title: String, kind: &str, offset: Option<usize>, fixed: Option<&str>| {
+        let mut action = json!({ "title": title, "kind": kind });
+        if let Some(fixed) = fixed {
+            action["edit"] = workspace_edit(
+                (uri, document.version.as_ref().filter(|_| client.versioned)),
+                lines,
+                fixed,
+            );
+        } else {
+            action["data"] = json!({ "uri": uri, "revision": document.revision });
+            if let Some(offset) = offset {
+                action["data"]["offset"] = json!(offset);
+            }
+        }
+        action
     };
     let mut actions = Vec::new();
     if wants("quickfix") {
@@ -359,26 +367,109 @@ fn code_actions(
             // Inclusive at both ends, so a caret that touches the problem counts.
             fix.offset <= range.end && end >= range.start
         };
-        for fix in all.fixes.iter().filter(in_range).take(MAX_QUICK_FIXES) {
-            let Ok(one) = jsonvet::try_fix_at(text, &config, false, Some(&[fix.offset])) else {
-                continue;
+        for fix in all.fixes.iter().filter(in_range) {
+            let one = if client.resolve {
+                None
+            } else {
+                let Ok(one) = jsonvet::try_fix_at(text, &config, false, Some(&[fix.offset])) else {
+                    continue;
+                };
+                Some(one)
             };
             let id = format!("lsp.fix.{}", fix.rule.id());
             let title = match messages::text(&id) {
                 "" => messages::fill("lsp.fix", &[("rule", &fix.rule.id())]),
                 title => title.to_owned(),
             };
-            actions.push(action(title, "quickfix", &one.text));
+            actions.push(action(
+                title,
+                "quickfix",
+                Some(fix.offset),
+                one.as_ref().map(|one| one.text.as_str()),
+            ));
         }
     }
     if wants(FIX_ALL) {
         actions.push(action(
             messages::text("lsp.fix-all").to_owned(),
             FIX_ALL,
-            &all.text,
+            None,
+            (!client.resolve).then_some(all.text.as_str()),
         ));
     }
     Value::Array(actions)
+}
+
+/// Resolve only actions for the same open document revision that produced their offsets.
+fn resolve_action(
+    request: &Request,
+    documents: &HashMap<String, Document>,
+    client: Client,
+) -> Response {
+    let params = &request.params;
+    let data = params.get("data").and_then(|data| {
+        params.get("title")?.as_str()?;
+        let kind = params.get("kind")?.as_str()?;
+        let uri = data.get("uri")?.as_str()?;
+        let path = path_of(uri)?;
+        let revision = data.get("revision")?.as_u64()?;
+        let only = match (kind, data.get("offset")) {
+            (FIX_ALL, None | Some(Value::Null)) => None,
+            ("quickfix", Some(offset)) => Some([usize::try_from(offset.as_u64()?).ok()?]),
+            _ => return None,
+        };
+        Some((uri, path, revision, only))
+    });
+    let Some((uri, path, revision, only)) = data else {
+        return Response::new_err(
+            request.id.clone(),
+            ErrorCode::InvalidParams as i32,
+            "invalid code action data".to_owned(),
+        );
+    };
+    let Some(document) = documents.get(uri).filter(|d| revision == d.revision) else {
+        return Response::new_err(
+            request.id.clone(),
+            ErrorCode::ContentModified as i32,
+            "the document changed or was closed".to_owned(),
+        );
+    };
+    let fixed = config_for(&path).and_then(|config| {
+        jsonvet::try_fix_at(
+            &document.text,
+            &config,
+            false,
+            only.as_ref().map(<[usize; 1]>::as_slice),
+        )
+        .map_err(|_| "the code action is no longer available".to_owned())
+    });
+    let fixed = match fixed {
+        Ok(fixed) => fixed,
+        Err(message) => {
+            return Response::new_err(request.id.clone(), ErrorCode::RequestFailed as i32, message);
+        }
+    };
+    let lines = Lines::new(&document.text, client.utf8);
+    let mut action = params.clone();
+    action["edit"] = workspace_edit(
+        (uri, document.version.as_ref().filter(|_| client.versioned)),
+        &lines,
+        &fixed.text,
+    );
+    Response::new_ok(request.id.clone(), action)
+}
+
+fn workspace_edit((uri, version): (&str, Option<&Value>), lines: &Lines<'_>, fixed: &str) -> Value {
+    let edits: Vec<Value> = edits(lines.text, fixed)
+        .into_iter()
+        .map(|(span, new)| json!({ "range": lines.span(span), "newText": new }))
+        .collect();
+    match version {
+        Some(version) => json!({ "documentChanges": [{
+            "textDocument": { "uri": uri, "version": version }, "edits": edits,
+        }]}),
+        None => json!({ "changes": { uri: edits } }),
+    }
 }
 
 /// The edits that format the document as `jsonvet fmt` would, or with `range`, only those
@@ -827,79 +918,201 @@ mod tests {
     }
 
     #[test]
-    fn large_diagnostic_responses_are_bounded() {
-        let dir = folder("diagnostic-limit");
+    fn every_diagnostic_is_published() {
+        let dir = folder("all-diagnostics");
         let (client, _) = Client::start(&json!({}));
-        for count in [4_999, 5_000, 5_001] {
-            let published = client.open(
-                &uri(&dir.join("a.jsonl")),
-                &"{\"a\":1,\"a\":2}\n".repeat(count),
-            );
-            let diagnostics = published["diagnostics"].as_array().expect("diagnostics");
-            assert_eq!(
-                diagnostics.len(),
-                count.min(5_000) + usize::from(count > 5_000)
-            );
-            if count > 5_000 {
-                assert_eq!(diagnostics[5_000]["severity"], 3);
-                assert_eq!(diagnostics[5_000]["message"], "Diagnostics not shown: 1");
-            } else {
-                assert!(diagnostics.iter().all(|d| d["code"] == "duplicate-key"));
-            }
-        }
+        let text = "{\"a\":1,\"a\":2}\n".repeat(5_001);
+        let published = client.open(&uri(&dir.join("a.jsonl")), &text);
+        let diagnostics = published["diagnostics"].as_array().expect("diagnostics");
+        assert_eq!(diagnostics.len(), 5_001);
+        assert!(diagnostics.iter().all(|d| d["code"] == "duplicate-key"));
         std::fs::write(dir.join("s.json"), r#"{"type":"string"}"#).expect("schema");
         std::fs::write(
             dir.join("jsonvet.toml"),
             "schemas = [{ files = \"*.jsonl\", schema = \"s.json\" }]\n",
         )
         .expect("config");
-        let published = client.open(
-            &uri(&dir.join("with-schema.jsonl")),
-            &"{\"a\":1,\"a\":2}\n".repeat(2_501),
-        );
+        let published = client.open(&uri(&dir.join("with-schema.jsonl")), &text);
         let diagnostics = published["diagnostics"].as_array().expect("diagnostics");
-        assert_eq!(diagnostics.len(), 5_001);
-        assert_eq!(diagnostics[5_000]["message"], "Diagnostics not shown: 2");
-        assert_eq!(diagnostics[4_999]["code"], "schema");
+        assert_eq!(diagnostics.len(), 10_002);
+        assert_eq!(
+            diagnostics.last().expect("last diagnostic")["code"],
+            "schema"
+        );
         client.stop();
         let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
-    fn large_quick_fix_responses_keep_fix_all() {
-        let dir = folder("quickfix-limit");
-        let (mut client, _) = Client::start(&json!({}));
-        for count in [19, 20, 21, 1_000] {
-            let text = format!("[{}0]", "[0,],".repeat(count));
+    fn every_quick_fix_is_listed_and_edits_are_resolved_on_demand() {
+        let dir = folder("lazy-actions");
+        for versioned in [false, true] {
+            let (mut client, result) = Client::start(&json!({
+                "textDocument": { "codeAction": {
+                    "dataSupport": true, "resolveSupport": { "properties": ["edit"] },
+                }},
+                "workspace": { "workspaceEdit": { "documentChanges": versioned } },
+            }));
+            assert_eq!(
+                result["capabilities"]["codeActionProvider"]["resolveProvider"],
+                true
+            );
+            for count in [1, 1_000] {
+                let text = format!("[{}0]", "[0,],".repeat(count));
+                let file = uri(&dir.join("a.jsonc"));
+                client.open(&file, &text);
+                let actions = client.request(
+                    "textDocument/codeAction",
+                    json!({
+                        "textDocument": { "uri": file },
+                        "range": range((0, 0), (0, u32::try_from(text.len()).expect("small text"))),
+                    }),
+                );
+                let actions = actions.as_array().expect("actions");
+                assert_eq!(actions.len(), count + 1);
+                assert!(actions.iter().all(|a| a.get("edit").is_none()));
+                for (index, action) in actions[..count].iter().enumerate() {
+                    assert_eq!(action["data"]["offset"], 3 + 5 * index);
+                }
+                for index in [0, count - 1, count] {
+                    let resolved = client.request("codeAction/resolve", actions[index].clone());
+                    assert_eq!(resolved["title"], actions[index]["title"]);
+                    assert_eq!(resolved["kind"], actions[index]["kind"]);
+                    assert_eq!(resolved["data"], actions[index]["data"]);
+                    let edits = if versioned {
+                        let edit = &resolved["edit"]["documentChanges"][0];
+                        assert_eq!(edit["textDocument"], json!({ "uri": file, "version": 1 }));
+                        &edit["edits"]
+                    } else {
+                        &resolved["edit"]["changes"][&file]
+                    };
+                    let edits = parse_edits(&text, edits);
+                    let expected = if index == count {
+                        text.replace(",]", "]")
+                    } else {
+                        let at = 3 + 5 * index;
+                        format!("{}{}", &text[..at], &text[at + 1..])
+                    };
+                    assert_eq!(apply_owned(&text, &edits), expected);
+                }
+                let mut all = actions[count].clone();
+                all["data"].as_object_mut().expect("data").remove("offset");
+                let resolved = client.request("codeAction/resolve", all.clone());
+                assert!(resolved.get("edit").is_some());
+                all["data"]["offset"] = Value::Null;
+                let resolved = client.request("codeAction/resolve", all);
+                assert!(resolved.get("edit").is_some());
+            }
+            client.stop();
+        }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn clients_without_edit_resolution_get_every_edit_immediately() {
+        let dir = folder("eager-actions");
+        for capabilities in [
+            json!({}),
+            json!({"textDocument":{"codeAction":{"dataSupport":true}}}),
+            json!({"textDocument":{"codeAction":{"resolveSupport":{"properties":["edit"]}}}}),
+            json!({"textDocument":{"codeAction":{"dataSupport":true,"resolveSupport":{"properties":["command"]}}}}),
+        ] {
+            let (mut client, _) = Client::start(&capabilities);
             let file = uri(&dir.join("a.jsonc"));
+            let text = format!("[{}0]", "[0,],".repeat(21));
             client.open(&file, &text);
             let actions = client.request(
                 "textDocument/codeAction",
-                json!({ "textDocument": { "uri": file }, "range": range((0, 0), (0, u32::try_from(text.len()).expect("small text"))) }),
+                json!({
+                    "textDocument": { "uri": file }, "range": range((0, 0), (0, 106)),
+                }),
             );
             let actions = actions.as_array().expect("actions");
-            assert_eq!(actions.len(), count.min(20) + 1);
-            let all = actions.last().expect("fix all");
-            assert_eq!(all["kind"], "source.fixAll.jsonvet");
-            assert_eq!(
-                all["edit"]["changes"][&file]
-                    .as_array()
-                    .expect("edits")
-                    .len(),
-                count
+            assert_eq!(actions.len(), 22);
+            assert!(
+                actions
+                    .iter()
+                    .all(|a| a.get("edit").is_some() && a.get("data").is_none())
             );
-            let at = u32::try_from(text.rfind(",]").expect("trailing comma")).expect("small text");
-            let actions = client.request(
-                "textDocument/codeAction",
-                json!({ "textDocument": { "uri": file }, "range": range((0, at), (0, at)),
-                    "context": { "only": ["quickfix"] } }),
-            );
-            assert_eq!(actions.as_array().expect("actions").len(), 1);
+            client.stop();
+        }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn resolving_actions_rejects_malformed_stale_and_closed_documents() {
+        let dir = folder("resolve-validation");
+        let (mut client, _) = Client::start(&json!({"textDocument":{"codeAction":{
+            "dataSupport":true, "resolveSupport":{"properties":["edit"]},
+        }}}));
+        let file = uri(&dir.join("a.jsonl"));
+        client.open(&file, "\u{feff}{}");
+        let actions = client.request(
+            "textDocument/codeAction",
+            json!({
+                "textDocument": { "uri": file }, "range": range((0, 0), (0, 3)),
+            }),
+        );
+        let action = actions[0].clone();
+        for malformed in [
+            Value::Null,
+            json!({"title":"Fix", "kind":"quickfix", "data":{"uri":file,"revision":action["data"]["revision"],"offset":true}}),
+            json!({"title":"Fix", "kind":"quickfix", "data":{"uri":file,"revision":action["data"]["revision"],"offset":null}}),
+            json!({"title":"Fix", "kind":"quickfix", "data":{"uri":file,"revision":action["data"]["revision"]}}),
+            json!({"title":"Fix", "kind":"quickfix", "data":{"uri":"https://example.org/a.jsonl","revision":action["data"]["revision"],"offset":0}}),
+            json!({"title":"Fix", "kind":"source.fixAll.jsonvet", "data":{"uri":file,"revision":action["data"]["revision"],"offset":0}}),
+        ] {
             assert_eq!(
-                actions[0]["edit"]["changes"][&file][0]["range"],
-                range((0, at), (0, at + 1))
+                client.try_request("codeAction/resolve", malformed),
+                Err(-32602)
             );
         }
+        let mut unavailable = action.clone();
+        unavailable["data"]["offset"] = json!(1);
+        assert_eq!(
+            client.try_request("codeAction/resolve", unavailable),
+            Err(-32803)
+        );
+        std::fs::write(
+            dir.join("jsonvet.toml"),
+            "rules = { byte-order-mark = \"ignore\" }\n",
+        )
+        .expect("updated config");
+        assert_eq!(
+            client.try_request("codeAction/resolve", action.clone()),
+            Err(-32803)
+        );
+        std::fs::write(dir.join("jsonvet.toml"), "rules = 1\n").expect("invalid config");
+        assert_eq!(
+            client.try_request("codeAction/resolve", action.clone()),
+            Err(-32803)
+        );
+        std::fs::write(dir.join("jsonvet.toml"), "").expect("restored config");
+        client.notify(
+            "textDocument/didChange",
+            json!({
+                "textDocument": {"uri":file,"version":2}, "contentChanges":[{"text":"\u{feff}{}"}],
+            }),
+        );
+        client.diagnostics();
+        assert_eq!(
+            client.try_request("codeAction/resolve", action.clone()),
+            Err(-32801)
+        );
+        client.notify(
+            "textDocument/didClose",
+            json!({"textDocument":{"uri":file}}),
+        );
+        client.diagnostics();
+        assert_eq!(
+            client.try_request("codeAction/resolve", action.clone()),
+            Err(-32801)
+        );
+        client.open(&file, "\u{feff}{}");
+        assert_eq!(
+            client.try_request("codeAction/resolve", action),
+            Err(-32801)
+        );
         client.stop();
         let _ = std::fs::remove_dir_all(dir);
     }
