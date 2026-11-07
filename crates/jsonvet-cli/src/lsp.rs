@@ -1058,7 +1058,7 @@ mod tests {
 
     #[test]
     fn invalid_initialization_messages_remain_protocol_errors() {
-        for after_response in [false, true] {
+        for (after_response, notification) in [(false, false), (true, false), (true, true)] {
             let (server, client) = Connection::memory();
             let serving = std::thread::spawn(move || serve(&server));
             if after_response {
@@ -1072,13 +1072,15 @@ mod tests {
                     .expect("initialize");
                 assert!(matches!(receive(&client), Message::Response(_)));
             }
-            client
-                .sender
-                .send(Message::Response(lsp_server::Response::new_ok(
+            let message = if notification {
+                Message::Notification(Notification::new("unexpected".to_owned(), Value::Null))
+            } else {
+                Message::Response(lsp_server::Response::new_ok(
                     RequestId::from(2),
                     Value::Null,
-                )))
-                .expect("unexpected response");
+                ))
+            };
+            client.sender.send(message).expect("unexpected message");
             assert!(
                 serving
                     .join()
