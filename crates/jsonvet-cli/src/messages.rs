@@ -170,6 +170,7 @@ const ENGLISH: &[(&str, &str)] = &[
         "Change every line ending to the file's first one",
     ),
     ("lsp.fix-all", "Fix every problem that has a safe fix"),
+    ("lsp.more-problems", "Diagnostics not shown: {count}"),
     ("write.failed", "cannot write the file: {error}"),
     ("write.read-only", "the file is read-only"),
     ("summary.none", "no problems in {files}"),

@@ -18,6 +18,8 @@ use crate::{editorconfig, format, frame, messages, rules, sarif};
 
 /// The code action kind of the action that applies every safe fix, which editors can run on save.
 const FIX_ALL: &str = "source.fixAll.jsonvet";
+const MAX_DIAGNOSTICS: usize = 5_000;
+const MAX_QUICK_FIXES: usize = 20;
 
 /// Run the server until the client says exit: exit status 0 after a shutdown request, else 1,
 /// as the protocol asks.
@@ -32,7 +34,24 @@ pub(crate) fn run() -> Result<u8, String> {
 /// Answer the client on `connection` until it says exit or goes: whether it asked to shut down
 /// first.
 fn serve(connection: &Connection) -> Result<bool, String> {
-    let (id, params) = connection.initialize_start().map_err(|e| e.to_string())?;
+    let send = |message: Message| connection.sender.send(message).map_err(|e| e.to_string());
+    // Exit is legal before initialization; lsp-server's handshake helpers reject it.
+    let (id, params) = loop {
+        match connection.receiver.recv() {
+            Ok(Message::Request(request)) if request.method == "initialize" => {
+                break (request.id, request.params);
+            }
+            Ok(Message::Request(request)) => send(Message::Response(Response::new_err(
+                request.id,
+                ErrorCode::ServerNotInitialized as i32,
+                "expected initialize request".to_owned(),
+            )))?,
+            Ok(Message::Notification(note)) if note.method == "exit" => return Ok(false),
+            Ok(Message::Notification(_)) => {}
+            Err(_) => return Ok(false),
+            Ok(message) => return Err(format!("expected initialize request, got {message:?}")),
+        }
+    };
     // UTF-8 positions save a count per position, so take them when the client offers them.
     let utf8 = params
         .pointer("/capabilities/general/positionEncodings")
@@ -50,9 +69,19 @@ fn serve(connection: &Connection) -> Result<bool, String> {
         "capabilities": capabilities,
         "serverInfo": { "name": "jsonvet", "version": env!("CARGO_PKG_VERSION") },
     });
-    connection
-        .initialize_finish(id, result)
-        .map_err(|e| e.to_string())?;
+    if send(Message::Response(Response::new_ok(id, result))).is_err() {
+        return Ok(false);
+    }
+    match connection.receiver.recv() {
+        Ok(Message::Notification(note)) if note.method == "initialized" => {}
+        Ok(Message::Notification(note)) if note.method == "exit" => return Ok(false),
+        Err(_) => return Ok(false),
+        Ok(message) => {
+            return Err(format!(
+                "expected initialized notification, got {message:?}"
+            ));
+        }
+    }
     let client = Client {
         utf8,
         versioned: params
@@ -60,7 +89,6 @@ fn serve(connection: &Connection) -> Result<bool, String> {
             .and_then(Value::as_bool)
             .unwrap_or(false),
     };
-    let send = |message: Message| connection.sender.send(message).map_err(|e| e.to_string());
     let mut documents = HashMap::new();
     let mut shut_down = false;
     for message in &connection.receiver {
@@ -228,8 +256,9 @@ fn diagnostics(uri: &str, path: &Path, text: &str, utf8: bool) -> Vec<Value> {
             })];
         }
     };
+    let total = report.problems().len() + schema_errors.len();
     let mut diagnostics = Vec::new();
-    for problem in report.problems() {
+    for problem in report.problems().iter().take(MAX_DIAGNOSTICS) {
         let id = problem.rule().id();
         let mut diagnostic = json!({
             "range": lines.span(problem.offset()..problem.end()),
@@ -254,15 +283,27 @@ fn diagnostics(uri: &str, path: &Path, text: &str, utf8: bool) -> Vec<Value> {
         }
         diagnostics.push(diagnostic);
     }
-    for (offset, message, _) in schema_errors {
+    let remaining = MAX_DIAGNOSTICS - diagnostics.len();
+    for (offset, message, summary) in schema_errors.into_iter().take(remaining) {
         let (start, end) = frame::one_char(&report, offset);
-        diagnostics.push(json!({
+        let mut diagnostic = json!({
             "range": lines.span(start..end),
-            "severity": 1,
-            "code": sarif::SCHEMA,
-            "codeDescription": { "href": rules::help_uri(sarif::SCHEMA) },
+            "severity": if summary { 3 } else { 1 },
             "source": "jsonvet",
             "message": message,
+        });
+        if !summary {
+            diagnostic["code"] = json!(sarif::SCHEMA);
+            diagnostic["codeDescription"] = json!({ "href": rules::help_uri(sarif::SCHEMA) });
+        }
+        diagnostics.push(diagnostic);
+    }
+    if total > diagnostics.len() {
+        diagnostics.push(json!({
+            "range": lines.span(0..0),
+            "severity": 3,
+            "source": "jsonvet",
+            "message": messages::fill("lsp.more-problems", &[("count", &(total - diagnostics.len()))]),
         }));
     }
     diagnostics
@@ -306,18 +347,19 @@ fn code_actions(
     let mut actions = Vec::new();
     if wants("quickfix") {
         let report = jsonvet::check(text, &config);
-        for fix in &all.fixes {
+        let in_range = |fix: &&jsonvet::Fix| {
             // The fix's problem may start after it, as a trailing comma's is the bracket after
             // it: the nearest problem of its rule from the fix on, else the fix's own place.
-            let end = report
-                .problems()
+            let problems = report.problems();
+            let from = problems.partition_point(|p| p.offset() < fix.offset);
+            let end = problems[from..]
                 .iter()
-                .find(|p| p.rule() == fix.rule && p.offset() >= fix.offset)
+                .find(|p| p.rule() == fix.rule)
                 .map_or(fix.offset, jsonvet::Problem::end);
             // Inclusive at both ends, so a caret that touches the problem counts.
-            if fix.offset > range.end || end < range.start {
-                continue;
-            }
+            fix.offset <= range.end && end >= range.start
+        };
+        for fix in all.fixes.iter().filter(in_range).take(MAX_QUICK_FIXES) {
             let Ok(one) = jsonvet::try_fix_at(text, &config, false, Some(&[fix.offset])) else {
                 continue;
             };
@@ -785,6 +827,273 @@ mod tests {
     }
 
     #[test]
+    fn large_diagnostic_responses_are_bounded() {
+        let dir = folder("diagnostic-limit");
+        let (client, _) = Client::start(&json!({}));
+        for count in [4_999, 5_000, 5_001] {
+            let published = client.open(
+                &uri(&dir.join("a.jsonl")),
+                &"{\"a\":1,\"a\":2}\n".repeat(count),
+            );
+            let diagnostics = published["diagnostics"].as_array().expect("diagnostics");
+            assert_eq!(
+                diagnostics.len(),
+                count.min(5_000) + usize::from(count > 5_000)
+            );
+            if count > 5_000 {
+                assert_eq!(diagnostics[5_000]["severity"], 3);
+                assert_eq!(diagnostics[5_000]["message"], "Diagnostics not shown: 1");
+            } else {
+                assert!(diagnostics.iter().all(|d| d["code"] == "duplicate-key"));
+            }
+        }
+        std::fs::write(dir.join("s.json"), r#"{"type":"string"}"#).expect("schema");
+        std::fs::write(
+            dir.join("jsonvet.toml"),
+            "schemas = [{ files = \"*.jsonl\", schema = \"s.json\" }]\n",
+        )
+        .expect("config");
+        let published = client.open(
+            &uri(&dir.join("with-schema.jsonl")),
+            &"{\"a\":1,\"a\":2}\n".repeat(2_501),
+        );
+        let diagnostics = published["diagnostics"].as_array().expect("diagnostics");
+        assert_eq!(diagnostics.len(), 5_001);
+        assert_eq!(diagnostics[5_000]["message"], "Diagnostics not shown: 2");
+        assert_eq!(diagnostics[4_999]["code"], "schema");
+        client.stop();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn large_quick_fix_responses_keep_fix_all() {
+        let dir = folder("quickfix-limit");
+        let (mut client, _) = Client::start(&json!({}));
+        for count in [19, 20, 21, 1_000] {
+            let text = format!("[{}0]", "[0,],".repeat(count));
+            let file = uri(&dir.join("a.jsonc"));
+            client.open(&file, &text);
+            let actions = client.request(
+                "textDocument/codeAction",
+                json!({ "textDocument": { "uri": file }, "range": range((0, 0), (0, u32::try_from(text.len()).expect("small text"))) }),
+            );
+            let actions = actions.as_array().expect("actions");
+            assert_eq!(actions.len(), count.min(20) + 1);
+            let all = actions.last().expect("fix all");
+            assert_eq!(all["kind"], "source.fixAll.jsonvet");
+            assert_eq!(
+                all["edit"]["changes"][&file]
+                    .as_array()
+                    .expect("edits")
+                    .len(),
+                count
+            );
+            let at = u32::try_from(text.rfind(",]").expect("trailing comma")).expect("small text");
+            let actions = client.request(
+                "textDocument/codeAction",
+                json!({ "textDocument": { "uri": file }, "range": range((0, at), (0, at)),
+                    "context": { "only": ["quickfix"] } }),
+            );
+            assert_eq!(actions.as_array().expect("actions").len(), 1);
+            assert_eq!(
+                actions[0]["edit"]["changes"][&file][0]["range"],
+                range((0, at), (0, at + 1))
+            );
+        }
+        client.stop();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn schema_summaries_are_not_error_diagnostics() {
+        let dir = folder("schema-summary");
+        std::fs::write(dir.join("s.json"), r#"{"items":{"type":"string"}}"#).expect("schema");
+        std::fs::write(
+            dir.join("jsonvet.toml"),
+            "schemas = [{ files = \"a.json\", schema = \"s.json\" }]\n",
+        )
+        .expect("config");
+        let (client, _) = Client::start(&json!({}));
+        let text = format!("[{}0]", "0,".repeat(100));
+        let published = client.open(&uri(&dir.join("a.json")), &text);
+        let diagnostics = published["diagnostics"].as_array().expect("diagnostics");
+        assert_eq!(diagnostics.len(), 101);
+        assert!(diagnostics[..100].iter().all(|d| d["severity"] == 1));
+        assert_eq!(diagnostics[100]["severity"], 3);
+        assert_eq!(
+            diagnostics[100]["message"],
+            crate::messages::text("schema.more")
+        );
+        assert!(diagnostics[100].get("code").is_none());
+        client.stop();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn requests_before_initialization_get_server_not_initialized() {
+        let (server, client) = Connection::memory();
+        client
+            .sender
+            .send(Message::Notification(Notification::new(
+                "early".to_owned(),
+                Value::Null,
+            )))
+            .expect("early notification");
+        client
+            .sender
+            .send(Message::Request(Request::new(
+                RequestId::from(1),
+                "textDocument/formatting".to_owned(),
+                json!({}),
+            )))
+            .expect("early request");
+        client
+            .sender
+            .send(Message::Request(Request::new(
+                RequestId::from(2),
+                "initialize".to_owned(),
+                json!({}),
+            )))
+            .expect("initialize");
+        client
+            .sender
+            .send(Message::Notification(Notification::new(
+                "initialized".to_owned(),
+                json!({}),
+            )))
+            .expect("initialized");
+        client
+            .sender
+            .send(Message::Notification(Notification::new(
+                "exit".to_owned(),
+                Value::Null,
+            )))
+            .expect("exit");
+        assert!(!serve(&server).expect("initialized"));
+        let Message::Response(response) = receive(&client) else {
+            panic!("response")
+        };
+        assert_eq!(response.id, RequestId::from(1));
+        assert_eq!(
+            response.response_result.expect_err("not initialized").code,
+            -32002
+        );
+        let Message::Response(response) = receive(&client) else {
+            panic!("response")
+        };
+        assert_eq!(response.id, RequestId::from(2));
+        assert_eq!(
+            response.response_result.expect("initialized")["serverInfo"]["name"],
+            "jsonvet"
+        );
+    }
+
+    #[test]
+    fn disconnect_before_the_initialize_response_is_an_unclean_exit() {
+        let (server, client) = Connection::memory();
+        client
+            .sender
+            .send(Message::Request(Request::new(
+                RequestId::from(1),
+                "initialize".to_owned(),
+                json!({}),
+            )))
+            .expect("initialize");
+        drop(client);
+        assert!(!serve(&server).expect("disconnected client"));
+    }
+
+    #[test]
+    fn disconnect_before_initialization_is_an_unclean_exit() {
+        for after_response in [false, true] {
+            let (server, client) = Connection::memory();
+            let serving = std::thread::spawn(move || serve(&server));
+            if after_response {
+                client
+                    .sender
+                    .send(Message::Request(Request::new(
+                        RequestId::from(1),
+                        "initialize".to_owned(),
+                        json!({}),
+                    )))
+                    .expect("initialize");
+                assert!(matches!(receive(&client), Message::Response(_)));
+            }
+            drop(client);
+            assert!(
+                !serving
+                    .join()
+                    .expect("server")
+                    .expect("disconnected client")
+            );
+        }
+    }
+
+    #[test]
+    fn exit_during_initialization_is_an_unclean_exit() {
+        for after_response in [false, true] {
+            let (server, client) = Connection::memory();
+            let serving = std::thread::spawn(move || serve(&server));
+            if after_response {
+                client
+                    .sender
+                    .send(Message::Request(Request::new(
+                        RequestId::from(1),
+                        "initialize".to_owned(),
+                        json!({}),
+                    )))
+                    .expect("initialize");
+                assert!(matches!(receive(&client), Message::Response(_)));
+            }
+            client
+                .sender
+                .send(Message::Notification(Notification::new(
+                    "exit".to_owned(),
+                    Value::Null,
+                )))
+                .expect("exit");
+            assert!(!serving.join().expect("server").expect("exit notification"));
+        }
+    }
+
+    #[test]
+    fn invalid_initialization_messages_remain_protocol_errors() {
+        for after_response in [false, true] {
+            let (server, client) = Connection::memory();
+            let serving = std::thread::spawn(move || serve(&server));
+            if after_response {
+                client
+                    .sender
+                    .send(Message::Request(Request::new(
+                        RequestId::from(1),
+                        "initialize".to_owned(),
+                        json!({}),
+                    )))
+                    .expect("initialize");
+                assert!(matches!(receive(&client), Message::Response(_)));
+            }
+            client
+                .sender
+                .send(Message::Response(lsp_server::Response::new_ok(
+                    RequestId::from(2),
+                    Value::Null,
+                )))
+                .expect("unexpected response");
+            assert!(
+                serving
+                    .join()
+                    .expect("server")
+                    .expect_err("protocol error")
+                    .contains(if after_response {
+                        "expected initialized notification"
+                    } else {
+                        "expected initialize request"
+                    })
+            );
+        }
+    }
+
+    #[test]
     fn per_file_rules_apply_to_diagnostics_and_fixes() {
         let dir = folder("per-file-rules");
         std::fs::write(
@@ -994,6 +1303,13 @@ mod tests {
         );
         assert_eq!(actions.as_array().map(Vec::len), Some(1));
         assert_eq!(actions[0]["kind"], "source.fixAll.jsonvet");
+        let actions = client.request(
+            "textDocument/codeAction",
+            json!({ "textDocument": { "uri": file }, "range": range((0, 1), (0, 1)),
+                "context": { "only": ["quickfix"] } }),
+        );
+        assert_eq!(actions.as_array().expect("actions").len(), 1);
+        assert_eq!(actions[0]["title"], "Remove the byte order mark");
         client.stop();
         let _ = std::fs::remove_dir_all(dir);
     }

@@ -29,7 +29,6 @@ version for a new option or output, the patch version for a fix.
   own JSON validation, which reports some of the same problems
   ([extension README](editors/vscode/README.md)). It is not on the Marketplace yet.
 
-
 ### Changed
 
 - `jsonvet lsp` now starts the language server: `lsp` as the first argument is a subcommand, as

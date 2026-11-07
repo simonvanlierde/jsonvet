@@ -7,9 +7,11 @@ output, so any editor that has a client for it can show jsonvet's problems as yo
   schema come from the nearest `jsonvet.toml` and the file's own `$schema`
   ([configuration](usage.md#configuration-file)). A config file or schema that cannot be used is
   one error at the start of the file.
+  The editor receives at most 5,000 diagnostics per file, followed by a notice with the number left out.
 - **Quick fixes** for the problems that have a safe fix, as `--fix` makes it
   ([fixing](usage.md#fixing)), and one action that applies them all, of the kind
   `source.fixAll.jsonvet`. Duplicate keys get no fix: dropping one changes what the file means.
+  Each request returns up to 20 individual quick fixes; fix-all still includes every safe fix.
 - **Formatting** of the whole file, as `jsonvet fmt` does, with the same settings
   ([formatting](format.md#settings)). The editor's own tab size is not used, so `jsonvet fmt
   --check` agrees with the editor.
