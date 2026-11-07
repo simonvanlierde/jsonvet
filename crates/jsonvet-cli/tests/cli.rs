@@ -1295,8 +1295,8 @@ fn a_symlink_is_the_same_file() {
     checked_once(&["a.json", "link.json"], "duplicate");
 }
 
-// Linux only: its overcommit check refuses the 1 TiB reservation at once, while macOS grants it
-// lazily and the read then fills memory. A sparse file takes no disk space here.
+// Bound the child's address space so Linux's overcommit policy cannot let the read fill RAM.
+// A sparse file takes no disk space here.
 #[cfg(target_os = "linux")]
 #[test]
 fn a_file_too_big_for_memory_fails_alone() {
@@ -1304,8 +1304,19 @@ fn a_file_too_big_for_memory_fails_alone() {
     fs::File::create(dir.join("huge.json"))
         .and_then(|file| file.set_len(1 << 40))
         .expect("create a sparse 1 TiB file");
-    let (code, out) = jsonvet(&dir, &["huge.json", "ok.json"]);
-    assert_eq!(code, 1, "{out}");
+    let output = command("sh")
+        .args([
+            "-c",
+            "ulimit -v 67108864 2>/dev/null || [ \"$(ulimit -v)\" -le 67108864 ] || exit 2; exec \"$@\"",
+            "jsonvet-memory-test",
+        ])
+        .arg(env!("CARGO_BIN_EXE_jsonvet"))
+        .args(["huge.json", "ok.json"])
+        .current_dir(&dir)
+        .output()
+        .expect("run with a 64 GiB address-space limit");
+    let out = String::from_utf8(output.stdout).expect("UTF-8 output");
+    assert_eq!(output.status.code(), Some(1), "{out}");
     assert!(out.contains("huge.json: error: cannot read"), "{out}");
 }
 
@@ -3081,33 +3092,31 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
     }
 
     #[test]
-    fn the_schema_rule_cannot_be_reconfigured() {
-        let dir = workdir(&[
-            ("schema.json", "{}"),
-            ("ok.json", "{}"),
-            ("jsonvet.toml", "[rules]\nschema = \"warn\"\n"),
-        ]);
-        for flag in ["--error", "--warn", "--ignore"] {
-            let (code, out, err) = jsonvet_stderr(
-                &dir,
-                &[flag, "schema", "--schema", "schema.json", "ok.json"],
-            );
-            assert_eq!((code, out.as_str()), (2, ""), "{flag}");
+    fn file_and_schema_errors_cannot_be_reconfigured() {
+        let dir = workdir(&[("schema.json", "{}"), ("ok.json", "{}")]);
+        for rule in ["schema", "unreadable"] {
+            fs::write(
+                dir.join("jsonvet.toml"),
+                format!("[rules]\n{rule} = \"warn\"\n"),
+            )
+            .expect("config");
+            let message = format!("the `{rule}` rule is always an error and cannot be set\n");
+            for flag in ["--error", "--warn", "--ignore"] {
+                let (code, out, err) =
+                    jsonvet_stderr(&dir, &[flag, rule, "--schema", "schema.json", "ok.json"]);
+                assert_eq!((code, out.as_str()), (2, ""), "{flag}");
+                assert!(
+                    err.starts_with(&format!("jsonvet: {message}")),
+                    "{flag}: {err}"
+                );
+            }
+            let (code, _, err) = jsonvet_stderr(&dir, &["--schema", "schema.json", "ok.json"]);
+            assert_eq!(code, 2);
             assert!(
-                err.starts_with(
-                    "jsonvet: the `schema` rule is always an error and cannot be set\n"
-                ),
-                "{flag}: {err}"
+                err.contains(&format!("jsonvet.toml:2:1: {message}")),
+                "{err}"
             );
         }
-        let (code, _, err) = jsonvet_stderr(&dir, &["--schema", "schema.json", "ok.json"]);
-        assert_eq!(code, 2);
-        assert!(
-            err.contains(
-                "jsonvet.toml:2:1: the `schema` rule is always an error and cannot be set\n"
-            ),
-            "{err}"
-        );
     }
 
     #[test]

@@ -63,8 +63,8 @@ const ENGLISH: &[(&str, &str)] = &[
     ),
     ("error.unknown-rule-close", "unknown rule `{id}`{hint}"),
     (
-        "error.schema-rule",
-        "the `schema` rule is always an error and cannot be set",
+        "error.fixed-rule",
+        "the `{id}` rule is always an error and cannot be set",
     ),
     (
         "error.working-dir",

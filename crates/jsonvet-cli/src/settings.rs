@@ -106,11 +106,11 @@ pub(crate) fn parse_severity(name: &str) -> Result<Severity, String> {
     }
 }
 
-/// A rule id from the command line or a settings file. `schema` is no [`Rule`]: its errors
-/// cannot be turned down, so it gets its own message rather than "unknown rule".
+/// A rule id from the command line or a settings file. File and schema errors cannot be
+/// turned down, so they get their own message rather than "unknown rule".
 pub(crate) fn parse_rule(id: &str) -> Result<Rule, String> {
-    if id == crate::sarif::SCHEMA {
-        return Err(messages::text("error.schema-rule").to_owned());
+    if matches!(id, crate::sarif::SCHEMA | crate::sarif::UNREADABLE) {
+        return Err(messages::fill("error.fixed-rule", &[("id", &id)]));
     }
     id.parse().map_err(|_: jsonvet::UnknownRule| {
         let ids: Vec<&str> = Rule::ALL.iter().map(|r| r.id()).collect();

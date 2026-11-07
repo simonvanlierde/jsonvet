@@ -24,6 +24,7 @@ version for a new option or output, the patch version for a fix.
 
 ### Fixed
 
+- Rule settings reject `unreadable` with the same explanation as `schema`: both are always errors.
 - `--fix --unsafe-fixes` takes the line ending from the text it keeps, not from a dropped duplicate
   member, so it gives the same text as the playground's one-at-a-time fixes.
 
