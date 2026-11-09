@@ -70,14 +70,18 @@ fn serve(connection: &Connection) -> Result<bool, String> {
     if send(Message::Response(Response::new_ok(id, result))).is_err() {
         return Ok(false);
     }
-    match connection.receiver.recv() {
-        Ok(Message::Notification(note)) if note.method == "initialized" => {}
-        Ok(Message::Notification(note)) if note.method == "exit" => return Ok(false),
-        Err(_) => return Ok(false),
-        Ok(message) => {
-            return Err(format!(
-                "expected initialized notification, got {message:?}"
-            ));
+    // A client can send notifications, such as its settings, before `initialized` gets here.
+    loop {
+        match connection.receiver.recv() {
+            Ok(Message::Notification(note)) if note.method == "initialized" => break,
+            Ok(Message::Notification(note)) if note.method == "exit" => return Ok(false),
+            Ok(Message::Notification(_)) => {}
+            Err(_) => return Ok(false),
+            Ok(message) => {
+                return Err(format!(
+                    "expected initialized notification, got {message:?}"
+                ));
+            }
         }
     }
     let client = Client {
@@ -1271,7 +1275,7 @@ mod tests {
 
     #[test]
     fn invalid_initialization_messages_remain_protocol_errors() {
-        for (after_response, notification) in [(false, false), (true, false), (true, true)] {
+        for (after_response, request) in [(false, false), (true, false), (true, true)] {
             let (server, client) = Connection::memory();
             let serving = std::thread::spawn(move || serve(&server));
             if after_response {
@@ -1285,8 +1289,12 @@ mod tests {
                     .expect("initialize");
                 assert!(matches!(receive(&client), Message::Response(_)));
             }
-            let message = if notification {
-                Message::Notification(Notification::new("unexpected".to_owned(), Value::Null))
+            let message = if request {
+                Message::Request(Request::new(
+                    RequestId::from(2),
+                    "textDocument/formatting".to_owned(),
+                    json!({}),
+                ))
             } else {
                 Message::Response(lsp_server::Response::new_ok(
                     RequestId::from(2),
@@ -1993,5 +2001,41 @@ mod tests {
         );
         client.stop();
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn notifications_before_initialized_are_dropped() {
+        let (server, client) = Connection::memory();
+        let serving = std::thread::spawn(move || serve(&server));
+        let send = |message| client.sender.send(message).expect("sent");
+        send(Message::Request(Request::new(
+            RequestId::from(1),
+            "initialize".to_owned(),
+            json!({ "capabilities": {} }),
+        )));
+        assert!(matches!(receive(&client), Message::Response(_)));
+        // VS Code sends its configuration before `initialized` can reach the server.
+        send(Message::Notification(Notification::new(
+            "workspace/didChangeConfiguration".to_owned(),
+            json!({ "settings": {} }),
+        )));
+        send(Message::Notification(Notification::new(
+            "initialized".to_owned(),
+            json!({}),
+        )));
+        send(Message::Request(Request::new(
+            RequestId::from(2),
+            "shutdown".to_owned(),
+            Value::Null,
+        )));
+        let Message::Response(response) = receive(&client) else {
+            panic!("a response");
+        };
+        assert_eq!(response.id, RequestId::from(2));
+        send(Message::Notification(Notification::new(
+            "exit".to_owned(),
+            Value::Null,
+        )));
+        assert_eq!(serving.join().expect("no panic"), Ok(true));
     }
 }
