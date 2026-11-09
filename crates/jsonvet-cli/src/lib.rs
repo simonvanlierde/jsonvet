@@ -1043,6 +1043,17 @@ mod tests {
     }
 
     #[test]
+    fn config_text_reports_a_bad_file() {
+        let path = std::path::Path::new("/nonexistent/jsonvet.toml");
+        assert_eq!(super::check_config_text(path, "rules = {}"), Ok(()));
+        let message = super::check_config_text(path, "rules = [").expect_err("bad toml");
+        assert!(
+            message.starts_with("/nonexistent/jsonvet.toml:1:"),
+            "{message}"
+        );
+    }
+
+    #[test]
     fn only_files_with_a_schema_take_a_share() {
         let (dir, schema) = any_schema("shares");
         let _ = std::fs::remove_dir_all(&dir);
