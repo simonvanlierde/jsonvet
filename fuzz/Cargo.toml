@@ -11,6 +11,7 @@ cargo-fuzz = true
 
 [dependencies]
 jsonvet = { path = "../crates/jsonvet" }
+jsonvet-cli = { path = "../crates/jsonvet-cli" }
 json5 = "=1.3.4"
 libfuzzer-sys = "0.4"
 serde = "1"
@@ -55,6 +56,13 @@ bench = false
 [[bin]]
 name = "config"
 path = "fuzz_targets/config.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "config_file"
+path = "fuzz_targets/config_file.rs"
 test = false
 doc = false
 bench = false

@@ -146,6 +146,14 @@ pub struct Terminal {
     pub color: Option<bool>,
 }
 
+/// Whether `text` loads as the config file `path` (a `pyproject.toml` reads its `[tool.jsonvet]`
+/// table), with the error message if not. Public only for the fuzz target `config_file`; not
+/// part of the crate's API.
+#[doc(hidden)]
+pub fn check_config_text(path: &Path, text: &str) -> Result<(), String> {
+    settings::load_str(path, text, false, None).map(drop)
+}
+
 /// The command, with its inputs passed in: 0 when no file has an error, 1 when one does.
 /// On a terminal, text output ends with a count of the problems. A usage error comes back as
 /// `Err`, which `run` turns into exit status 2. Public only for `benches/codspeed.rs`, which

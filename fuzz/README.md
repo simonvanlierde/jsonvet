@@ -7,6 +7,7 @@ asserts is in the doc comment at the top of its file in `fuzz_targets/`.
 |---|---|---|
 | `check` | text | every dialect: report invariants, dialect nesting, JSON Lines in parts |
 | `config` | bytes: dialect, rule severities, depth limit, file name, then the text | names and `FromStr`, `for_path`, rule overrides, `parse_with`, `report` |
+| `config_file` | bytes as a `jsonvet.toml` or `pyproject.toml` | the config loader: `rules`, `per-file-rules`, `dialects`, `schemas`, `format`, error text on one line |
 | `parse` | text | events against `check` and serde_json |
 | `fix` | text | `fix` is idempotent and leaves no handled problem |
 | `diff_serde_json`, `diff_json5` | text | verdicts against serde_json and the json5 crate |
