@@ -275,10 +275,12 @@ fn check(args: impl IntoIterator<Item = OsString>) -> Result<Command, String> {
 }
 
 /// `jsonvet lsp` with the arguments after `lsp`: `--stdio`, which names the transport the
-/// server always uses and some clients pass, and nothing else.
+/// server always uses and some clients pass, or `--help` or `--version`, and nothing else.
 fn lsp(mut args: impl Iterator<Item = OsString>) -> Result<Command, String> {
     match args.find(|arg| arg != "--stdio") {
         None => Ok(Command::Lsp),
+        Some(arg) if arg == "-h" || arg == "--help" => Ok(Command::Help),
+        Some(arg) if arg == "-V" || arg == "--version" => Ok(Command::Version),
         Some(arg) => Err(messages::fill(
             "error.lsp-option",
             &[("option", &arg.to_string_lossy())],
@@ -462,6 +464,15 @@ mod tests {
         let parsed = |args: &[&str]| parse(args.iter().map(Into::into));
         assert!(matches!(parsed(&["lsp"]), Ok(Command::Lsp)));
         assert!(matches!(parsed(&["lsp", "--stdio"]), Ok(Command::Lsp)));
+        for help in ["-h", "--help"] {
+            assert!(matches!(parsed(&["lsp", help]), Ok(Command::Help)));
+        }
+        for version in ["-V", "--version"] {
+            assert!(matches!(
+                parsed(&["lsp", "--stdio", version]),
+                Ok(Command::Version)
+            ));
+        }
         assert_eq!(
             parsed(&["lsp", "a.json"]).err(),
             Some("`jsonvet lsp` takes no options or files, not `a.json`".to_owned())
