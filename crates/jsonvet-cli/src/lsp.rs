@@ -95,12 +95,9 @@ fn serve(connection: &Connection) -> Result<bool, String> {
     let Some((params, utf8)) = initialize(connection)? else {
         return Ok(false);
     };
-    let watched = "/capabilities/workspace/didChangeWatchedFiles";
-    if params.pointer(&format!("{watched}/dynamicRegistration")) == Some(&Value::Bool(true)) {
-        let relative = params.pointer(&format!("{watched}/relativePatternSupport"));
-        send(Message::Request(watch(
-            relative == Some(&Value::Bool(true)),
-        )))?;
+    let user = settings::user_config_path();
+    if let Some(watch) = watch(&params, user.as_deref().and_then(Path::parent)) {
+        send(Message::Request(watch))?;
     }
     // Each document's config search stops at the workspace folder holding it, as a run's stops
     // at its working directory.
@@ -192,24 +189,32 @@ fn serve(connection: &Connection) -> Result<bool, String> {
 }
 
 /// The request that has the client watch the files settings come from, so that a change to one
-/// checks every open document again: the user's own config file too, where the client takes a
-/// pattern relative to a folder outside the workspace. `.editorconfig` is left out: only
-/// formatting reads it, afresh for each request.
-fn watch(relative: bool) -> Request {
+/// checks every open document again, if the client's `initialize` `params` say it takes one: the
+/// user's own config file in the folder `user` too, if it exists and the client takes a pattern
+/// relative to a folder outside the workspace. `.editorconfig` is left out: only formatting reads
+/// it, afresh for each request.
+fn watch(params: &Value, user: Option<&Path>) -> Option<Request> {
+    let watched = |key| {
+        params.pointer(&format!(
+            "/capabilities/workspace/didChangeWatchedFiles/{key}"
+        )) == Some(&Value::Bool(true))
+    };
+    if !watched("dynamicRegistration") {
+        return None;
+    }
     let mut watchers = vec![
         json!({ "globPattern": "**/jsonvet.toml" }),
         json!({ "globPattern": "**/pyproject.toml" }),
     ];
-    let user = settings::user_config_path();
-    if let Some(dir) = user.as_deref().and_then(Path::parent)
-        && relative
+    if let Some(dir) = user
+        && watched("relativePatternSupport")
         && dir.is_dir()
     {
         let pattern = json!({ "baseUri": uri_of(dir), "pattern": "jsonvet.toml" });
         watchers.push(json!({ "globPattern": pattern }));
     }
     let id = "jsonvet/watch";
-    Request::new(
+    Some(Request::new(
         RequestId::from(id.to_owned()),
         "client/registerCapability".to_owned(),
         json!({ "registrations": [{
@@ -217,7 +222,7 @@ fn watch(relative: bool) -> Request {
             "method": "workspace/didChangeWatchedFiles",
             "registerOptions": { "watchers": watchers },
         }]}),
-    )
+    ))
 }
 
 /// Whether a message waiting in `queue` makes the check `note` asks for moot: a later change or
@@ -1909,7 +1914,10 @@ mod tests {
     fn paths_become_file_uris_that_read_back() {
         let path = std::env::temp_dir().join("a b#%?é~.json");
         let uri = uri_of(&path);
-        assert!(uri.starts_with("file:///"), "{uri}");
+        assert!(
+            uri.starts_with("file:///") && !uri.starts_with("file:////"),
+            "{uri}"
+        );
         assert!(uri.ends_with("/a%20b%23%25%3F%C3%A9~.json"), "{uri}");
         assert_eq!(path_of(&uri), Some(path));
     }
@@ -2142,18 +2150,32 @@ mod tests {
 
     #[test]
     fn the_user_config_folder_is_watched_where_the_client_takes_relative_patterns() {
-        let user = crate::settings::user_config_path();
-        let folder = user
-            .as_deref()
-            .and_then(Path::parent)
-            .filter(|d| d.is_dir());
-        let watchers = |relative| {
-            let request = watch(relative);
-            let watchers = &request.params["registrations"][0]["registerOptions"]["watchers"];
-            watchers.as_array().map_or(0, Vec::len)
+        let dir = folder("user-watch");
+        let watchers = |capabilities: Value, user: Option<&Path>| {
+            let params = json!({ "capabilities": { "workspace": {
+                "didChangeWatchedFiles": capabilities,
+            }}});
+            watch(&params, user).map(|request| {
+                request.params["registrations"][0]["registerOptions"]["watchers"].clone()
+            })
         };
-        assert_eq!(watchers(false), 2);
-        assert_eq!(watchers(true), 2 + usize::from(folder.is_some()));
+        let both = json!({ "dynamicRegistration": true, "relativePatternSupport": true });
+        assert_eq!(watchers(json!({}), Some(&dir)), None);
+        assert_eq!(
+            watchers(json!({ "relativePatternSupport": true }), Some(&dir)),
+            None
+        );
+        let all = watchers(both.clone(), Some(&dir)).expect("a request");
+        assert_eq!(
+            all[2]["globPattern"],
+            json!({ "baseUri": uri_of(&dir), "pattern": "jsonvet.toml" })
+        );
+        let shared = json!({ "dynamicRegistration": true });
+        let count = |w: Option<Value>| w.and_then(|w| w.as_array().map(Vec::len));
+        assert_eq!(count(watchers(shared, Some(&dir))), Some(2));
+        assert_eq!(count(watchers(both.clone(), None)), Some(2));
+        assert_eq!(count(watchers(both, Some(&dir.join("missing")))), Some(2));
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -2186,6 +2208,42 @@ mod tests {
         }));
         assert_eq!(severity(client.open(&uri(&a.join("sub/x.json")), text)), 2);
         assert_eq!(severity(client.open(&uri(&b.join("sub/y.json")), text)), 1);
+        client.stop();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_settings_change_queued_behind_others_checks_once() {
+        let dir = folder("coalesce-watched");
+        let file = uri(&dir.join("a.json"));
+        let (mut client, _) = Client::start(&json!({}));
+        client.open(&file, "{}");
+        let slow = format!("{{{}\"b\": 0}}", "\"a\": 1, ".repeat(2_000));
+        let change = |version: i32| {
+            client.notify(
+                "textDocument/didChange",
+                json!({
+                    "textDocument": { "uri": file, "version": version },
+                    "contentChanges": [{ "text": slow }],
+                }),
+            );
+        };
+        // The first change is checked alone; the rest queue up behind it.
+        change(2);
+        change(3);
+        let settings = json!({ "changes": [{ "uri": uri(&dir.join("jsonvet.toml")), "type": 2 }] });
+        client.notify("workspace/didChangeWatchedFiles", settings.clone());
+        client.notify("workspace/didChangeWatchedFiles", settings);
+        client.request(
+            "textDocument/formatting",
+            json!({ "textDocument": { "uri": file } }),
+        );
+        let published = client
+            .skipped
+            .iter()
+            .filter(|method| *method == "textDocument/publishDiagnostics")
+            .count();
+        assert!(published <= 2, "{published} publishes");
         client.stop();
         let _ = std::fs::remove_dir_all(dir);
     }
