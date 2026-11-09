@@ -894,7 +894,10 @@ fn read(path: &Path) -> Result<String, String> {
         if meta.is_file() {
             // The size is known already: `fs::read`, and `File`'s own `read_to_end`, would ask
             // the system for it again. `take` reads to the end without asking. A file too big for
-            // memory fails alone, as an error, rather than aborting the run.
+            // memory fails alone, as an error, rather than aborting the run, but only where an
+            // oversized reservation fails: Linux's default heuristic overcommit
+            // (`vm.overcommit_memory=0`). Under mode 1 or on macOS it succeeds and the read can
+            // fill memory. NOTE: no cap against available memory, as std has no portable query.
             let mut bytes = Vec::new();
             bytes.try_reserve_exact(usize::try_from(meta.len()).unwrap_or(usize::MAX))?;
             std::fs::File::open(path)?
