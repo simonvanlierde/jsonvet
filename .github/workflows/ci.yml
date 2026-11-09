@@ -67,7 +67,7 @@ jobs:
       # A parser or image bump must come with a matrix re-run, so the results say what ran.
       - run: uv run conformance/run.py --check
 
-  # The VS Code client in editors/vscode: lint, types and the bundle `just vsix` packages.
+  # The VS Code client in editors/vscode: lint, types, unit tests and the bundle `just vsix` packages.
   vscode:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -87,6 +87,7 @@ jobs:
           package_json_file: editors/vscode/package.json
       - run: pnpm install --frozen-lockfile
       - run: pnpm run check
+      - run: pnpm test
       - run: pnpm run build
 
   test:

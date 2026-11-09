@@ -58,7 +58,8 @@
   },
   "scripts": {
     "build": "esbuild src/extension.ts --bundle --platform=node --format=cjs --external:vscode --minify --outfile=out/extension.js",
-    "check": "biome check && tsc --noEmit"
+    "check": "biome check && tsc --noEmit",
+    "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON src/*.test.ts"
   },
   "dependencies": {
     "vscode-languageclient": "11.0.0"

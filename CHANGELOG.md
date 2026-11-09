@@ -25,8 +25,8 @@ version for a new option or output, the patch version for a fix.
   any editor with a Language Server Protocol client; [editors](docs/editors.md) shows VS Code,
   Neovim and Helix.
 - A VS Code extension in `editors/vscode`, a thin client for `jsonvet lsp`. It runs `jsonvet` from
-  `PATH` or the `jsonvet.path` setting, and asks once per workspace whether to turn off VS Code's
-  own JSON validation, which reports some of the same problems
+  `PATH` or the `jsonvet.path` setting. In JSON and JSONC files it leaves syntax errors and
+  duplicate keys to VS Code's own JSON validation while that is on, so none shows twice
   ([extension README](editors/vscode/README.md)). It is not on the Marketplace yet.
 
 ### Changed

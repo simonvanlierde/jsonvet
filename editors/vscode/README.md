@@ -14,23 +14,27 @@ checks each file with the dialect, rules and schema a `jsonvet` run would use fo
 the nearest `jsonvet.toml` ([configuration](https://github.com/simonvanlierde/jsonvet#configuration)).
 Only files on disk are checked: an untitled file has no path to pick its settings by.
 
-## Problems shown twice
+A change to a `jsonvet.toml` or `pyproject.toml` checks every open file again.
+
+## VS Code's own JSON validation
 
 VS Code's own JSON validation also reports syntax errors and duplicate keys in JSON and JSONC
-files, so those would show twice. The first time the extension starts in a workspace folder, it
-asks whether to turn that validation off there, which sets this in `.vscode/settings.json`:
+files. While it is on (`json.validate.enable`, on by default), the extension leaves those two to
+it and shows jsonvet's other problems beside it, so none shows twice. VS Code also checks the JSON
+Schemas it knows, such as those it downloads from SchemaStore for `package.json` and
+`tsconfig.json`; jsonvet checks only the local schemas a file's `$schema` or `jsonvet.toml` names,
+and fetches nothing. JSON5 and JSON Lines files get all of jsonvet's problems.
+
+To see jsonvet's syntax errors and duplicate keys instead, turn VS Code's validation off, which
+also turns off its schema checks:
 
 ```json
 { "json.validate.enable": false }
 ```
 
-That also turns off VS Code's JSON Schema checks, including the schemas it downloads from
-SchemaStore for files such as `package.json` and `tsconfig.json`. jsonvet checks only the local
-schemas a file's `$schema` or `jsonvet.toml` names, and fetches nothing. If you want SchemaStore's
-schemas, keep both and accept that some problems show twice.
-
-The extension does not turn the setting off on its own, and does not claim only some files: which
-files VS Code validates depends on settings the extension cannot see, such as `files.associations`.
+The first time the extension starts in a workspace folder, it offers to set that in
+`.vscode/settings.json`, and asks again next time if you close the message without a choice. The
+change shows on each file at its next edit.
 
 ## Formatting
 
