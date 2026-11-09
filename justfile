@@ -169,6 +169,11 @@ compare REF DIR=(target / "profile-files"): profiling-build
 threads DIR=(target / "profile-files") CPUS="0,0-1,0-3,0-7": profiling-build
     hyperfine --shell=bash --warmup 3 -L cpus {{ CPUS }} 'taskset -c {cpus} {{ target }}/profiling/jsonvet {{ DIR }}/s[0-9]*.json'
 
+# Re-render playground/og.png from a real CLI run, in the vhs container (needs docker).
+social-card:
+    cargo build --release --locked -p jsonvet-cli
+    scripts/social-card/render.sh
+
 # Build the playground as pages.yml does, then serve it at http://127.0.0.1:8000. Needs the
 # wasm32 target and wasm-bindgen-cli at the version in Cargo.lock; the deploy also runs wasm-opt.
 # Runs the page's tests and smoke test before serving, as pages.yml does.

@@ -22,6 +22,7 @@ repos:
       rev: 022d320d5b971eccb28cfa6ce205152cbb382e53 # frozen: v3.2.0
       hooks:
           - id: jsonvet
+            exclude: ^scripts/social-card/staging.json5$ # the card shows its duplicate key
 
     - repo: https://github.com/astral-sh/ruff-pre-commit
       rev: v0.17.2

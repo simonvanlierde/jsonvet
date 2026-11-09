@@ -106,7 +106,8 @@ the page: a share link keeps it in the URL fragment, which browsers do not send 
 
 - The sample text in `index.html`: a config with a comment, a trailing comma and a `port` key
   repeated inside `server`, so it fails as JSON, and each dialect gives a different verdict.
-- The social card `playground/og.png`, a screenshot of the page itself.
+- The social card `playground/og.png`, a terminal run of the CLI on `scripts/social-card/staging.json5`,
+  rendered by `just social-card`.
 - The speed figures in docs/design.md#speed, linked from the colophon.
 - No testimonials, user counts or quotes exist; none may be invented.
 
