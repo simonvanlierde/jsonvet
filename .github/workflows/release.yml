@@ -222,7 +222,7 @@ jobs:
           toolchain: stable
       # After the toolchain: the script asks cargo for the crate's binaries.
       - run: uv run scripts/release-archives.py wheels release
-      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+      - uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
         with:
           tool: cargo-cyclonedx@0.5.9
       # The SBOM lands next to the Cargo.toml, named after the crate.
