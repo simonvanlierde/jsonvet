@@ -4326,3 +4326,41 @@ fn lsp_checks_a_document_over_stdio_and_exits_0_after_shutdown() {
     assert_eq!(child.wait().expect("an exit").code(), Some(0));
     no_hang(start);
 }
+
+#[test]
+fn lsp_exits_after_exit_while_the_client_keeps_its_pipe_open() {
+    use serde_json::json;
+    use std::io::Write;
+    let dir = workdir(&[("jsonvet.toml", "")]);
+    let mut child = command(env!("CARGO_BIN_EXE_jsonvet"))
+        .arg("lsp")
+        .current_dir(&dir)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .spawn()
+        .expect("run jsonvet lsp");
+    let mut input = child.stdin.take().expect("stdin");
+    for message in [
+        json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"capabilities": {}}}),
+        json!({"jsonrpc": "2.0", "method": "initialized", "params": {}}),
+        json!({"jsonrpc": "2.0", "id": 2, "method": "shutdown"}),
+        json!({"jsonrpc": "2.0", "method": "exit"}),
+    ] {
+        input.write_all(&lsp_message(&message)).expect("written");
+    }
+    input.flush().expect("flushed");
+    // `input` stays open until the end of the test, as an editor's pipe can.
+    let start = std::time::Instant::now();
+    let code = loop {
+        if let Some(status) = child.try_wait().expect("a status") {
+            break status.code();
+        }
+        if start.elapsed() > std::time::Duration::from_secs(2) {
+            let _ = child.kill();
+            panic!("jsonvet lsp still running 2 s after exit");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    assert_eq!(code, Some(0));
+    drop(input);
+}

@@ -1565,7 +1565,16 @@ mod tests {
 
     /// `result`'s text edits, as byte ranges of `text`, for UTF-16 positions.
     fn parse_edits(text: &str, result: &Value) -> Vec<(std::ops::Range<usize>, String)> {
-        let lines = Lines::new(text, false);
+        parse_edits_in(text, result, false)
+    }
+
+    /// `result`'s text edits, as byte ranges of `text`, for UTF-8 positions with `utf8`.
+    fn parse_edits_in(
+        text: &str,
+        result: &Value,
+        utf8: bool,
+    ) -> Vec<(std::ops::Range<usize>, String)> {
+        let lines = Lines::new(text, utf8);
         result
             .as_array()
             .expect("an array")
@@ -1856,6 +1865,132 @@ mod tests {
             json!({ "textDocument": { "uri": file } }),
         );
         assert_eq!(client.diagnostics().get("version"), None);
+        client.stop();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn per_file_settings_apply_when_a_fix_is_resolved_and_to_formatting() {
+        let dir = folder("per-file-resolve");
+        std::fs::write(
+            dir.join("jsonvet.toml"),
+            "rules = { byte-order-mark = \"error\" }\n\
+             per-file-rules = [{ files = \"ignored.json5\", byte-order-mark = \"ignore\" }]\n\
+             dialects = [\n\
+               { files = \"*.json\", dialect = \"json\" },\n\
+               { files = \"loose.json\", dialect = \"jsonc\" },\n\
+             ]\n",
+        )
+        .expect("written");
+        let (mut client, _) = Client::start(&json!({
+            "textDocument": { "codeAction": {
+                "dataSupport": true, "resolveSupport": { "properties": ["edit"] },
+            }},
+        }));
+        let (kept, ignored) = (
+            uri(&dir.join("kept.json5")),
+            uri(&dir.join("ignored.json5")),
+        );
+        client.open(&kept, "\u{feff}{}");
+        client.open(&ignored, "\u{feff}{}");
+        let actions = client.request(
+            "textDocument/codeAction",
+            json!({ "textDocument": { "uri": kept }, "range": range((0, 0), (0, 1)) }),
+        );
+        let fix = actions[0].clone();
+        assert_eq!(fix["kind"], "quickfix");
+        let resolved = client.request("codeAction/resolve", fix.clone());
+        assert_eq!(
+            resolved["edit"]["changes"][&kept],
+            json!([{ "range": range((0, 0), (0, 1)), "newText": "" }])
+        );
+        // The same fix, sent for the file whose rules leave the mark alone: nothing to fix.
+        let mut stale = fix;
+        stale["data"]["uri"] = json!(ignored);
+        stale["data"]["revision"] = json!(2);
+        assert_eq!(
+            client.try_request("codeAction/resolve", stale),
+            Err(lsp_server::ErrorCode::RequestFailed as i32)
+        );
+        // A comment is a syntax error in JSON, but `loose.json` is JSONC.
+        let text = "{// c\n\"a\":1}";
+        let (strict, loose) = (uri(&dir.join("strict.json")), uri(&dir.join("loose.json")));
+        client.open(&strict, text);
+        client.open(&loose, text);
+        let options = json!({ "tabSize": 2, "insertSpaces": true });
+        let config = jsonvet::Config::new(jsonvet::Dialect::Jsonc);
+        let expected =
+            jsonvet::format(text, &config, &jsonvet::FormatOptions::default()).expect("formatted");
+        for (method, extra) in [
+            ("textDocument/formatting", json!({})),
+            (
+                "textDocument/rangeFormatting",
+                json!({ "range": range((0, 0), (2, 0)) }),
+            ),
+        ] {
+            let mut params = json!({ "textDocument": { "uri": strict }, "options": options });
+            params.as_object_mut().expect("params").extend(
+                extra
+                    .as_object()
+                    .expect("extra")
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone())),
+            );
+            assert_eq!(
+                client.request(method, params.clone()),
+                Value::Null,
+                "{method}"
+            );
+            params["textDocument"]["uri"] = json!(loose);
+            let edits = parse_edits(text, &client.request(method, params));
+            assert_eq!(apply_owned(text, &edits), expected, "{method}");
+        }
+        client.stop();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn requests_take_and_give_utf8_positions_on_non_ascii_text() {
+        let dir = folder("utf8-requests");
+        std::fs::write(
+            dir.join("jsonvet.toml"),
+            "dialects = [{ files = \"*.json\", dialect = \"json\" }]\n",
+        )
+        .expect("written");
+        let (mut client, result) =
+            Client::start(&json!({ "general": { "positionEncodings": ["utf-8"] } }));
+        assert_eq!(result["capabilities"]["positionEncoding"], "utf-8");
+        // `é` is two bytes and one UTF-16 unit, `😀` four bytes and two units: the trailing
+        // comma is at byte 12 and unit 9.
+        let file = uri(&dir.join("a.json"));
+        let text = "{\"é😀\":[1,],\n\"b\":2}";
+        client.open(&file, text);
+        let actions = client.request(
+            "textDocument/codeAction",
+            json!({
+                "textDocument": { "uri": file },
+                "range": range((0, 12), (0, 12)),
+                "context": { "only": ["quickfix"] },
+            }),
+        );
+        assert_eq!(actions[0]["title"], "Remove the trailing comma");
+        assert_eq!(
+            actions[0]["edit"]["changes"][&file],
+            json!([{ "range": range((0, 12), (0, 13)), "newText": "" }])
+        );
+        let text = "{\"é😀\":[1,2],\n\"b\":   \"ü\"}";
+        client.open(&file, text);
+        let result = client.request(
+            "textDocument/formatting",
+            json!({ "textDocument": { "uri": file }, "options": {} }),
+        );
+        let config = jsonvet::Config::new(jsonvet::Dialect::Json);
+        let expected =
+            jsonvet::format(text, &config, &jsonvet::FormatOptions::default()).expect("formatted");
+        assert_eq!(
+            apply_owned(text, &parse_edits_in(text, &result, true)),
+            expected
+        );
         client.stop();
         let _ = std::fs::remove_dir_all(dir);
     }
