@@ -337,7 +337,17 @@ pub(crate) struct Resolver {
 impl Resolver {
     /// Read the file `--config` names, if any, so a bad one fails before any file is checked.
     pub(crate) fn new(config: &ConfigSource, cli: Settings) -> Result<Resolver, String> {
-        let here = working_dir()?.clone();
+        Resolver::rooted(working_dir()?, config, cli)
+    }
+
+    /// As [`Resolver::new`], with the absolute folder `here` in place of the working directory,
+    /// as the language server takes an editor's workspace folder.
+    pub(crate) fn rooted(
+        here: &Path,
+        config: &ConfigSource,
+        cli: Settings,
+    ) -> Result<Resolver, String> {
+        let here = lexical(here);
         let repo = here
             .ancestors()
             .find(|dir| dir.join(".git").exists())
@@ -511,6 +521,12 @@ fn project(from: &Path, last: Option<&Path>) -> PathBuf {
 /// Windows, and elsewhere in `$XDG_CONFIG_HOME` or `~/.config`, as ruff looks for its own on
 /// Linux and macOS. A relative `XDG_CONFIG_HOME` is ignored, as the XDG spec says.
 fn user_config() -> Option<PathBuf> {
+    let path = user_config_path()?;
+    path.is_file().then_some(path)
+}
+
+/// Where the user's own config file goes, whether or not it is there.
+pub(crate) fn user_config_path() -> Option<PathBuf> {
     let absolute = |name| {
         std::env::var_os(name)
             .map(PathBuf::from)
@@ -521,8 +537,7 @@ fn user_config() -> Option<PathBuf> {
     } else {
         absolute("XDG_CONFIG_HOME").or_else(|| absolute("HOME").map(|home| home.join(".config")))
     };
-    let path = dir?.join("jsonvet").join("jsonvet.toml");
-    path.is_file().then_some(path)
+    Some(dir?.join("jsonvet").join("jsonvet.toml"))
 }
 
 /// `path` with `..` folded away by name, as the globs fold it, so the search climbs the folders

@@ -34,8 +34,14 @@ gives what formatting the file does.
 ## Consequences
 
 A message field the server reads is a string in the code, not a type: a typo is a bug no compiler
-finds, which the in-process tests in `lsp.rs` guard. Each request makes a new config resolver, so
-an edit to `jsonvet.toml` applies at the next change, and a schema is read again for each check.
+finds, which the in-process tests in `lsp.rs` guard. Each request makes a new config resolver, and
+a schema is read again for each check. The server has the client watch `jsonvet.toml`,
+`pyproject.toml` and the user's config file, and checks every open document again when one
+changes. Changes queued behind a running check are checked once, at their latest text, so a slow
+check does not fall behind typing. The config search stops at the workspace folder holding the
+document, from `initialize`, so an editor started from `$HOME` or `/` does not search above the
+project or widen the schema confinement root of
+[0012](0012-schema-paths-stay-in-the-project.md).
 
 ## Confirmation
 

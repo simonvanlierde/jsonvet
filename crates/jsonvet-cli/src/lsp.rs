@@ -3,18 +3,19 @@
 //! `jsonvet fmt` does, all of a document or a range of it.
 
 use std::cell::Cell;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::fmt::Write as _;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use jsonvet::{Config, RelatedKind, Severity};
-use lsp_server::{Connection, ErrorCode, Message, Notification, Request, Response};
+use lsp_server::{Connection, ErrorCode, Message, Notification, Request, RequestId, Response};
 use serde_json::{Value, json};
 
 use crate::args::ConfigSource;
 use crate::settings::{Resolver, Settings};
-use crate::{editorconfig, format, frame, messages, rules, sarif};
+use crate::{editorconfig, format, frame, messages, rules, sarif, settings};
 
 /// The code action kind of the action that applies every safe fix, which editors can run on save.
 const FIX_ALL: &str = "source.fixAll.jsonvet";
@@ -29,9 +30,9 @@ pub(crate) fn run() -> Result<u8, String> {
     Ok(u8::from(!clean))
 }
 
-/// Answer the client on `connection` until it says exit or goes: whether it asked to shut down
-/// first.
-fn serve(connection: &Connection) -> Result<bool, String> {
+/// The protocol's handshake on `connection`: the client's `initialize` parameters and whether
+/// positions are in UTF-8, or `None` when it says exit or goes first.
+fn initialize(connection: &Connection) -> Result<Option<(Value, bool)>, String> {
     let send = |message: Message| connection.sender.send(message).map_err(|e| e.to_string());
     // Exit is legal before initialization; lsp-server's handshake helpers reject it.
     let (id, params) = loop {
@@ -44,9 +45,9 @@ fn serve(connection: &Connection) -> Result<bool, String> {
                 ErrorCode::ServerNotInitialized as i32,
                 "expected initialize request".to_owned(),
             )))?,
-            Ok(Message::Notification(note)) if note.method == "exit" => return Ok(false),
+            Ok(Message::Notification(note)) if note.method == "exit" => return Ok(None),
             Ok(Message::Notification(_)) => {}
-            Err(_) => return Ok(false),
+            Err(_) => return Ok(None),
             Ok(message) => return Err(format!("expected initialize request, got {message:?}")),
         }
     };
@@ -68,15 +69,15 @@ fn serve(connection: &Connection) -> Result<bool, String> {
         "serverInfo": { "name": "jsonvet", "version": env!("CARGO_PKG_VERSION") },
     });
     if send(Message::Response(Response::new_ok(id, result))).is_err() {
-        return Ok(false);
+        return Ok(None);
     }
     // A client can send notifications, such as its settings, before `initialized` gets here.
     loop {
         match connection.receiver.recv() {
             Ok(Message::Notification(note)) if note.method == "initialized" => break,
-            Ok(Message::Notification(note)) if note.method == "exit" => return Ok(false),
+            Ok(Message::Notification(note)) if note.method == "exit" => return Ok(None),
             Ok(Message::Notification(_)) => {}
-            Err(_) => return Ok(false),
+            Err(_) => return Ok(None),
             Ok(message) => {
                 return Err(format!(
                     "expected initialized notification, got {message:?}"
@@ -84,7 +85,42 @@ fn serve(connection: &Connection) -> Result<bool, String> {
             }
         }
     }
+    Ok(Some((params, utf8)))
+}
+
+/// Answer the client on `connection` until it says exit or goes: whether it asked to shut down
+/// first.
+fn serve(connection: &Connection) -> Result<bool, String> {
+    let send = |message: Message| connection.sender.send(message).map_err(|e| e.to_string());
+    let Some((params, utf8)) = initialize(connection)? else {
+        return Ok(false);
+    };
+    let watched = "/capabilities/workspace/didChangeWatchedFiles";
+    if params.pointer(&format!("{watched}/dynamicRegistration")) == Some(&Value::Bool(true)) {
+        let relative = params.pointer(&format!("{watched}/relativePatternSupport"));
+        send(Message::Request(watch(
+            relative == Some(&Value::Bool(true)),
+        )))?;
+    }
+    // Each document's config search stops at the workspace folder holding it, as a run's stops
+    // at its working directory.
+    let mut roots: Vec<PathBuf> = params
+        .get("workspaceFolders")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|folder| path_of(folder.get("uri")?.as_str()?))
+        .collect();
+    if roots.is_empty() {
+        roots.extend(
+            params
+                .get("rootUri")
+                .and_then(Value::as_str)
+                .and_then(path_of),
+        );
+    }
     let client = Client {
+        roots,
         utf8,
         resolve: params
             .pointer("/capabilities/textDocument/codeAction/dataSupport")
@@ -99,10 +135,17 @@ fn serve(connection: &Connection) -> Result<bool, String> {
             .and_then(Value::as_bool)
             .unwrap_or(false),
     };
+    // lsp-server hands over one message at a time. A thread queues them all, so the loop sees
+    // the changes already sent and checks only the last text of each document.
+    let (queue_in, receiver) = std::sync::mpsc::channel();
+    let input = connection.receiver.clone();
+    std::thread::spawn(move || input.iter().try_for_each(|message| queue_in.send(message)));
+    let mut queue = VecDeque::new();
     let mut documents = HashMap::new();
     let mut revision = 0;
     let mut shut_down = false;
-    for message in &connection.receiver {
+    while let Some(message) = queue.pop_front().or_else(|| receiver.recv().ok()) {
+        queue.extend(receiver.try_iter());
         match message {
             Message::Request(request) if request.method == "shutdown" => {
                 shut_down = true;
@@ -117,12 +160,27 @@ fn serve(connection: &Connection) -> Result<bool, String> {
                 )))?;
             }
             Message::Request(request) => {
-                send(Message::Response(answer(&request, &documents, client)))?;
+                send(Message::Response(answer(&request, &documents, &client)))?;
             }
             Message::Notification(note) if note.method == "exit" => return Ok(shut_down),
             Message::Notification(_) if shut_down => {}
+            // A settings file changed: every open document again, unless another change waits.
+            Message::Notification(note) if note.method == "workspace/didChangeWatchedFiles" => {
+                if superseded(&note, &queue) {
+                    continue;
+                }
+                for (uri, document) in &documents {
+                    if let Some(path) = path_of(uri) {
+                        let diagnostics = diagnostics(uri, &path, &document.text, &client);
+                        let version = document.version.clone();
+                        send(Message::Notification(publish(uri, version, diagnostics)))?;
+                    }
+                }
+            }
             Message::Notification(note) => {
-                if let Some(published) = update(&note, &mut documents, &mut revision, utf8) {
+                let superseded = superseded(&note, &queue);
+                let update = update(&note, &mut documents, &mut revision, &client, superseded);
+                if let Some(published) = update {
                     send(Message::Notification(published))?;
                 }
             }
@@ -133,9 +191,64 @@ fn serve(connection: &Connection) -> Result<bool, String> {
     Ok(false)
 }
 
-/// What the client can take, from its capabilities.
-#[derive(Clone, Copy)]
+/// The request that has the client watch the files settings come from, so that a change to one
+/// checks every open document again: the user's own config file too, where the client takes a
+/// pattern relative to a folder outside the workspace. `.editorconfig` is left out: only
+/// formatting reads it, afresh for each request.
+fn watch(relative: bool) -> Request {
+    let mut watchers = vec![
+        json!({ "globPattern": "**/jsonvet.toml" }),
+        json!({ "globPattern": "**/pyproject.toml" }),
+    ];
+    let user = settings::user_config_path();
+    if let Some(dir) = user.as_deref().and_then(Path::parent)
+        && relative
+        && dir.is_dir()
+    {
+        let pattern = json!({ "baseUri": uri_of(dir), "pattern": "jsonvet.toml" });
+        watchers.push(json!({ "globPattern": pattern }));
+    }
+    let id = "jsonvet/watch";
+    Request::new(
+        RequestId::from(id.to_owned()),
+        "client/registerCapability".to_owned(),
+        json!({ "registrations": [{
+            "id": id,
+            "method": "workspace/didChangeWatchedFiles",
+            "registerOptions": { "watchers": watchers },
+        }]}),
+    )
+}
+
+/// Whether a message waiting in `queue` makes the check `note` asks for moot: a later change or
+/// close of the same document, or a later change to the watched files, which checks every
+/// document again.
+fn superseded(note: &Notification, queue: &VecDeque<Message>) -> bool {
+    let uri = |note: &Notification| note.params.pointer("/textDocument/uri").cloned();
+    queue.iter().any(|message| {
+        let Message::Notification(later) = message else {
+            return false;
+        };
+        match (note.method.as_str(), later.method.as_str()) {
+            (
+                "textDocument/didOpen"
+                | "textDocument/didChange"
+                | "workspace/didChangeWatchedFiles",
+                "workspace/didChangeWatchedFiles",
+            ) => true,
+            (
+                "textDocument/didOpen" | "textDocument/didChange",
+                "textDocument/didChange" | "textDocument/didClose",
+            ) => uri(note) == uri(later),
+            _ => false,
+        }
+    })
+}
+
+/// What the client can take, from its capabilities, and the workspace folders it opened.
 struct Client {
+    /// The workspace folders, as paths: none when the client named none.
+    roots: Vec<PathBuf>,
     /// Positions in UTF-8 bytes, not UTF-16 units.
     utf8: bool,
     /// Workspace edits that name the version of the document they edit.
@@ -153,12 +266,13 @@ struct Document {
 }
 
 /// Keep `documents` in step with an open, change or close, and return the document's new
-/// diagnostics.
+/// diagnostics, unless `superseded` says a later change or close makes them moot.
 fn update(
     note: &Notification,
     documents: &mut HashMap<String, Document>,
     revision: &mut u64,
-    utf8: bool,
+    client: &Client,
+    superseded: bool,
 ) -> Option<Notification> {
     let params = &note.params;
     let uri = params.pointer("/textDocument/uri")?.as_str()?.to_owned();
@@ -180,7 +294,7 @@ fn update(
             .as_str()?
             .to_owned();
             let path = path_of(&uri)?;
-            let diagnostics = diagnostics(&uri, &path, &text, utf8);
+            let diagnostics = (!superseded).then(|| diagnostics(&uri, &path, &text, client));
             *revision = revision.checked_add(1)?;
             let document = Document {
                 text,
@@ -188,7 +302,7 @@ fn update(
                 revision: *revision,
             };
             documents.insert(uri.clone(), document);
-            diagnostics
+            diagnostics?
         }
         "textDocument/didClose" => {
             documents.remove(&uri);
@@ -196,19 +310,21 @@ fn update(
         }
         _ => return None,
     };
-    let mut published = json!({ "uri": uri, "diagnostics": diagnostics });
+    Some(publish(&uri, version, diagnostics))
+}
+
+/// The notification that publishes `diagnostics` for the document `uri` at `version`.
+fn publish(uri: &str, version: Option<Value>, diagnostics: Vec<Value>) -> Notification {
+    let mut published = json!({ "uri": uri, "diagnostics": Value::Array(diagnostics) });
     // Left out, not null, where the client gave none, as on a close.
     if let Some(version) = version {
         published["version"] = version;
     }
-    Some(Notification::new(
-        "textDocument/publishDiagnostics".to_owned(),
-        published,
-    ))
+    Notification::new("textDocument/publishDiagnostics".to_owned(), published)
 }
 
 /// The response to a request other than shutdown.
-fn answer(request: &Request, documents: &HashMap<String, Document>, client: Client) -> Response {
+fn answer(request: &Request, documents: &HashMap<String, Document>, client: &Client) -> Response {
     if request.method == "codeAction/resolve" {
         return resolve_action(request, documents, client);
     }
@@ -237,12 +353,12 @@ fn answer(request: &Request, documents: &HashMap<String, Document>, client: Clie
         }
         ("textDocument/formatting", Some((_, document, path))) => {
             let lines = Lines::new(&document.text, utf8);
-            formatting(&path, &lines, None)
+            formatting(&path, &lines, None, &client.roots)
         }
         ("textDocument/rangeFormatting", Some((_, document, path))) => {
             let lines = Lines::new(&document.text, utf8);
             let range = lines.range(params.get("range"));
-            formatting(&path, &lines, Some(range))
+            formatting(&path, &lines, Some(range), &client.roots)
         }
         // A document the server does not have, or one that is not a file, gets nothing.
         (
@@ -262,9 +378,10 @@ fn answer(request: &Request, documents: &HashMap<String, Document>, client: Clie
 
 /// The diagnostics for `text`, checked as the file at `path` is. A config file or schema that
 /// stops a run is one error at the start, as nothing else can be checked.
-fn diagnostics(uri: &str, path: &Path, text: &str, utf8: bool) -> Vec<Value> {
-    let lines = Lines::new(text, utf8);
-    let (report, schema_errors) = match crate::check_file(path, text) {
+fn diagnostics(uri: &str, path: &Path, text: &str, client: &Client) -> Vec<Value> {
+    let lines = Lines::new(text, client.utf8);
+    let checked = resolver(path, &client.roots).and_then(|r| crate::check_file(path, text, r));
+    let (report, schema_errors) = match checked {
         Ok(checked) => checked,
         Err(error) => {
             return vec![json!({
@@ -318,9 +435,25 @@ fn diagnostics(uri: &str, path: &Path, text: &str, utf8: bool) -> Vec<Value> {
     diagnostics
 }
 
+/// A resolver for the file at `path` that stops its search where a run in the workspace folder
+/// holding it would, the deepest where folders nest. A file outside them all stops at its own
+/// folder or at a `.git` above it, as one outside a run's working directory does. With no
+/// folders, the server's working directory stands in.
+fn resolver(path: &Path, roots: &[PathBuf]) -> Result<Resolver, String> {
+    let root = roots
+        .iter()
+        .filter(|root| path.starts_with(root))
+        .max_by_key(|root| root.as_os_str().len())
+        .or(roots.first());
+    match root {
+        Some(root) => Resolver::rooted(root, &ConfigSource::Search, Settings::default()),
+        None => Resolver::new(&ConfigSource::Search, Settings::default()),
+    }
+}
+
 /// The checking config for the file at `path`, as a run picks it.
-fn config_for(path: &Path) -> Result<Config, String> {
-    let mut resolver = Resolver::new(&ConfigSource::Search, Settings::default())?;
+fn config_for(path: &Path, roots: &[PathBuf]) -> Result<Config, String> {
+    let mut resolver = resolver(path, roots)?;
     Ok(resolver.for_file(path)?.config_for(&path.to_string_lossy()))
 }
 
@@ -331,10 +464,10 @@ fn code_actions(
     lines: &Lines<'_>,
     range: Range<usize>,
     wants: &impl Fn(&str) -> bool,
-    client: Client,
+    client: &Client,
 ) -> Value {
     let text = lines.text;
-    let Ok(config) = config_for(path) else {
+    let Ok(config) = config_for(path, &client.roots) else {
         return json!([]);
     };
     let Ok(all) = jsonvet::try_fix(text, &config, false) else {
@@ -408,7 +541,7 @@ fn code_actions(
 fn resolve_action(
     request: &Request,
     documents: &HashMap<String, Document>,
-    client: Client,
+    client: &Client,
 ) -> Response {
     let params = &request.params;
     let data = params.get("data").and_then(|data| {
@@ -438,7 +571,7 @@ fn resolve_action(
             "the document changed or was closed".to_owned(),
         );
     };
-    let fixed = config_for(&path).and_then(|config| {
+    let fixed = config_for(&path, &client.roots).and_then(|config| {
         jsonvet::try_fix_at(
             &document.text,
             &config,
@@ -479,9 +612,14 @@ fn workspace_edit((uri, version): (&str, Option<&Value>), lines: &Lines<'_>, fix
 /// The edits that format the document as `jsonvet fmt` would, or with `range`, only those
 /// inside it, so the text outside stays as it is. `null` when the text cannot be formatted,
 /// such as for a syntax error.
-fn formatting(path: &Path, lines: &Lines<'_>, range: Option<Range<usize>>) -> Value {
+fn formatting(
+    path: &Path,
+    lines: &Lines<'_>,
+    range: Option<Range<usize>>,
+    roots: &[PathBuf],
+) -> Value {
     let text = lines.text;
-    let resolver = match Resolver::new(&ConfigSource::Search, Settings::default()) {
+    let resolver = match resolver(path, roots) {
         Ok(resolver) => Mutex::new(resolver),
         Err(_) => return Value::Null,
     };
@@ -721,6 +859,24 @@ impl<'t> Lines<'t> {
     }
 }
 
+/// The `file:` URI of the absolute path `path`, as [`path_of`] reads it back.
+fn uri_of(path: &Path) -> String {
+    let path = path.to_string_lossy().replace('\\', "/");
+    let mut uri = "file://".to_owned();
+    // `c:/x` is `/c:/x`.
+    if !path.starts_with('/') {
+        uri.push('/');
+    }
+    for byte in path.bytes() {
+        if byte.is_ascii_alphanumeric() || b"/-._~".contains(&byte) {
+            uri.push(char::from(byte));
+        } else {
+            let _ = write!(uri, "%{byte:02X}");
+        }
+    }
+    uri
+}
+
 /// The path a `file:` URI names, or `None` for any other.
 fn path_of(uri: &str) -> Option<PathBuf> {
     let rest = uri.strip_prefix("file://")?;
@@ -753,7 +909,7 @@ fn path_of(uri: &str) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Lines, apply, edits, path_of, serve, within};
+    use super::{Lines, apply, edits, path_of, serve, uri_of, watch, within};
     use lsp_server::{Connection, Message, Notification, Request, RequestId};
     use serde_json::{Value, json};
     use std::path::{Path, PathBuf};
@@ -802,6 +958,11 @@ mod tests {
 
     impl Client {
         fn start(capabilities: &Value) -> (Client, Value) {
+            Client::start_with(json!({ "capabilities": capabilities }))
+        }
+
+        /// A client that sends `params` with its initialize request.
+        fn start_with(params: Value) -> (Client, Value) {
             let (client, server) = Connection::memory();
             let server = std::thread::spawn(move || serve(&server));
             let mut client = Client {
@@ -810,7 +971,7 @@ mod tests {
                 next: 0,
                 skipped: Vec::new(),
             };
-            let result = client.request("initialize", json!({ "capabilities": capabilities }));
+            let result = client.request("initialize", params);
             client.notify("initialized", json!({}));
             (client, result)
         }
@@ -1745,6 +1906,15 @@ mod tests {
     }
 
     #[test]
+    fn paths_become_file_uris_that_read_back() {
+        let path = std::env::temp_dir().join("a b#%?é~.json");
+        let uri = uri_of(&path);
+        assert!(uri.starts_with("file:///"), "{uri}");
+        assert!(uri.ends_with("/a%20b%23%25%3F%C3%A9~.json"), "{uri}");
+        assert_eq!(path_of(&uri), Some(path));
+    }
+
+    #[test]
     fn an_unknown_request_is_an_error_and_exit_without_shutdown_fails() {
         let (client, _) = Client::start(&json!({}));
         let request = Request::new(RequestId::from(7), "jsonvet/unknown".to_owned(), json!({}));
@@ -1878,6 +2048,188 @@ mod tests {
     }
 
     #[test]
+    fn notifications_before_initialized_are_dropped() {
+        let (server, client) = Connection::memory();
+        let serving = std::thread::spawn(move || serve(&server));
+        let send = |message| client.sender.send(message).expect("sent");
+        send(Message::Request(Request::new(
+            RequestId::from(1),
+            "initialize".to_owned(),
+            json!({ "capabilities": {} }),
+        )));
+        assert!(matches!(receive(&client), Message::Response(_)));
+        // VS Code sends its configuration before `initialized` can reach the server.
+        send(Message::Notification(Notification::new(
+            "workspace/didChangeConfiguration".to_owned(),
+            json!({ "settings": {} }),
+        )));
+        send(Message::Notification(Notification::new(
+            "initialized".to_owned(),
+            json!({}),
+        )));
+        send(Message::Request(Request::new(
+            RequestId::from(2),
+            "shutdown".to_owned(),
+            Value::Null,
+        )));
+        let Message::Response(response) = receive(&client) else {
+            panic!("a response");
+        };
+        assert_eq!(response.id, RequestId::from(2));
+        send(Message::Notification(Notification::new(
+            "exit".to_owned(),
+            Value::Null,
+        )));
+        assert_eq!(serving.join().expect("no panic"), Ok(true));
+    }
+
+    #[test]
+    fn a_config_change_checks_every_open_document_again() {
+        let dir = folder("watched");
+        let (client, _) = Client::start(&json!({
+            "workspace": { "didChangeWatchedFiles": { "dynamicRegistration": true } },
+        }));
+        let Message::Request(register) = receive(&client.connection) else {
+            panic!("a registration request");
+        };
+        assert_eq!(register.method, "client/registerCapability");
+        let registration = &register.params["registrations"][0];
+        assert_eq!(registration["method"], "workspace/didChangeWatchedFiles");
+        let watchers = &registration["registerOptions"]["watchers"];
+        assert_eq!(watchers[0]["globPattern"], "**/jsonvet.toml");
+        assert_eq!(watchers[1]["globPattern"], "**/pyproject.toml");
+        client
+            .connection
+            .sender
+            .send(Message::Response(lsp_server::Response::new_ok(
+                register.id,
+                Value::Null,
+            )))
+            .expect("sent");
+        let files = [uri(&dir.join("a.json")), uri(&dir.join("b.json"))];
+        for file in &files {
+            let published = client.open(file, "{\"a\": 1, \"a\": 2}");
+            assert_eq!(published["diagnostics"][0]["severity"], 1);
+        }
+        std::fs::write(
+            dir.join("jsonvet.toml"),
+            "rules = { duplicate-key = \"warning\" }\n",
+        )
+        .expect("written");
+        client.notify(
+            "workspace/didChangeWatchedFiles",
+            json!({ "changes": [{ "uri": uri(&dir.join("jsonvet.toml")), "type": 2 }] }),
+        );
+        let mut published: Vec<_> = (0..files.len())
+            .map(|_| {
+                let params = client.diagnostics();
+                (
+                    params["uri"].as_str().unwrap_or_default().to_owned(),
+                    params["version"].clone(),
+                    params["diagnostics"][0]["severity"].clone(),
+                )
+            })
+            .collect();
+        published.sort_by(|a, b| a.0.cmp(&b.0));
+        let expected: Vec<_> = files
+            .iter()
+            .map(|file| (file.clone(), json!(1), json!(2)))
+            .collect();
+        assert_eq!(published, expected);
+        client.stop();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn the_user_config_folder_is_watched_where_the_client_takes_relative_patterns() {
+        let user = crate::settings::user_config_path();
+        let folder = user
+            .as_deref()
+            .and_then(Path::parent)
+            .filter(|d| d.is_dir());
+        let watchers = |relative| {
+            let request = watch(relative);
+            let watchers = &request.params["registrations"][0]["registerOptions"]["watchers"];
+            watchers.as_array().map_or(0, Vec::len)
+        };
+        assert_eq!(watchers(false), 2);
+        assert_eq!(watchers(true), 2 + usize::from(folder.is_some()));
+    }
+
+    #[test]
+    fn the_config_search_stops_at_the_workspace_folder_holding_the_file() {
+        // `a` and `b` are workspace folders; the server's own working directory is elsewhere.
+        let dir = folder("roots");
+        let (a, b) = (dir.join("a"), dir.join("b"));
+        for sub in [a.join("sub"), b.join("sub")] {
+            std::fs::create_dir_all(sub).expect("a folder");
+        }
+        // Above both folders: never read.
+        std::fs::write(
+            dir.join("jsonvet.toml"),
+            "rules = { duplicate-key = \"ignore\" }\n",
+        )
+        .expect("written");
+        std::fs::write(
+            a.join("jsonvet.toml"),
+            "rules = { duplicate-key = \"warning\" }\n",
+        )
+        .expect("written");
+        let text = "{\"a\": 1, \"a\": 2}";
+        let severity = |published: Value| published["diagnostics"][0]["severity"].clone();
+        let (client, _) = Client::start_with(json!({ "capabilities": {}, "rootUri": uri(&a) }));
+        assert_eq!(severity(client.open(&uri(&a.join("sub/x.json")), text)), 2);
+        client.stop();
+        let folders = json!([{ "uri": uri(&a), "name": "a" }, { "uri": uri(&b), "name": "b" }]);
+        let (client, _) = Client::start_with(json!({
+            "capabilities": {}, "rootUri": uri(&b), "workspaceFolders": folders,
+        }));
+        assert_eq!(severity(client.open(&uri(&a.join("sub/x.json")), text)), 2);
+        assert_eq!(severity(client.open(&uri(&b.join("sub/y.json")), text)), 1);
+        client.stop();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn queued_changes_are_checked_once_at_their_last_text() {
+        let dir = folder("coalesce");
+        let file = uri(&dir.join("a.json"));
+        let (client, _) = Client::start(&json!({}));
+        client.open(&file, "{}");
+        // Slow enough to check that the changes queue up behind the first.
+        let slow = format!("{{{}\"b\": 0}}", "\"a\": 1, ".repeat(2_000));
+        let last = 100;
+        for version in 2..=last {
+            let text = if version == last {
+                "{\"c\": 1, \"c\": 2}"
+            } else {
+                &slow
+            };
+            client.notify(
+                "textDocument/didChange",
+                json!({
+                    "textDocument": { "uri": file, "version": version },
+                    "contentChanges": [{ "text": text }],
+                }),
+            );
+        }
+        let mut count = 0;
+        let final_check = loop {
+            let params = client.diagnostics();
+            count += 1;
+            if params["version"] == last {
+                break params;
+            }
+        };
+        assert!(count < 10, "{count} publishes");
+        let diagnostics = final_check["diagnostics"].as_array().expect("diagnostics");
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0]["message"], "duplicate key $.c");
+        client.stop();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn per_file_settings_apply_when_a_fix_is_resolved_and_to_formatting() {
         let dir = folder("per-file-resolve");
         std::fs::write(
@@ -2001,41 +2353,5 @@ mod tests {
         );
         client.stop();
         let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[test]
-    fn notifications_before_initialized_are_dropped() {
-        let (server, client) = Connection::memory();
-        let serving = std::thread::spawn(move || serve(&server));
-        let send = |message| client.sender.send(message).expect("sent");
-        send(Message::Request(Request::new(
-            RequestId::from(1),
-            "initialize".to_owned(),
-            json!({ "capabilities": {} }),
-        )));
-        assert!(matches!(receive(&client), Message::Response(_)));
-        // VS Code sends its configuration before `initialized` can reach the server.
-        send(Message::Notification(Notification::new(
-            "workspace/didChangeConfiguration".to_owned(),
-            json!({ "settings": {} }),
-        )));
-        send(Message::Notification(Notification::new(
-            "initialized".to_owned(),
-            json!({}),
-        )));
-        send(Message::Request(Request::new(
-            RequestId::from(2),
-            "shutdown".to_owned(),
-            Value::Null,
-        )));
-        let Message::Response(response) = receive(&client) else {
-            panic!("a response");
-        };
-        assert_eq!(response.id, RequestId::from(2));
-        send(Message::Notification(Notification::new(
-            "exit".to_owned(),
-            Value::Null,
-        )));
-        assert_eq!(serving.join().expect("no panic"), Ok(true));
     }
 }

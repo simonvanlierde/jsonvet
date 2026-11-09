@@ -846,11 +846,8 @@ fn check<'t>(
 
 /// Check `text` as a run checks the file at `path`: with its settings and its schema, if any.
 /// `Err` is what ends such a run: a config file or schema that cannot be used.
-fn check_file<'t>(path: &Path, text: &'t str) -> Result<Checked<'t>, String> {
-    let resolver = Mutex::new(Resolver::new(
-        &args::ConfigSource::Search,
-        Settings::default(),
-    )?);
+fn check_file<'t>(path: &Path, text: &'t str, resolver: Resolver) -> Result<Checked<'t>, String> {
+    let resolver = Mutex::new(resolver);
     let settings_for = |path: &Path| lock(&resolver).for_file(path);
     let schemas = Schemas::default();
     let load = |path: &Path, quiet| {

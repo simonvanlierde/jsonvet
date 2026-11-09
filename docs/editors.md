@@ -22,16 +22,26 @@ output, so any editor that has a client for it can show jsonvet's problems as yo
 Only files on disk are checked (`file:` URIs), since the settings are picked by the file's path. A
 file with a syntax error is not formatted. Positions are counted in UTF-16 code units, as the
 protocol asks by default, or in bytes when the editor offers UTF-8. `jsonvet lsp` takes no other
-options; `--stdio` is accepted, as some clients pass it. A file named `lsp` needs `./lsp`, as
-`fmt` does.
+options but `--help` and `--version`; `--stdio` is accepted, as some clients pass it. A file named
+`lsp` needs `./lsp`, as `fmt` does.
+
+The search for `jsonvet.toml` stops at the workspace folder that holds the file, as a run's stops
+at its working directory, unless a `.git` above the file comes first. The server takes the folders
+from the editor's `initialize` request (`workspaceFolders`, else `rootUri`), and uses its own
+working directory only when the editor sends neither.
+
+When the editor can watch files for the server, the server asks it to watch `jsonvet.toml`,
+`pyproject.toml` and the user's own config file, and checks every open file again when one
+changes. Other clients can send `workspace/didChangeWatchedFiles` for those files themselves.
 
 The server checks the whole file on each change. A 4 MB file took 33 ms (2026-11-06, release
-build), so it does not wait for typing to stop.
+build), so it does not wait for typing to stop. Changes that arrive while a check runs are checked
+once, at the latest text.
 
 ## VS Code
 
 The extension in [editors/vscode](../editors/vscode/README.md) is a thin client for `jsonvet lsp`.
-Its README says how to keep VS Code's own JSON validation from reporting the same problems twice.
+Its README says how it shares JSON and JSONC files with VS Code's own JSON validation.
 
 ## Neovim
 
@@ -71,5 +81,5 @@ Listing jsonvet alone replaces Helix's default JSON server, so problems do not s
 ## Other editors
 
 Run `jsonvet lsp` as the server command for JSON, JSONC, JSON5 and JSON Lines files, over
-standard input and output, with the project folder as the working directory: the search for
-`jsonvet.toml` stops there when there is no `.git` above the file.
+standard input and output. A client that sends no workspace folder should start it in the project
+folder, as the search for `jsonvet.toml` then stops at its working directory.
