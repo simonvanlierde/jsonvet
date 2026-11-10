@@ -12,10 +12,9 @@
 
 use std::borrow::Cow;
 use std::fmt;
-use std::ops::Range;
 
 use crate::parse::check_ending;
-use crate::{Config, Dialect, Report, Rule};
+use crate::{Config, Dialect, Problem, Report, Rule};
 
 /// How one level of nesting is indented.
 ///
@@ -69,7 +68,7 @@ pub enum FormatError<'a> {
     Syntax(Report<'a>),
     /// The text is past what the formatter's 32-bit offsets reach, 512 MiB.
     InputTooLarge,
-    /// Reflowing the text would change the tokens covered by an inline suppression.
+    /// Reflowing the text would change which problems an inline suppression hides.
     SuppressionTargets,
     /// The output would take this many bytes, more than 16 times the text or 64 MiB, whichever is
     /// more. Deep nesting does this: each level adds its indentation to every line below it.
@@ -88,7 +87,7 @@ impl fmt::Display for FormatError<'_> {
             }
             FormatError::InputTooLarge => f.write_str("not formatted: the file is over 512 MiB"),
             FormatError::SuppressionTargets => f.write_str(
-                "not formatted: formatting would change which tokens an inline suppression covers",
+                "not formatted: formatting would change which problems an inline suppression hides",
             ),
             FormatError::OutputTooLarge { bytes } => {
                 // Decimal units, rounded to a tenth.
@@ -112,7 +111,7 @@ impl std::error::Error for FormatError<'_> {}
 
 /// Format one text, keeping comments and values with line endings normalized.
 /// A text with a syntax error comes back as [`FormatError::Syntax`] with its report,
-/// and nothing is formatted. Formatting that changes the tokens covered by an inline suppression
+/// and nothing is formatted. Formatting that changes which problems an inline suppression hides
 /// comes back as [`FormatError::SuppressionTargets`].
 ///
 /// ```
@@ -139,7 +138,7 @@ pub fn format<'a>(
     if text.len() > MAX_TEXT {
         return Err(FormatError::InputTooLarge);
     }
-    let (problems, eol) = check_ending(text, config);
+    let (problems, eol, hidden) = check_ending(text, config);
     if problems.iter().any(|p| p.rule() == Rule::Syntax) {
         return Err(FormatError::Syntax(Report::new(
             text,
@@ -221,70 +220,76 @@ pub fn format<'a>(
         .iter()
         .chain(&doc.leading)
         .chain(&doc.trailing)
-        .any(|&c| {
-            let comment = parser.t.comment(c);
-            crate::suppress::has_target(comment[2..].strip_suffix("*/").unwrap_or(&comment[2..]))
-        })
-        && suppression_targets(text, dialect) != suppression_targets(&out, dialect)
+        .any(|&c| crate::suppress::has_target(parser.t.comment(c)))
+        && suppressed(text, dialect, &problems, &hidden) != {
+            let (problems, _, hidden) = check_ending(&out, config);
+            suppressed(&out, dialect, &problems, &hidden)
+        }
     {
         return Err(FormatError::SuppressionTargets);
     }
     Ok(out)
 }
 
-/// Token ordinals survive whitespace changes and JSON5 normalization. Commas can be added or
-/// removed by normalization, so they have no identity here.
-fn suppression_targets(text: &str, dialect: Dialect) -> Vec<Range<usize>> {
+/// Each problem in `text` that a suppression could hide, as its token's ordinal, its rule and,
+/// when one hides it, the ordinal of that suppression. Token ordinals survive white space changes
+/// and JSON5 normalization. Commas can be added or removed by normalization, so they have no
+/// identity here.
+fn suppressed<'a>(
+    text: &str,
+    dialect: Dialect,
+    problems: &'a [Problem],
+    hidden: &'a [(usize, Problem)],
+) -> Vec<(usize, &'static str, Option<usize>)> {
     let mut lexer = Lexer {
         text,
         at: 0,
         dialect,
     };
     let mut tokens = Vec::new();
-    let mut comments = Vec::new();
+    let mut suppressions = Vec::new();
     while let Some(token) = lexer.next() {
         let (start, end) = (token.start as usize, token.end as usize);
         match token.kind {
             Kind::Line | Kind::Block => {
-                let body_end = if token.kind == Kind::Block {
-                    end - 2
-                } else {
-                    end
-                };
-                if crate::suppress::has_target(&text[start + 2..body_end]) {
-                    comments.push((start, end));
+                if crate::suppress::has_target(&text[start..end]) {
+                    suppressions.push(start);
                 }
             }
             Kind::Comma => {}
             _ => tokens.push(start),
         }
     }
-    let mut targets = crate::suppress::Targets::default();
-    comments
-        .into_iter()
-        .map(|(start, end)| {
-            let target = targets.next(text, start, end, dialect);
-            target.map_or(0..0, |line| {
-                tokens.partition_point(|&at| at < line.start)
-                    ..tokens.partition_point(|&at| at < line.end)
-            })
-        })
-        .collect()
+    let token = |p: &Problem| tokens.partition_point(|&start| start <= p.offset());
+    let mut list: Vec<_> = problems
+        .iter()
+        .filter(|p| crate::suppress::hideable(p.rule()))
+        .map(|p| (token(p), p.rule().id(), None))
+        .chain(hidden.iter().map(|(comment, p)| {
+            let by = suppressions.partition_point(|&start| start < *comment);
+            (token(p), p.rule().id(), Some(by))
+        }))
+        .collect();
+    list.sort_unstable();
+    list
 }
 
 #[cfg(test)]
 mod tests {
-    use super::suppression_targets;
-    use crate::Dialect;
+    use crate::{Config, Dialect, FormatOptions, Rule, Severity, format};
+
+    fn formats(text: &str) -> bool {
+        let config = Config::new(Dialect::Json5).rule(Rule::InvalidNumber, Severity::Error);
+        format(text, &config, &FormatOptions::default()).is_ok()
+    }
 
     #[test]
-    fn equal_target_counts_do_not_hide_changed_token_identities() {
-        let first = "[\n// jsonvet-ignore invalid-number\n1e999,\n2e999\n]";
-        let second = "[\n1e999,\n// jsonvet-ignore invalid-number\n2e999\n]";
-        let first = suppression_targets(first, Dialect::Json5);
-        let second = suppression_targets(second, Dialect::Json5);
-        assert_eq!(first[0].len(), second[0].len());
-        assert_ne!(first, second);
+    fn a_reflow_that_keeps_what_each_suppression_hides_is_formatted() {
+        assert!(formats(
+            "{\"a\":1,\n// jsonvet-ignore invalid-number\n\"b\":1e999}"
+        ));
+        // A suppression that hides nothing may cover other tokens after formatting.
+        assert!(formats("[1,\n// jsonvet-ignore duplicate-key\n2, 3]"));
     }
 }
 

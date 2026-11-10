@@ -290,8 +290,9 @@ What counts as a line ending:
 In `jsonc`, `jwcc` and `json5`, a comment `jsonvet-ignore RULE` turns RULE off for the next line
 that starts with a token. Name more rules with commas, and give a reason after `--`. This rule
 reports a name in such a comment that hides nothing, is no rule, is a rule that is always an
-error (`syntax`, `unreadable` or `schema`), or is a rule about the whole file
-(`byte-order-mark`, `mixed-line-endings` or `missing-final-newline`). A name whose rule is off
+error (`syntax`, `unreadable` or `schema`), is a rule about the whole file
+(`byte-order-mark`, `mixed-line-endings` or `missing-final-newline`), or repeats a rule that an
+earlier name already gives for the same line. A name whose rule is off
 for the file is not reported. A suppression that names `unused-suppression` hides nothing, so it
 is reported too. A warning in `jsonc`, `jwcc` and `json5`, off otherwise.
 
@@ -304,7 +305,7 @@ How a suppression works:
 
 - It is a `//` or `/* */` comment whose text is `jsonvet-ignore` and one or more rule ids, with
   commas between them: `// jsonvet-ignore duplicate-key, invalid-number`. A comment that names
-  no rule is reported. A name given twice is fine.
+  no rule is reported, and so is a rule named twice for the same line, in one comment or two.
 - Text after a ` -- ` is a reason and is ignored, as in ESLint:
   `// jsonvet-ignore duplicate-key -- kept for the old client`.
 - It hides the problems of those rules that start on the next line: the first line after the
@@ -312,14 +313,14 @@ How a suppression works:
   space and comments are the dialect's own, so JSON5's non-ASCII spaces count, and a JWCC `//`
   comment runs to the LF. A comment that spans lines is skipped whole, so the line it ends on can
   be the next line. Tokens on the comment's own line never are.
-- A string that spans lines, with a JSON5 line continuation, is one token. A problem that starts
-  on one of its later lines, such as a duplicate key after it, is on that later line, so a
-  suppression above the string does not reach it.
+- A string that spans lines, with a JSON5 line continuation, is one token, so a line that holds
+  its start holds all of it, problems inside it included. A token after the string ends, such as
+  a duplicate key, is on that later line, and a suppression above the string does not reach it.
 - `byte-order-mark`, `mixed-line-endings` and `missing-final-newline` have one problem for the
   whole file, so a suppression cannot hide them: set them in `per-file-rules`.
 - It is the last step after `rules`, `per-file-rules` and the command line, and hides a problem
-  of any severity. With `--fix --unsafe-fixes`, a duplicate key with a suppressed copy keeps all
-  its copies.
+  of any severity. With `--fix --unsafe-fixes`, a duplicate key keeps all its copies when one of
+  them is suppressed, or when dropping one would change a line a suppression applies to.
 - JSON, I-JSON and JSON Lines have no comments: use `per-file-rules` there.
 - When a syntax error stops the check before the line, the suppression is not reported.
 - `--fix` does not remove a suppression that hides nothing.

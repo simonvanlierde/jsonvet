@@ -63,9 +63,9 @@ there moves to after the colon.
 
 A file with a syntax error is left as it is. jsonvet prints the error and exits 1.
 
-Formatting also leaves a file unchanged and exits 1 if reflowing it would change which tokens an
-[inline suppression](usage.md#unused-suppression) covers. This keeps formatting from hiding or
-exposing lint problems.
+Formatting also leaves a file unchanged and exits 1 if reflowing it would change which problems an
+[inline suppression](usage.md#unused-suppression) hides. This keeps formatting from hiding or
+exposing lint problems. A suppression that hides nothing can end up on another line.
 
 ## Settings
 

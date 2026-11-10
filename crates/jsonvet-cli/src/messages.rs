@@ -163,7 +163,7 @@ const ENGLISH: &[(&str, &str)] = &[
     ),
     (
         "fmt.suppression-targets",
-        "not formatted: formatting would change which tokens an inline suppression covers",
+        "not formatted: formatting would change which problems an inline suppression hides",
     ),
     ("lsp.fix", "Fix {rule}"),
     ("lsp.fix.syntax", "Remove the trailing comma"),

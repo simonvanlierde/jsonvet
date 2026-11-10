@@ -140,13 +140,12 @@ exclude_re = [
   # stops there, so where a suppression's next line starts after one never shows.
   "suppress.rs:\\d+:33: replace match guard json5 with true in next_line$",
   # Speed only: disabling the target cache, or moving its line-start boundary earlier, repeats
-  # the same scan. The suppression scaling tests check that these scans stay linear.
+  # the same scan, so the cache hits less often and never wrongly; a wrong hit fails
+  # cached_targets_agree_with_individual_scans. The suppression scaling tests check that these
+  # scans stay linear.
   "suppress.rs:\\d+:(13|65|25): replace \\|\\| with && in Targets::next$",
   "suppress.rs:\\d+:41: replace \\+ with - in Targets::next$",
   # A single quote or JSON5-only Unicode space outside JSON5 is a syntax error. The check stops
   # before any suppression decision that depends on skipping it, and the formatter refuses it.
   "suppress.rs:\\d+:(22|28): replace match guard json5 with true in next_line$",
-  # Adding one to each first-token ordinal preserves equality of the before/after ranges. No
-  # token starts at a target line's ending or at EOF, so including that boundary adds nothing.
-  "format.rs:\\d+:(49|55): replace < with <= in suppression_targets$",
 ]

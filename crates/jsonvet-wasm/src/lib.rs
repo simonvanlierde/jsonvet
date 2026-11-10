@@ -451,7 +451,7 @@ mod tests {
         let text = "{\"a\":1,\n// jsonvet-ignore duplicate-key\n\"a\":2,\"b\":1,\"b\":2}\n";
         assert_eq!(
             format(text, "jsonc", 2, 80, true, false).unwrap_err(),
-            "not formatted: formatting would change which tokens an inline suppression covers"
+            "not formatted: formatting would change which problems an inline suppression hides"
         );
     }
 

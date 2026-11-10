@@ -43,7 +43,7 @@ fn formatting_refuses_changed_suppression_targets_without_writing() {
     let (code, _, out) = jsonvet_stderr(&dir, &["fmt", "s.jsonc"]);
     assert_eq!(code, 1, "{out}");
     assert!(
-        out.contains("formatting would change which tokens an inline suppression covers"),
+        out.contains("formatting would change which problems an inline suppression hides"),
         "{out}"
     );
     assert_eq!(
@@ -4413,7 +4413,7 @@ fn an_inline_suppression_hides_a_rule_on_the_next_line() {
             "s.jsonc:5:36: warning[unused-suppression] `mixed-line-endings` is about the whole file: turn it off with `per-file-rules`\n\
              s.jsonc:9:21: warning[unused-suppression] unknown rule `duplicate-keys` in a suppression; did you mean `duplicate-key`?\n\
              s.jsonc:11:21: warning[unused-suppression] the `syntax` rule is always an error and cannot be suppressed\n\
-             s.jsonc:13:21: warning[unused-suppression] nothing to suppress: no duplicate-key problem on the next line\n\
+             s.jsonc:13:21: warning[unused-suppression] nothing to suppress: no `duplicate-key` problem on the next line\n\
              s.jsonc:15:5: warning[unused-suppression] a suppression needs a rule, such as `jsonvet-ignore duplicate-key`\n"
                 .to_owned()
         )

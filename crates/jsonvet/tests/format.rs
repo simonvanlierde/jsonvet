@@ -19,7 +19,7 @@ fn formatting_preserves_suppression_targets() {
     let error = format(text, &config, &FormatOptions::default()).unwrap_err();
     assert_eq!(
         error.to_string(),
-        "not formatted: formatting would change which tokens an inline suppression covers"
+        "not formatted: formatting would change which problems an inline suppression hides"
     );
     let block = text.replace(
         "// jsonvet-ignore duplicate-key",
@@ -29,11 +29,9 @@ fn formatting_preserves_suppression_targets() {
         format(&block, &config, &FormatOptions::default()),
         Err(jsonvet::FormatError::SuppressionTargets)
     ));
+    // This suppression hides nothing before or after, so the tokens it covers may change.
     let before_colon = "{\"a\":0,\"a\" // jsonvet-ignore duplicate-key\n:1,\n\"b\":0,\"c\":0}";
-    assert!(matches!(
-        format(before_colon, &config, &FormatOptions::default()),
-        Err(jsonvet::FormatError::SuppressionTargets)
-    ));
+    assert!(format(before_colon, &config, &FormatOptions::default()).is_ok());
     let safe = "{\"a\":1,\n// jsonvet-ignore duplicate-key\n\"a\":2\n}";
     assert!(format(safe, &config, &FormatOptions::default()).is_ok());
     // Normalization changes atom spelling and adds commas, but keeps their identities.
@@ -41,8 +39,11 @@ fn formatting_preserves_suppression_targets() {
     let safe = "{a:1,\n// jsonvet-ignore duplicate-key\n'a':2\n}";
     assert!(format(safe, &json5, &normalized()).is_ok());
     let root = "// jsonvet-ignore invalid-number\n[1e999,1e999]";
+    let numbers = json5
+        .clone()
+        .rule(Rule::InvalidNumber, jsonvet::Severity::Error);
     assert!(matches!(
-        format(root, &json5, &width(8)),
+        format(root, &numbers, &width(8)),
         Err(jsonvet::FormatError::SuppressionTargets)
     ));
     for name in ["syntax", "schema", "unknown-rule", "unused-suppression", ""] {

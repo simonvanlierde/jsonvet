@@ -34,7 +34,11 @@ pub(crate) const MIXED_LINE_ENDINGS: Message = (
 );
 pub(crate) const UNUSED_SUPPRESSION: Message = (
     "unused-suppression",
-    "nothing to suppress: no {rule} problem on the next line",
+    "nothing to suppress: no `{rule}` problem on the next line",
+);
+pub(crate) const REPEATED_SUPPRESSION: Message = (
+    "unused-suppression.repeated",
+    "`{rule}` is named already for the next line",
 );
 pub(crate) const UNKNOWN_SUPPRESSION: Message = (
     "unused-suppression.unknown",
@@ -152,6 +156,7 @@ pub const MESSAGES: &[(&str, &str)] = &[
     FIXED_SUPPRESSION,
     WHOLE_FILE_SUPPRESSION,
     EMPTY_SUPPRESSION,
+    REPEATED_SUPPRESSION,
     UNEXPECTED_END,
     UNEXPECTED_LINE_END,
     UNCLOSED,

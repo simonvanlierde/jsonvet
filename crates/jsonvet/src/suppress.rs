@@ -7,8 +7,8 @@ use std::fmt;
 use std::ops::Range;
 
 use crate::messages::{
-    self, EMPTY_SUPPRESSION, FIXED_SUPPRESSION, SUPPRESSION_DID_YOU_MEAN, Translate,
-    UNKNOWN_SUPPRESSION, UNUSED_SUPPRESSION, WHOLE_FILE_SUPPRESSION, fill,
+    self, EMPTY_SUPPRESSION, FIXED_SUPPRESSION, REPEATED_SUPPRESSION, SUPPRESSION_DID_YOU_MEAN,
+    Translate, UNKNOWN_SUPPRESSION, UNUSED_SUPPRESSION, WHOLE_FILE_SUPPRESSION, fill,
 };
 use crate::parse::line_comment_end;
 use crate::problem::Detail;
@@ -29,8 +29,19 @@ pub(crate) fn marked(body: &[u8]) -> bool {
         .is_some_and(|rest| rest.first().is_none_or(u8::is_ascii_whitespace))
 }
 
-/// Whether a directive names any rule whose token targets formatting must preserve.
-pub(crate) fn has_target(body: &str) -> bool {
+/// Whether a suppression can hide one of `rule`'s problems on a line: the per-line rules other
+/// than `unused-suppression`, whose problems are added after the suppressions apply.
+pub(crate) fn hideable(rule: Rule) -> bool {
+    hides(rule) && rule != Rule::UnusedSuppression
+}
+
+/// Whether a comment, given whole with its `//` or `/*` and `*/`, names a rule a suppression can
+/// hide.
+pub(crate) fn has_target(comment: &str) -> bool {
+    let body = match comment.as_bytes()[1] {
+        b'*' => &comment[2..comment.len() - 2],
+        _ => &comment[2..],
+    };
     if !marked(body.as_bytes()) {
         return false;
     }
@@ -38,7 +49,7 @@ pub(crate) fn has_target(body: &str) -> bool {
     list[..reason(list).unwrap_or(list.len())]
         .split(',')
         .filter_map(|name| name.trim().parse().ok())
-        .any(|rule| hides(rule) && rule != Rule::UnusedSuppression)
+        .any(hideable)
 }
 
 /// Why a name in a suppression hides nothing.
@@ -54,6 +65,8 @@ pub(crate) enum Unused {
     WholeFile,
     /// The comment names no rule.
     NoRule,
+    /// An earlier name in a suppression of the same line names the rule already.
+    Repeated,
 }
 
 impl Unused {
@@ -76,6 +89,7 @@ impl Unused {
             Unused::Fixed => fill(out, t(FIXED_SUPPRESSION), &[("rule", &name)]),
             Unused::WholeFile => fill(out, t(WHOLE_FILE_SUPPRESSION), &[("rule", &name)]),
             Unused::NoRule => out.write_str(t(EMPTY_SUPPRESSION)),
+            Unused::Repeated => fill(out, t(REPEATED_SUPPRESSION), &[("rule", &name)]),
         }
     }
 }
@@ -93,6 +107,8 @@ fn hides(rule: Rule) -> bool {
 struct Name {
     /// Where the name is.
     at: Range<usize>,
+    /// Where its comment starts.
+    comment: usize,
     rule: Option<Rule>,
     /// From the first token of the line it applies to, to that line's end; `None` when nothing
     /// follows the comment.
@@ -142,53 +158,39 @@ impl Targets {
     }
 }
 
-/// Drop the `problems` that the suppressions in `comments`, each a `(start, end)` of a comment
-/// in document order, hide, and add an `unused-suppression` problem for each name that hides
-/// nothing. With `hidden`, note there the first copy of each duplicate key a hidden problem is
-/// about.
+/// What the suppressions of a text did.
+#[derive(Default)]
+pub(crate) struct Applied {
+    /// Each hidden problem, with the start of the comment whose name hid it.
+    pub(crate) hidden: Vec<(usize, Problem)>,
+    /// The lines the suppressions apply to, in order and apart.
+    pub(crate) targets: Vec<Range<usize>>,
+}
+
+/// Move the `problems` that the suppressions in `comments`, each a `(start, end)` of a comment
+/// in document order, hide out to [`Applied::hidden`], and add an `unused-suppression` problem
+/// for each name that hides nothing. Checking stopped at `checked`, the offset of the syntax
+/// error, so a line that reaches it may hold a problem yet.
 pub(crate) fn apply(
     text: &str,
     comments: &[(usize, usize)],
     config: &Config,
     problems: &mut Vec<Problem>,
-    mut hidden: Option<&mut Vec<usize>>,
-) {
-    let bytes = text.as_bytes();
-    let dialect = config.dialect();
-    let mut names = Vec::new();
-    let mut empty = Vec::new();
-    let mut targets = Targets::default();
-    for &(start, end) in comments {
-        let block = bytes[start + 1] == b'*';
-        let body_end = if block { end - 2 } else { end };
-        let body = &bytes[start + 2..body_end];
-        let marker = body_end - body.trim_ascii_start().len();
-        let line = targets.next(text, start, end, dialect);
-        let before = names.len();
-        let mut at = marker + MARKER.len();
-        let list = &text[at..body_end];
-        for part in list[..reason(list).unwrap_or(list.len())].split(',') {
-            let name = part.trim();
-            if !name.is_empty() {
-                let offset = at + part.len() - part.trim_start().len();
-                names.push(Name {
-                    at: offset..offset + name.len(),
-                    rule: name.parse().ok(),
-                    line: line.clone(),
-                });
-            }
-            at += part.len() + 1;
-        }
-        if names.len() == before {
-            empty.push(marker..marker + MARKER.len());
-        }
-    }
+    checked: usize,
+) -> Applied {
+    let (names, empty) = read_names(text, comments, config.dialect());
     let mut lines: Vec<_> = names.iter().filter_map(|n| n.line.clone()).collect();
     lines.dedup();
-    let mut used: HashMap<_, _> = names
-        .iter()
-        .filter_map(|n| Some(((n.line.as_ref()?.start, n.rule?), false)))
-        .collect();
+    // Each line and rule belongs to the first name that gives them; a later one is repeated.
+    let mut first = HashMap::new();
+    let mut repeated = vec![false; names.len()];
+    for (i, n) in names.iter().enumerate() {
+        if let (Some(line), Some(rule)) = (&n.line, n.rule) {
+            repeated[i] = *first.entry((line.start, rule)).or_insert(i) != i;
+        }
+    }
+    let mut used = vec![false; names.len()];
+    let mut hidden = Vec::new();
     problems.retain(|p| {
         let rule = p.rule();
         if !hides(rule) {
@@ -199,37 +201,31 @@ pub(crate) fn apply(
             .checked_sub(1)
             .and_then(|i| lines.get(i))
             .filter(|line| p.offset <= line.end)
-            .and_then(|line| used.get_mut(&(line.start, rule)));
-        let hide = matched.is_some();
-        if let Some(used) = matched {
-            *used = true;
-        }
-        if hide && let (Some(hidden), Some(first)) = (hidden.as_deref_mut(), p.related()) {
-            hidden.push(first.offset);
-        }
-        !hide
+            .and_then(|line| first.get(&(line.start, rule)).copied());
+        let Some(name) = matched else {
+            return true;
+        };
+        used[name] = true;
+        hidden.push((names[name].comment, p.clone()));
+        false
     });
+    let applied = Applied {
+        hidden,
+        targets: lines,
+    };
     let severity = config.severity(Rule::UnusedSuppression);
     if !severity.is_on() {
-        return;
+        return applied;
     }
-    // Checking stops at a syntax error, so a line that reaches it may hold a problem yet.
-    let checked = problems
-        .iter()
-        .find(|p| p.rule() == Rule::Syntax)
-        .map_or(usize::MAX, Problem::offset);
-    let unused = names.into_iter().filter_map(|n| {
+    let unused = names.into_iter().enumerate().filter_map(|(i, n)| {
         let name = &text[n.at.clone()];
         let why = match n.rule {
             // A rule that is off has nothing to hide, and that is no news.
             Some(rule) if config.severity(rule) == Severity::Off => return None,
             Some(Rule::Syntax) => Unused::Fixed,
             Some(rule) if !hides(rule) => Unused::WholeFile,
-            Some(rule)
-                if n.line.as_ref().is_some_and(|l| {
-                    l.end >= checked || used.get(&(l.start, rule)) == Some(&true)
-                }) =>
-            {
+            Some(_) if repeated[i] => Unused::Repeated,
+            Some(_) if used[i] || n.line.as_ref().is_some_and(|l| l.end >= checked) => {
                 return None;
             }
             Some(_) => Unused::Nothing,
@@ -255,6 +251,47 @@ pub(crate) fn apply(
             detail: Detail::UnusedSuppression { name, why },
         });
     }
+    applied
+}
+
+/// The rule names in the suppressions in `comments`, and the marker of each suppression that
+/// names none.
+fn read_names(
+    text: &str,
+    comments: &[(usize, usize)],
+    dialect: Dialect,
+) -> (Vec<Name>, Vec<Range<usize>>) {
+    let bytes = text.as_bytes();
+    let mut names = Vec::new();
+    let mut empty = Vec::new();
+    let mut targets = Targets::default();
+    for &(start, end) in comments {
+        let block = bytes[start + 1] == b'*';
+        let body_end = if block { end - 2 } else { end };
+        let body = &bytes[start + 2..body_end];
+        let marker = body_end - body.trim_ascii_start().len();
+        let line = targets.next(text, start, end, dialect);
+        let before = names.len();
+        let mut at = marker + MARKER.len();
+        let list = &text[at..body_end];
+        for part in list[..reason(list).unwrap_or(list.len())].split(',') {
+            let name = part.trim();
+            if !name.is_empty() {
+                let offset = at + part.len() - part.trim_start().len();
+                names.push(Name {
+                    at: offset..offset + name.len(),
+                    comment: start,
+                    rule: name.parse().ok(),
+                    line: line.clone(),
+                });
+            }
+            at += part.len() + 1;
+        }
+        if names.len() == before {
+            empty.push(marker..marker + MARKER.len());
+        }
+    }
+    (names, empty)
 }
 
 /// Where the reason starts in the text after the marker: at a `--` with white space before it
@@ -312,7 +349,7 @@ fn next_line(text: &str, mut at: usize, dialect: Dialect, mut later: bool) -> Op
             _ => {}
         }
         if later {
-            return Some(at..line_end(bytes, at, json5));
+            return Some(at..target_end(bytes, at, json5));
         }
         // A token on the comment's own line: step over it, a string whole.
         at = match b {
@@ -321,6 +358,35 @@ fn next_line(text: &str, mut at: usize, dialect: Dialect, mut later: bool) -> Op
             _ => at + text[at..].chars().next().map_or(1, char::len_utf8),
         };
     }
+}
+
+/// Where the line that starts with a token at `from` ends for a suppression: at its line end, or
+/// in JSON5 at the end of a string that starts on it and goes on past it, so that the problems
+/// inside that string are on the line.
+fn target_end(bytes: &[u8], mut from: usize, json5: bool) -> usize {
+    let end = line_end(bytes, from, json5);
+    if !json5 {
+        return end;
+    }
+    while let Some(found) = memchr::memchr3(b'"', b'\'', b'/', &bytes[from..end]) {
+        let at = from + found;
+        from = match (bytes[at], bytes.get(at + 1)) {
+            (b'/', Some(b'/')) => break,
+            (b'/', Some(b'*')) => match block_comment_end(bytes, at + 2) {
+                Some(close) if close <= end => close,
+                _ => break,
+            },
+            (b'/', _) => at + 1,
+            (quote, _) => {
+                let close = string_end(bytes, at + 1, quote);
+                if close > end {
+                    return close;
+                }
+                close
+            }
+        };
+    }
+    end
 }
 
 /// Just past the `*/` of a block comment whose text starts at `from`.
@@ -463,7 +529,7 @@ mod tests {
                 &Config::new(Dialect::Jsonc).rule(Rule::InvalidCodePoint, Severity::Error)
             ),
             [
-                "2:34 unused-suppression: nothing to suppress: no invalid-code-point problem on the next line",
+                "2:34 unused-suppression: nothing to suppress: no `invalid-code-point` problem on the next line",
                 "2:55 unused-suppression: the `schema` rule is always an error and cannot be suppressed",
             ]
         );
@@ -495,7 +561,7 @@ mod tests {
         assert_eq!(
             jsonc("{}\n// jsonvet-ignore duplicate-key\n"),
             [
-                "2:19 unused-suppression: nothing to suppress: no duplicate-key problem on the next line"
+                "2:19 unused-suppression: nothing to suppress: no `duplicate-key` problem on the next line"
             ]
         );
     }
@@ -584,10 +650,19 @@ mod tests {
     }
 
     #[test]
-    fn a_repeated_name_is_fine() {
+    fn a_name_repeated_for_the_same_line_is_reported() {
         let text = "{\"a\": 1,\n// jsonvet-ignore duplicate-key, duplicate-key\n\"a\": 2}";
-        assert_eq!(jsonc(text), Vec::<String>::new());
-        let text = "{\"a\":1,\n// jsonvet-ignore duplicate-key, duplicate-key\n// jsonvet-ignore duplicate-key\n\"a\":2,\"a\":3}";
+        assert_eq!(
+            jsonc(text),
+            ["2:34 unused-suppression: `duplicate-key` is named already for the next line"]
+        );
+        let text = "{\"a\":1,\n// jsonvet-ignore duplicate-key\n/* jsonvet-ignore duplicate-key */\n\"a\":2,\"a\":3}";
+        assert_eq!(
+            jsonc(text),
+            ["3:19 unused-suppression: `duplicate-key` is named already for the next line"]
+        );
+        // The same name for another line is not a repeat.
+        let text = "{\"a\":1,\n// jsonvet-ignore duplicate-key\n\"a\":2,\n// jsonvet-ignore duplicate-key\n\"a\":3}";
         assert_eq!(jsonc(text), Vec::<String>::new());
     }
 
@@ -706,10 +781,42 @@ mod tests {
         assert_eq!(
             problems(text, &Config::new(Dialect::Json5)),
             [
-                "2:19 unused-suppression: nothing to suppress: no duplicate-key problem on the next line",
+                "2:19 unused-suppression: nothing to suppress: no `duplicate-key` problem on the next line",
                 "4:7 duplicate-key: duplicate key $.a",
             ]
         );
+    }
+
+    #[test]
+    fn a_continued_string_on_the_line_is_covered_whole() {
+        // The lone surrogate is on the string's second line, inside the token the line starts.
+        let text = "{\"a\": 1,\n// jsonvet-ignore invalid-code-point\n\"x\": 'one\\\ntwo \\ud800', \"b\": 2}";
+        let config = Config::new(Dialect::Json5).rule(Rule::InvalidCodePoint, Severity::Error);
+        assert_eq!(problems(text, &config), Vec::<String>::new());
+        // A comment on the line can hold a quote that starts no string.
+        let text = "{\"a\": 1,\n// jsonvet-ignore invalid-code-point\n\"x\": 1, // it's\n\"y\": '\\ud800'}";
+        assert_eq!(
+            problems(text, &config),
+            [
+                "2:19 unused-suppression: nothing to suppress: no `invalid-code-point` problem on the next line",
+                "4:7 invalid-code-point: lone surrogate U+D800",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_fix_keeps_a_duplicate_on_a_suppressed_line() {
+        // Dropping the first copy would move the suppression onto the second one's line.
+        let text = "{\n// jsonvet-ignore invalid-number\n\"a\": 1e999,\n\"a\": 1e999\n}";
+        let config = Config::new(Dialect::Json5);
+        assert!(fix(text, &config, true).is_none());
+        // Deleting a copy and the line break after it would join the line onto the comment's.
+        let text = "{\"x\": 0, /* jsonvet-ignore invalid-number */ \"a\": 1,\n\"a\": 1e999\n}";
+        assert!(fix(text, &config, true).is_none());
+        // A copy away from any suppression's line is still dropped.
+        let text = "{\"a\": 1,\n// jsonvet-ignore invalid-number\n\"b\": 1e999,\n\"a\": 2\n}";
+        let fixed = fix(text, &config, true).expect("a fix");
+        assert_eq!(fixed.fixes[0].rule, Rule::DuplicateKey);
     }
 
     #[test]

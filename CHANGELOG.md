@@ -16,8 +16,8 @@ version for a new option or output, the patch version for a fix.
   for the next line that starts with a token. Name more rules with commas, and give a reason after
   ` -- `: `// jsonvet-ignore duplicate-key -- kept for the old client`. The new
   `unused-suppression` rule, a warning in those dialects, reports a suppression that hides nothing,
-  names an unknown rule, or names a rule that is always an error or is about the whole file, so
-  stale ones don't pile up ([unused-suppression](docs/usage.md#unused-suppression)).
+  names an unknown rule, names a rule that is always an error or is about the whole file, or
+  repeats a rule for the same line, so stale ones don't pile up ([unused-suppression](docs/usage.md#unused-suppression)).
 - `per-file-rules` in `jsonvet.toml` sets rule severities for the files a glob matches, such as
   `per-file-rules = [{ files = "legacy/*.json", duplicate-key = "ignore" }]`. It works in every
   dialect, also JSON, I-JSON and JSON Lines, where no comment can turn a rule off. Matching entries

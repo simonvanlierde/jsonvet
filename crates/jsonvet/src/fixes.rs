@@ -287,8 +287,17 @@ fn duplicate_groups(text: &str, problems: &[Problem], scan: &Scan) -> Vec<Group>
     }
     let members: HashMap<usize, &Member> = scan.members.iter().map(|m| (m.start, m)).collect();
     let mut groups = Vec::new();
+    // A suppression's line that loses a member would cover other tokens, and could hide or show
+    // other problems, so a key with a copy to drop on one keeps every copy.
+    let suppressed = |span: &Range<usize>| {
+        let lines = &scan.suppressed;
+        let i = lines.partition_point(|line| line.end < span.start);
+        // Ending at the line's first token joins it onto an earlier line.
+        lines.get(i).is_some_and(|line| line.start <= span.end)
+    };
     for (first, later) in copies {
         let dropped = std::iter::once(first).chain(later.iter().copied().take(later.len() - 1));
+        let mut edits = Vec::new();
         for start in dropped {
             let Some(m) = members.get(&start) else {
                 continue;
@@ -298,10 +307,13 @@ fn duplicate_groups(text: &str, problems: &[Problem], scan: &Scan) -> Vec<Group>
                 .bytes()
                 .take_while(u8::is_ascii_whitespace)
                 .count();
-            let edits = vec![
-                Edit::delete(m.start..m.end),
-                Edit::delete(m.comma..m.comma + 1 + after),
-            ];
+            edits.push((start, [m.start..m.end, m.comma..m.comma + 1 + after]));
+        }
+        if edits.iter().flat_map(|(_, spans)| spans).any(suppressed) {
+            continue;
+        }
+        for (start, [member, comma]) in edits {
+            let edits = vec![Edit::delete(member), Edit::delete(comma)];
             groups.push(Group::new(Rule::DuplicateKey, start, false, edits));
         }
     }
