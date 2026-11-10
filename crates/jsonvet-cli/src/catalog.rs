@@ -244,7 +244,8 @@ fn fetch(url: &str, max: u64) -> Result<String, String> {
         return response
             .body_mut()
             .with_config()
-            .limit(max)
+            // ureq rejects a body at its read limit; resource checks the inclusive cap.
+            .limit(max + 1)
             .read_to_string()
             .map_err(|error| error.to_string());
     }
@@ -420,6 +421,98 @@ mod tests {
     }
 
     #[test]
+    fn stale_cache_warnings_are_returned_once() {
+        let cache = folder();
+        save(&cache, CATALOG, r#"{"schemas":[]}"#).expect("cached catalog");
+        expire(&cache, CATALOG);
+        let mut catalog = Catalog {
+            cache: cache.clone(),
+            entries: None,
+            notes: Vec::new(),
+        };
+        assert!(
+            catalog
+                .schema_with("unmatched.json", &Schemas::default(), &offline)
+                .expect("stale catalog")
+                .is_none()
+        );
+        let notes = catalog.take_notes();
+        assert_eq!(notes.len(), 1);
+        assert!(notes[0].contains("using stale cached"));
+        assert!(notes[0].contains(CATALOG));
+        assert!(notes[0].contains("offline"));
+        assert_eq!(catalog.take_notes(), Vec::<String>::new());
+        let _ = std::fs::remove_dir_all(cache);
+    }
+
+    #[test]
+    fn pattern_limit_counts_every_catalog_entry() {
+        let mut catalog = serde_json::json!({"schemas": [
+            {"url": CATALOG, "fileMatch": vec!["*.json"; MAX_PATTERNS / 2]},
+            {"url": CATALOG, "fileMatch": vec!["*.json"; MAX_PATTERNS / 2]}
+        ]});
+        assert!(entries(&catalog.to_string()).is_ok());
+        catalog["schemas"][1]["fileMatch"]
+            .as_array_mut()
+            .expect("patterns")
+            .push(Value::from("*.json"));
+        assert!(entries(&catalog.to_string()).is_err());
+    }
+
+    #[test]
+    fn cached_downloads_stay_fresh_for_seven_days() {
+        let cache = folder();
+        for (age, downloads) in [(6 * 86_400, 0), (604_799, 0), (604_800, 1), (8 * 86_400, 1)] {
+            let mut observed = false;
+            for _ in 0..8 {
+                let before = now();
+                let calls = AtomicU64::new(0);
+                let envelope = serde_json::json!({
+                    "url": CATALOG, "fetched": before - age, "body": r#"{"schemas":[]}"#
+                });
+                std::fs::write(cache_path(&cache, CATALOG), envelope.to_string()).expect("cache");
+                resource(
+                    &cache,
+                    CATALOG,
+                    CATALOG_BYTES,
+                    &|_, _| {
+                        calls.fetch_add(1, Ordering::Relaxed);
+                        Ok(r#"{"schemas":[]}"#.to_owned())
+                    },
+                    entries,
+                )
+                .expect("usable catalog");
+                // Observe exact expiry only when setup and reading share one clock second.
+                if now() == before {
+                    assert_eq!(calls.load(Ordering::Relaxed), downloads, "cache age {age}");
+                    observed = true;
+                    break;
+                }
+            }
+            assert!(observed, "clock did not settle for the expiry check");
+        }
+        let _ = std::fs::remove_dir_all(cache);
+    }
+
+    #[test]
+    fn escaped_cache_envelopes_preserve_the_download_size_limit() {
+        let cache = folder();
+        let body = serde_json::json!({"description": "\"".repeat(8_192)}).to_string();
+        save(&cache, CATALOG, &body).expect("escaped cached body");
+        let (restored, _) = cached(&cache, CATALOG, body.len() as u64)
+            .expect("cache envelope allowance")
+            .expect("cached body");
+        assert_eq!(restored, body);
+        let oversized_envelope = serde_json::json!({
+            "url": CATALOG, "fetched": now(), "body": "{}", "padding": " ".repeat(20_000)
+        });
+        std::fs::write(cache_path(&cache, CATALOG), oversized_envelope.to_string())
+            .expect("oversized cache envelope");
+        assert!(cached(&cache, CATALOG, 16).is_err());
+        let _ = std::fs::remove_dir_all(cache);
+    }
+
+    #[test]
     fn cold_warm_stale_and_uncached_failures() {
         let cache = folder();
         let calls = AtomicU64::new(0);
@@ -491,7 +584,75 @@ mod tests {
             "//www.schemastore.org/a",
         ] {
             assert!(allowed(url).is_err(), "{url}");
+            assert!(fetch(url, SCHEMA_BYTES).is_err(), "{url}");
         }
+    }
+
+    #[test]
+    fn downloads_follow_approved_redirects_and_bound_bytes_and_hops() {
+        use ureq::unversioned::transport::set_handler;
+
+        const START: &str = "https://www.schemastore.org/redirect-start";
+        const LOOP: &str = "https://www.schemastore.org/redirect-loop";
+        for (url, next) in [
+            (START, "https://json.schemastore.org/redirect-middle"),
+            (
+                "https://json.schemastore.org/redirect-middle",
+                "/redirect-last",
+            ),
+            (
+                "https://json.schemastore.org/redirect-last",
+                "https://schemastore.org/redirect-result",
+            ),
+        ] {
+            set_handler(
+                url,
+                302,
+                &[("location", next), ("content-length", "0")],
+                b"",
+            );
+        }
+        set_handler(
+            "https://schemastore.org/redirect-result",
+            200,
+            &[("content-length", "2")],
+            b"{}",
+        );
+        assert_eq!(fetch(START, 2).expect("three approved redirects"), "{}");
+        assert!(fetch(START, 1).is_err());
+        let cache = folder();
+        let text = |text: &str| Ok(text.to_owned());
+        assert_eq!(
+            resource(&cache, START, 2, &fetch, text).expect("body at the exact limit"),
+            "{}"
+        );
+        assert!(resource(&cache, START, 1, &fetch, text).is_err());
+        let _ = std::fs::remove_dir_all(cache);
+        set_handler(
+            LOOP,
+            302,
+            &[("location", LOOP), ("content-length", "0")],
+            b"",
+        );
+        assert!(fetch(LOOP, 2).is_err());
+    }
+
+    #[test]
+    fn network_path_redirects_are_rejected_before_another_request() {
+        use ureq::unversioned::transport::set_handler;
+
+        const START: &str = "https://www.schemastore.org/network-path-redirect";
+        set_handler(
+            START,
+            302,
+            &[
+                ("location", "//json.schemastore.org/schema"),
+                ("content-length", "0"),
+            ],
+            b"",
+        );
+        let error = fetch(START, 2).expect_err("a redirect must name an approved HTTPS origin");
+        assert!(error.contains("unsupported catalog URL //json.schemastore.org/schema"));
     }
 
     #[test]

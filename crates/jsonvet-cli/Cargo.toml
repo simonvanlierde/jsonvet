@@ -76,6 +76,8 @@ insta = "1.49.0"
 # Counts the heap tests/schema_memory.rs measures.
 peak_alloc = "0.3.0"
 proptest = "1.12.0"
+# In-memory HTTP responses test redirects without DNS or sockets; normal builds omit this feature.
+ureq = { version = "3.5.1", default-features = false, features = ["_test"] }
 
 [lints]
 workspace = true
