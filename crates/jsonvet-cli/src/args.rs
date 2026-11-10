@@ -51,7 +51,7 @@ Options:
                                 terminal, each problem also shows the line of the file it is
                                 on; elsewhere it stays one line.
       --schema FILE             Check each file against the JSON Schema in FILE, reported
-                                under the rule schema, instead of the schemas from settings
+                                under the rule schema, instead of the schemas setting
                                 or a file's own local $schema. Nothing is fetched. Limits:
                                 docs/usage.md in the repository.
       --schema-catalog          Enable HTTPS SchemaStore lookup by file name as a fallback.
