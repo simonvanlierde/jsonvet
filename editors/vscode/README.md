@@ -25,6 +25,12 @@ Schemas it knows, such as those it downloads from SchemaStore for `package.json`
 `tsconfig.json`; jsonvet checks only the local schemas a file's `$schema` or `jsonvet.toml` names,
 and fetches nothing. JSON5 and JSON Lines files get all of jsonvet's problems.
 
+The two do not agree on trailing commas in JSONC. jsonvet's `jsonc` rejects them, VS Code only
+warns, and it allows them without a warning in files whose schema permits them, such as
+`*.code-workspace` and `*.code-snippets`. There, `jsonvet` on the command line fails where the editor shows nothing.
+Check such files as `jwcc` (a `[[dialects]]` entry in `jsonvet.toml`), or turn VS Code's
+validation off.
+
 To see jsonvet's syntax errors and duplicate keys instead, turn VS Code's validation off, which
 also turns off its schema checks:
 
