@@ -37,7 +37,7 @@ fn no_hang(start: std::time::Instant) {
 }
 
 #[test]
-fn formatting_refuses_changed_suppression_targets_without_writing() {
+fn formatting_refuses_changed_hidden_problems_without_writing() {
     let text = "{\"a\":1,\n// jsonvet-ignore duplicate-key\n\"a\":2,\"b\":1,\"b\":2}\n";
     let dir = workdir(&[("s.jsonc", text)]);
     let (code, _, out) = jsonvet_stderr(&dir, &["fmt", "s.jsonc"]);
@@ -4426,7 +4426,7 @@ fn an_inline_suppression_hides_a_rule_on_the_next_line() {
     // A name whose rule is off has nothing to hide and is not reported.
     let (code, out) = jsonvet(&dir, &["--ignore", "duplicate-key", "s.jsonc"]);
     assert_eq!(code, 0);
-    assert!(!out.contains("no duplicate-key problem"), "{out}");
+    assert!(!out.contains("no `duplicate-key` problem"), "{out}");
     assert_eq!(
         jsonvet(&dir, &["--dialect", "json:j.json", "j.json"]),
         (

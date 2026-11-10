@@ -12,7 +12,7 @@ use jsonvet::{Config, Dialect, FormatOptions, Indent, Rule, check, format, parse
 use proptest::prelude::*;
 
 #[test]
-fn formatting_preserves_suppression_targets() {
+fn formatting_preserves_hidden_problems() {
     let config = Config::new(Dialect::Jsonc);
     let text = "{\"a\":1,\n// jsonvet-ignore duplicate-key\n\"a\":2,\"b\":1,\"b\":2}\n";
     assert_eq!(check(text, &config).problems(), []);
