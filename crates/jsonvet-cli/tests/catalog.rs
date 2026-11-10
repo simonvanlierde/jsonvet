@@ -127,6 +127,36 @@ fn explicit_configured_and_local_schemas_override_catalog() {
 }
 
 #[test]
+fn catalog_precedence_uses_the_fixed_schema_declaration() {
+    let path = setup();
+    std::fs::write(path.join("local.json"), "{}\n").expect("local schema");
+    for (first, last, expected) in [
+        ("https://example.com/schema", "local.json", 0),
+        ("local.json", "https://example.com/schema", 1),
+    ] {
+        std::fs::write(
+            path.join("package.json"),
+            format!(r#"{{"$schema":"{first}","$schema":"{last}","port":"bad"}}"#),
+        )
+        .expect("duplicate schema declarations");
+        let fixed = run(
+            &path,
+            &[
+                "--no-config",
+                "--schema-catalog",
+                "--fix",
+                "--unsafe-fixes",
+                "package.json",
+            ],
+        );
+        let checked = run(&path, &["--no-config", "--schema-catalog", "package.json"]);
+        assert_eq!(checked.status.code(), Some(expected));
+        assert_eq!(fixed.status.code(), checked.status.code());
+    }
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[test]
 fn matched_unsupported_origin_is_a_usage_error() {
     let path = setup();
     seed(

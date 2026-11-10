@@ -55,6 +55,8 @@ version for a new option or output, the patch version for a fix.
 - A file swapped for a FIFO between jsonvet's check of its type and the read no longer hangs the
   run: the type is checked on the open file, and on Unix opening a FIFO does not wait for a
   writer. This holds for checked files, `jsonvet.toml` and `--schema` files.
+- Catalog selection uses the fixed text, so replacing a duplicate `$schema` with
+  `--fix --unsafe-fixes` gives the same result as checking the saved file.
 - Runtime notes stay inside JSON and SARIF reports when `--fix -` writes diagnostics to
   standard error, so missing schemas and stale catalog caches cannot corrupt the report.
 - The language server checks open documents again when a local schema changes, and updates
