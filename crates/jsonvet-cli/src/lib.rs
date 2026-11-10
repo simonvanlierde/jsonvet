@@ -211,7 +211,7 @@ pub fn run_with(
     let stdin_fix = args.fix && files.iter().any(|(_, file)| file == STDIN);
     let mut out = out;
     let sink = Diagnostics::new(stdin_fix, &mut out);
-    let mut printer = Printer::new(sink, args.format, annotate, look);
+    let mut printer = Printer::new(sink, args.format, annotate, look, stdin_fix);
     let mut fixed = FixRun::default();
     let mut counts = Counts::default();
     // Files are read and checked on every core, a chunk at a time, then printed here in the
@@ -228,6 +228,9 @@ pub fn run_with(
     let mut ahead = Vec::new();
     let written = loop {
         if rest.is_empty() {
+            for note in schemas.missing_notes() {
+                printer.note(note);
+            }
             let line = (!files.is_empty()).then(|| counts.summary(files.len()));
             let found = counts.errors + counts.warnings > 0;
             break print_summary(&mut printer, line.as_deref(), terminal.tty, found);
@@ -276,7 +279,7 @@ pub fn run_with(
     // A JSON or SARIF report on standard error is all of it, so the count stays out.
     let count = !stdin_fix || args.format == Format::Text;
     let written = written.and_then(|()| fixed.finish(count, &mut out));
-    conclude(written, &schemas, &counts, args.max_warnings)
+    conclude(written, &counts, args.max_warnings)
 }
 
 /// A file's report and its schema errors.
@@ -310,7 +313,6 @@ fn print_checked(
 /// `max_warnings` allows.
 fn conclude(
     written: io::Result<()>,
-    schemas: &Schemas,
     counts: &Counts,
     max_warnings: Option<usize>,
 ) -> Result<u8, String> {
@@ -321,7 +323,6 @@ fn conclude(
         }
         _ => {}
     }
-    schemas.note_missing();
     let too_many_warnings = max_warnings.is_some_and(|max| counts.warnings > max);
     Ok(u8::from(counts.errors > 0 || too_many_warnings))
 }

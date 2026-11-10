@@ -321,6 +321,8 @@ How a suppression works:
 - It is the last step after `rules`, `per-file-rules` and the command line, and hides a problem
   of any severity. With `--fix --unsafe-fixes`, a duplicate key keeps all its copies when one of
   them is suppressed, or when dropping one would change a line a suppression applies to.
+- Formatting refuses a change that would change which problems a suppression hides. Put the
+  affected members on separate lines before formatting.
 - JSON, I-JSON and JSON Lines have no comments: use `per-file-rules` there.
 - When a syntax error stops the check before the line, the suppression is not reported.
 - `--fix` does not remove a suppression that hides nothing.
@@ -435,6 +437,8 @@ jsonvet --format sarif $(git ls-files '*.json') > jsonvet.sarif
   characters, such as a missing `,`, has no end, and nor has a schema error. A file jsonvet cannot
   read is a result under the rule `unreadable`.
 - Each rule carries its help text and a link to its section above.
+- Runtime notices, such as a stale catalog cache, appear in tool notifications. With `--fix -`,
+  notices stay inside the report on stderr.
 - GitHub keeps only 5,000 results of a run with more than 25,000. So jsonvet writes the first
   25,000, and counts the rest in a tool notification and on stderr.
 
@@ -483,6 +487,8 @@ jsonvet --format json config.json5 | jq -r '.diagnostics[] | "\(.file):\(.line) 
 
 - `version` is the version of this layout, now `1`. A new field may come without a new version;
   a field that changes meaning or goes away gets one. Ignore fields you do not know.
+- Optional `notes` holds runtime notices, such as a missing schema or a stale catalog cache.
+  These do not change the exit status or count toward `--max-warnings`.
 - `diagnostics` holds one object per problem, in the order text output prints them. Each has:
 
   | Field      | What it holds                                                                     |

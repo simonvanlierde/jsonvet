@@ -101,13 +101,24 @@ pub(crate) fn start() -> String {
 
 /// What comes after the last result: a notification counting the `dropped` ones past
 /// [`MAX_RESULTS`], and the closing brackets.
-pub(crate) fn end(dropped: usize) -> String {
-    if dropped == 0 {
+pub(crate) fn end(dropped: usize, notes: &[String]) -> String {
+    if dropped == 0 && notes.is_empty() {
         return "]}]}".to_owned();
     }
+    let dropped = (dropped > 0).then(|| dropped_message(dropped));
+    let notes = notes
+        .iter()
+        .chain(dropped.iter())
+        .map(|note| {
+            format!(
+                r#"{{"level":"warning","message":{{"text":{}}}}}"#,
+                string(note)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
     format!(
-        r#"],"invocations":[{{"executionSuccessful":true,"toolExecutionNotifications":[{{"level":"warning","message":{{"text":{}}}}}]}}]}}]}}"#,
-        string(&dropped_message(dropped))
+        r#"],"invocations":[{{"executionSuccessful":true,"toolExecutionNotifications":[{notes}]}}]}}]}}"#
     )
 }
 

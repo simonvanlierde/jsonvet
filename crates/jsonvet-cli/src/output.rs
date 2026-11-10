@@ -91,6 +91,8 @@ struct Place<'t> {
 pub(crate) struct Printer<W: Write> {
     out: W,
     sink: Sink,
+    notes: Vec<String>,
+    stderr_report: bool,
     /// The words for each related place, looked up once rather than for every problem: how the
     /// message names it, with its `{line}` and `{column}`, and the frame's label for it.
     related: [(&'static str, &'static str); 3],
@@ -121,7 +123,13 @@ enum Sink {
 }
 
 impl<W: Write> Printer<W> {
-    pub(crate) fn new(out: W, format: Format, annotate: bool, look: Look) -> Self {
+    pub(crate) fn new(
+        out: W,
+        format: Format,
+        annotate: bool,
+        look: Look,
+        stderr_report: bool,
+    ) -> Self {
         let sink = match format {
             Format::Text => Sink::Text {
                 annotate,
@@ -147,7 +155,13 @@ impl<W: Write> Printer<W> {
             words("related.opened-at", "related.opened-here"),
             words("related.started-at", "related.starts-here"),
         ];
-        Printer { out, sink, related }
+        Printer {
+            out,
+            sink,
+            related,
+            notes: Vec::new(),
+            stderr_report,
+        }
     }
 
     /// A problem in a file's contents.
@@ -400,21 +414,45 @@ impl<W: Write> Printer<W> {
         Ok(())
     }
 
+    /// Runtime notes belong inside a structured report, especially when it occupies stderr.
+    pub(crate) fn note(&mut self, message: String) {
+        if !self.stderr_report || matches!(self.sink, Sink::Text { .. }) {
+            eprintln!("jsonvet: {}", printable(&message));
+        }
+        if !matches!(self.sink, Sink::Text { .. }) {
+            self.notes.push(message);
+        }
+    }
+
     /// Write what can only come once every file was checked: the end of the SARIF or JSON
     /// document, with SARIF's count of results past the cap.
     pub(crate) fn finish(&mut self) -> io::Result<()> {
         match &self.sink {
             Sink::Text { .. } => {}
-            Sink::Json { started: true } => writeln!(self.out, "\n]}}")?,
-            Sink::Json { started: false } => writeln!(self.out, "{}]}}", json::start())?,
+            Sink::Json { started } => {
+                if !started {
+                    self.out.write_all(json::start().as_bytes())?;
+                }
+                write!(self.out, "\n]")?;
+                if !self.notes.is_empty() {
+                    let notes = self
+                        .notes
+                        .iter()
+                        .map(|note| sarif::string(note))
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    write!(self.out, ",\"notes\":[{notes}]")?;
+                }
+                writeln!(self.out, "}}")?;
+            }
             Sink::Sarif { written, dropped } => {
-                if *dropped > 0 {
+                if *dropped > 0 && !self.stderr_report {
                     eprintln!("jsonvet: {}", sarif::dropped_message(*dropped));
                 }
                 if *written == 0 {
                     self.out.write_all(sarif::start().as_bytes())?;
                 }
-                writeln!(self.out, "{}", sarif::end(*dropped))?;
+                writeln!(self.out, "{}", sarif::end(*dropped, &self.notes))?;
             }
         }
         self.out.flush()
@@ -442,6 +480,7 @@ mod tests {
                 frames: true,
                 color: true,
             },
+            false,
         );
         for (file, text) in [
             ("dup.json", "{\n  \"a\": 1,\n  \"a\": 2\n}\n"),
@@ -470,7 +509,7 @@ mod tests {
             frames: true,
             color: false,
         };
-        let mut printer = Printer::new(&mut out, Format::Text, false, look);
+        let mut printer = Printer::new(&mut out, Format::Text, false, look, false);
         // MAX_FRAMES + 1 duplicate keys, over two files: the cap is per run, not per file.
         for text in [
             format!("{{{}}}", vec!["\"a\": 1"; MAX_FRAMES].join(",")),

@@ -168,17 +168,16 @@ impl Schemas {
         own
     }
 
-    /// Say on stderr which schemas were skipped: one note for each `$schema` path that led to
-    /// no file, sorted by path. Not a problem, so the exit code stays.
-    pub(crate) fn note_missing(&self) {
+    /// One runtime note for each missing `$schema` path, sorted by path. These do not fail a run.
+    pub(crate) fn missing_notes(&self) -> Vec<String> {
         let missing = self
             .missing
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        for path in missing.iter() {
-            let note = messages::fill("schema.missing", &[("path", &path.to_string_lossy())]);
-            eprintln!("jsonvet: {}", output::printable(&note));
-        }
+        missing
+            .iter()
+            .map(|path| messages::fill("schema.missing", &[("path", &path.to_string_lossy())]))
+            .collect()
     }
 }
 
@@ -265,7 +264,7 @@ fn is_url(text: &str) -> bool {
 /// Check a file's text with no schema given for it, which [`with_schema`] says may name one in its
 /// own `$schema`, against that schema if any, relative to the file's folder, through `load`. The schema must be inside the file's own
 /// project, as `root` gives it, and its errors quote nothing from it (ADR 0012). One that does not
-/// exist is skipped, and noted by [`Schemas::note_missing`]; one outside the project or that
+/// exist is skipped, and noted by [`Schemas::missing_notes`]; one outside the project or that
 /// cannot be used is an error at the `$schema` value. JSON Lines holds many documents, so no one
 /// `$schema` applies.
 pub(crate) fn check_own_schema<'t>(

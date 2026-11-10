@@ -52,6 +52,44 @@ fn formatting_refuses_changed_hidden_problems_without_writing() {
     );
 }
 
+#[test]
+fn runtime_notes_keep_fixed_stdin_reports_parseable() {
+    use std::io::Write as _;
+    use std::process::Stdio;
+    let dir = workdir(&[]);
+    for format in ["json", "sarif"] {
+        let mut child = command(env!("CARGO_BIN_EXE_jsonvet"))
+            .current_dir(&dir)
+            .args(["--fix", "--format", format, "-"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("run jsonvet");
+        child
+            .stdin
+            .take()
+            .expect("stdin")
+            .write_all(b"{\"$schema\":\"missing.json\"}\n")
+            .expect("write input");
+        let output = child.wait_with_output().expect("finish");
+        assert!(output.status.success());
+        let report: serde_json::Value =
+            serde_json::from_slice(&output.stderr).expect("one report on stderr");
+        let note = if format == "json" {
+            &report["notes"][0]
+        } else {
+            &report["runs"][0]["invocations"][0]["toolExecutionNotifications"][0]["message"]["text"]
+        };
+        assert!(
+            note.as_str()
+                .expect("runtime note")
+                .contains("missing.json"),
+            "{report}"
+        );
+    }
+}
+
 /// A command for `bin` without the caller's `NO_COLOR`, `FORCE_COLOR`, `GITHUB_ACTIONS` and
 /// locale, which change how its output looks and what language it is in. A test that wants one
 /// sets it again.
