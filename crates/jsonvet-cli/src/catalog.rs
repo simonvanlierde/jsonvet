@@ -402,6 +402,24 @@ mod tests {
     }
 
     #[test]
+    fn entries_without_file_matches_are_accepted_and_ignored() {
+        let mut catalog = Catalog {
+            cache: PathBuf::new(),
+            entries: Some(
+                entries(r#"{"schemas":[{"url":"https://www.schemastore.org/unmatched.json"}]}"#)
+                    .expect("catalog entry without fileMatch"),
+            ),
+            notes: Vec::new(),
+        };
+        assert!(
+            catalog
+                .schema_with("unmatched.json", &Schemas::default(), &offline)
+                .expect("entry without fileMatch selects no schema")
+                .is_none()
+        );
+    }
+
+    #[test]
     fn cold_warm_stale_and_uncached_failures() {
         let cache = folder();
         let calls = AtomicU64::new(0);
