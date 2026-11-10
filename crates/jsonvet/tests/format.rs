@@ -32,7 +32,7 @@ fn formatting_preserves_suppression_targets() {
         format(root, &json5, &width(8)),
         Err(jsonvet::FormatError::SuppressionTargets)
     ));
-    for name in ["syntax", "schema", "unknown-rule", ""] {
+    for name in ["syntax", "schema", "unknown-rule", "unused-suppression", ""] {
         let text = format!("{{\"a\":1,\n// jsonvet-ignore {name}\n\"a\":2,\"b\":1,\"b\":2}}\n");
         assert!(
             format(&text, &config, &FormatOptions::default()).is_ok(),

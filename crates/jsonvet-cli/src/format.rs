@@ -95,11 +95,14 @@ pub(crate) fn run(
     Ok(u8::from(failed || (check_only && changed)))
 }
 
-/// The catalog text for a file the formatter refused for its size. Sizes are in decimal units,
+/// The catalog text for a file the formatter refused. Sizes are in decimal units,
 /// rounded to a tenth.
 fn refusal(error: &jsonvet::FormatError<'_>) -> String {
     match error {
         jsonvet::FormatError::InputTooLarge => messages::text("fmt.input-too-large").to_owned(),
+        jsonvet::FormatError::SuppressionTargets => {
+            messages::text("fmt.suppression-targets").to_owned()
+        }
         jsonvet::FormatError::OutputTooLarge { bytes } => {
             let (unit, tenths) = if *bytes >= 1_000_000_000 {
                 ("GB", (bytes + 50_000_000) / 100_000_000)
@@ -182,10 +185,21 @@ fn one(
 
 #[cfg(test)]
 mod tests {
-    use super::options;
+    use super::{options, refusal};
     use crate::editorconfig::Style;
     use crate::settings::FormatSettings;
     use jsonvet::{FormatOptions, Indent};
+
+    #[test]
+    fn suppression_refusal_uses_the_translation() {
+        crate::messages::use_translation(
+            "\"fmt.suppression-targets\" = \"suppression coverage would change\"",
+        );
+        assert_eq!(
+            refusal(&jsonvet::FormatError::SuppressionTargets),
+            "suppression coverage would change"
+        );
+    }
 
     #[test]
     fn settings_beat_editorconfig_beat_defaults() {

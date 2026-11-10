@@ -63,6 +63,10 @@ there moves to after the colon.
 
 A file with a syntax error is left as it is. jsonvet prints the error and exits 1.
 
+Formatting also leaves a file unchanged and exits 1 if reflowing it would change which tokens an
+[inline suppression](usage.md#unused-suppression) covers. This keeps formatting from hiding or
+exposing lint problems.
+
 ## Settings
 
 The defaults are 2 spaces, 80 columns and spaces inside braces. Each setting comes from the first

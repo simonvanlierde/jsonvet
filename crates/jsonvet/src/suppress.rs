@@ -38,7 +38,7 @@ pub(crate) fn has_target(body: &str) -> bool {
     list[..reason(list).unwrap_or(list.len())]
         .split(',')
         .filter_map(|name| name.trim().parse().ok())
-        .any(hides)
+        .any(|rule| hides(rule) && rule != Rule::UnusedSuppression)
 }
 
 /// Why a name in a suppression hides nothing.

@@ -161,6 +161,10 @@ const ENGLISH: &[(&str, &str)] = &[
         "fmt.output-too-large",
         "not formatted: the output would be {size}",
     ),
+    (
+        "fmt.suppression-targets",
+        "not formatted: formatting would change which tokens an inline suppression covers",
+    ),
     ("lsp.fix", "Fix {rule}"),
     ("lsp.fix.syntax", "Remove the trailing comma"),
     ("lsp.fix.byte-order-mark", "Remove the byte order mark"),
