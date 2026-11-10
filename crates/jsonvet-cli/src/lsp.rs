@@ -63,6 +63,7 @@ fn initialize(connection: &Connection) -> Result<Option<(Value, bool)>, String> 
         "codeActionProvider": { "codeActionKinds": ["quickfix", FIX_ALL], "resolveProvider": true },
         "documentFormattingProvider": true,
         "documentRangeFormattingProvider": true,
+        "workspace": { "workspaceFolders": { "supported": true, "changeNotifications": true } },
     });
     let result = json!({
         "capabilities": capabilities,
@@ -116,7 +117,7 @@ fn serve(connection: &Connection) -> Result<bool, String> {
                 .and_then(path_of),
         );
     }
-    let client = Client {
+    let mut client = Client {
         roots,
         utf8,
         resolve: params
@@ -144,11 +145,8 @@ fn serve(connection: &Connection) -> Result<bool, String> {
     while let Some(message) = queue.pop_front().or_else(|| receiver.recv().ok()) {
         queue.extend(receiver.try_iter());
         match message {
-            Message::Request(request) if request.method == "shutdown" => {
-                shut_down = true;
-                send(Message::Response(Response::new_ok(request.id, Value::Null)))?;
-            }
-            // After shutdown the protocol allows only `exit`: refuse requests, drop the rest.
+            // After shutdown the protocol allows only `exit`: refuse requests, a second shutdown
+            // too, and drop the rest.
             Message::Request(request) if shut_down => {
                 send(Message::Response(Response::new_err(
                     request.id,
@@ -156,13 +154,24 @@ fn serve(connection: &Connection) -> Result<bool, String> {
                     "the server is shutting down".to_owned(),
                 )))?;
             }
+            Message::Request(request) if request.method == "shutdown" => {
+                shut_down = true;
+                send(Message::Response(Response::new_ok(request.id, Value::Null)))?;
+            }
             Message::Request(request) => {
                 send(Message::Response(answer(&request, &documents, &client)))?;
             }
             Message::Notification(note) if note.method == "exit" => return Ok(shut_down),
             Message::Notification(_) if shut_down => {}
-            // A settings file changed: every open document again, unless another change waits.
-            Message::Notification(note) if note.method == "workspace/didChangeWatchedFiles" => {
+            // A settings file or a workspace folder changed: every open document again, unless
+            // another settings change waits.
+            Message::Notification(note)
+                if note.method == "workspace/didChangeWatchedFiles"
+                    || note.method == "workspace/didChangeWorkspaceFolders" =>
+            {
+                if let Some(event) = note.params.get("event") {
+                    move_roots(&mut client.roots, event);
+                }
                 if superseded(&note, &queue) {
                     continue;
                 }
@@ -186,6 +195,19 @@ fn serve(connection: &Connection) -> Result<bool, String> {
     }
     // The client went without saying exit.
     Ok(false)
+}
+
+/// `roots` after a `workspace/didChangeWorkspaceFolders` `event`.
+fn move_roots(roots: &mut Vec<PathBuf>, event: &Value) {
+    let folders = |key| {
+        let list = event.get(key).and_then(Value::as_array).into_iter();
+        list.flatten()
+            .filter_map(|folder| path_of(folder.get("uri")?.as_str()?))
+            .collect::<Vec<_>>()
+    };
+    let removed = folders("removed");
+    roots.retain(|root| !removed.contains(root));
+    roots.extend(folders("added"));
 }
 
 /// The request that has the client watch the files settings come from, so that a change to one
@@ -443,13 +465,16 @@ fn diagnostics(uri: &str, path: &Path, text: &str, client: &Client) -> Vec<Value
 /// A resolver for the file at `path` that stops its search where a run in the workspace folder
 /// holding it would, the deepest where folders nest. A file outside them all stops at its own
 /// folder or at a `.git` above it, as one outside a run's working directory does. With no
-/// folders, the server's working directory stands in.
+/// folders, every file is outside them: the editor's working directory, often `/` or the home
+/// folder, would let a config file far above apply.
 fn resolver(path: &Path, roots: &[PathBuf]) -> Result<Resolver, String> {
     let root = roots
         .iter()
         .filter(|root| path.starts_with(root))
         .max_by_key(|root| root.as_os_str().len())
-        .or(roots.first());
+        .or(roots.first())
+        .map(PathBuf::as_path)
+        .or(path.parent());
     match root {
         Some(root) => Resolver::rooted(root, &ConfigSource::Search, Settings::default()),
         None => Resolver::new(&ConfigSource::Search, Settings::default()),
@@ -1949,6 +1974,7 @@ mod tests {
     fn requests_after_shutdown_are_refused_and_exit_then_succeeds() {
         let (mut client, _) = Client::start(&json!({}));
         assert_eq!(client.request("shutdown", Value::Null), Value::Null);
+        assert_eq!(client.try_request("shutdown", Value::Null), Err(-32600));
         client.notify("$/cancelRequest", json!({ "id": 1 }));
         client.notify(
             "textDocument/didClose",
@@ -2208,6 +2234,48 @@ mod tests {
         }));
         assert_eq!(severity(client.open(&uri(&a.join("sub/x.json")), text)), 2);
         assert_eq!(severity(client.open(&uri(&b.join("sub/y.json")), text)), 1);
+        client.stop();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn workspace_folders_added_and_removed_later_move_the_search_stop() {
+        let dir = folder("roots-changed");
+        let (a, b) = (dir.join("a"), dir.join("b"));
+        for sub in [a.join("sub"), b.join("sub")] {
+            std::fs::create_dir_all(sub).expect("a folder");
+        }
+        for root in [&a, &b] {
+            std::fs::write(
+                root.join("jsonvet.toml"),
+                "rules = { duplicate-key = \"warning\" }\n",
+            )
+            .expect("written");
+        }
+        let text = "{\"a\": 1, \"a\": 2}";
+        let severity = |published: Value| published["diagnostics"][0]["severity"].clone();
+        let folders = |path: &Path| json!([{ "uri": uri(path), "name": "f" }]);
+        let (client, result) = Client::start_with(json!({
+            "capabilities": {}, "workspaceFolders": folders(&a),
+        }));
+        assert_eq!(
+            result["capabilities"]["workspace"]["workspaceFolders"]["changeNotifications"],
+            true
+        );
+        let (x, y) = (uri(&a.join("sub/x.json")), uri(&b.join("sub/y.json")));
+        assert_eq!(severity(client.open(&x, text)), 2);
+        // Outside every folder, the search stops at the file's own folder.
+        assert_eq!(severity(client.open(&y, text)), 1);
+        client.notify(
+            "workspace/didChangeWorkspaceFolders",
+            json!({ "event": { "added": folders(&b), "removed": folders(&a) } }),
+        );
+        // Both open documents are checked again, in either order.
+        let mut published: Vec<Value> = (0..2).map(|_| client.diagnostics()).collect();
+        published.sort_by_key(|p| p["uri"].as_str().map(str::to_owned));
+        assert_eq!(published[0]["uri"], x);
+        assert_eq!(severity(published[0].clone()), 1);
+        assert_eq!(severity(published[1].clone()), 2);
         client.stop();
         let _ = std::fs::remove_dir_all(dir);
     }

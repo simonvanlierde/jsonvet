@@ -27,8 +27,9 @@ options but `--help` and `--version`; `--stdio` is accepted, as some clients pas
 
 The search for `jsonvet.toml` stops at the workspace folder that holds the file, as a run's stops
 at its working directory, unless a `.git` above the file comes first. The server takes the folders
-from the editor's `initialize` request (`workspaceFolders`, else `rootUri`), and uses its own
-working directory only when the editor sends neither.
+from the editor's `initialize` request (`workspaceFolders`, else `rootUri`) and follows the folders
+the editor adds and removes later. With no folder, the search stops at the file's own folder,
+unless a `.git` above it comes first.
 
 When the editor can watch files for the server, the server asks it to watch `jsonvet.toml`,
 `pyproject.toml` and the user's own config file, and checks every open file again when one
@@ -81,5 +82,4 @@ Listing jsonvet alone replaces Helix's default JSON server, so problems do not s
 ## Other editors
 
 Run `jsonvet lsp` as the server command for JSON, JSONC, JSON5 and JSON Lines files, over
-standard input and output. A client that sends no workspace folder should start it in the project
-folder, as the search for `jsonvet.toml` then stops at its working directory.
+standard input and output.

@@ -28,7 +28,8 @@
     "onLanguage:json",
     "onLanguage:jsonc",
     "onLanguage:json5",
-    "onLanguage:jsonl"
+    "onLanguage:jsonl",
+    "onLanguage:jwcc"
   ],
   "main": "./out/extension.js",
   "files": [
@@ -44,6 +45,28 @@
     }
   },
   "contributes": {
+    "languages": [
+      {
+        "id": "json5",
+        "aliases": [
+          "JSON5"
+        ],
+        "extensions": [
+          ".json5"
+        ]
+      },
+      {
+        "id": "jwcc",
+        "aliases": [
+          "JWCC",
+          "HuJSON"
+        ],
+        "extensions": [
+          ".jwcc",
+          ".hujson"
+        ]
+      }
+    ],
     "configuration": {
       "title": "jsonvet",
       "properties": {

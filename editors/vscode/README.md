@@ -12,7 +12,9 @@ uv tool install jsonvet     # or: pipx install jsonvet, cargo binstall jsonvet-c
 The extension runs `jsonvet` from your `PATH`, or the program the `jsonvet.path` setting names. It
 checks each file with the dialect, rules and schema a `jsonvet` run would use for that path, from
 the nearest `jsonvet.toml` ([configuration](https://github.com/simonvanlierde/jsonvet#configuration)).
-Only files on disk are checked: an untitled file has no path to pick its settings by.
+Only files on disk are checked: an untitled file has no path to pick its settings by. VS Code
+knows no JSON5 or JWCC language, so the extension adds them for `.json5`, `.jwcc` and `.hujson`
+files, without syntax highlighting.
 
 A change to a `jsonvet.toml` or `pyproject.toml` checks every open file again.
 
@@ -27,7 +29,7 @@ and fetches nothing. JSON5 and JSON Lines files get all of jsonvet's problems.
 
 The two do not agree on trailing commas in JSONC. jsonvet's `jsonc` rejects them, VS Code only
 warns, and it allows them without a warning in files whose schema permits them, such as
-`*.code-workspace` and `*.code-snippets`. There, `jsonvet` on the command line fails where the editor shows nothing.
+`*.code-workspace`. There, `jsonvet` on the command line fails where the editor shows nothing.
 Check such files as `jwcc` (a `[[dialects]]` entry in `jsonvet.toml`), or turn VS Code's
 validation off.
 
