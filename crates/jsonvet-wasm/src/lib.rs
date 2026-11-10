@@ -87,15 +87,17 @@ pub fn fix(text: &str, dialect: &str, unsafe_fixes: bool, only: &[u32]) -> Resul
     let bytes: Vec<usize> = if only.is_empty() {
         Vec::new()
     } else {
+        let mut only = only.to_vec();
+        only.sort_unstable();
         let (mut units, mut found) = (0_u32, Vec::new());
         for (byte, c) in text.char_indices() {
-            if only.contains(&units) {
+            if only.binary_search(&units).is_ok() {
                 found.push(byte);
             }
             units += u32::try_from(c.len_utf16()).unwrap_or(2);
         }
         // A missing final newline is reported at the end of the text, past every character.
-        if only.contains(&units) {
+        if only.binary_search(&units).is_ok() {
             found.push(text.len());
         }
         found
@@ -442,6 +444,10 @@ mod tests {
             "{all}"
         );
         let one = fix(text, "json", false, &[20]).unwrap_or_default();
+        assert_eq!(
+            fix(text, "json", false, &[20, 9, 20]).as_deref(),
+            Ok(all.as_str())
+        );
         assert!(
             one.starts_with(r#"{"text":"{\"😀\": [1,], \"b\": [2]}""#),
             "{one}"
