@@ -141,9 +141,13 @@ const ENGLISH: &[(&str, &str)] = &[
     ),
     (
         "config.unknown-key",
-        "unknown key `{key}`{hint}; expected rules, per-file-rules, dialects, exclude, schemas or format",
+        "unknown key `{key}`{hint}; expected rules, per-file-rules, per-file-format, dialects, exclude, schemas or format",
     ),
     ("config.format-type", "`format` must be a table"),
+    (
+        "config.per-file-format-type",
+        "`per-file-format` must be an array of tables",
+    ),
     (
         "config.format-unknown-key",
         "unknown key `{key}`{hint} in `format`; expected indent, width, normalize-json5 or bracket-spacing",

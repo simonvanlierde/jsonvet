@@ -852,7 +852,7 @@ fn pyproject_tool_table_and_bad_configs() {
         // A key holding a newline stays on the line, so it cannot forge a workflow command.
         (
             "forged.toml:1:1",
-            "unknown key `\\n::error::x`; expected rules, per-file-rules, dialects, exclude, schemas or format",
+            "unknown key `\\n::error::x`; expected rules, per-file-rules, per-file-format, dialects, exclude, schemas or format",
         ),
         // A typo gets its line and column, and the name it is closest to.
         (
@@ -863,7 +863,7 @@ fn pyproject_tool_table_and_bad_configs() {
         ),
         (
             "key.toml:2:3",
-            "unknown key `rule` (did you mean `rules`?); expected rules, per-file-rules, dialects, exclude, schemas or format",
+            "unknown key `rule` (did you mean `rules`?); expected rules, per-file-rules, per-file-format, dialects, exclude, schemas or format",
         ),
         (
             "severity.toml:2:10",

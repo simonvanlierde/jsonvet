@@ -46,7 +46,14 @@ pub(crate) fn setup(
     };
     let config = settings.config_for(&path.to_string_lossy());
     let style = styles.style(path, &dirs);
-    Ok((config, options(&settings.format, settings.user, style)))
+    Ok((
+        config,
+        options(
+            &settings.format_for(&path.to_string_lossy()),
+            settings.user,
+            style,
+        ),
+    ))
 }
 
 /// What formatting one file gave: the lines for standard error, the text for `out`, and

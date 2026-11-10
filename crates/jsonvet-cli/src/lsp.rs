@@ -2052,7 +2052,11 @@ mod tests {
     #[test]
     fn formatting_gives_what_fmt_gives() {
         let dir = folder("formatting");
-        std::fs::write(dir.join("jsonvet.toml"), "[format]\nindent = 4\n").expect("written");
+        std::fs::write(
+            dir.join("jsonvet.toml"),
+            "[format]\nindent = 2\n[[per-file-format]]\nfiles = \"a.json\"\nindent = 4\n",
+        )
+        .expect("written");
         let file = uri(&dir.join("a.json"));
         let (mut client, _) = Client::start(&json!({}));
         let text = "{\"a\":[1,2],\n\"b\":{\"c\":true}}";
@@ -2072,6 +2076,16 @@ mod tests {
         let config = jsonvet::Config::new(jsonvet::Dialect::Json5);
         let expected = jsonvet::format(text, &config, &options).expect("formatted");
         assert_eq!(apply_owned(text, &edits), expected);
+        let other = uri(&dir.join("b.json"));
+        client.open(&other, text);
+        let result = client.request(
+            "textDocument/formatting",
+            json!({ "textDocument": { "uri": other }, "options": {} }),
+        );
+        assert_eq!(
+            apply_owned(text, &parse_edits(text, &result)),
+            jsonvet::format(text, &config, &jsonvet::FormatOptions::default()).expect("formatted")
+        );
         // A syntax error: nothing to do.
         client.open(&file, "{");
         let result = client.request(

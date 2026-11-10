@@ -173,6 +173,10 @@ exclude = ["node_modules", "tests/fixtures/*"]
 [format]
 indent = 4
 width = 100
+
+[[per-file-format]]
+files = "generated/*.json"
+indent = 2
 ```
 
 Each file takes the nearest config file in its folder or a parent, up to the repository root, so

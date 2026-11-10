@@ -69,6 +69,91 @@ const UGLY: &str = "{\"a\":[1,2], // c\n\"b\":{\"c\":null}}";
 const PRETTY: &str = "{\n  \"a\": [1, 2], // c\n  \"b\": { \"c\": null }\n}\n";
 
 #[test]
+fn per_file_format_folds_matching_fields_in_order_relative_to_the_config() {
+    let dir = workdir(&[(
+        "project/jsonvet.toml",
+        "per-file-format = [\n\
+           { files = \"*.json5\", indent = 4, width = 1, normalize-json5 = true, bracket-spacing = false },\n\
+           { files = \"wide.json5\", width = 100, normalize-json5 = false, bracket-spacing = true },\n\
+           { files = \"compact.json5\", width = 100 },\n\
+         ]\n\
+         [format]\nindent = 2\nwidth = 80\n",
+    )]);
+    let input = "{'a':1,'b':2}";
+    for (name, expected) in [
+        ("project/a.json5", "{\n    a: 1,\n    b: 2,\n}\n"),
+        ("project/wide.json5", "{ 'a': 1, 'b': 2 }\n"),
+        ("project/compact.json5", "{a: 1, b: 2}\n"),
+        ("project/plain.json", "{ 'a': 1, 'b': 2 }\n"),
+        ("outside.json5", "{ 'a': 1, 'b': 2 }\n"),
+    ] {
+        assert_eq!(
+            run(
+                &dir,
+                &[
+                    "fmt",
+                    "--config",
+                    "project/jsonvet.toml",
+                    "--stdin-filename",
+                    name,
+                    "-"
+                ],
+                input
+            ),
+            (0, expected.to_owned(), String::new()),
+            "{name}"
+        );
+    }
+    assert_eq!(
+        run(
+            &dir,
+            &[
+                "fmt",
+                "--no-config",
+                "--stdin-filename",
+                "project/a.json5",
+                "-"
+            ],
+            input
+        ),
+        (0, "{ 'a': 1, 'b': 2 }\n".to_owned(), String::new())
+    );
+}
+
+#[test]
+fn per_file_format_in_pyproject_applies_to_file_writes_and_check() {
+    let dir = workdir(&[
+        (
+            "pyproject.toml",
+            "[tool.jsonvet]\nper-file-format = [{ files = \"sub/*.json\", indent = \"tab\", width = 1 }]\n",
+        ),
+        ("sub/a.json", "{\"a\":1}"),
+    ]);
+    assert_eq!(
+        run(&dir, &["fmt", "sub/a.json"], ""),
+        (0, String::new(), String::new())
+    );
+    assert_eq!(read(&dir, "sub/a.json"), "{\n\t\"a\": 1\n}\n");
+    assert_eq!(run(&dir, &["fmt", "--check", "sub/a.json"], "").0, 0);
+}
+
+#[test]
+fn user_per_file_format_globs_use_the_working_directory_and_yield_to_editorconfig() {
+    let dir = workdir(&[(
+        ".config/jsonvet/jsonvet.toml",
+        "per-file-format = [{ files = \"sub/*.json\", indent = 4, width = 1, bracket-spacing = false }]\n",
+    )]);
+    let args = ["fmt", "--stdin-filename", "sub/a.json", "-"];
+    assert_eq!(run(&dir, &args, "{\"a\":1}").1, "{\n    \"a\": 1\n}\n");
+    fs::write(
+        dir.join(".editorconfig"),
+        "root = true\n[*]\nindent_style = space\nindent_size = 3\n",
+    )
+    .expect("write editorconfig");
+    assert_eq!(run(&dir, &args, "{\"a\":1}").1, "{\n   \"a\": 1\n}\n");
+}
+
+#[test]
 fn fmt_rewrites_files_in_place_and_leaves_no_temporary_file() {
     let dir = workdir(&[
         ("a.json", UGLY),
@@ -313,6 +398,42 @@ fn normalize_json5_comes_from_the_format_table() {
 #[test]
 fn a_bad_format_table_is_a_usage_error() {
     for (toml, message) in [
+        (
+            "per-file-format = 1",
+            "`per-file-format` must be an array of tables",
+        ),
+        (
+            "per-file-format = [1]",
+            "each `per-file-format` entry must be a table",
+        ),
+        (
+            "per-file-format = [{ indent = 4 }]",
+            "each `per-file-format` entry needs a `files` string",
+        ),
+        (
+            "per-file-format = [{ files = 1 }]",
+            "each `per-file-format` entry needs a `files` string",
+        ),
+        (
+            "per-file-format = [{ files = \"*.json\", widht = 80 }]",
+            "unknown key `widht` (did you mean `width`?)",
+        ),
+        (
+            "per-file-format = [{ files = \"*.json\", width = 0 }]",
+            "`format.width` must be a whole number of 1 or more",
+        ),
+        (
+            "per-file-format = [{ files = \"*.json\", indent = -1 }]",
+            "`format.indent` must be",
+        ),
+        (
+            "per-file-format = [{ files = \"*.json\", normalize-json5 = 1 }]",
+            "`format.normalize-json5` must be true or false",
+        ),
+        (
+            "per-file-format = [{ files = \"*.json\", bracket-spacing = 1 }]",
+            "`format.bracket-spacing` must be true or false",
+        ),
         (
             "[format]\nwidth = 0\n",
             "`format.width` must be a whole number of 1 or more",

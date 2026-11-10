@@ -139,6 +139,7 @@ pub(crate) struct Settings {
     pub(crate) schemas: Vec<SchemaPattern>,
     /// The `[format]` table of a config file.
     pub(crate) format: FormatSettings,
+    pub(crate) per_file_format: Vec<FormatPattern>,
     /// Whether these come from the user's own config file, which sits below `.editorconfig` for
     /// layout, rather than from the project's or one named with `--config`.
     pub(crate) user: bool,
@@ -151,6 +152,25 @@ pub(crate) struct FormatSettings {
     pub(crate) width: Option<usize>,
     pub(crate) normalize_json5: Option<bool>,
     pub(crate) bracket_spacing: Option<bool>,
+}
+
+impl FormatSettings {
+    fn overridden_by(self, later: Self) -> Self {
+        Self {
+            indent: later.indent.or(self.indent),
+            width: later.width.or(self.width),
+            normalize_json5: later.normalize_json5.or(self.normalize_json5),
+            bracket_spacing: later.bracket_spacing.or(self.bracket_spacing),
+        }
+    }
+}
+
+/// Formatting overrides for files matching a glob relative to the config file's folder.
+#[derive(Clone, Debug)]
+pub(crate) struct FormatPattern {
+    files: Glob,
+    base: Option<String>,
+    format: FormatSettings,
 }
 
 /// A schema for the files matching a glob, from a config file.
@@ -175,13 +195,20 @@ impl Settings {
         self.rules.extend(later.rules);
         self.exclude.extend(later.exclude);
         self.schemas.extend(later.schemas);
-        self.format = FormatSettings {
-            indent: later.format.indent.or(self.format.indent),
-            width: later.format.width.or(self.format.width),
-            normalize_json5: later.format.normalize_json5.or(self.format.normalize_json5),
-            bracket_spacing: later.format.bracket_spacing.or(self.format.bracket_spacing),
-        };
+        self.format = self.format.overridden_by(later.format);
+        self.per_file_format.extend(later.per_file_format);
         self
+    }
+
+    /// The `[format]` defaults followed by each matching override in file order.
+    pub(crate) fn format_for(&self, path: &str) -> FormatSettings {
+        let mut located = Located::new(path);
+        self.per_file_format
+            .iter()
+            .filter(|entry| located.matches(Some(&entry.files), entry.base.as_deref()))
+            .fold(self.format, |format, entry| {
+                format.overridden_by(entry.format)
+            })
     }
 
     /// The schema the config file names for `path`, if any: the last matching entry wins, as
@@ -493,6 +520,9 @@ impl Resolver {
                 for pattern in &mut own.rules {
                     pattern.base = Some(cwd.clone());
                 }
+                for pattern in &mut own.per_file_format {
+                    pattern.base = Some(cwd.clone());
+                }
                 for (_, base) in &mut own.exclude {
                     base.clone_from(&cwd);
                 }
@@ -734,6 +764,12 @@ pub(crate) fn load_str(
                     per_file.push(rule_entry(entry, base.clone(), &at)?);
                 }
             }
+            ("per-file-format", DeValue::Array(entries)) => {
+                for entry in entries {
+                    let pattern = format_entry(entry, base.clone(), &at)?;
+                    settings.per_file_format.push(pattern);
+                }
+            }
             ("dialects", DeValue::Array(entries)) => {
                 for entry in entries {
                     let mut pattern = dialect_entry(entry).map_err(|(offset, e)| at(offset, &e))?;
@@ -754,9 +790,8 @@ pub(crate) fn load_str(
             }
             ("schemas", DeValue::Array(entries)) => {
                 for entry in entries {
-                    let pattern = schema_entry(entry, folder, root);
-                    let pattern = pattern.map_err(|(offset, e)| at(offset, &e))?;
-                    if let Some(mut pattern) = pattern
+                    if let Some(mut pattern) =
+                        schema_entry(entry, folder, root).map_err(|(offset, e)| at(offset, &e))?
                         && let Some(base) = &base
                     {
                         pattern.base.clone_from(base);
@@ -764,15 +799,12 @@ pub(crate) fn load_str(
                     }
                 }
             }
-            ("format", DeValue::Table(table)) => {
-                settings.format = format_table(table, &at)?;
-            }
+            ("format", DeValue::Table(table)) => settings.format = format_table(table.iter(), &at)?,
             (
-                key @ ("exclude" | "schemas" | "rules" | "per-file-rules" | "dialects" | "format"),
+                key @ ("exclude" | "schemas" | "rules" | "per-file-rules" | "per-file-format"
+                | "dialects" | "format"),
                 _,
-            ) => {
-                return Err(at(here, &messages::text(&format!("config.{key}-type"))));
-            }
+            ) => return Err(at(here, &messages::text(&format!("config.{key}-type")))),
             (key_text, _) => {
                 let hint = messages::did_you_mean(key_text, KEYS);
                 return Err(at(
@@ -787,9 +819,10 @@ pub(crate) fn load_str(
 }
 
 /// The keys a config file may hold.
-pub(crate) const KEYS: [&str; 6] = [
+pub(crate) const KEYS: [&str; 7] = [
     "rules",
     "per-file-rules",
+    "per-file-format",
     "dialects",
     "exclude",
     "schemas",
@@ -864,9 +897,39 @@ fn rule_entry(
     })
 }
 
-/// The `[format]` table: `indent` (a number of spaces, or "tab"), `width` and `normalize-json5`.
-fn format_table(
-    table: &DeTable<'_>,
+/// One `per-file-format` entry with a required `files` glob and optional formatting keys.
+fn format_entry(
+    entry: &Spanned<DeValue<'_>>,
+    base: Option<String>,
+    at: &dyn Fn(usize, &dyn std::fmt::Display) -> String,
+) -> Result<FormatPattern, String> {
+    let array = "per-file-format";
+    let DeValue::Table(table) = entry.get_ref() else {
+        return Err(at(
+            entry.span().start,
+            &messages::fill("config.entry-type", &[("array", &array)]),
+        ));
+    };
+    let files = table.get("files");
+    let Some(pattern) = files.and_then(|value| value.get_ref().as_str()) else {
+        return Err(at(
+            files.map_or(entry.span().start, |value| value.span().start),
+            &messages::fill(
+                "config.entry-needs",
+                &[("array", &array), ("key", &"files")],
+            ),
+        ));
+    };
+    Ok(FormatPattern {
+        files: Glob::new(pattern),
+        base,
+        format: format_table(table.iter().filter(|(key, _)| key.get_ref() != "files"), at)?,
+    })
+}
+
+/// Formatting keys shared by `[format]` and `per-file-format` entries.
+fn format_table<'t>(
+    table: impl Iterator<Item = (&'t Spanned<Cow<'t, str>>, &'t Spanned<DeValue<'t>>)>,
     at: &dyn Fn(usize, &dyn std::fmt::Display) -> String,
 ) -> Result<FormatSettings, String> {
     let mut format = FormatSettings::default();

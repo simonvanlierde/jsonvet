@@ -72,15 +72,14 @@ exposing lint problems. A suppression that hides nothing can end up on another l
 The defaults are 2 spaces, 80 columns and spaces inside braces. Each setting comes from the first
 of these that sets it:
 
-1. The `[format]` table of the project's `jsonvet.toml` (or `[tool.jsonvet.format]` in
-   `pyproject.toml`), or of the file `--config` names.
+1. The project's `jsonvet.toml` (or `[tool.jsonvet]` in `pyproject.toml`), or the file `--config`
+   names: `[format]` first, then each matching `per-file-format` entry in order.
 2. `.editorconfig`.
-3. The `[format]` table of your own `jsonvet/jsonvet.toml`, which jsonvet reads only when the
+3. Your own `jsonvet/jsonvet.toml`, with the same tables, which jsonvet reads only when the
    search finds no project config file.
 4. The default.
 
-So the project decides, and `jsonvet fmt --check` gives the same answer on every machine. Your own
-config fills in only what the project and its `.editorconfig` leave open.
+So the project decides, and `jsonvet fmt --check` gives the same answer on every machine.
 
 ```toml
 [format]
@@ -88,7 +87,18 @@ indent = 4              # spaces from 0 to 16, or "tab"
 width = 100             # columns, 1 or more
 normalize-json5 = true  # JSON5 files only
 bracket-spacing = false # {"a": 1} instead of { "a": 1 }
+
+[[per-file-format]]
+files = "generated/*.json"
+indent = 2
+width = 80
 ```
+
+Each `per-file-format` entry needs a `files` glob and accepts any `[format]` keys.
+Globs are relative to the config file's folder. Each matching entry overrides only the keys it
+sets, so later entries win for those keys. In `pyproject.toml`, use
+`[[tool.jsonvet.per-file-format]]`. In your own config, globs are relative to the working directory.
+The same overrides apply in the editor and with `--stdin-filename`.
 
 `.editorconfig` is read in part: `indent_style`, `indent_size` and `max_line_length`, in sections
 with the glob `*`, `*.json` or `*.{json,jsonc}`, and `root = true`. Sections with a path in the
@@ -102,8 +112,8 @@ Each kind of file is looked up on its own:
   a file with `root = true`.
 
 So a `jsonvet.toml` setting wins over `.editorconfig` even when the `.editorconfig` is nearer.
-A setting the nearest `jsonvet.toml` leaves out falls back to `.editorconfig`, then your own
-config, then the default.
+A setting the nearest `jsonvet.toml` leaves out falls back to `.editorconfig`, then the default.
+Your own config applies only when there is no project config.
 
 The dialect of a file is picked as for a check, by `--dialect`, `dialects` in `jsonvet.toml`,
 or the extension. A `.json` file is JSON5 by default, so `normalize-json5` also applies to it.

@@ -14,6 +14,9 @@ version for a new option or output, the patch version for a fix.
 
 ### Added
 
+- `per-file-format` overrides indent, width, JSON5 normalization and bracket spacing for files
+  matching a glob. Matching entries apply after `[format]` in file order, in both `jsonvet fmt`
+  and the editor ([format settings](docs/format.md#settings)).
 - `--schema-catalog` selects schemas by file name from SchemaStore. It enables HTTPS downloads
   explicitly, caches them for seven days, and warns when an offline run uses stale cached data.
   Local schema choices still win. Only SchemaStore-hosted, self-contained schemas are supported
