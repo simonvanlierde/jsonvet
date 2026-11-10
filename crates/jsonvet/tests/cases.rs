@@ -602,6 +602,7 @@ fn a_dialect_hint_needs_the_whole_token() {
         (Dialect::Json, "[+1]"),
         (Dialect::Json, "[+NaN]"),
         (Dialect::Json, "[.5]"),
+        (Dialect::Json, "[-.1234567]"),
         (Dialect::Json, "{a: 1}"),
         (Dialect::Json, "{a-: 1}"),
         (Dialect::Jwcc, "['a']"),
