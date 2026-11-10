@@ -8,7 +8,7 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
-<!-- TODO: 3.4.0 ships with a new speed table: run `uv run scripts/bench.py --write` before the release. -->
+<!-- TODO: 3.4.0 ships with a new speed table: run the `bench` workflow on the release branch and apply its patch. -->
 
 ### Added
 

@@ -120,7 +120,8 @@ licence and has no RustSec advisory or unmaintained notice. Renovate bumps the p
   --in-diff pr.diff` does the same.
 - **Differential.** `just differential` compares jsonvet with check-json5 1.4.1 on generated
   files. CI runs 5,000 cases with a new seed each run.
-- **Speed claims.** Measure with `just bench` on a quiet machine, and report the median. To
+- **Speed claims.** Measure with `just bench` on a quiet machine, and report the median. For a
+  release's speed table, the `bench` workflow runs it on a GitHub runner instead. To
   compare two builds, write the fixtures with `just profile-files` and run `hyperfine -N -r 40`
   on both. Time a change that touches every file on the 10,000-small-file walk too.
 - **Instruction counts.** `just counts` counts the instructions of the parser
@@ -202,7 +203,9 @@ git fetch && git switch -c release/X.Y.Z origin/main
 cargo release X.Y.Z                       # dry run: shows every change
 SKIP=dco-signoff,check-versions cargo release X.Y.Z --execute   # commits "chore: release X.Y.Z"
 git commit --amend -s --no-edit           # cargo-release cannot sign off
-just bench --runs 40 --write              # a new minor only, on a quiet machine
+git push -u origin release/X.Y.Z          # a new minor only: the speed table, from bench.yml
+gh workflow run bench.yml --ref release/X.Y.Z
+gh run download <run-id> -n speed-table && git apply speed-table.patch
 git commit -s -m "docs: speed figures for X.Y" -- docs/design.md README.md
 just matrix                               # records the new version in the matrix
 git commit -s -m "docs: re-run the conformance matrix for X.Y.Z" -- docs/conformance.md README.md conformance/results
