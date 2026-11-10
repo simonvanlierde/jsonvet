@@ -25,8 +25,8 @@ protocol asks by default, or in bytes when the editor offers UTF-8. `jsonvet lsp
 options but `--help` and `--version`; `--stdio` is accepted, as some clients pass it. A file named
 `lsp` needs `./lsp`, as `fmt` does.
 
-The search for `jsonvet.toml` stops at the workspace folder that holds the file, as a run's stops
-at its working directory, unless a nearer `.git` directory stops it first. The server takes
+The search for `jsonvet.toml` stops at the workspace folder that holds the file, unless a nearer
+`.git` directory stops it first. The server takes
 the folders from the editor's `initialize` request (`workspaceFolders`, else `rootUri`) and follows the folders
 the editor adds and removes later. For a file outside those folders, including when no folder
 is open, the search stops at the file's own folder.

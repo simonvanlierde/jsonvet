@@ -882,9 +882,11 @@ struct Lines<'t> {
     text: &'t str,
     starts: Vec<usize>,
     utf8: bool,
-    /// Two offsets and their UTF-16 columns, for counting on from: problems come in order, and
-    /// so mostly do the places they point back to, so a long line is counted once for each.
+    /// Nearby offsets count on from these columns; checkpoints bound distant lookups.
     known: [Cell<(usize, usize)>; 2],
+    checkpoints: RefCell<Vec<(usize, usize)>>,
+    #[cfg(test)]
+    counted: Cell<usize>,
 }
 
 impl<'t> Lines<'t> {
@@ -904,7 +906,34 @@ impl<'t> Lines<'t> {
             starts,
             utf8,
             known,
+            checkpoints: RefCell::new(Vec::new()),
+            #[cfg(test)]
+            counted: Cell::new(0),
         }
+    }
+
+    fn count(&self, from: usize, to: usize) -> usize {
+        #[cfg(test)]
+        self.counted.set(self.counted.get() + to.abs_diff(from));
+        self.text
+            .get(from..to)
+            .map_or(0, |s| s.encode_utf16().count())
+    }
+
+    fn prefix(&self, offset: usize) -> usize {
+        let mut checkpoints = self.checkpoints.borrow_mut();
+        if checkpoints.is_empty() {
+            checkpoints.push((0, 0));
+        }
+        while let Some(&(at, before)) = checkpoints.last().filter(|(at, _)| at + 4096 <= offset) {
+            let mut next = at + 4096;
+            while !self.text.is_char_boundary(next) {
+                next += 1;
+            }
+            checkpoints.push((next, before + self.count(at, next)));
+        }
+        let (at, before) = checkpoints[checkpoints.partition_point(|&(at, _)| at <= offset) - 1];
+        before + self.count(at, offset)
     }
 
     /// The position of byte `offset`, a character boundary.
@@ -931,11 +960,11 @@ impl<'t> Lines<'t> {
                     (start, 0),
                 ),
             };
-            let units = units
-                + self
-                    .text
-                    .get(from..offset)
-                    .map_or(0, |s| s.encode_utf16().count());
+            let units = if offset - from <= 4096 {
+                units + self.count(from, offset)
+            } else {
+                self.prefix(offset) - self.prefix(start)
+            };
             slot.set((offset, units));
             units
         };
@@ -1036,6 +1065,26 @@ mod tests {
     use lsp_server::{Connection, Message, Notification, Request, RequestId};
     use serde_json::{Value, json};
     use std::path::{Path, PathBuf};
+
+    #[test]
+    fn alternating_related_positions_scan_at_most_a_chunk_each() {
+        let text = "é😀a".repeat(10_000);
+        let lines = Lines::new(&text, false);
+        for _ in 0..1_000 {
+            for offset in [text.len(), 7 * 2_000, 7 * 9_000] {
+                assert_eq!(
+                    lines.position(offset),
+                    json!({"line": 0, "character": offset / 7 * 4})
+                );
+            }
+        }
+        let bound = 2 * text.len() + 3_000 * 4_096;
+        assert!(
+            lines.counted.get() <= bound,
+            "{} > {bound}",
+            lines.counted.get()
+        );
+    }
 
     /// A folder of its own for `test`, with an empty `jsonvet.toml`, so the user's own config
     /// file never applies.
@@ -1735,14 +1784,20 @@ mod tests {
 
     #[test]
     fn columns_counted_on_from_a_known_place_match_a_count_from_the_line_start() {
-        let text = "é😀a\né😀a😀é\r😀a";
-        let lines = Lines::new(text, false);
-        let offsets: Vec<usize> = text.char_indices().map(|(at, _)| at).collect();
-        // Forward, back and forward again, as problems and the places they name come.
-        for &offset in offsets.iter().chain(offsets.iter().rev()).chain(&offsets) {
-            let start = text[..offset].rfind(['\n', '\r']).map_or(0, |at| at + 1);
-            let units = text[start..offset].encode_utf16().count();
-            assert_eq!(lines.position(offset)["character"], units, "at {offset}");
+        let long = format!("{}\r\n{}", "é😀a".repeat(3_000), "a😀é".repeat(3_000));
+        for text in ["é😀a\né😀a😀é\r😀a", long.as_str()] {
+            let lines = Lines::new(text, false);
+            let offsets: Vec<usize> = text
+                .char_indices()
+                .map(|(at, _)| at)
+                .step_by(if text.len() > 100 { 13 } else { 1 })
+                .collect();
+            // Forward, back and forward again, as problems and the places they name come.
+            for &offset in offsets.iter().chain(offsets.iter().rev()).chain(&offsets) {
+                let start = text[..offset].rfind(['\n', '\r']).map_or(0, |at| at + 1);
+                let units = text[start..offset].encode_utf16().count();
+                assert_eq!(lines.position(offset)["character"], units, "at {offset}");
+            }
         }
     }
 

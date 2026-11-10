@@ -22,8 +22,7 @@ pub fn check(text: &str, dialect: &str) -> Result<String, String> {
     let dialect = dialect.parse::<Dialect>().map_err(|e| e.to_string())?;
     let report = jsonvet::check(text, &Config::new(dialect));
     let mut out = String::from("[");
-    // Problems come in document order, and so, mostly, do their related places: each keeps its
-    // own cursor, so counting stays linear.
+    // Problems are ordered; related places may jump back across a long string.
     let (mut here, mut there) = (Utf16::default(), Utf16::default());
     for (i, problem) in report.problems().iter().enumerate() {
         let offset = problem.offset().min(text.len());
@@ -169,24 +168,52 @@ pub fn version() -> String {
     env!("CARGO_PKG_VERSION").to_owned()
 }
 
-/// A byte offset and the UTF-16 index it is at, moved forward or back from the last one asked for.
+/// A forward cursor, with checkpoints for lookups before it.
 #[derive(Default)]
 struct Utf16 {
     byte: usize,
     units: usize,
+    checkpoints: Vec<(usize, usize)>,
+    #[cfg(test)]
+    counted: usize,
 }
 
 impl Utf16 {
+    #[allow(
+        clippy::unused_self,
+        reason = "tests count bytes scanned by this cursor"
+    )]
+    fn count(&mut self, text: &str, from: usize, to: usize) -> usize {
+        #[cfg(test)]
+        {
+            self.counted += to.abs_diff(from);
+        }
+        text.get(from..to).map_or(0, |s| s.encode_utf16().count())
+    }
+
     /// The UTF-16 index of byte `offset`, a character boundary in `text`.
     fn at(&mut self, text: &str, offset: usize) -> usize {
-        let count = |from, to| {
-            text.get(from..to)
-                .map_or(0, |s: &str| s.encode_utf16().count())
-        };
         if offset >= self.byte {
-            self.units += count(self.byte, offset);
+            self.units += self.count(text, self.byte, offset);
         } else {
-            self.units -= count(offset, self.byte);
+            if self.checkpoints.is_empty() {
+                self.checkpoints.push((0, 0));
+            }
+            while let Some(&(at, before)) = self
+                .checkpoints
+                .last()
+                .filter(|(at, _)| at + 4096 <= offset)
+            {
+                let mut next = at + 4096;
+                while !text.is_char_boundary(next) {
+                    next += 1;
+                }
+                let count = self.count(text, at, next);
+                self.checkpoints.push((next, before + count));
+            }
+            let (at, before) =
+                self.checkpoints[self.checkpoints.partition_point(|&(at, _)| at <= offset) - 1];
+            return before + self.count(text, at, offset);
         }
         self.byte = offset;
         self.units
@@ -212,6 +239,33 @@ fn string(out: &mut String, s: &str) {
 #[cfg(test)]
 mod tests {
     use super::{check, fix, format, string};
+
+    #[test]
+    fn alternating_utf16_offsets_scan_at_most_a_chunk_each() {
+        let text = "é😀a".repeat(10_000);
+        let mut index = super::Utf16::default();
+        let (first, second) = (7 * 2_000, 7 * 9_000);
+        for _ in 0..1_000 {
+            for offset in [first, second] {
+                assert_eq!(index.at(&text, offset), offset / 7 * 4);
+            }
+        }
+        let bound = 2 * text.len() + 2_000 * 4_096;
+        assert!(index.counted <= bound, "{} > {bound}", index.counted);
+    }
+
+    #[test]
+    fn utf16_checkpoints_match_a_full_count_in_any_order() {
+        let text = "é😀a\r\n".repeat(1_000);
+        let mut index = super::Utf16::default();
+        let offsets: Vec<_> = text.char_indices().map(|(at, _)| at).step_by(83).collect();
+        for offset in offsets.into_iter().rev() {
+            assert_eq!(
+                index.at(&text, offset),
+                text[..offset].encode_utf16().count()
+            );
+        }
+    }
 
     #[test]
     fn duplicate_key_in_json5() {
