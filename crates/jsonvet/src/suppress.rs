@@ -817,6 +817,9 @@ mod tests {
         // `/*/`. One at the start of the line is skipped before the line starts.
         assert_eq!(hidden("x: 'one\\"), Vec::<String>::new());
         assert_eq!(hidden("x: /*/ ' */ 'one\\"), Vec::<String>::new());
+        // A key longer than all the text before its line.
+        let key = "k".repeat(60);
+        assert_eq!(hidden(&format!("{key}: 'one\\")), Vec::<String>::new());
         // A block comment that goes on past the line ends the line there.
         let text = "{a: 1,\n// jsonvet-ignore duplicate-key\na: 2, /* one\ntwo */ b: 3}";
         assert_eq!(problems(text, &config), Vec::<String>::new());
