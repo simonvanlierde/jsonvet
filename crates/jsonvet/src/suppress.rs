@@ -805,6 +805,26 @@ mod tests {
     }
 
     #[test]
+    fn a_continued_string_is_found_past_keys_comments_and_slashes() {
+        let config = Config::new(Dialect::Json5).rule(Rule::InvalidCodePoint, Severity::Error);
+        let hidden = |line: &str| {
+            let text = format!(
+                "{{a: 1,\n// jsonvet-ignore invalid-code-point\n{line}\ntwo \\ud800', b: 2}}"
+            );
+            problems(&text, &config)
+        };
+        // An unquoted key, then a block comment that holds a quote and starts with `/*/`.
+        assert_eq!(hidden("x: 'one\\"), Vec::<String>::new());
+        assert_eq!(hidden("/*/ ' */ x: 'one\\"), Vec::<String>::new());
+        // A block comment that goes on past the line ends the line there.
+        let text = "{a: 1,\n// jsonvet-ignore duplicate-key\na: 2, /* one\ntwo */ b: 3}";
+        assert_eq!(problems(text, &config), Vec::<String>::new());
+        // A lone slash is a syntax error, and the line ends.
+        let text = "{a: 1,\n// jsonvet-ignore duplicate-key\na: 2 / 3}";
+        assert_eq!(problems(text, &config).len(), 1);
+    }
+
+    #[test]
     fn a_fix_keeps_a_duplicate_on_a_suppressed_line() {
         // Dropping the first copy would move the suppression onto the second one's line.
         let text = "{\n// jsonvet-ignore invalid-number\n\"a\": 1e999,\n\"a\": 1e999\n}";
@@ -813,6 +833,9 @@ mod tests {
         // Deleting a copy and the line break after it would join the line onto the comment's.
         let text = "{\"x\": 0, /* jsonvet-ignore invalid-number */ \"a\": 1,\n\"a\": 1e999\n}";
         assert!(fix(text, &config, true).is_none());
+        // A copy after the only suppression's line is dropped too.
+        let text = "{\n// jsonvet-ignore invalid-number\n\"b\": 1e999,\n\"a\": 1,\n\"a\": 2\n}";
+        assert!(fix(text, &config, true).is_some());
         // A copy away from any suppression's line is still dropped.
         let text = "{\"a\": 1,\n// jsonvet-ignore invalid-number\n\"b\": 1e999,\n\"a\": 2\n}";
         let fixed = fix(text, &config, true).expect("a fix");

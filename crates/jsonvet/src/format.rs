@@ -266,8 +266,9 @@ fn suppressed<'a>(
         .filter(|p| crate::suppress::hideable(p.rule()))
         .map(|p| (token(p), p.rule().id(), None))
         .chain(hidden.iter().map(|(comment, p)| {
-            let by = suppressions.partition_point(|&start| start < *comment);
-            (token(p), p.rule().id(), Some(by))
+            // Each comment that hides a problem names a rule it can hide, so it is listed.
+            let by = suppressions.binary_search(comment).ok();
+            (token(p), p.rule().id(), by)
         }))
         .collect();
     list.sort_unstable();
@@ -276,11 +277,16 @@ fn suppressed<'a>(
 
 #[cfg(test)]
 mod tests {
+    use super::suppressed;
+    use crate::parse::check_ending;
     use crate::{Config, Dialect, FormatOptions, Rule, Severity, format};
 
+    fn numbers() -> Config {
+        Config::new(Dialect::Json5).rule(Rule::InvalidNumber, Severity::Error)
+    }
+
     fn formats(text: &str) -> bool {
-        let config = Config::new(Dialect::Json5).rule(Rule::InvalidNumber, Severity::Error);
-        format(text, &config, &FormatOptions::default()).is_ok()
+        format(text, &numbers(), &FormatOptions::default()).is_ok()
     }
 
     #[test]
@@ -290,6 +296,31 @@ mod tests {
         ));
         // A suppression that hides nothing may cover other tokens after formatting.
         assert!(formats("[1,\n// jsonvet-ignore duplicate-key\n2, 3]"));
+    }
+
+    #[test]
+    fn added_commas_do_not_shift_the_hidden_tokens() {
+        // Normalizing puts a trailing comma in the array, before the hidden duplicate.
+        let text = "{x: [1111, 2222, 3333, 4444, 5555],\n// jsonvet-ignore duplicate-key\nx: 2}";
+        let options = FormatOptions {
+            width: 20,
+            normalize_json5: true,
+            ..FormatOptions::default()
+        };
+        let out = format(text, &Config::new(Dialect::Json5), &options).expect("formatted");
+        assert!(out.contains("5555,\n  ],"), "{out}");
+    }
+
+    #[test]
+    fn equal_counts_with_other_hidden_tokens_differ() {
+        let list = |text| {
+            let (problems, _, hidden) = check_ending(text, &numbers());
+            suppressed(text, Dialect::Json5, &problems, &hidden)
+        };
+        let first = list("[\n// jsonvet-ignore invalid-number\n1e999,\n2e999\n]");
+        let second = list("[\n1e999,\n// jsonvet-ignore invalid-number\n2e999\n]");
+        assert_eq!(first.len(), second.len());
+        assert_ne!(first, second);
     }
 }
 

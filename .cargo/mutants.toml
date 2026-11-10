@@ -148,4 +148,9 @@ exclude_re = [
   # A single quote or JSON5-only Unicode space outside JSON5 is a syntax error. The check stops
   # before any suppression decision that depends on skipping it, and the formatter refuses it.
   "suppress.rs:\\d+:(22|28): replace match guard json5 with true in next_line$",
+  # A string that closes at the line's end gives that end either way.
+  "suppress.rs:\\d+:26: replace > with >= in target_end$",
+  # A member or its comma never starts at a line's end, the line break itself, so the search
+  # finds the same suppressed line.
+  "fixes.rs:\\d+:55: replace < with <= in duplicate_groups$",
 ]
