@@ -251,6 +251,11 @@ pub fn run_with(
         let chunk;
         (chunk, rest) = rest.split_at(texts.len());
         let selected = catalog::select(&mut catalog, chunk, &texts, &shown, &schemas)?;
+        if let Some(catalog) = &mut catalog {
+            for note in catalog.take_notes() {
+                printer.note(note);
+            }
+        }
         let chunk = selected.as_deref().unwrap_or(chunk);
         let known = if args.fix {
             fix_chunk(

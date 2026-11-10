@@ -137,7 +137,7 @@ minified file is not copied whole for each problem on its one line.
 ### `--schema`
 
 `schema` is a rule like the others, but it belongs to the CLI: the library knows no schemas. jsonschema
-runs with default features off, so nothing is fetched, and every build has it
+runs with external references disabled in every build. Only `--schema-catalog` enables HTTPS downloads and a local cache
 ([0006](decisions/0006-offline-json-schema-in-every-build.md)). Schemas a project picks stay inside
 it and quote nothing in their errors
 ([0012](decisions/0012-schema-paths-stay-in-the-project.md)).

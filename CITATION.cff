@@ -3,7 +3,7 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 type: software
 title: "jsonvet"
-abstract: "A linter and formatter for JSON, I-JSON, JSONC, JWCC (HuJSON), JSON5 and JSON Lines. It reports syntax errors, duplicate keys and JSON Schema errors at their exact positions. Rules can be set per file or suppressed in comments. It applies safe fixes, formats files without losing comments and writes text, SARIF or JSON diagnostics. Schema validation uses local files. The language server offers diagnostics, quick fixes and formatting in VS Code and other editors. A playground runs the same parser in the browser as WebAssembly. It ships as a pre-commit hook, PyPI wheels, Rust crates, release binaries and a GitHub Action. The repository compares JSON-family parsers in a conformance matrix."
+abstract: "A linter and formatter for JSON, I-JSON, JSONC, JWCC (HuJSON), JSON5 and JSON Lines. It reports syntax errors, duplicate keys and JSON Schema errors at their exact positions. Rules can be set per file or suppressed in comments. It applies safe fixes, formats files without losing comments and writes text, SARIF or JSON diagnostics. Schema validation uses local files or an opt-in SchemaStore catalog. Runs stay offline unless the catalog is enabled. The language server offers diagnostics, quick fixes and formatting in VS Code and other editors. A playground runs the same parser in the browser as WebAssembly. It ships as a pre-commit hook, PyPI wheels, Rust crates, release binaries and a GitHub Action. The repository compares JSON-family parsers in a conformance matrix."
 authors:
   - family-names: "van Lierde"
     given-names: "Simon"

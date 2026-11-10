@@ -213,8 +213,8 @@ impl Schemas {
 }
 
 /// The local schema path a file's `$schema` names, and the offset of its value, found as the
-/// file's events come in: a string member of the top-level object that is no URL. jsonvet fetches
-/// no schemas, so a URL names none. It keeps no event, so the file's memory stays its text.
+/// file's events come in: a string member of the top-level object that is no URL. Document URLs
+/// are never followed. It keeps no event, so the file's memory stays its text.
 #[derive(Default)]
 struct OwnSchema {
     /// How many levels under the top-level object the events are, once it opens.

@@ -430,10 +430,12 @@ impl<W: Write> Printer<W> {
         match &self.sink {
             Sink::Text { .. } => {}
             Sink::Json { started } => {
-                if !started {
+                if *started {
+                    writeln!(self.out)?;
+                } else {
                     self.out.write_all(json::start().as_bytes())?;
                 }
-                write!(self.out, "\n]")?;
+                write!(self.out, "]")?;
                 if !self.notes.is_empty() {
                     let notes = self
                         .notes

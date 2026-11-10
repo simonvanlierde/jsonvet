@@ -12,6 +12,10 @@ version for a new option or output, the patch version for a fix.
 
 ### Added
 
+- `--schema-catalog` selects schemas by file name from SchemaStore. It enables HTTPS downloads
+  explicitly, caches them for seven days, and warns when an offline run uses stale cached data.
+  Local schema choices still win. Only SchemaStore-hosted, self-contained schemas are supported
+  ([catalog](docs/usage.md#schemastore-catalog)).
 - In JSONC, JWCC and JSON5, a comment such as `// jsonvet-ignore duplicate-key` turns a rule off
   for the next line that starts with a token. Name more rules with commas, and give a reason after
   ` -- `: `// jsonvet-ignore duplicate-key -- kept for the old client`. The new

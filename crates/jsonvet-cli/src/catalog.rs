@@ -1,6 +1,5 @@
 //! Explicit SchemaStore fetching; documents and repository settings never enable it.
 
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -58,7 +57,6 @@ struct Entry {
 pub(crate) struct Catalog {
     cache: PathBuf,
     entries: Option<Vec<Entry>>,
-    loaded: HashMap<String, Arc<Schema>>,
     notes: Vec<String>,
 }
 
@@ -88,7 +86,6 @@ impl Catalog {
         Ok(Self {
             cache: base.join("jsonvet/schemastore"),
             entries: None,
-            loaded: HashMap::new(),
             notes: Vec::new(),
         })
     }
@@ -131,9 +128,6 @@ impl Catalog {
         };
         let url = &entry.url;
         allowed(url)?;
-        if let Some(schema) = self.loaded.get(url) {
-            return Ok(Some(Arc::clone(schema)));
-        }
         let schema = schemas.get_catalog(url, |admit| {
             resource(
                 &self.cache,
@@ -144,7 +138,6 @@ impl Catalog {
                 &mut self.notes,
             )
         })?;
-        self.loaded.insert(url.clone(), Arc::clone(&schema));
         Ok(Some(schema))
     }
 }
@@ -489,7 +482,6 @@ mod tests {
         let mut catalog = Catalog {
             cache: cache.clone(),
             entries: None,
-            loaded: HashMap::new(),
             notes: Vec::new(),
         };
         let calls = AtomicU64::new(0);

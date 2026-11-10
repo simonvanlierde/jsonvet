@@ -9,8 +9,6 @@ a promise, and none of it has a date. Released work is in [CHANGELOG.md](CHANGEL
 
 - **4.0: drop the check-json5 compatibility.** The `check-json5` binary and package, `--strict`
   and the old hook id go away. The 3.x releases keep them.
-- **Schemas from a catalog, opt-in only:** look up a schema for a file in a SchemaStore-style
-  catalog, with a local cache. jsonvet stays offline unless you turn this on.
 
 ## Not planned
 
