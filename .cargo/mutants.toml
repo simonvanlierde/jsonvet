@@ -33,8 +33,9 @@ exclude_re = [
   "parse.rs:.* replace \\| with \\^ in push_wtf8",
   "parse.rs:\\d+:(11|23|36|46): replace \\| with \\^ in string_stops$",
   "path.rs:.* replace \\| with \\^ in decode",
-  # A Windows-only branch.
+  # Windows-only branches.
   "sarif.rs:\\d+:45: replace == with != in uri",
+  "jsonvet-cli/src/lib.rs:\\d+:8: delete ! in open_regular$",
   # Loop guards the body always stops first, and star backtracking that only retries more.
   "path.rs:\\d+:16: replace > with >= in bounded",
   "glob.rs:\\d+:28: replace \\+ with \\* in wildcard",
