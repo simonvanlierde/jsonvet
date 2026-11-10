@@ -60,8 +60,11 @@ version for a new option or output, the patch version for a fix.
 - Runtime notes stay inside JSON and SARIF reports when `--fix -` writes diagnostics to
   standard error, so missing schemas and stale catalog caches cannot corrupt the report.
 - The language server checks open documents again when a local schema changes, and updates
-  schema watches as documents open, change and close. Config searches and schema paths stay
-  inside each workspace folder; a file outside the workspace uses its own folder.
+  schema watches as documents open, change and close. Missing schemas stay watched through
+  deletion and recreation. Config searches and schema paths stay inside each workspace folder;
+  a file outside the workspace uses its own folder.
+- Editors without lazy code-action resolution list quick fixes without reparsing the document
+  for each one. Selecting many playground fixes also avoids repeated searches through the selection.
 - Duplicate-key diagnostics with distant first occurrences no longer repeatedly scan the same
   text for UTF-16 positions in the playground and language server.
 - The playground's dialect controls and installation snippets fit narrow screens without
