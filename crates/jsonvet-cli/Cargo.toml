@@ -53,6 +53,10 @@ ignore = "0.4.33"
 annotate-snippets = "0.12.17"
 memchr = "2.8.3"
 
+# O_NONBLOCK, so opening a FIFO does not wait for a writer. getrandom already builds it.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2.191"
+
 # Instruction counts under valgrind, not a libtest harness: benches/schema.rs.
 [[bench]]
 name = "schema"

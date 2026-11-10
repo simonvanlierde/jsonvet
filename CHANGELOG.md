@@ -40,6 +40,9 @@ version for a new option or output, the patch version for a fix.
 
 ### Fixed
 
+- A file swapped for a FIFO between jsonvet's check of its type and the read no longer hangs the
+  run: the type is checked on the open file, and on Unix opening a FIFO does not wait for a
+  writer. This holds for checked files, `jsonvet.toml` and `--schema` files.
 - Rule settings reject `unreadable` with the same explanation as `schema`: both are always errors.
 - `--fix --unsafe-fixes` takes the line ending from the text it keeps, not from a dropped duplicate
   member, so it gives the same text as the playground's one-at-a-time fixes.

@@ -924,12 +924,32 @@ fn print_file(
     Ok(())
 }
 
+/// `path` opened for reading, with its size, if it is a regular file or a symlink to one. The
+/// type is checked on the open file, not the path, so a path swapped for a FIFO or a device after
+/// a check is still refused, and on Unix opening a FIFO does not wait for a writer.
+fn open_regular(path: &Path) -> io::Result<Option<(std::fs::File, u64)>> {
+    // shortcut: elsewhere the path is checked before the open, which a swap can race; Windows
+    // has no FIFO to swap in at a file path.
+    #[cfg(not(unix))]
+    if !std::fs::metadata(path)?.is_file() {
+        return Ok(None);
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    // A regular file reads the same without blocking.
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::custom_flags(&mut options, libc::O_NONBLOCK);
+    let file = options.open(path)?;
+    let meta = file.metadata()?;
+    Ok(meta.is_file().then_some((file, meta.len())))
+}
+
 /// A file's text, or why it has none. Only regular files are read, so a FIFO cannot hang the
 /// run and a device such as `/dev/zero` cannot fill memory. A symlink to a regular file is
 /// followed, as `cat` would.
 fn read(path: &Path) -> Result<String, String> {
-    let read = std::fs::metadata(path).and_then(|meta| {
-        if meta.is_file() {
+    let read = open_regular(path).and_then(|opened| {
+        if let Some((file, len)) = opened {
             // The size is known already: `fs::read`, and `File`'s own `read_to_end`, would ask
             // the system for it again. `take` reads to the end without asking. A file too big for
             // memory fails alone, as an error, rather than aborting the run, but only where an
@@ -937,9 +957,8 @@ fn read(path: &Path) -> Result<String, String> {
             // (`vm.overcommit_memory=0`). Under mode 1 or on macOS it succeeds and the read can
             // fill memory. NOTE: no cap against available memory, as std has no portable query.
             let mut bytes = Vec::new();
-            bytes.try_reserve_exact(usize::try_from(meta.len()).unwrap_or(usize::MAX))?;
-            std::fs::File::open(path)?
-                .take(u64::MAX)
+            bytes.try_reserve_exact(usize::try_from(len).unwrap_or(usize::MAX))?;
+            file.take(u64::MAX)
                 .read_to_end(&mut bytes)
                 .map(|_| Some(bytes))
         } else {
@@ -1005,14 +1024,12 @@ pub(crate) const MAX_SCHEMA_BYTES: u64 = 64 << 20;
 /// file, or a symlink to one, is opened, so a FIFO cannot hang the run and `/dev/zero` cannot
 /// fill memory.
 pub(crate) fn read_small(path: &Path, max: u64) -> io::Result<String> {
-    if !std::fs::metadata(path)?.is_file() {
+    let Some((file, _)) = open_regular(path)? else {
         return Err(io::Error::other(messages::text("read.not-regular")));
-    }
+    };
     let mut text = String::new();
     // The cap holds even for a file that grows after the check.
-    std::fs::File::open(path)?
-        .take(max + 1)
-        .read_to_string(&mut text)?;
+    file.take(max + 1).read_to_string(&mut text)?;
     if text.len() as u64 > max {
         let mb = max >> 20;
         return Err(io::Error::other(messages::fill(
@@ -1069,6 +1086,34 @@ mod tests {
     };
     use crate::schema::select::Job;
     use std::sync::Arc;
+
+    /// The type is checked on the opened file, and opening a FIFO with no writer returns at
+    /// once, so a path swapped for one between a check and the open cannot hang the run.
+    #[cfg(unix)]
+    #[test]
+    fn opening_a_fifo_does_not_wait_for_a_writer() {
+        let dir = std::env::temp_dir().join(format!("jsonvet-fifo-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a temporary directory");
+        let fifo = dir.join("fifo.json");
+        let made = std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .expect("run mkfifo");
+        assert!(made.success());
+        let (send, receive) = std::sync::mpsc::channel();
+        let path = fifo.clone();
+        std::thread::spawn(move || {
+            let opened = super::open_regular(&path).map(|o| o.is_none());
+            let _ = send.send(opened.map_err(|e| e.to_string()));
+        });
+        let refused = receive.recv_timeout(std::time::Duration::from_secs(5));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(
+            refused,
+            Ok(Ok(true)),
+            "the open waited, or did not refuse the FIFO"
+        );
+    }
 
     /// A schema that takes any value, in a fresh folder named for `test`, which also holds an
     /// empty folder `x`.

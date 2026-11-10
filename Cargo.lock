@@ -762,6 +762,7 @@ dependencies = [
  "jsonschema-value",
  "jsonvet",
  "lexopt",
+ "libc",
  "lsp-server",
  "memchr",
  "peak_alloc",
