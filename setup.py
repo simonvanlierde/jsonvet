@@ -13,7 +13,7 @@ from setuptools import setup  # ty: ignore[unresolved-import]
 setup(
     name="pre_commit_placeholder_package",
     version="0.0.0",
-    install_requires=["jsonvet==3.3.1"],
+    install_requires=["jsonvet==3.4.0"],
     packages=[],
     py_modules=[],
 )

@@ -8,6 +8,8 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-11-10
+
 <!-- TODO: 3.4.0 ships with a new speed table: run the `bench` workflow on the release branch and apply its patch. -->
 
 ### Added
@@ -738,7 +740,8 @@ hook's output, or imports `pre_commit_hooks.check_json5`, needs a change (see Ch
 
 - Renamed from `pre-commit-check-json5` to `check-json5`.
 
-[Unreleased]: https://github.com/simonvanlierde/jsonvet/compare/v3.3.1...HEAD
+[Unreleased]: https://github.com/simonvanlierde/jsonvet/compare/v3.4.0...HEAD
+[3.4.0]: https://github.com/simonvanlierde/jsonvet/compare/v3.3.1...v3.4.0
 [3.3.1]: https://github.com/simonvanlierde/jsonvet/compare/v3.3.0...v3.3.1
 [3.3.0]: https://github.com/simonvanlierde/jsonvet/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/simonvanlierde/jsonvet/compare/v3.1.1...v3.2.0
