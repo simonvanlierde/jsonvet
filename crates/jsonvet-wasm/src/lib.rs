@@ -131,7 +131,7 @@ pub fn fix(text: &str, dialect: &str, unsafe_fixes: bool, only: &[u32]) -> Resul
 /// # Errors
 ///
 /// The reason nothing was formatted: an unknown dialect, a syntax error (as `line:column message`),
-/// or a text whose output would be too large.
+/// a text whose output would be too large, or a layout that would change a suppression's targets.
 #[wasm_bindgen]
 pub fn format(
     text: &str,

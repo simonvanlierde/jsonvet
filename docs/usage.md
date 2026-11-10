@@ -338,8 +338,8 @@ Text output shows no rule for it; SARIF and JSON output file it under `unreadabl
 
 A value the file's JSON Schema rejects, such as a missing required key or a string where the
 schema wants a number. The schema comes from `--schema`, the config file's `schemas` or a local
-`$schema` in the file. Always an error: `--error`, `--warn`, `--ignore` and settings files do not
-take this rule.
+`$schema` in the file, then falls back to SchemaStore when `--schema-catalog` is on.
+Always an error: `--error`, `--warn`, `--ignore` and settings files do not take this rule.
 
 ## Globs
 
