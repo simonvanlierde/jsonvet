@@ -1,8 +1,60 @@
 //! `jsonvet::fix`: what each fix does in each dialect, that fixing twice equals fixing once, and
 //! that strict JSON keeps its value.
 
-use jsonvet::{Config, Dialect, Fix, Rule, Severity, check, fix, report, try_fix};
+use jsonvet::{Config, Dialect, Fix, Rule, Severity, check, fix, report, try_fix, try_fix_at};
 use proptest::prelude::*;
+
+#[test]
+fn each_fix_exposes_the_same_edits_as_selecting_it_alone() {
+    for (dialect, text) in [
+        (Dialect::Json, "\u{feff}[1,]\r\n"),
+        (Dialect::JsonLines, "\u{feff}{\"a\":1}\r\n{\"a\":2}"),
+        (Dialect::Json5, "{\"a\":[1,\r\n2],\n\"a\":3,\r\"b\":0\n}"),
+        (
+            Dialect::Json5,
+            "{a:1,\n// jsonvet-ignore duplicate-key\na:2,\r\nb:0}\n",
+        ),
+    ] {
+        let config = Config::new(dialect);
+        for unsafe_fixes in [false, true] {
+            let fixed = try_fix(text, &config, unsafe_fixes).expect("fixes");
+            for fix in fixed.fixes {
+                let expected = try_fix_at(text, &config, unsafe_fixes, Some(&[fix.offset]))
+                    .expect("selected fix");
+                let mut actual = text.to_owned();
+                for (range, insert) in fix.edits.into_iter().rev() {
+                    assert_ne!(&text[range.clone()], insert);
+                    actual.replace_range(range, insert);
+                }
+                assert_eq!(actual, expected.text, "{dialect} {:?}", fix.rule);
+            }
+        }
+    }
+}
+
+#[test]
+fn selected_fix_offsets_allow_any_order_and_repeated_values() {
+    let text = "[[1,],[2,],[3,]]";
+    let config = Config::new(Dialect::Json);
+    let all = try_fix(text, &config, false).expect("fixes");
+    let mut offsets: Vec<_> = all.fixes.iter().rev().map(|fix| fix.offset).collect();
+    offsets.extend(offsets.clone());
+    offsets.push(usize::MAX);
+    assert_eq!(
+        try_fix_at(text, &config, false, Some(&offsets))
+            .expect("selected fixes")
+            .text,
+        all.text
+    );
+    let first = all.fixes[0].offset;
+    assert_eq!(
+        try_fix_at(text, &config, false, Some(&[first, first, usize::MAX]))
+            .expect("one fix")
+            .fixes
+            .len(),
+        1
+    );
+}
 
 fn safe(text: &str, dialect: Dialect) -> Option<String> {
     fix(text, &Config::new(dialect), false).map(|f| f.text)

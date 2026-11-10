@@ -596,14 +596,11 @@ fn code_actions(
     let Ok(all) = jsonvet::try_fix(text, &config, false) else {
         return json!([]);
     };
-    let action = |title: String, kind: &str, offset: Option<usize>, fixed: Option<&str>| {
+    let target = (uri, document.version.as_ref().filter(|_| client.versioned));
+    let action = |title: String, kind: &str, offset: Option<usize>, edit: Option<Value>| {
         let mut action = json!({ "title": title, "kind": kind });
-        if let Some(fixed) = fixed {
-            action["edit"] = workspace_edit(
-                (uri, document.version.as_ref().filter(|_| client.versioned)),
-                lines,
-                fixed,
-            );
+        if let Some(edit) = edit {
+            action["edit"] = edit;
         } else {
             action["data"] = json!({ "uri": uri, "revision": document.revision });
             if let Some(offset) = offset {
@@ -628,14 +625,6 @@ fn code_actions(
             fix.offset <= range.end && end >= range.start
         };
         for fix in all.fixes.iter().filter(in_range) {
-            let one = if client.resolve {
-                None
-            } else {
-                let Ok(one) = jsonvet::try_fix_at(text, &config, false, Some(&[fix.offset])) else {
-                    continue;
-                };
-                Some(one)
-            };
             let id = format!("lsp.fix.{}", fix.rule.id());
             let title = match messages::text(&id) {
                 "" => messages::fill("lsp.fix", &[("rule", &fix.rule.id())]),
@@ -645,7 +634,8 @@ fn code_actions(
                 title,
                 "quickfix",
                 Some(fix.offset),
-                one.as_ref().map(|one| one.text.as_str()),
+                (!client.resolve)
+                    .then(|| workspace_edits(target, lines, fix.edits.iter().cloned())),
             ));
         }
     }
@@ -654,7 +644,7 @@ fn code_actions(
             messages::text("lsp.fix-all").to_owned(),
             FIX_ALL,
             None,
-            (!client.resolve).then_some(all.text.as_str()),
+            (!client.resolve).then(|| workspace_edit(target, lines, &all.text)),
         ));
     }
     Value::Array(actions)
@@ -720,7 +710,15 @@ fn resolve_action(
 }
 
 fn workspace_edit((uri, version): (&str, Option<&Value>), lines: &Lines<'_>, fixed: &str) -> Value {
-    let edits: Vec<Value> = edits(lines.text, fixed)
+    workspace_edits((uri, version), lines, edits(lines.text, fixed))
+}
+
+fn workspace_edits<'n>(
+    (uri, version): (&str, Option<&Value>),
+    lines: &Lines<'_>,
+    edits: impl IntoIterator<Item = (Range<usize>, &'n str)>,
+) -> Value {
+    let edits: Vec<Value> = edits
         .into_iter()
         .map(|(span, new)| json!({ "range": lines.span(span), "newText": new }))
         .collect();
@@ -857,6 +855,8 @@ fn edits<'n>(old: &'n str, new: &'n str) -> Vec<(Range<usize>, &'n str)> {
 
 /// The byte ranges of the tokens of `text`, as [`edits`] splits it.
 fn tokens(text: &str) -> Vec<Range<usize>> {
+    #[cfg(test)]
+    TOKENIZED_BYTES.set(TOKENIZED_BYTES.get() + text.len());
     let mut tokens: Vec<Range<usize>> = Vec::new();
     let mut joins = false;
     for (at, c) in text.char_indices() {
@@ -874,6 +874,11 @@ fn tokens(text: &str) -> Vec<Range<usize>> {
         }
     }
     tokens
+}
+
+#[cfg(test)]
+thread_local! {
+    static TOKENIZED_BYTES: Cell<usize> = const { Cell::new(0) };
 }
 
 /// A text's lines as the protocol counts them, ended by LF, CRLF or a lone CR, to turn byte
@@ -1064,7 +1069,121 @@ mod tests {
     use super::{Lines, apply, edits, path_of, serve, uri_of, watch, within};
     use lsp_server::{Connection, Message, Notification, Request, RequestId};
     use serde_json::{Value, json};
+    use std::collections::BTreeSet;
     use std::path::{Path, PathBuf};
+
+    #[test]
+    fn eager_code_actions_do_not_diff_the_document_for_each_fix() {
+        let dir = folder("eager-actions-scaling");
+        std::fs::write(
+            dir.join("jsonvet.toml"),
+            "dialects = [{ files = \"*.json\", dialect = \"json\" }]\n",
+        )
+        .expect("strict dialect");
+        let path = dir.join("a.json");
+        let uri = uri(&path);
+        let client = super::Client {
+            roots: vec![dir.clone()],
+            utf8: false,
+            versioned: false,
+            resolve: false,
+        };
+        for n in [100, 1_000] {
+            let text = format!("[{}]", vec!["[0,]"; n].join(","));
+            let document = super::Document {
+                text,
+                version: None,
+                revision: 1,
+                schemas: BTreeSet::new(),
+            };
+            let lines = Lines::new(&document.text, false);
+            super::TOKENIZED_BYTES.set(0);
+            let actions = super::code_actions(
+                (&uri, &document),
+                &path,
+                &lines,
+                0..document.text.len(),
+                &|_| true,
+                &client,
+            );
+            assert_eq!(actions.as_array().map(Vec::len), Some(n + 1));
+            eprintln!(
+                "{n} eager fixes: {} bytes tokenized",
+                super::TOKENIZED_BYTES.get()
+            );
+            let bound = 3 * document.text.len();
+            assert!(
+                super::TOKENIZED_BYTES.get() <= bound,
+                "n={n}: {} > {bound}",
+                super::TOKENIZED_BYTES.get()
+            );
+        }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn eager_edits_match_individual_core_fixes() {
+        let dir = folder("eager-action-edits");
+        std::fs::write(dir.join("jsonvet.toml"), "dialects = [{ files = \"*.json\", dialect = \"json\" }, { files = \"*.jsonl\", dialect = \"jsonl\" }]\n").expect("dialects");
+        for (name, text) in [
+            ("a.json", "\u{feff}[[1,],\r\n[2,]\n]"),
+            ("a.jsonl", "\u{feff}{\"é😀\":1}\r\n{\"a\":2}"),
+            (
+                "a.json5",
+                "{a:1,\n// jsonvet-ignore duplicate-key\na:2,\r\nb:0}\n",
+            ),
+        ] {
+            let path = dir.join(name);
+            let uri = uri(&path);
+            let config = super::config_for(&path, std::slice::from_ref(&dir)).expect("config");
+            let expected = jsonvet::try_fix(text, &config, false).expect("fixes");
+            for utf8 in [false, true] {
+                for versioned in [false, true] {
+                    let client = super::Client {
+                        roots: vec![dir.clone()],
+                        utf8,
+                        versioned,
+                        resolve: false,
+                    };
+                    let document = super::Document {
+                        text: text.to_owned(),
+                        version: Some(json!(7)),
+                        revision: 1,
+                        schemas: BTreeSet::new(),
+                    };
+                    let lines = Lines::new(text, utf8);
+                    let actions = super::code_actions(
+                        (&uri, &document),
+                        &path,
+                        &lines,
+                        0..text.len(),
+                        &|kind| kind == "quickfix",
+                        &client,
+                    );
+                    let actions = actions.as_array().expect("actions");
+                    assert_eq!(actions.len(), expected.fixes.len());
+                    for (action, fix) in actions.iter().zip(&expected.fixes) {
+                        let edits = if versioned {
+                            &action["edit"]["documentChanges"][0]["edits"]
+                        } else {
+                            &action["edit"]["changes"][&uri]
+                        };
+                        let edits = parse_edits_in(text, edits, utf8);
+                        let expected =
+                            jsonvet::try_fix_at(text, &config, false, Some(&[fix.offset]))
+                                .expect("one fix");
+                        assert_eq!(
+                            apply_owned(text, &edits),
+                            expected.text,
+                            "{name} {:?}",
+                            fix.rule
+                        );
+                    }
+                }
+            }
+        }
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     #[test]
     fn alternating_related_positions_scan_at_most_a_chunk_each() {

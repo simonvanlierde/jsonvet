@@ -1,6 +1,6 @@
 //! Byte-range edits for the problems that have a mechanical fix.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
 use crate::parse::{self, Eol, Member, Scan};
@@ -10,7 +10,7 @@ use crate::{Config, Problem, Rule};
 ///
 /// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
 #[doc(hidden)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Fix {
     /// The rule whose problem this fixed. A trailing comma is a `Rule::Syntax` problem.
@@ -19,6 +19,26 @@ pub struct Fix {
     pub offset: usize,
     /// False for a fix that can change what a file means, such as dropping a duplicate key.
     pub safe: bool,
+    /// This fix's edits against the original text, when applied on its own.
+    pub edits: Vec<(Range<usize>, &'static str)>,
+}
+
+impl Fix {
+    fn mixed(text: &str, offset: usize, scan: &Scan) -> Option<Self> {
+        let target = scan.target?;
+        Some(Fix {
+            rule: Rule::MixedLineEndings,
+            offset,
+            safe: true,
+            edits: scan
+                .endings
+                .iter()
+                .filter_map(|&(at, len)| {
+                    (text[at..at + len] != *target.text()).then_some((at..at + len, target.text()))
+                })
+                .collect(),
+        })
+    }
 }
 
 /// A text with its fixes applied.
@@ -129,7 +149,8 @@ pub fn try_fix_at(
     if unsafe_fixes {
         groups.extend(duplicate_groups(text, &problems, &scan));
     }
-    if let Some(only) = only {
+    let only = only.map(|only| only.iter().copied().collect::<HashSet<_>>());
+    if let Some(only) = &only {
         groups.retain(|g| only.contains(&g.offset));
     }
     // Outer edits come first, so a fix inside a dropped member is skipped whole.
@@ -142,19 +163,25 @@ pub fn try_fix_at(
             continue;
         }
         done = group.end.max(done);
-        edits.extend(group.edits);
         fixes.push(Fix {
             rule: group.rule,
             offset: group.offset,
             safe: group.safe,
+            edits: group
+                .edits
+                .iter()
+                .map(|e| (e.range.clone(), e.insert))
+                .collect(),
         });
+        edits.extend(group.edits);
     }
     // The line endings go in last: an ending inside a dropped member is gone with it.
     let mixed = problems
         .iter()
         .find(|p| p.rule() == Rule::MixedLineEndings)
         .map(Problem::offset)
-        .filter(|at| only.is_none_or(|only| only.contains(at)));
+        .filter(|at| only.as_ref().is_none_or(|only| only.contains(at)));
+    let standalone_mixed = mixed.and_then(|offset| Fix::mixed(text, offset, &scan));
     let (mut target, mut endings, mut kept) = (scan.target, scan.endings, None);
     if mixed.is_some() && fixes.iter().any(|f| f.rule == Rule::DuplicateKey) {
         // A dropped member can hold the first ending, so the endings that stay pick the target,
@@ -167,12 +194,8 @@ pub fn try_fix_at(
         endings = scan.endings;
         kept = Some(text);
     }
-    if let (Some(offset), Some(target)) = (mixed, target) {
-        fixes.push(Fix {
-            rule: Rule::MixedLineEndings,
-            offset,
-            safe: true,
-        });
+    if let (Some(fix), Some(target)) = (standalone_mixed, target) {
+        fixes.push(fix);
         edits.extend(endings.iter().map(|&(at, len)| Edit {
             range: at..at + len,
             insert: target.text(),
