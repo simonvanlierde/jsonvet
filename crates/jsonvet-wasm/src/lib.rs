@@ -243,6 +243,19 @@ mod tests {
     use super::{check, fix, format, string};
 
     #[test]
+    fn monotonic_utf16_lookups_scan_each_byte_once() {
+        let text = "a😀é".repeat(1_000);
+        let mut index = super::Utf16::default();
+        let mut units = 0;
+        for (offset, character) in text.char_indices() {
+            assert_eq!(index.at(&text, offset), units);
+            units += character.len_utf16();
+        }
+        assert_eq!(index.at(&text, text.len()), units);
+        assert_eq!(index.counted, text.len());
+    }
+
+    #[test]
     fn alternating_utf16_offsets_scan_at_most_a_chunk_each() {
         let text = "é😀a".repeat(10_000);
         let mut index = super::Utf16::default();
