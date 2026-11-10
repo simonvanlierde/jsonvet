@@ -362,8 +362,9 @@ const ENGLISH: &[(&str, &str)] = &[
         "In jsonc, jwcc and json5, a comment jsonvet-ignore RULE turns RULE off for the next \
          line that starts with a token. Name more rules with commas, and give a reason after --. \
          This rule reports a name in such a comment that hides nothing, is no rule, is a rule \
-         that is always an error (syntax, unreadable or schema), or is a rule about the whole \
-         file (byte-order-mark, mixed-line-endings or missing-final-newline). A name whose rule \
+         that is always an error (syntax, unreadable or schema), is a rule about the whole \
+         file (byte-order-mark, mixed-line-endings or missing-final-newline), or repeats a rule \
+         that an earlier name already gives for the same line. A name whose rule \
          is off for the file is not reported. A suppression that names unused-suppression hides \
          nothing, so it is reported too.\n\n  Bad:  {\"a\": 1, // \
          jsonvet-ignore duplicate-key<newline>\"b\": 2}\n  Good: {\"a\": 1,<newline>\"b\": 2}",
