@@ -43,6 +43,11 @@ fn instructions(program: &Path, args: &[&str], dir: &Path) -> u64 {
         .output()
         .expect("valgrind on PATH: install it to run the scaling tests");
     let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        matches!(out.status.code(), Some(0 | 1)),
+        "measured program failed with {}:\n{stderr}",
+        out.status
+    );
     // The summary line reads `==pid== I refs:  1,234,567`.
     let count = stderr
         .lines()
@@ -56,6 +61,13 @@ fn instructions(program: &Path, args: &[&str], dir: &Path) -> u64 {
     count
         .and_then(|count| count.parse().ok())
         .unwrap_or_else(|| panic!("no instruction count from valgrind:\n{stderr}"))
+}
+
+#[test]
+#[ignore = "needs valgrind: just scaling"]
+#[should_panic(expected = "measured program failed")]
+fn instruction_counts_reject_failed_processes() {
+    instructions(Path::new("/bin/sh"), &["-c", "exit 2"], Path::new("."));
 }
 
 /// Count the instructions of `run` at `n` and `10 * n`, and fail when they grow faster than
