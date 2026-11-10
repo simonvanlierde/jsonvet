@@ -270,6 +270,31 @@ mod tests {
     }
 
     #[test]
+    fn cold_and_distant_utf16_lookups_match_a_full_count() {
+        for unit in ["é", "中", "😀", "aé中😀\r\n"] {
+            let text = format!("abc{}", unit.repeat(5_000));
+            let offsets: Vec<_> = text
+                .char_indices()
+                .map(|(at, _)| at)
+                .chain(std::iter::once(text.len()))
+                .collect();
+            let last = offsets.len() - 1;
+            for cold in [0, last / 2, last] {
+                let mut index = super::Utf16::default();
+                for i in [cold, last, last / 2, 0, last - 1, 1, last / 3, last] {
+                    let offset = offsets[i];
+                    assert_eq!(
+                        index.at(&text, offset),
+                        text[..offset].encode_utf16().count(),
+                        "{unit:?}, cold byte {}, lookup byte {offset}",
+                        offsets[cold]
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn duplicate_key_in_json5() {
         let text = "{\n  // port\n  \"port\": 80,\n  \"port\": 8080,\n}\n";
         let expected = r#"[{"line":4,"column":3,"index":28,"severity":"error","rule":"duplicate-key","message":"duplicate key $.port","path":"$.port","related":[{"message":"first copy","line":3,"column":3,"offset":14,"index":14}]}]"#;
