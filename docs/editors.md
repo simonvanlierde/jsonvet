@@ -35,9 +35,8 @@ When the editor can watch files for the server, the server asks it to watch `jso
 `pyproject.toml` and the user's own config file, and checks every open file again when one
 changes. Other clients can send `workspace/didChangeWatchedFiles` for those files themselves.
 
-The server checks the whole file on each change. A 4 MB file took 33 ms (2026-11-06, release
-build), so it does not wait for typing to stop. Changes that arrive while a check runs are checked
-once, at the latest text.
+The server checks the whole file on each change without waiting for typing to stop. Changes that
+arrive while a check runs are checked once, at the latest text.
 
 ## VS Code
 

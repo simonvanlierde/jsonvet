@@ -158,7 +158,7 @@ Timings, positions and counts use tabular figures.
 - A centred column up to 1240px, side padding `clamp(16px, 4vw, 48px)`.
 - The slug line runs across the top, its two halves at either end over a dashed rule. They wrap
   to two lines on a phone.
-- The stages are one bordered row, each stage at least 7.5rem wide; three by two under 720px.
+- The stages are one bordered row, each stage at least 7.5rem wide; three by two under 800px.
 - From 860px the proof is two columns: the text, 80 characters of the editor's font wide (`80ch` plus the gutter and padding, so it follows the font) and a margin of at least 18.5rem on the faint grid. The
   editor grows with the text (at least 8 rows, at most 70% of the window, then it scrolls inside)
   and with the notes, which keep their row or stack below the one above.

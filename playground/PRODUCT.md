@@ -83,9 +83,9 @@ the page: a share link keeps it in the URL fragment, which browsers do not send 
 - Large input stays usable: above 5,000 rows the gutter and highlights turn off, above 200,000
   characters a check waits for a pause in typing, past either the other five dialects are not
   checked, and the list shows at most 200 problems.
-- Nothing is stored and nothing is requested but the page's own files: no cookies or local
-  storage. The share link lives in the address bar (`#dialect:data`, the text deflated and in
-  base64url, by `share.mjs`), and a dropped file is read in the page.
+- Only the theme choice is kept in local storage. There are no cookies, and requests load only
+  the page's own files. The share link lives in the address bar (`#dialect:data`, the text deflated
+  and in base64url, by `share.mjs`), and a dropped file is read in the page.
 - `playground/browser-check.sh` loads the page in headless Chrome and expects the verdict
   `1 correction.` for the sample text.
 - Fix and Format edit the text with the browser's editing commands (`insertText`), which keep
