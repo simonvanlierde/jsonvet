@@ -53,40 +53,50 @@ fn formatting_refuses_changed_hidden_problems_without_writing() {
 }
 
 #[test]
-fn runtime_notes_keep_fixed_stdin_reports_parseable() {
-    use std::io::Write as _;
-    use std::process::Stdio;
+fn runtime_notes_follow_report_destination_and_format() {
     let dir = workdir(&[]);
-    for format in ["json", "sarif"] {
-        let mut child = command(env!("CARGO_BIN_EXE_jsonvet"))
-            .current_dir(&dir)
-            .args(["--fix", "--format", format, "-"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("run jsonvet");
-        child
-            .stdin
-            .take()
-            .expect("stdin")
-            .write_all(b"{\"$schema\":\"missing.json\"}\n")
-            .expect("write input");
-        let output = child.wait_with_output().expect("finish");
-        assert!(output.status.success());
-        let report: serde_json::Value =
-            serde_json::from_slice(&output.stderr).expect("one report on stderr");
-        let note = if format == "json" {
-            &report["notes"][0]
-        } else {
-            &report["runs"][0]["invocations"][0]["toolExecutionNotifications"][0]["message"]["text"]
-        };
-        assert!(
-            note.as_str()
-                .expect("runtime note")
-                .contains("missing.json"),
-            "{report}"
-        );
+    let input = "{\"$schema\":\"missing.json\"}\n";
+    for format in ["text", "json", "sarif"] {
+        for fix in [false, true] {
+            let mut args = vec!["--format", format, "-"];
+            if fix {
+                args.insert(0, "--fix");
+            }
+            let (code, out, err) = jsonvet_stdin(&dir, &args, input);
+            assert_eq!(code, 0, "{format} fix={fix}: {err}");
+            if fix {
+                assert_eq!(out, input);
+            }
+            if format == "text" || !fix {
+                assert!(err.contains("missing.json"), "{format} fix={fix}: {err:?}");
+            }
+            if format == "text" {
+                continue;
+            }
+            let report: serde_json::Value =
+                serde_json::from_str(if fix { &err } else { &out }).expect("one structured report");
+            let notes = if format == "json" {
+                &report["notes"]
+            } else {
+                &report["runs"][0]["invocations"][0]["toolExecutionNotifications"]
+            };
+            assert_eq!(
+                notes.as_array().map(Vec::len),
+                Some(1),
+                "{format} fix={fix}: {notes}"
+            );
+            let note = if format == "json" {
+                &notes[0]
+            } else {
+                &notes[0]["message"]["text"]
+            };
+            assert!(
+                note.as_str()
+                    .expect("runtime note")
+                    .contains("missing.json"),
+                "{report}"
+            );
+        }
     }
 }
 
