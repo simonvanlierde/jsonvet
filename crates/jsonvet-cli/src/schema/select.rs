@@ -199,6 +199,17 @@ impl Schemas {
         own
     }
 
+    /// Observe local schema dependencies that passed confinement but do not exist yet.
+    pub(crate) fn observe_missing(&self, observe: &impl Fn(&Path)) {
+        let missing = self
+            .missing
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for path in missing.iter() {
+            observe(path);
+        }
+    }
+
     /// One runtime note for each missing `$schema` path, sorted by path. These do not fail a run.
     pub(crate) fn missing_notes(&self) -> Vec<String> {
         let missing = self

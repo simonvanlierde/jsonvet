@@ -872,7 +872,7 @@ fn check<'t>(
 
 /// Check `text` as a run checks the file at `path`: with its settings and its schema, if any.
 /// `Err` is what ends such a run: a config file or schema that cannot be used.
-/// `on_schema` receives each schema path read, including ones that fail to load.
+/// `on_schema` receives local schema dependencies, including missing ones and failed loads.
 fn check_file<'t>(
     path: &Path,
     text: &'t str,
@@ -908,6 +908,7 @@ fn check_file<'t>(
         }
         None => check(&name, text, settings, None, 1, None),
     };
+    schemas.observe_missing(on_schema);
     schemas.over()?;
     Ok(checked)
 }

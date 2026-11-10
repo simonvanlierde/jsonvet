@@ -235,8 +235,8 @@ fn schema_watches(
                 == Some(&Value::Bool(true));
             let watchers: Vec<_> = schema_paths.iter().map(|path| {
                 let pattern = if relative {
-                    path.parent().and_then(|base| {
-                        Some(json!({ "baseUri": uri_of(base), "pattern": exact_glob(Path::new(path.file_name()?)) }))
+                    path.ancestors().skip(1).find(|base| base.is_dir()).map(|base| {
+                        json!({ "baseUri": uri_of(base), "pattern": exact_glob(path.strip_prefix(base).unwrap_or(path)) })
                     })
                 } else { None }.unwrap_or_else(|| json!(exact_glob(path)));
                 json!({ "globPattern": pattern })
@@ -2323,6 +2323,108 @@ mod tests {
             .collect();
         assert_eq!(published, expected);
         client.stop();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn missing_document_schemas_stay_watched_until_they_are_created_again() {
+        for initially_missing in [false, true] {
+            let dir = folder(if initially_missing {
+                "schema-initially-missing"
+            } else {
+                "schema-recreated"
+            });
+            let name = if initially_missing {
+                "nested/s.json"
+            } else {
+                "s.json"
+            };
+            let schema = dir.join(name);
+            if !initially_missing {
+                std::fs::write(&schema, "false").expect("schema");
+            }
+            let (client, _) = Client::start(&json!({ "workspace": {
+                "didChangeWatchedFiles": { "dynamicRegistration": true, "relativePatternSupport": true }
+            }}));
+            assert!(matches!(receive(&client.connection), Message::Request(_)));
+            let file = uri(&dir.join("a.json"));
+            let published = client.open(&file, &json!({ "$schema": name }).to_string());
+            assert_eq!(
+                published["diagnostics"]
+                    .as_array()
+                    .expect("diagnostics")
+                    .is_empty(),
+                initially_missing
+            );
+            let Message::Request(watch) = receive(&client.connection) else {
+                panic!("schema watch");
+            };
+            assert_eq!(watch.method, "client/registerCapability");
+            assert_eq!(
+                watch.params["registrations"][0]["registerOptions"]["watchers"][0]["globPattern"],
+                json!({ "baseUri": uri_of(&dir), "pattern": name })
+            );
+            if !initially_missing {
+                std::fs::remove_file(&schema).expect("schema deleted");
+                client.notify(
+                    "workspace/didChangeWatchedFiles",
+                    json!({ "changes": [{ "uri": uri(&schema), "type": 3 }] }),
+                );
+                assert_eq!(client.diagnostics()["diagnostics"], json!([]));
+                // A response after deletion proves the schema watch was not unregistered.
+                client
+                    .connection
+                    .sender
+                    .send(Message::Request(Request::new(
+                        900.into(),
+                        "textDocument/formatting".to_owned(),
+                        json!({"textDocument":{"uri":file}}),
+                    )))
+                    .expect("request");
+                assert!(
+                    matches!(receive(&client.connection), Message::Response(_)),
+                    "missing schemas must stay watched"
+                );
+            }
+            std::fs::create_dir_all(schema.parent().expect("parent")).expect("schema directory");
+            std::fs::write(&schema, "false").expect("schema created");
+            client.notify(
+                "workspace/didChangeWatchedFiles",
+                json!({ "changes": [{ "uri": uri(&schema), "type": 1 }] }),
+            );
+            assert_eq!(client.diagnostics()["diagnostics"][0]["code"], "schema");
+            client.stop();
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
+
+    #[test]
+    fn missing_schema_dependencies_do_not_escape_the_document_boundary() {
+        let dir = folder("missing-schema-confinement");
+        let workspace = dir.join("workspace");
+        std::fs::create_dir_all(&workspace).expect("workspace");
+        let file = workspace.join("a.json");
+        let observed = std::cell::RefCell::new(Vec::new());
+        let check = |text: &str| {
+            let resolver =
+                super::resolver(&file, std::slice::from_ref(&workspace)).expect("settings");
+            let (_, errors) = crate::check_file(&file, text, resolver, &|path| {
+                observed.borrow_mut().push(path.to_owned());
+            })
+            .expect("checked");
+            assert!(!errors.is_empty(), "the outside schema is refused");
+            assert!(
+                observed.borrow().is_empty(),
+                "outside paths must not be watched"
+            );
+        };
+        check(r#"{"$schema":"../missing.json"}"#);
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink("../missing.json", workspace.join("linked.json"))
+                .expect("dangling symlink");
+            check(r#"{"$schema":"linked.json"}"#);
+        }
         let _ = std::fs::remove_dir_all(dir);
     }
 
