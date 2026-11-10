@@ -36,12 +36,16 @@ gives what formatting the file does.
 A message field the server reads is a string in the code, not a type: a typo is a bug no compiler
 finds, which the in-process tests in `lsp.rs` guard. Each request makes a new config resolver, and
 a schema is read again for each check. Where the client allows it, the server has it watch
-`jsonvet.toml`, `pyproject.toml` and the user's config file, and checks every open document again
-when one changes. Changes queued behind a running check are checked once, at their latest text, so a slow
-check does not fall behind typing. The config search stops at the workspace folder holding the
-document, from `initialize`, so an editor started from `$HOME` or `/` does not search above the
-project or widen the schema confinement root of
-[0012](0012-schema-paths-stay-in-the-project.md).
+`jsonvet.toml`, `pyproject.toml`, the user's config file and the local schemas used by open
+documents. The schema watches change with the open documents. A change to a watched file checks
+every open document again. Changes queued behind a running check are checked once, at their
+latest text, so a slow check does not fall behind typing.
+
+The config search stops at the workspace folder holding the document, or a nearer `.git`
+directory. The server takes folders from `initialize` and follows later folder changes. A
+`.git` directory above the workspace does not widen its search or the schema confinement root
+of [0012](0012-schema-paths-stay-in-the-project.md). A file outside all workspace folders,
+including when no folder is open, stops at its own folder.
 
 ## Confirmation
 

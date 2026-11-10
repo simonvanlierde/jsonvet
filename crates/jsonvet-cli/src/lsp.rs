@@ -2,8 +2,8 @@
 //! as a run checks the file at its path, offers the safe fixes as code actions, and formats as
 //! `jsonvet fmt` does, all of a document or a range of it.
 
-use std::cell::Cell;
-use std::collections::{HashMap, VecDeque};
+use std::cell::{Cell, RefCell};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::fmt::Write as _;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -142,6 +142,7 @@ fn serve(connection: &Connection) -> Result<bool, String> {
     let mut documents = HashMap::new();
     let mut revision = 0;
     let mut shut_down = false;
+    let (mut schema_paths, mut watch_revision) = (BTreeSet::new(), 0);
     while let Some(message) = queue.pop_front().or_else(|| receiver.recv().ok()) {
         queue.extend(receiver.try_iter());
         match message {
@@ -175,9 +176,11 @@ fn serve(connection: &Connection) -> Result<bool, String> {
                 if superseded(&note, &queue) {
                     continue;
                 }
-                for (uri, document) in &documents {
+                for (uri, document) in &mut documents {
                     if let Some(path) = path_of(uri) {
-                        let diagnostics = diagnostics(uri, &path, &document.text, &client);
+                        let (diagnostics, schemas) =
+                            diagnostics(uri, &path, &document.text, &client);
+                        document.schemas = schemas;
                         let version = document.version.clone();
                         send(Message::Notification(publish(uri, version, diagnostics)))?;
                     }
@@ -192,9 +195,61 @@ fn serve(connection: &Connection) -> Result<bool, String> {
             }
             Message::Response(_) => {}
         }
+        for request in schema_watches(&params, &documents, &mut schema_paths, &mut watch_revision) {
+            send(Message::Request(request))?;
+        }
     }
     // The client went without saying exit.
     Ok(false)
+}
+
+/// Update the exact schema watches when open documents change the set of files they read.
+fn schema_watches(
+    params: &Value,
+    documents: &HashMap<String, Document>,
+    schema_paths: &mut BTreeSet<PathBuf>,
+    revision: &mut u64,
+) -> Vec<Request> {
+    let mut requests = Vec::new();
+    let paths = documents
+        .values()
+        .flat_map(|d| d.schemas.iter().cloned())
+        .collect();
+    if *schema_paths != paths
+        && params.pointer("/capabilities/workspace/didChangeWatchedFiles/dynamicRegistration")
+            == Some(&Value::Bool(true))
+    {
+        *revision += 1;
+        let id = "jsonvet/schema-watch";
+        if !schema_paths.is_empty() {
+            requests.push(Request::new(
+                    RequestId::from(format!("{id}/remove/{revision}")),
+                    "client/unregisterCapability".to_owned(),
+                    json!({ "unregisterations": [{ "id": id, "method": "workspace/didChangeWatchedFiles" }] }),
+                ));
+        }
+        *schema_paths = paths;
+        if !schema_paths.is_empty() {
+            let relative = params
+                .pointer("/capabilities/workspace/didChangeWatchedFiles/relativePatternSupport")
+                == Some(&Value::Bool(true));
+            let watchers: Vec<_> = schema_paths.iter().map(|path| {
+                let pattern = if relative {
+                    path.parent().and_then(|base| {
+                        Some(json!({ "baseUri": uri_of(base), "pattern": exact_glob(Path::new(path.file_name()?)) }))
+                    })
+                } else { None }.unwrap_or_else(|| json!(exact_glob(path)));
+                json!({ "globPattern": pattern })
+            }).collect();
+            requests.push(Request::new(
+                RequestId::from(format!("{id}/add/{revision}")),
+                "client/registerCapability".to_owned(),
+                json!({ "registrations": [{ "id": id, "method": "workspace/didChangeWatchedFiles",
+                        "registerOptions": { "watchers": watchers } }] }),
+            ));
+        }
+    }
+    requests
 }
 
 /// `roots` after a `workspace/didChangeWorkspaceFolders` `event`.
@@ -212,7 +267,7 @@ fn move_roots(roots: &mut Vec<PathBuf>, event: &Value) {
 
 /// The request that has the client watch the files settings come from, so that a change to one
 /// checks every open document again, if the client's `initialize` `params` say it takes one: the
-/// user's own config file in the folder `user` too, if it exists and the client takes a pattern
+/// user's own config file in the folder `user` too, if the client takes a pattern
 /// relative to a folder outside the workspace. `.editorconfig` is left out: only formatting reads
 /// it, afresh for each request.
 fn watch(params: &Value, user: Option<&Path>) -> Option<Request> {
@@ -230,9 +285,12 @@ fn watch(params: &Value, user: Option<&Path>) -> Option<Request> {
     ];
     if let Some(dir) = user
         && watched("relativePatternSupport")
-        && dir.is_dir()
     {
-        let pattern = json!({ "baseUri": uri_of(dir), "pattern": "jsonvet.toml" });
+        // An existing ancestor also catches creation of the user config folder after startup.
+        let base = dir.ancestors().find(|path| path.is_dir()).unwrap_or(dir);
+        let path = dir.join("jsonvet.toml");
+        let relative = path.strip_prefix(base).unwrap_or(&path);
+        let pattern = json!({ "baseUri": uri_of(base), "pattern": exact_glob(relative) });
         watchers.push(json!({ "globPattern": pattern }));
     }
     let id = "jsonvet/watch";
@@ -245,6 +303,23 @@ fn watch(params: &Value, user: Option<&Path>) -> Option<Request> {
             "registerOptions": { "watchers": watchers },
         }]}),
     ))
+}
+
+/// A literal path as a glob: schema names may contain glob metacharacters.
+fn exact_glob(path: &Path) -> String {
+    path.to_string_lossy()
+        .replace('\\', "/")
+        .chars()
+        .fold(String::new(), |mut glob, c| {
+            if matches!(c, '*' | '?' | '[' | ']' | '{' | '}') {
+                glob.push('[');
+                glob.push(c);
+                glob.push(']');
+            } else {
+                glob.push(c);
+            }
+            glob
+        })
 }
 
 /// Whether a message waiting in `queue` makes the check `note` asks for moot: a later change or
@@ -290,6 +365,7 @@ struct Document {
     version: Option<Value>,
     /// Unlike client versions, this does not restart when a file is reopened.
     revision: u64,
+    schemas: BTreeSet<PathBuf>,
 }
 
 /// Keep `documents` in step with an open, change or close, and return the document's new
@@ -321,15 +397,20 @@ fn update(
             .as_str()?
             .to_owned();
             let path = path_of(&uri)?;
-            let diagnostics = (!superseded).then(|| diagnostics(&uri, &path, &text, client));
+            let checked = (!superseded).then(|| diagnostics(&uri, &path, &text, client));
+            let (diagnostics, schemas) = checked.unwrap_or_default();
             *revision = revision.checked_add(1)?;
             let document = Document {
                 text,
                 version: version.clone(),
                 revision: *revision,
+                schemas,
             };
             documents.insert(uri.clone(), document);
-            diagnostics?
+            if superseded {
+                return None;
+            }
+            diagnostics
         }
         "textDocument/didClose" => {
             documents.remove(&uri);
@@ -405,18 +486,32 @@ fn answer(request: &Request, documents: &HashMap<String, Document>, client: &Cli
 
 /// The diagnostics for `text`, checked as the file at `path` is. A config file or schema that
 /// stops a run is one error at the start, as nothing else can be checked.
-fn diagnostics(uri: &str, path: &Path, text: &str, client: &Client) -> Vec<Value> {
+fn diagnostics(
+    uri: &str,
+    path: &Path,
+    text: &str,
+    client: &Client,
+) -> (Vec<Value>, BTreeSet<PathBuf>) {
     let lines = Lines::new(text, client.utf8);
-    let checked = resolver(path, &client.roots).and_then(|r| crate::check_file(path, text, r));
+    let schemas = RefCell::new(BTreeSet::new());
+    let checked = resolver(path, &client.roots).and_then(|r| {
+        crate::check_file(path, text, r, &|path| {
+            schemas.borrow_mut().insert(settings::lexical(path));
+        })
+    });
+    let schemas = schemas.into_inner();
     let (report, schema_errors) = match checked {
         Ok(checked) => checked,
         Err(error) => {
-            return vec![json!({
-                "range": lines.span(0..0),
-                "severity": 1,
-                "source": "jsonvet",
-                "message": error,
-            })];
+            return (
+                vec![json!({
+                    "range": lines.span(0..0),
+                    "severity": 1,
+                    "source": "jsonvet",
+                    "message": error,
+                })],
+                schemas,
+            );
         }
     };
     let mut diagnostics = Vec::new();
@@ -459,24 +554,22 @@ fn diagnostics(uri: &str, path: &Path, text: &str, client: &Client) -> Vec<Value
         }
         diagnostics.push(diagnostic);
     }
-    diagnostics
+    (diagnostics, schemas)
 }
 
 /// A resolver for the file at `path` that stops its search where a run in the workspace folder
 /// holding it would, the deepest where folders nest. A file outside them all stops at its own
-/// folder or at a `.git` above it, as one outside a run's working directory does. With no
-/// folders, every file is outside them: the editor's working directory, often `/` or the home
-/// folder, would let a config file far above apply.
+/// folder. With no folders, every file is outside them: the editor's working directory, often
+/// `/` or the home folder, would let a config file far above apply.
 fn resolver(path: &Path, roots: &[PathBuf]) -> Result<Resolver, String> {
     let root = roots
         .iter()
         .filter(|root| path.starts_with(root))
         .max_by_key(|root| root.as_os_str().len())
-        .or(roots.first())
         .map(PathBuf::as_path)
         .or(path.parent());
     match root {
-        Some(root) => Resolver::rooted(root, &ConfigSource::Search, Settings::default()),
+        Some(root) => Resolver::workspace(root),
         None => Resolver::new(&ConfigSource::Search, Settings::default()),
     }
 }
@@ -1121,7 +1214,11 @@ mod tests {
         let diagnostics = published["diagnostics"].as_array().expect("diagnostics");
         assert_eq!(diagnostics.len(), 5_001);
         assert!(diagnostics.iter().all(|d| d["code"] == "duplicate-key"));
-        std::fs::write(dir.join("s.json"), r#"{"type":"string"}"#).expect("schema");
+        std::fs::write(
+            dir.join("s.json"),
+            r##"{"$defs":{"root":{"type":"string"}},"$ref":"#/$defs/root"}"##,
+        )
+        .expect("schema");
         std::fs::write(
             dir.join("jsonvet.toml"),
             "schemas = [{ files = \"*.jsonl\", schema = \"s.json\" }]\n",
@@ -2175,6 +2272,161 @@ mod tests {
     }
 
     #[test]
+    fn schema_watches_require_client_support() {
+        let mut paths = std::collections::BTreeSet::from([Path::new("s.json").to_owned()]);
+        let mut revision = 7;
+        assert!(
+            super::schema_watches(
+                &json!({}),
+                &std::collections::HashMap::new(),
+                &mut paths,
+                &mut revision
+            )
+            .is_empty()
+        );
+        assert_eq!(paths.len(), 1);
+        assert_eq!(revision, 7);
+    }
+
+    #[test]
+    fn schema_watches_can_name_files_outside_the_workspace() {
+        let dir = folder("relative-schema-watch");
+        let mut documents = std::collections::HashMap::new();
+        documents.insert(
+            "file:///a.json".to_owned(),
+            super::Document {
+                text: "{}".to_owned(),
+                version: None,
+                revision: 1,
+                schemas: std::collections::BTreeSet::from([dir.join("s[1].json")]),
+            },
+        );
+        let requests = super::schema_watches(
+            &json!({ "capabilities": { "workspace": {
+                "didChangeWatchedFiles": { "dynamicRegistration": true, "relativePatternSupport": true }
+            }}}),
+            &documents,
+            &mut std::collections::BTreeSet::new(),
+            &mut 0,
+        );
+        assert_eq!(
+            requests[0].params["registrations"][0]["registerOptions"]["watchers"],
+            json!([{ "globPattern": { "baseUri": uri_of(&dir), "pattern": "s[[]1[]].json" } }])
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn schema_watch_globs_keep_metacharacters_literal() {
+        assert_eq!(
+            super::exact_glob(Path::new("schemas/[draft]*?{x}.json")),
+            "schemas/[[]draft[]][*][?][{]x[}].json"
+        );
+    }
+
+    #[test]
+    fn local_schema_edits_refresh_open_documents_and_watchers_follow_them() {
+        let dir = folder("schema-watch");
+        std::fs::write(
+            dir.join("s.json"),
+            r##"{"$defs":{"root":{"type":"string"}},"$ref":"#/$defs/root"}"##,
+        )
+        .expect("schema");
+        std::fs::write(dir.join("other.json"), "true").expect("schema");
+        std::fs::write(
+            dir.join("jsonvet.toml"),
+            "schemas = [{ files = \"configured.json\", schema = \"s.json\" }]\n",
+        )
+        .expect("config");
+        let (client, _) = Client::start(&json!({ "workspace": {
+            "didChangeWatchedFiles": { "dynamicRegistration": true }
+        }}));
+        assert!(matches!(receive(&client.connection), Message::Request(_)));
+        let configured = uri(&dir.join("configured.json"));
+        assert_eq!(
+            client.open(&configured, "{}")["diagnostics"][0]["code"],
+            "schema"
+        );
+        let Message::Request(register) = receive(&client.connection) else {
+            panic!("schema watch");
+        };
+        assert_eq!(register.method, "client/registerCapability");
+        let first_registration = register.id.clone();
+        let watchers = &register.params["registrations"][0]["registerOptions"]["watchers"];
+        assert_eq!(watchers.as_array().expect("watchers").len(), 1);
+        assert_eq!(
+            watchers[0]["globPattern"],
+            dir.join("s.json").to_string_lossy().replace('\\', "/")
+        );
+        let own = uri(&dir.join("own.json"));
+        assert_eq!(
+            client.open(&own, r#"{"$schema":"s.json"}"#)["diagnostics"][0]["code"],
+            "schema"
+        );
+        std::fs::write(dir.join("s.json"), "true").expect("schema edited");
+        client.notify(
+            "workspace/didChangeWatchedFiles",
+            json!({ "changes": [{
+                "uri": uri(&dir.join("s.json")), "type": 2
+            }]}),
+        );
+        for _ in 0..2 {
+            assert_eq!(client.diagnostics()["diagnostics"], json!([]));
+        }
+        client.notify(
+            "textDocument/didChange",
+            json!({
+                "textDocument": { "uri": own, "version": 2 },
+                "contentChanges": [{ "text": r#"{"$schema":"other.json"}"# }]
+            }),
+        );
+        assert_eq!(client.diagnostics()["diagnostics"], json!([]));
+        let Message::Request(unregister) = receive(&client.connection) else {
+            panic!("unregister");
+        };
+        assert_eq!(unregister.method, "client/unregisterCapability");
+        let Message::Request(register) = receive(&client.connection) else {
+            panic!("schema watches");
+        };
+        assert_ne!(register.id, first_registration);
+        assert_ne!(register.id, unregister.id);
+        assert_eq!(
+            register.params["registrations"][0]["registerOptions"]["watchers"]
+                .as_array()
+                .expect("watchers")
+                .len(),
+            2
+        );
+        client.notify(
+            "textDocument/didClose",
+            json!({ "textDocument": { "uri": own } }),
+        );
+        client.diagnostics();
+        assert!(matches!(receive(&client.connection), Message::Request(_)));
+        let Message::Request(register) = receive(&client.connection) else {
+            panic!("schema watch");
+        };
+        assert_eq!(
+            register.params["registrations"][0]["registerOptions"]["watchers"]
+                .as_array()
+                .expect("watchers")
+                .len(),
+            1
+        );
+        client.notify(
+            "textDocument/didClose",
+            json!({ "textDocument": { "uri": configured } }),
+        );
+        client.diagnostics();
+        let Message::Request(unregister) = receive(&client.connection) else {
+            panic!("unregister last schema");
+        };
+        assert_eq!(unregister.method, "client/unregisterCapability");
+        client.stop();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn the_user_config_folder_is_watched_where_the_client_takes_relative_patterns() {
         let dir = folder("user-watch");
         let watchers = |capabilities: Value, user: Option<&Path>| {
@@ -2200,7 +2452,59 @@ mod tests {
         let count = |w: Option<Value>| w.and_then(|w| w.as_array().map(Vec::len));
         assert_eq!(count(watchers(shared, Some(&dir))), Some(2));
         assert_eq!(count(watchers(both.clone(), None)), Some(2));
-        assert_eq!(count(watchers(both, Some(&dir.join("missing")))), Some(2));
+        let missing = watchers(both, Some(&dir.join("missing"))).expect("a watch");
+        assert_eq!(
+            missing[2]["globPattern"],
+            json!({
+                "baseUri": uri_of(&dir), "pattern": "missing/jsonvet.toml"
+            })
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_git_directory_above_the_workspace_does_not_widen_its_boundary() {
+        let dir = folder("workspace-git-boundary");
+        std::fs::create_dir_all(dir.join(".git")).expect("git directory");
+        std::fs::write(
+            dir.join("jsonvet.toml"),
+            "rules = { duplicate-key = \"ignore\" }\n",
+        )
+        .expect("parent config");
+        std::fs::write(dir.join("secret.json"), "false").expect("parent schema");
+        let workspace = dir.join("workspace");
+        std::fs::create_dir(&workspace).expect("workspace");
+        let (client, _) =
+            Client::start_with(json!({"rootUri": uri(&workspace), "capabilities": {}}));
+        let file = uri(&workspace.join("a.json"));
+        assert_eq!(
+            client.open(&file, r#"{"a":1,"a":2}"#)["diagnostics"][0]["code"],
+            "duplicate-key"
+        );
+        let published = client.open(&file, r#"{"$schema":"../secret.json"}"#);
+        assert!(
+            published["diagnostics"][0]["message"]
+                .as_str()
+                .expect("error")
+                .contains("outside"),
+            "{published}"
+        );
+        client.stop();
+        // Without a workspace, an ambient repository still cannot widen the file's boundary.
+        let (client, _) = Client::start(&json!({}));
+        assert_eq!(
+            client.open(&file, r#"{"a":1,"a":2}"#)["diagnostics"][0]["code"],
+            "duplicate-key"
+        );
+        let published = client.open(&file, r#"{"$schema":"../secret.json"}"#);
+        assert!(
+            published["diagnostics"][0]["message"]
+                .as_str()
+                .expect("error")
+                .contains("outside"),
+            "{published}"
+        );
+        client.stop();
         let _ = std::fs::remove_dir_all(dir);
     }
 

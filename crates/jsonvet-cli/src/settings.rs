@@ -371,6 +371,13 @@ impl Resolver {
         })
     }
 
+    /// A language-server workspace is a search boundary even inside a larger repository.
+    pub(crate) fn workspace(here: &Path) -> Result<Resolver, String> {
+        let mut resolver = Self::rooted(here, &ConfigSource::Search, Settings::default())?;
+        resolver.repo = None;
+        Ok(resolver)
+    }
+
     /// The project the file at `path` sits in, made canonical: where [`Resolver::for_file`]'s
     /// search for it stops. Its config file's schema paths and its own `$schema` stay in it.
     pub(crate) fn root(&self, path: &Path) -> PathBuf {

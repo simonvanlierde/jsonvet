@@ -26,14 +26,16 @@ options but `--help` and `--version`; `--stdio` is accepted, as some clients pas
 `lsp` needs `./lsp`, as `fmt` does.
 
 The search for `jsonvet.toml` stops at the workspace folder that holds the file, as a run's stops
-at its working directory, unless a `.git` above the file comes first. The server takes the folders
-from the editor's `initialize` request (`workspaceFolders`, else `rootUri`) and follows the folders
-the editor adds and removes later. With no folder, the search stops at the file's own folder,
-unless a `.git` above it comes first.
+at its working directory, unless a nearer `.git` directory stops it first. The server takes
+the folders from the editor's `initialize` request (`workspaceFolders`, else `rootUri`) and follows the folders
+the editor adds and removes later. For a file outside those folders, including when no folder
+is open, the search stops at the file's own folder.
 
 When the editor can watch files for the server, the server asks it to watch `jsonvet.toml`,
-`pyproject.toml` and the user's own config file, and checks every open file again when one
-changes. Other clients can send `workspace/didChangeWatchedFiles` for those files themselves.
+`pyproject.toml`, the user's own config file and the local schemas used by open files. It
+checks every open file again when one changes. Schema watches follow the files as they open,
+change schemas and close. Other clients can send `workspace/didChangeWatchedFiles` for those
+files themselves.
 
 The server checks the whole file on each change without waiting for typing to stop. Changes that
 arrive while a check runs are checked once, at the latest text.
