@@ -21,6 +21,19 @@ fn formatting_preserves_suppression_targets() {
         error.to_string(),
         "not formatted: formatting would change which tokens an inline suppression covers"
     );
+    let block = text.replace(
+        "// jsonvet-ignore duplicate-key",
+        "/* jsonvet-ignore duplicate-key */",
+    );
+    assert!(matches!(
+        format(&block, &config, &FormatOptions::default()),
+        Err(jsonvet::FormatError::SuppressionTargets)
+    ));
+    let before_colon = "{\"a\":0,\"a\" // jsonvet-ignore duplicate-key\n:1,\n\"b\":0,\"c\":0}";
+    assert!(matches!(
+        format(before_colon, &config, &FormatOptions::default()),
+        Err(jsonvet::FormatError::SuppressionTargets)
+    ));
     let safe = "{\"a\":1,\n// jsonvet-ignore duplicate-key\n\"a\":2\n}";
     assert!(format(safe, &config, &FormatOptions::default()).is_ok());
     // Normalization changes atom spelling and adds commas, but keeps their identities.

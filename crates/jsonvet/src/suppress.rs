@@ -128,11 +128,13 @@ impl Targets {
         let line = next_line(text, end, dialect, later);
         if let Some(line) = &line {
             self.line_start = text[..line.start]
-                .rfind(|c| {
+                .char_indices()
+                .rev()
+                .find(|&(_, c)| {
                     matches!(c, '\n' | '\r')
                         || dialect.json5() && matches!(c, '\u{2028}' | '\u{2029}')
                 })
-                .map_or(0, |at| at + if text.as_bytes()[at] < 0x80 { 1 } else { 3 });
+                .map_or(0, |(at, c)| at + c.len_utf8());
         }
         self.eof = line.is_none();
         self.cached.clone_from(&line);
@@ -592,30 +594,75 @@ mod tests {
     #[test]
     fn cached_targets_agree_with_individual_scans() {
         for dialect in [Dialect::Jsonc, Dialect::Jwcc, Dialect::Json5] {
-            for gap in ["\n", "\r", "\u{2028}", "\n/* why\n*/", " \"x\",\n"] {
-                for tail in ["", "{}", "\n{}", "\n/* why */\n{}"] {
-                    let comment = "/* jsonvet-ignore duplicate-key */";
-                    let mut text = String::new();
-                    let mut comments = Vec::new();
-                    for _ in 0..4 {
-                        let start = text.len();
-                        text.push_str(comment);
-                        comments.push((start, text.len()));
-                        text.push_str(gap);
-                    }
-                    text.push_str(tail);
-                    let mut targets = Targets::default();
-                    for (start, end) in comments {
-                        let later = has_line_end(&text.as_bytes()[start..end], dialect.json5());
-                        assert_eq!(
-                            targets.next(&text, start, end, dialect),
-                            next_line(&text, end, dialect, later),
-                            "{dialect} {text:?}"
-                        );
+            for comment in [
+                "/* jsonvet-ignore duplicate-key */",
+                "/* jsonvet-ignore duplicate-key\n*/",
+            ] {
+                for gap in [
+                    "\n",
+                    "\r",
+                    "\u{2028}",
+                    "\n/* why\n*/",
+                    " \"x\",\n",
+                    " \"x\",\u{2028}",
+                    " \"x\",\u{2029}",
+                ] {
+                    for tail in ["", "{}", "\n{}", "\n/* why */\n{}"] {
+                        let mut text = String::new();
+                        let mut comments = Vec::new();
+                        for _ in 0..4 {
+                            let start = text.len();
+                            text.push_str(comment);
+                            comments.push((start, text.len()));
+                            text.push_str(gap);
+                        }
+                        text.push_str(tail);
+                        let mut targets = Targets::default();
+                        for (start, end) in comments {
+                            let later = has_line_end(&text.as_bytes()[start..end], dialect.json5());
+                            assert_eq!(
+                                targets.next(&text, start, end, dialect),
+                                next_line(&text, end, dialect, later),
+                                "{dialect} {text:?}"
+                            );
+                        }
                     }
                 }
             }
         }
+    }
+
+    #[test]
+    fn a_reason_needs_spaces_on_both_sides_of_the_dashes() {
+        for name in ["duplicate-key --why", "duplicate-key-- why"] {
+            let text = format!("{{\"a\":1,\n// jsonvet-ignore {name}\n\"a\":2}}");
+            let rules: Vec<_> = check(&text, &Config::new(Dialect::Jsonc))
+                .problems()
+                .iter()
+                .map(crate::Problem::rule)
+                .collect();
+            assert_eq!(rules, [Rule::UnusedSuppression, Rule::DuplicateKey]);
+        }
+    }
+
+    #[test]
+    fn json5_blank_lines_can_hold_vertical_tabs_and_form_feeds() {
+        for space in ['\u{b}', '\u{c}'] {
+            let text = format!("{{a:1,\n// jsonvet-ignore duplicate-key\n{space}\na:2}}");
+            assert_eq!(
+                problems(&text, &Config::new(Dialect::Json5)),
+                Vec::<String>::new()
+            );
+        }
+    }
+
+    #[test]
+    fn a_single_quoted_continuation_on_the_comment_line_is_skipped_whole() {
+        let text = "{a:1, /* jsonvet-ignore duplicate-key */ x:'one\\\ntwo',a:2,\na:3}";
+        assert_eq!(
+            problems(text, &Config::new(Dialect::Json5)),
+            ["2:6 duplicate-key: duplicate key $.a"]
+        );
     }
 
     #[test]
