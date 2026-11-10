@@ -76,7 +76,7 @@ pub(crate) type Loaded = Result<Arc<Schema>, String>;
 /// path and whether its errors are quiet.
 #[derive(Default)]
 pub(crate) struct Schemas {
-    loaded: Mutex<HashMap<(PathBuf, bool), Loaded>>,
+    loaded: Mutex<HashMap<(SchemaKey, bool), Loaded>>,
     /// The regexes of the schemas read, as [`RUN_PATTERNS`] counts them, also of those that
     /// failed after they were counted. Changed only while `loaded` is held.
     patterns: AtomicUsize,
@@ -92,6 +92,12 @@ pub(crate) struct Schemas {
 /// The schema a file's own `$schema` names: none if it is not there, or why it cannot be used.
 type Own = Result<Option<Arc<Schema>>, String>;
 
+#[derive(Eq, Hash, PartialEq)]
+enum SchemaKey {
+    Local(PathBuf),
+    Catalog(String),
+}
+
 impl Schemas {
     /// The schema at `path`, from `load` the first time it is asked for with `quiet`. Every
     /// spelling of a path, such as `x/../s.json` for `s.json`, reads it once: else a file
@@ -104,9 +110,34 @@ impl Schemas {
         quiet: bool,
         load: impl FnOnce(&dyn Fn(usize) -> Result<(), String>) -> Result<Schema, String>,
     ) -> Loaded {
-        let key = std::fs::canonicalize(path)
-            .or_else(|_| std::path::absolute(path))
-            .unwrap_or_else(|_| path.to_owned());
+        self.get_named(path, quiet, false, load)
+    }
+
+    /// Catalog URLs occupy a separate namespace from paths that spell the same text.
+    pub(crate) fn get_catalog(
+        &self,
+        url: &str,
+        load: impl FnOnce(&dyn Fn(usize) -> Result<(), String>) -> Result<Schema, String>,
+    ) -> Loaded {
+        self.get_named(Path::new(url), false, true, load)
+    }
+
+    fn get_named(
+        &self,
+        path: &Path,
+        quiet: bool,
+        catalog: bool,
+        load: impl FnOnce(&dyn Fn(usize) -> Result<(), String>) -> Result<Schema, String>,
+    ) -> Loaded {
+        let key = if catalog {
+            SchemaKey::Catalog(path.to_string_lossy().into_owned())
+        } else {
+            SchemaKey::Local(
+                std::fs::canonicalize(path)
+                    .or_else(|_| std::path::absolute(path))
+                    .unwrap_or_else(|_| path.to_owned()),
+            )
+        };
         // A poisoned lock still holds every schema read.
         let mut loaded = self
             .loaded
@@ -194,6 +225,17 @@ struct OwnSchema {
     done: bool,
     /// What that `$schema` names.
     found: Option<(usize, String)>,
+}
+
+/// Whether a document declares a local schema, which takes precedence over the catalog.
+pub(crate) fn names_local_schema(name: &str, text: &str, settings: &Settings) -> bool {
+    let config = settings.config_for(name);
+    if config.dialect() == Dialect::JsonLines || !may_name_a_path(text) {
+        return false;
+    }
+    let mut own = OwnSchema::default();
+    jsonvet::parse_with(text, &config, &mut |event| own.event(&event));
+    own.found.is_some()
 }
 
 impl OwnSchema {

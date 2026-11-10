@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use jsonvet::{Dialect, Problem, Report, Severity};
 
 mod args;
+mod catalog;
 mod editorconfig;
 mod format;
 mod frame;
@@ -161,6 +162,10 @@ pub fn check_config_text(path: &Path, text: &str) -> Result<(), String> {
 /// `Err`, which `run` turns into exit status 2. Public only for `benches/codspeed.rs`, which
 /// measures `--schema` in-process; not part of the crate's API.
 #[doc(hidden)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the checking pipeline keeps its stages in execution order"
+)]
 pub fn run_with(
     args: impl IntoIterator<Item = OsString>,
     annotate: bool,
@@ -206,6 +211,10 @@ pub fn run_with(
     // Every config file, and every schema one names, is read before any file is checked, so a
     // bad one stops the run at once.
     let files = jobs(files, &shown, &settings_for, args.schema.as_deref(), &load)?;
+    let mut catalog = args
+        .schema_catalog
+        .then(catalog::Catalog::new)
+        .transpose()?;
     let look = look(args.format, args.color, terminal);
     // Standard input fixed to standard output leaves only standard error for the problems.
     let stdin_fix = args.fix && files.iter().any(|(_, file)| file == STDIN);
@@ -236,10 +245,13 @@ pub fn run_with(
             break print_summary(&mut printer, line.as_deref(), terminal.tty, found);
         }
         let shares = shares.get(files.len() - rest.len()..);
-        let with_schema = |job: &Job, text: &str| with_schema(job, &shown(&job.1), text);
+        let with_schema =
+            |job: &Job, text: &str| args.schema_catalog || with_schema(job, &shown(&job.1), text);
         let mut texts = take_chunk(&mut ahead, rest, shares, threads, &with_schema);
         let chunk;
         (chunk, rest) = rest.split_at(texts.len());
+        let selected = catalog::select(&mut catalog, chunk, &texts, &shown, &schemas)?;
+        let chunk = selected.as_deref().unwrap_or(chunk);
         let known = if args.fix {
             fix_chunk(
                 chunk,

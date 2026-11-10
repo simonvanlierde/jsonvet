@@ -21,6 +21,7 @@ The details behind the [README](../README.md). Why things work this way is in
                            is set, and anywhere when FORCE_COLOR is
 --schema FILE              check each file against the JSON Schema in FILE, instead of the
                            schemas from settings or a file's own local $schema
+--schema-catalog           enable HTTPS SchemaStore lookup by file name as a fallback
 --stdin-filename PATH      the name standard input (`-`) goes by
 --config FILE, --no-config
 jsonvet fmt FILE...       format files instead of checking them, see [formatting](format.md)
@@ -509,9 +510,41 @@ jsonvet --format json config.json5 | jq -r '.diagnostics[] | "\(.file):\(.line) 
 - Each diagnostic is on a line of its own, written as files are checked. The exit status and
   `--max-warnings` work as with text. No annotations or count are printed.
 
+## SchemaStore catalog
+
+`jsonvet --schema-catalog bower.json` enables HTTPS downloads from SchemaStore. Default runs
+and the language server stay offline. Repository settings cannot enable downloads.
+
+`--schema` takes precedence, then a matching `schemas` entry in the configuration, then a
+document's local `$schema` declaration. The catalog is the fallback. A local declaration
+keeps precedence even if its file is missing. Document `$schema` URLs are never fetched.
+Catalog patterns without `/` match file names; others match the normalized path. A leading
+`**/` also matches zero directories. `--stdin-filename` supplies the path for standard input.
+For JSON Lines, a matching schema checks each document separately.
+
+The first matching entry wins. Downloads and redirects support only `https://schemastore.org`,
+`https://www.schemastore.org` and `https://json.schemastore.org`. A matched entry on another
+origin is a usage error. External `$ref` files and URLs remain unsupported, including in
+downloaded schemas; a matched schema that cannot be used is an error.
+For example, the current `package.json` schema references `prettierrc.json` and cannot be used
+through the catalog. Supply a self-contained schema with `--schema` for such files.
+No document text or local paths are sent to SchemaStore.
+
+Catalogs and schemas stay fresh for seven days. If a refresh fails or returns unusable data,
+jsonvet uses a usable stale copy and warns on stderr. Without a usable copy, it stops with a
+usage error (exit 2). Downloads allow three redirects and take at most 30 seconds each.
+The catalog is limited to 4 MiB, 10,000 entries and 100,000 patterns; a schema is limited to
+8 MiB. All schema validation limits below still apply.
+
+The cache is under `$XDG_CACHE_HOME/jsonvet/schemastore` when `XDG_CACHE_HOME` is absolute.
+Otherwise it uses `~/.cache/jsonvet/schemastore` on Linux, `~/Library/Caches/jsonvet/schemastore`
+on macOS, or `%LOCALAPPDATA%/jsonvet/schemastore` on Windows. Each cache entry stores its URL,
+download time and body; the URL must match before reuse. Writes replace entries atomically
+after validation. Delete this directory to clear the cache.
+
 ## JSON Schema limits
 
-These hold for every schema: from `--schema`, a config file or a file's `$schema`. Why each one
+These hold for every schema: from `--schema`, a config file, a file's `$schema` or the catalog. Why each one
 exists is in [design.md](design.md#--schema).
 
 - **Which schema.** `--schema` applies to every file. Without it, a file takes the schema of the

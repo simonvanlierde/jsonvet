@@ -31,7 +31,7 @@ and formats the text you paste. Nothing to install, and the text stays on your m
 - **Formatting that keeps comments.** `jsonvet fmt` lays out JSON, JSONC, JWCC, JSON5 and JSON Lines
   and leaves your comments where they are.
 - **JSON Schema with positions.** Each schema error points at its value's line and column.
-  jsonvet never fetches anything from the network.
+  Default runs stay offline; `--schema-catalog` opts into SchemaStore downloads.
 - **Fits CI.** A pre-commit or prek hook, a GitHub Action, a command or a Rust library, with text,
   SARIF or JSON output.
 
@@ -202,8 +202,9 @@ schemas = [{ files = "config/server.json5", schema = "schemas/server.schema.json
 { $schema: "../schemas/server.schema.json", port: 8080 }
 ```
 
-Such a schema must stay inside the project. A `$schema` URL is skipped: jsonvet fetches nothing,
-so every `$ref` must point inside the schema file. Schema errors are always errors. The rules for
+Such a schema must stay inside the project. A `$schema` URL is skipped, and every `$ref` must
+point inside the schema file. `--schema-catalog` enables SchemaStore lookup by file name when
+no local schema applies, with downloads cached for seven days. Schema errors are always errors. The rules for
 schema paths and the limits are in the
 [reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#json-schema-limits).
 

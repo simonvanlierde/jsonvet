@@ -13,12 +13,6 @@ documentation = "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.
 keywords.workspace = true
 categories.workspace = true
 
-[[bin]]
-name = "jsonvet"
-path = "src/main.rs"
-# The lib is the documented target; a bin docs page would share target/doc/jsonvet with the jsonvet crate.
-doc = false
-
 # cargo binstall downloads the binary from the GitHub release instead of compiling it. The asset
 # names come from scripts/release-archives.py.
 [package.metadata.binstall]
@@ -33,6 +27,12 @@ pkg-fmt = "zip"
 [package.metadata.binstall.overrides.aarch64-pc-windows-msvc]
 pkg-url = "{ repo }/releases/download/v{ version }/jsonvet-{ target }.zip"
 pkg-fmt = "zip"
+
+[[bin]]
+name = "jsonvet"
+path = "src/main.rs"
+# The lib is the documented target; a bin docs page would share target/doc/jsonvet with the jsonvet crate.
+doc = false
 
 [dependencies]
 jsonvet = { path = "../jsonvet", version = "=3.3.1" }
@@ -52,6 +52,7 @@ toml = { version = "1.1.8", default-features = false, features = ["parse", "serd
 ignore = "0.4.33"
 annotate-snippets = "0.12.17"
 memchr = "2.8.3"
+ureq = { version = "3.5.1", default-features = false, features = ["rustls"] }
 
 # O_NONBLOCK, so opening a FIFO does not wait for a writer. getrandom already builds it.
 [target.'cfg(unix)'.dependencies]

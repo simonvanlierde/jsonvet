@@ -647,6 +647,18 @@ impl Schema {
         let name = path.to_string_lossy();
         let text = crate::read_small(path, crate::MAX_SCHEMA_BYTES)
             .map_err(|e| messages::fill("schema.unreadable", &[("path", &name), ("error", &e)]))?;
+        Self::load_text(path, &text, settings, quiet, admit)
+    }
+
+    /// Compile bounded schema text through the same limits as a schema on disk.
+    pub(crate) fn load_text(
+        path: &Path,
+        text: &str,
+        settings: &Settings,
+        quiet: bool,
+        admit: impl FnOnce(usize) -> Result<(), String>,
+    ) -> Result<Schema, String> {
+        let name = path.to_string_lossy();
         // jsonschema compiles a schema recursively: a deep one can take gigabytes or the stack.
         let mut config = settings.config_for(&name);
         // A schema is one value, so a JSON Lines dialect set for the documents does not apply.
@@ -656,7 +668,7 @@ impl Schema {
             config = settings.config(&name, Dialect::Json5);
         }
         let config = config.max_depth(MAX_SCHEMA_DEPTH);
-        let (report, events) = jsonvet::parse(&text, &config);
+        let (report, events) = jsonvet::parse(text, &config);
         let at = |offset, problem: &dyn std::fmt::Display| {
             let at = report.location(offset);
             let place: [(&str, &dyn std::fmt::Display); 3] =

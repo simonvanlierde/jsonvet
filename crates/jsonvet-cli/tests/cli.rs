@@ -2447,11 +2447,11 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
             ),
             (
                 "remote.json",
-                "jsonvet: the schema remote.json has a `$ref` to https://example.com/a.json, outside the file; jsonvet fetches no schemas\n",
+                "jsonvet: the schema remote.json has a `$ref` to https://example.com/a.json, outside the file; external references are not fetched\n",
             ),
             (
                 "relative.json",
-                "jsonvet: the schema relative.json has a `$ref` to other.json, outside the file; jsonvet fetches no schemas\n",
+                "jsonvet: the schema relative.json has a `$ref` to other.json, outside the file; external references are not fetched\n",
             ),
             ("gone.json", "jsonvet: cannot read the schema gone.json: "),
         ];

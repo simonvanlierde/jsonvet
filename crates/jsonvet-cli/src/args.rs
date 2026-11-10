@@ -54,6 +54,8 @@ Options:
                                 under the rule schema, instead of the schemas from settings
                                 or a file's own local $schema. Nothing is fetched. Limits:
                                 docs/usage.md in the repository.
+      --schema-catalog          Enable HTTPS SchemaStore lookup by file name as a fallback.
+                                Cache downloads for seven days; default runs stay offline.
       --stdin-filename PATH     Name standard input PATH in the output, and pick its dialect
                                 and settings by PATH. With no FILE, check standard input.
       --config FILE             Read settings from FILE instead of searching for one.
@@ -112,6 +114,7 @@ pub(crate) struct Args {
     /// Whether to color text output, from `--color`: `None` for `auto`.
     pub(crate) color: Option<bool>,
     pub(crate) schema: Option<PathBuf>,
+    pub(crate) schema_catalog: bool,
     /// The name standard input goes by, from `--stdin-filename`.
     pub(crate) stdin_filename: Option<OsString>,
 }
@@ -182,9 +185,8 @@ fn check(args: impl IntoIterator<Item = OsString>) -> Result<Command, String> {
     let (mut fix, mut unsafe_fixes) = (false, false);
     let mut config = ConfigSource::Search;
     let mut format = Format::Text;
-    let mut color = None;
-    let mut schema = None;
-    let mut stdin_filename = None;
+    let (mut color, mut schema) = (None, None);
+    let (mut schema_catalog, mut stdin_filename) = (false, None);
     loop {
         // lexopt reads a non-UTF-8 argument that starts with `-` lossily. No option has such a
         // name, so it is a file, kept as given. An existing file named like `--dialect=json`
@@ -232,6 +234,7 @@ fn check(args: impl IntoIterator<Item = OsString>) -> Result<Command, String> {
                 return crate::rules::explain(&value(&mut parser)?).map(Command::Explain);
             }
             Long("schema") => schema = Some(PathBuf::from(value(&mut parser)?)),
+            Long("schema-catalog") => schema_catalog = true,
             Long("stdin-filename") => {
                 stdin_filename = Some(parser.value().map_err(|e| e.to_string())?);
             }
@@ -273,6 +276,7 @@ fn check(args: impl IntoIterator<Item = OsString>) -> Result<Command, String> {
         format,
         color,
         schema,
+        schema_catalog,
         stdin_filename,
     })))
 }
@@ -296,6 +300,7 @@ const CHECK_ONLY: &[&str] = &[
     "format",
     "color",
     "schema",
+    "schema-catalog",
     "max-warnings",
     "error",
     "warn",

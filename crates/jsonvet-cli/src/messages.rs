@@ -17,6 +17,39 @@ const LOCALES: &[(&str, &str)] = include!(concat!(env!("OUT_DIR"), "/locales.rs"
 
 /// The command's own messages, by id, in English.
 const ENGLISH: &[(&str, &str)] = &[
+    (
+        "catalog.cache-link",
+        "the SchemaStore cache directory must not be a symbolic link",
+    ),
+    (
+        "catalog.no-cache",
+        "--schema-catalog needs XDG_CACHE_HOME, HOME or LOCALAPPDATA for its cache",
+    ),
+    (
+        "catalog.invalid",
+        "invalid SchemaStore catalog or catalog limits exceeded",
+    ),
+    (
+        "catalog.origin",
+        "unsupported catalog URL {url}: only HTTPS on schemastore.org, www.schemastore.org and json.schemastore.org is supported",
+    ),
+    ("catalog.timeout", "SchemaStore request exceeded 30 seconds"),
+    (
+        "catalog.redirect",
+        "unsupported redirect or more than three SchemaStore redirects",
+    ),
+    (
+        "catalog.too-large",
+        "SchemaStore response exceeds its size limit",
+    ),
+    (
+        "catalog.stale",
+        "warning: using stale cached {url}: {error}",
+    ),
+    (
+        "catalog.fetch",
+        "cannot load {url} and no usable cached copy exists: {error}",
+    ),
     ("help", crate::args::HELP),
     ("related.first-at", "first at {line}:{column}"),
     ("related.opened-at", "opened at {line}:{column}"),
@@ -216,11 +249,11 @@ const ENGLISH: &[(&str, &str)] = &[
     ("schema.one-value", "the schema {path} must hold one value"),
     (
         "schema.ref-outside",
-        "the schema {path} has a `$ref` outside the file; jsonvet fetches no schemas",
+        "the schema {path} has a `$ref` outside the file; external references are not fetched",
     ),
     (
         "schema.ref-outside-to",
-        "the schema {path} has a `$ref` to {uri}, outside the file; jsonvet fetches no schemas",
+        "the schema {path} has a `$ref` to {uri}, outside the file; external references are not fetched",
     ),
     (
         "schema.regex-too-big",

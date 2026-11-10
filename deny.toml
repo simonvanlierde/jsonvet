@@ -18,6 +18,8 @@ allow = [
 exceptions = [
   # MIT No Attribution, which asks even less than MIT. Comes in through jsonschema.
   { crate = "borrow-or-share", allow = ["MIT-0"] },
+  # Mozilla's public TLS trust anchors, distributed with rustls.
+  { crate = "webpki-roots", allow = ["CDLA-Permissive-2.0"] },
 ]
 # The list is policy, not an inventory: allowed licenses nothing uses yet are fine.
 unused-allowed-license = "allow"
