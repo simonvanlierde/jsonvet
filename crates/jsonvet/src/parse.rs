@@ -14,6 +14,7 @@ use crate::messages::{
 };
 use crate::path::{self, PathStep};
 use crate::problem::{Detail, SyntaxError, SyntaxKind};
+use crate::suppress;
 use crate::unicode::{
     is_high_surrogate, is_identifier_part, is_identifier_start, is_json5_space, is_low_surrogate,
     is_noncharacter, is_surrogate, line_separator_at,
@@ -81,6 +82,8 @@ pub(crate) struct Scan {
     pub(crate) endings: Vec<(usize, usize)>,
     /// The line ending `--fix` rewrites the others to, once the file has a first one.
     pub(crate) target: Option<Eol>,
+    /// The first copy of each duplicate key that a suppression hides a later copy of.
+    pub(crate) hidden: Vec<usize>,
 }
 
 /// A kind of line ending.
@@ -164,6 +167,7 @@ fn walk_scan<'a, 's, const SCAN: bool>(
         },
         cr_mask: 0,
         lf_fast: dialect != Dialect::JsonLines,
+        suppressions: Vec::new(),
     };
     if parser.endings.severity.is_on() {
         if parser.json_lines {
@@ -199,6 +203,16 @@ fn walk_scan<'a, 's, const SCAN: bool>(
                 started: fail.started,
             }),
         });
+    }
+    if !parser.suppressions.is_empty() {
+        let hidden = parser.scan.as_deref_mut().map(|scan| &mut scan.hidden);
+        suppress::apply(
+            text,
+            &parser.suppressions,
+            config,
+            &mut parser.problems,
+            hidden,
+        );
     }
     if let (Some(scan), Some(first)) = (parser.scan.as_deref_mut(), parser.endings.first) {
         scan.target = Some(target_ending(first, dialect));
@@ -302,6 +316,8 @@ struct Parser<'a, 's, const SCAN: bool> {
     /// Whether a line break followed by spaces can be skipped without looking at the break:
     /// not in JSON Lines, and not once an ending other than LF has come first.
     lf_fast: bool,
+    /// The `(start, end)` of each `jsonvet-ignore` comment.
+    suppressions: Vec<(usize, usize)>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1604,28 +1620,29 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
 
     /// Skip to the line terminator that ends a `//` comment, leaving it in place.
     fn line_comment(&mut self) {
-        let mut from = self.pos + 2;
-        if self.dialect.line_comment_ends_only_at_lf() {
-            self.pos =
-                memchr::memchr(b'\n', &self.bytes[from..]).map_or(self.bytes.len(), |n| from + n);
-            // The CR of a CRLF is in the comment, but the ending is the pair.
-            if self.cr_mask != 0 && self.pos < self.bytes.len() && self.bytes[self.pos - 1] == b'\r'
-            {
-                self.ending(self.pos - 1, Eol::CrLf);
-            }
-            return;
+        let start = self.pos;
+        self.line_comment_end();
+        self.suppression(start, self.pos, self.pos);
+    }
+
+    /// Note the comment from `start` to `end` if it is a suppression; its text ends at `body`.
+    #[inline]
+    fn suppression(&mut self, start: usize, body: usize, end: usize) {
+        if suppress::marked(&self.bytes[start + 2..body]) {
+            self.suppressions.push((start, end));
         }
-        while let Some(found) = memchr::memchr3(b'\n', b'\r', 0xE2, &self.bytes[from..]) {
-            let at = from + found;
-            let separator =
-                self.bytes[at] != 0xE2 || (self.json5 && line_separator_at(self.bytes, at));
-            if separator {
-                self.pos = at;
-                return;
-            }
-            from = at + 1;
+    }
+
+    fn line_comment_end(&mut self) {
+        self.pos = line_comment_end(self.bytes, self.pos + 2, self.dialect);
+        // The CR of a CRLF is in the comment, but the ending is the pair.
+        if self.dialect.line_comment_ends_only_at_lf()
+            && self.cr_mask != 0
+            && self.pos < self.bytes.len()
+            && self.bytes[self.pos - 1] == b'\r'
+        {
+            self.ending(self.pos - 1, Eol::CrLf);
         }
-        self.pos = self.bytes.len();
     }
 
     fn block_comment(&mut self) -> Result<(), Fail> {
@@ -1638,6 +1655,7 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
                 if self.cr_mask != 0 {
                     self.endings_in(start + 2, at);
                 }
+                self.suppression(start, at, self.pos);
                 return Ok(());
             }
             from = at + 1;
@@ -1648,6 +1666,28 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
             start,
         ))
     }
+}
+
+/// Where a `//` comment whose text starts at `from` ends in `dialect`: at the line terminator
+/// that ends it, left out, or at the end of the text. JWCC ends it at LF only, JSONC also at a
+/// lone CR, and JSON5 also at U+2028 and U+2029.
+#[expect(
+    clippy::inline_always,
+    reason = "plain inline left a call per comment: 0.9% more instructions with a comment per line"
+)]
+#[inline(always)]
+pub(crate) fn line_comment_end(bytes: &[u8], mut from: usize, dialect: Dialect) -> usize {
+    if dialect.line_comment_ends_only_at_lf() {
+        return memchr::memchr(b'\n', &bytes[from..]).map_or(bytes.len(), |n| from + n);
+    }
+    while let Some(found) = memchr::memchr3(b'\n', b'\r', 0xE2, &bytes[from..]) {
+        let at = from + found;
+        if bytes[at] != 0xE2 || (dialect.json5() && line_separator_at(bytes, at)) {
+            return at;
+        }
+        from = at + 1;
+    }
+    bytes.len()
 }
 
 /// Whether no white space, comment or JSON Lines line end can start at `b` in any dialect: it

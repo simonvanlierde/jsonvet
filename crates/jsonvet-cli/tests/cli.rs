@@ -580,7 +580,7 @@ fn a_bad_per_file_rules_entry_is_a_config_error() {
             "per-file-rule.toml:3:1",
             "unknown rule `duplicate-keys` (did you mean `duplicate-key`?); expected one of \
              syntax, duplicate-key, invalid-number, invalid-code-point, byte-order-mark, \
-             missing-final-newline, mixed-line-endings",
+             missing-final-newline, mixed-line-endings, unused-suppression",
         ),
         (
             "per-file-severity.toml:1:48",
@@ -795,7 +795,7 @@ fn pyproject_tool_table_and_bad_configs() {
             "typo.toml:2:1",
             "unknown rule `duplicate-keys` (did you mean `duplicate-key`?); expected one of \
              syntax, duplicate-key, invalid-number, invalid-code-point, byte-order-mark, \
-             missing-final-newline, mixed-line-endings",
+             missing-final-newline, mixed-line-endings, unused-suppression",
         ),
         (
             "key.toml:2:3",
@@ -4372,4 +4372,51 @@ fn lsp_exits_after_exit_while_the_client_keeps_its_pipe_open() {
     };
     assert_eq!(code, Some(0));
     drop(input);
+}
+
+#[test]
+fn an_inline_suppression_hides_a_rule_on_the_next_line() {
+    let text = "{\n  // jsonvet-ignore duplicate-key\n  \"a\": 1, \"a\": 2,\n  \"b\": 1,\n  /* jsonvet-ignore duplicate-key, mixed-line-endings */\n\n  // a note\n  \"b\": 2,\n  // jsonvet-ignore duplicate-keys\n  \"c\": 1,\n  // jsonvet-ignore syntax\n  \"d\": 1,\n  // jsonvet-ignore duplicate-key\n  \"e\": 1,\n  //jsonvet-ignore\n  \"f\": 1\n}\n";
+    let dir = workdir(&[
+        (
+            "jsonvet.toml",
+            "per-file-rules = [{ files = \"quiet/*.jsonc\", unused-suppression = \"off\" }]\n",
+        ),
+        ("s.jsonc", text),
+        ("quiet/s.jsonc", text),
+        // JSON has no comments, so the comment is a syntax error and hides nothing.
+        (
+            "j.json",
+            "// jsonvet-ignore duplicate-key\n{\"a\": 1, \"a\": 2}\n",
+        ),
+    ]);
+    assert_eq!(
+        jsonvet(&dir, &["s.jsonc", "quiet/s.jsonc"]),
+        (
+            0,
+            "s.jsonc:5:36: warning[unused-suppression] `mixed-line-endings` is about the whole file: turn it off with `per-file-rules`\n\
+             s.jsonc:9:21: warning[unused-suppression] unknown rule `duplicate-keys` in a suppression; did you mean `duplicate-key`?\n\
+             s.jsonc:11:21: warning[unused-suppression] the `syntax` rule is always an error and cannot be suppressed\n\
+             s.jsonc:13:21: warning[unused-suppression] nothing to suppress: no duplicate-key problem on the next line\n\
+             s.jsonc:15:5: warning[unused-suppression] a suppression needs a rule, such as `jsonvet-ignore duplicate-key`\n"
+                .to_owned()
+        )
+    );
+    // The command line sets the new rule like any other.
+    assert_eq!(
+        jsonvet(&dir, &["--ignore", "unused-suppression", "s.jsonc"]),
+        (0, String::new())
+    );
+    // A name whose rule is off has nothing to hide and is not reported.
+    let (code, out) = jsonvet(&dir, &["--ignore", "duplicate-key", "s.jsonc"]);
+    assert_eq!(code, 0);
+    assert!(!out.contains("no duplicate-key problem"), "{out}");
+    assert_eq!(
+        jsonvet(&dir, &["--dialect", "json:j.json", "j.json"]),
+        (
+            1,
+            "j.json:1:1: error[syntax] comments are not allowed in json; the jsonc dialect allows this\n"
+                .to_owned()
+        )
+    );
 }

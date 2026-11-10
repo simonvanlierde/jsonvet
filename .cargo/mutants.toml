@@ -136,4 +136,7 @@ exclude_re = [
   # Speed only: without the problems the scan found, the report runs the check again and finds the
   # same.
   "jsonvet-cli/src/lib.rs:.* delete match arm Some\\(Err\\(problems\\)\\) in fix_chunk$",
+  # A vertical tab or form feed outside a string is a syntax error in JSONC and JWCC, and checking
+  # stops there, so where a suppression's next line starts after one never shows.
+  "suppress.rs:\\d+:33: replace match guard json5 with true in next_line$",
 ]

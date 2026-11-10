@@ -140,11 +140,13 @@ fail as JSON are config files with comments. To check a file as strict JSON, use
 | `byte-order-mark`       | a byte order mark at the start of the file                        | warning in `json` and `i-json`, error in `jsonl` |
 | `missing-final-newline` | a JSON Lines file that does not end with a newline                | warning in `jsonl`                               |
 | `mixed-line-endings`    | a line ending that differs from the file's first one              | warning                                          |
+| `unused-suppression`    | a `jsonvet-ignore` comment that hides nothing                     | warning in `jsonc`, `jwcc` and `json5`           |
 | `unreadable`            | a file that is missing, not a regular file, or not readable UTF-8 | error, always                                    |
 | `schema`                | a value the file's JSON Schema rejects                            | error, always                                    |
 
 Change a rule's severity with `--error`, `--warn` or `--ignore`; `unreadable` and `schema` stay
-errors. Warnings fail a run only past
+errors. In `jsonc`, `jwcc` and `json5`, a comment `// jsonvet-ignore duplicate-key` turns a rule
+off for the next line. Warnings fail a run only past
 `--max-warnings N`.
 
 ## Configuration

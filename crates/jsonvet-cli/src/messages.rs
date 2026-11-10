@@ -354,6 +354,17 @@ const ENGLISH: &[(&str, &str)] = &[
          2,<CRLF>\"c\": 3}",
     ),
     (
+        "rule.unused-suppression.explanation",
+        "In jsonc, jwcc and json5, a comment jsonvet-ignore RULE turns RULE off for the next \
+         line that starts with a token. Name more rules with commas, and give a reason after --. \
+         This rule reports a name in such a comment that hides nothing, is no rule, is a rule \
+         that is always an error (syntax, unreadable or schema), or is a rule about the whole \
+         file (byte-order-mark, mixed-line-endings or missing-final-newline). A name whose rule \
+         is off for the file is not reported. A suppression that names unused-suppression hides \
+         nothing, so it is reported too.\n\n  Bad:  {\"a\": 1, // \
+         jsonvet-ignore duplicate-key<newline>\"b\": 2}\n  Good: {\"a\": 1,<newline>\"b\": 2}",
+    ),
+    (
         "rule.schema.explanation",
         "A value the file's JSON Schema rejects, such as a missing required key or a string \
          where the schema wants a number. The schema comes from --schema, the config file's \

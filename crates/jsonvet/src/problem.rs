@@ -8,6 +8,7 @@ use crate::messages::{
     NUMBER_OVERFLOWS, TOO_DEEP, TRAILING_COMMA, Translate, UNCLOSED, UNEXPECTED, UNEXPECTED_END,
     UNEXPECTED_LINE_END, UNEXPECTED_WORD, UNTERMINATED_COMMENT, UNTERMINATED_STRING, fill,
 };
+use crate::suppress::Unused;
 use crate::unicode::{is_bidi_control, is_surrogate};
 use crate::{Dialect, Rule, Severity};
 
@@ -58,6 +59,7 @@ impl Problem {
             Detail::ByteOrderMark => Rule::ByteOrderMark,
             Detail::MissingFinalNewline => Rule::MissingFinalNewline,
             Detail::MixedLineEndings => Rule::MixedLineEndings,
+            Detail::UnusedSuppression { .. } => Rule::UnusedSuppression,
         }
     }
 
@@ -182,6 +184,13 @@ pub(crate) enum Detail {
     MissingFinalNewline,
     /// A line ending that differs from the file's first one.
     MixedLineEndings,
+    /// A rule name in a `jsonvet-ignore` comment that hides nothing.
+    UnusedSuppression {
+        /// The name as written; empty when the comment names no rule.
+        name: String,
+        /// Why it hides nothing.
+        why: Unused,
+    },
 }
 
 impl Detail {
@@ -205,6 +214,7 @@ impl Detail {
             Detail::ByteOrderMark => out.write_str(t(BYTE_ORDER_MARK)),
             Detail::MissingFinalNewline => out.write_str(t(MISSING_FINAL_NEWLINE)),
             Detail::MixedLineEndings => out.write_str(t(MIXED_LINE_ENDINGS)),
+            Detail::UnusedSuppression { name, why } => why.write(out, name, translate),
         }
     }
 }

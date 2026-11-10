@@ -272,8 +272,13 @@ impl Group {
 fn duplicate_groups(text: &str, problems: &[Problem], scan: &Scan) -> Vec<Group> {
     // The problems are in document order, so each key's copies are too.
     let mut copies: HashMap<usize, Vec<usize>> = HashMap::new();
+    // A key with a suppressed copy keeps every copy: dropping some would move the others.
+    let mut hidden = scan.hidden.clone();
+    hidden.sort_unstable();
     for problem in problems {
-        if let (Rule::DuplicateKey, Some(first)) = (problem.rule(), problem.related()) {
+        if let (Rule::DuplicateKey, Some(first)) = (problem.rule(), problem.related())
+            && hidden.binary_search(&first.offset).is_err()
+        {
             copies
                 .entry(first.offset)
                 .or_default()

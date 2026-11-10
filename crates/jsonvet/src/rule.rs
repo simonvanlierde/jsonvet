@@ -21,6 +21,8 @@ pub enum Rule {
     MissingFinalNewline,
     /// A file whose line endings are not all the same.
     MixedLineEndings,
+    /// A `jsonvet-ignore` comment that hides nothing, or names a rule it cannot hide.
+    UnusedSuppression,
 }
 
 impl Rule {
@@ -33,6 +35,7 @@ impl Rule {
         Rule::ByteOrderMark,
         Rule::MissingFinalNewline,
         Rule::MixedLineEndings,
+        Rule::UnusedSuppression,
     ];
 
     /// The rule's id, such as `duplicate-key`.
@@ -45,6 +48,7 @@ impl Rule {
             Rule::ByteOrderMark => "byte-order-mark",
             Rule::MissingFinalNewline => "missing-final-newline",
             Rule::MixedLineEndings => "mixed-line-endings",
+            Rule::UnusedSuppression => "unused-suppression",
         }
     }
 
@@ -58,6 +62,9 @@ impl Rule {
             Rule::ByteOrderMark => "a byte order mark at the start of the file",
             Rule::MissingFinalNewline => "a JSON Lines file that does not end with a newline",
             Rule::MixedLineEndings => "a file that mixes LF, CRLF and CR line endings",
+            Rule::UnusedSuppression => {
+                "a jsonvet-ignore comment that hides nothing or names a rule it cannot hide"
+            }
         }
     }
 
@@ -69,7 +76,10 @@ impl Rule {
             | (Rule::ByteOrderMark, Dialect::JsonLines) => Severity::Error,
             (Rule::ByteOrderMark, Dialect::Json | Dialect::IJson)
             | (Rule::MissingFinalNewline, Dialect::JsonLines)
-            | (Rule::MixedLineEndings, _) => Severity::Warning,
+            | (Rule::MixedLineEndings, _)
+            | (Rule::UnusedSuppression, Dialect::Jsonc | Dialect::Jwcc | Dialect::Json5) => {
+                Severity::Warning
+            }
             _ => Severity::Off,
         }
     }
@@ -215,7 +225,7 @@ mod tests {
         for (i, &rule) in Rule::ALL.iter().enumerate() {
             assert_eq!(rule as usize, i, "{rule}");
         }
-        let last = Rule::MixedLineEndings;
+        let last = Rule::UnusedSuppression;
         // No wildcard: a new rule stops this building until `last` and ALL are updated.
         match last {
             Rule::Syntax
@@ -224,7 +234,8 @@ mod tests {
             | Rule::InvalidCodePoint
             | Rule::ByteOrderMark
             | Rule::MissingFinalNewline
-            | Rule::MixedLineEndings => {}
+            | Rule::MixedLineEndings
+            | Rule::UnusedSuppression => {}
         }
         assert_eq!(Rule::ALL.len(), last as usize + 1);
     }

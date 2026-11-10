@@ -174,6 +174,19 @@ expression: "serde_json::to_string_pretty(&sarif).expect(\"JSON\")"
             },
             {
               "fullDescription": {
+                "text": "a jsonvet-ignore comment that hides nothing or names a rule it cannot hide."
+              },
+              "help": {
+                "text": "In jsonc, jwcc and json5, a comment jsonvet-ignore RULE turns RULE off for the next line that starts with a token. Name more rules with commas, and give a reason after --. This rule reports a name in such a comment that hides nothing, is no rule, is a rule that is always an error (syntax, unreadable or schema), or is a rule about the whole file (byte-order-mark, mixed-line-endings or missing-final-newline). A name whose rule is off for the file is not reported. A suppression that names unused-suppression hides nothing, so it is reported too.\n\n  Bad:  {\"a\": 1, // jsonvet-ignore duplicate-key<newline>\"b\": 2}\n  Good: {\"a\": 1,<newline>\"b\": 2}"
+              },
+              "helpUri": "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#unused-suppression",
+              "id": "unused-suppression",
+              "shortDescription": {
+                "text": "a jsonvet-ignore comment that hides nothing or names a rule it cannot hide"
+              }
+            },
+            {
+              "fullDescription": {
                 "text": "a file that does not exist, is not a regular file, could not be read, or is not UTF-8."
               },
               "help": {

@@ -32,6 +32,30 @@ pub(crate) const MIXED_LINE_ENDINGS: Message = (
     "mixed-line-endings",
     "this line ending differs from the first one in the file",
 );
+pub(crate) const UNUSED_SUPPRESSION: Message = (
+    "unused-suppression",
+    "nothing to suppress: no {rule} problem on the next line",
+);
+pub(crate) const UNKNOWN_SUPPRESSION: Message = (
+    "unused-suppression.unknown",
+    "unknown rule `{rule}` in a suppression",
+);
+pub(crate) const SUPPRESSION_DID_YOU_MEAN: Message = (
+    "unused-suppression.did-you-mean",
+    "; did you mean `{rule}`?",
+);
+pub(crate) const FIXED_SUPPRESSION: Message = (
+    "unused-suppression.fixed-rule",
+    "the `{rule}` rule is always an error and cannot be suppressed",
+);
+pub(crate) const WHOLE_FILE_SUPPRESSION: Message = (
+    "unused-suppression.whole-file",
+    "`{rule}` is about the whole file: turn it off with `per-file-rules`",
+);
+pub(crate) const EMPTY_SUPPRESSION: Message = (
+    "unused-suppression.no-rule",
+    "a suppression needs a rule, such as `jsonvet-ignore duplicate-key`",
+);
 pub(crate) const UNEXPECTED_END: Message = (
     "syntax.unexpected-end",
     "expected {expected}, found the end of the file",
@@ -122,6 +146,12 @@ pub const MESSAGES: &[(&str, &str)] = &[
     BYTE_ORDER_MARK,
     MISSING_FINAL_NEWLINE,
     MIXED_LINE_ENDINGS,
+    UNUSED_SUPPRESSION,
+    UNKNOWN_SUPPRESSION,
+    SUPPRESSION_DID_YOU_MEAN,
+    FIXED_SUPPRESSION,
+    WHOLE_FILE_SUPPRESSION,
+    EMPTY_SUPPRESSION,
     UNEXPECTED_END,
     UNEXPECTED_LINE_END,
     UNCLOSED,
