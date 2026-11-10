@@ -1921,6 +1921,56 @@ mod tests {
     }
 
     #[test]
+    fn positions_on_short_lines_do_not_count_unrelated_earlier_lines() {
+        let tail = "a😀é";
+        let text = format!("{}\n{tail}", "é".repeat(524_288));
+        let lines = Lines::new(&text, false);
+        assert_eq!(
+            lines.position(text.len()),
+            json!({ "line": 1, "character": 4 })
+        );
+        assert!(
+            lines.counted.get() <= tail.len(),
+            "{} bytes counted for a {}-byte line",
+            lines.counted.get(),
+            tail.len()
+        );
+    }
+
+    #[test]
+    fn distant_multiline_positions_match_utf16_counts_from_each_line_start() {
+        let first = "é😀\r\n";
+        let text = format!("{first}{}", "a😀é".repeat(3_000));
+        let lines = Lines::new(&text, false);
+        let second = first.len();
+        let offsets = [
+            text.len(),
+            2,
+            second + 7 * 900,
+            0,
+            second + 7 * 2_500,
+            second,
+            second + 14,
+        ];
+        for offset in offsets.into_iter().chain(offsets.into_iter().rev()) {
+            let prefix = &text[..offset];
+            let start = prefix.rfind(['\r', '\n']).map_or(0, |at| at + 1);
+            let line = prefix
+                .replace("\r\n", "\n")
+                .replace('\r', "\n")
+                .matches('\n')
+                .count();
+            assert_eq!(
+                lines.position(offset),
+                json!({
+                    "line": line, "character": text[start..offset].encode_utf16().count()
+                }),
+                "at {offset}"
+            );
+        }
+    }
+
+    #[test]
     fn positions_turn_back_into_offsets() {
         let text = "a😀b\r\nc\rd";
         let lines = Lines::new(text, false);
