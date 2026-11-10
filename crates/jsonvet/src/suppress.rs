@@ -813,9 +813,10 @@ mod tests {
             );
             problems(&text, &config)
         };
-        // An unquoted key, then a block comment that holds a quote and starts with `/*/`.
+        // An unquoted key, then a block comment after a token that holds a quote and starts with
+        // `/*/`. One at the start of the line is skipped before the line starts.
         assert_eq!(hidden("x: 'one\\"), Vec::<String>::new());
-        assert_eq!(hidden("/*/ ' */ x: 'one\\"), Vec::<String>::new());
+        assert_eq!(hidden("x: /*/ ' */ 'one\\"), Vec::<String>::new());
         // A block comment that goes on past the line ends the line there.
         let text = "{a: 1,\n// jsonvet-ignore duplicate-key\na: 2, /* one\ntwo */ b: 3}";
         assert_eq!(problems(text, &config), Vec::<String>::new());

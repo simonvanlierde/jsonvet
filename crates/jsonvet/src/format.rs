@@ -317,10 +317,16 @@ mod tests {
             let (problems, _, hidden) = check_ending(text, &numbers());
             suppressed(text, Dialect::Json5, &problems, &hidden)
         };
-        let first = list("[\n// jsonvet-ignore invalid-number\n1e999,\n2e999\n]");
-        let second = list("[\n1e999,\n// jsonvet-ignore invalid-number\n2e999\n]");
-        assert_eq!(first.len(), second.len());
-        assert_ne!(first, second);
+        // Each token's number counts the tokens up to it, from 1 at the `[`.
+        let number = "invalid-number";
+        assert_eq!(
+            list("[\n// jsonvet-ignore invalid-number\n1e999,\n2e999\n]"),
+            [(2, number, Some(0)), (3, number, None)]
+        );
+        assert_eq!(
+            list("[\n1e999,\n// jsonvet-ignore invalid-number\n2e999\n]"),
+            [(2, number, None), (3, number, Some(0))]
+        );
     }
 }
 
