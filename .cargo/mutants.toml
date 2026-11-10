@@ -51,6 +51,7 @@ exclude_re = [
   # Choosing the preceding UTF-8 boundary for a checkpoint stores the same exact cumulative
   # count; lookups still count from a checkpoint at or before the requested offset.
   "jsonvet-wasm/src/lib.rs:\\d+:26: replace \\+= with -= in Utf16::at$",
+  "jsonvet-cli/src/lsp.rs:\\d+:22: replace \\+= with -= in Lines<'t>::prefix$",
   # No byte matches two of the per-byte tests, so XOR and OR agree there; the OR with `stop` is
   # tested.
   "parse.rs:\\d+:(37|52|65): replace \\| with \\^ in plain_run",
