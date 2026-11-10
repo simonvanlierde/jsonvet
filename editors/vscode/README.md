@@ -42,7 +42,7 @@ also turns off its schema checks:
 
 The first time the extension starts in a workspace folder, it offers to set that in
 `.vscode/settings.json`, and asks again next time if you close the message without a choice. The
-change shows on each file at its next edit.
+change restarts the server to refresh diagnostics.
 
 ## Formatting
 
