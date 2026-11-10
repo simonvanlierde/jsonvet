@@ -50,8 +50,8 @@ VS Code also has a JSON formatter. To format with jsonvet, pick it as the defaul
 
 ```json
 {
-  "[json]": { "editor.defaultFormatter": "placeholder-publisher-id.jsonvet" },
-  "[jsonc]": { "editor.defaultFormatter": "placeholder-publisher-id.jsonvet" }
+  "[json]": { "editor.defaultFormatter": "simonvanlierde.jsonvet" },
+  "[jsonc]": { "editor.defaultFormatter": "simonvanlierde.jsonvet" }
 }
 ```
 

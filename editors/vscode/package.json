@@ -3,7 +3,7 @@
   "displayName": "jsonvet",
   "description": "Problems, safe fixes and formatting for JSON, JSONC, JWCC, JSON5 and JSON Lines, from the jsonvet language server.",
   "version": "3.4.0",
-  "publisher": "placeholder-publisher-id",
+  "publisher": "simonvanlierde",
   "license": "MIT OR Apache-2.0",
   "repository": {
     "type": "git",
