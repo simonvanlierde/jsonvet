@@ -115,6 +115,38 @@ fn duplicate_keys_on_many_lines() {
 
 #[test]
 #[ignore = "needs valgrind: just scaling"]
+fn suppression_comments_share_their_next_line() {
+    assert_linear(1_000, |n| {
+        let text = format!("{}{{}}\n", "// jsonvet-ignore duplicate-key\n".repeat(n));
+        jsonvet("suppression-comments.jsonc", &text, &[])
+    });
+}
+
+#[test]
+#[ignore = "needs valgrind: just scaling"]
+fn suppression_comments_share_their_end_of_file() {
+    assert_linear(1_000, |n| {
+        jsonvet(
+            "suppression-eof.jsonc",
+            &"// jsonvet-ignore duplicate-key\n".repeat(n),
+            &[],
+        )
+    });
+}
+
+#[test]
+#[ignore = "needs valgrind: just scaling"]
+fn suppression_names_share_their_rule_matches() {
+    assert_linear(1_000, |n| {
+        let names = vec!["duplicate-key"; n].join(",");
+        let members = vec!["\"a\":0"; n].join(",");
+        let text = format!("{{\n// jsonvet-ignore {names}\n{members}\n}}\n");
+        jsonvet("suppression-names.jsonc", &text, &[])
+    });
+}
+
+#[test]
+#[ignore = "needs valgrind: just scaling"]
 fn duplicate_keys_on_one_long_line() {
     // The `é` makes columns a count of characters, which goes on from the last duplicate found.
     assert_linear(5_000, |n| {

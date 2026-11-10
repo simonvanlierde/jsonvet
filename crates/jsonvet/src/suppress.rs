@@ -2,6 +2,7 @@
 //! next line that starts with a token: the last level of the severity lookup, after the
 //! [`Config`]. Each name that hides nothing is an `unused-suppression` problem.
 
+use std::collections::HashMap;
 use std::fmt;
 use std::ops::Range;
 
@@ -26,6 +27,18 @@ pub(crate) fn marked(body: &[u8]) -> bool {
     body.trim_ascii_start()
         .strip_prefix(MARKER)
         .is_some_and(|rest| rest.first().is_none_or(u8::is_ascii_whitespace))
+}
+
+/// Whether a directive names any rule whose token targets formatting must preserve.
+pub(crate) fn has_target(body: &str) -> bool {
+    if !marked(body.as_bytes()) {
+        return false;
+    }
+    let list = &body.trim_ascii_start()[MARKER.len()..];
+    list[..reason(list).unwrap_or(list.len())]
+        .split(',')
+        .filter_map(|name| name.trim().parse().ok())
+        .any(hides)
 }
 
 /// Why a name in a suppression hides nothing.
@@ -84,7 +97,47 @@ struct Name {
     /// From the first token of the line it applies to, to that line's end; `None` when nothing
     /// follows the comment.
     line: Option<Range<usize>>,
-    used: bool,
+}
+
+/// Ordered comments before the same token share one scan, including a scan that reaches EOF.
+#[derive(Default)]
+pub(crate) struct Targets {
+    cached: Option<Range<usize>>,
+    line_start: usize,
+    eof: bool,
+}
+
+impl Targets {
+    pub(crate) fn next(
+        &mut self,
+        text: &str,
+        start: usize,
+        end: usize,
+        dialect: Dialect,
+    ) -> Option<Range<usize>> {
+        let block = text.as_bytes()[start + 1] == b'*';
+        let later = block && has_line_end(&text.as_bytes()[start..end], dialect.json5());
+        if self.eof
+            || self
+                .cached
+                .as_ref()
+                .is_some_and(|line| end <= line.start && (later || end <= self.line_start))
+        {
+            return self.cached.clone();
+        }
+        let line = next_line(text, end, dialect, later);
+        if let Some(line) = &line {
+            self.line_start = text[..line.start]
+                .rfind(|c| {
+                    matches!(c, '\n' | '\r')
+                        || dialect.json5() && matches!(c, '\u{2028}' | '\u{2029}')
+                })
+                .map_or(0, |at| at + if text.as_bytes()[at] < 0x80 { 1 } else { 3 });
+        }
+        self.eof = line.is_none();
+        self.cached.clone_from(&line);
+        line
+    }
 }
 
 /// Drop the `problems` that the suppressions in `comments`, each a `(start, end)` of a comment
@@ -102,13 +155,13 @@ pub(crate) fn apply(
     let dialect = config.dialect();
     let mut names = Vec::new();
     let mut empty = Vec::new();
+    let mut targets = Targets::default();
     for &(start, end) in comments {
         let block = bytes[start + 1] == b'*';
         let body_end = if block { end - 2 } else { end };
         let body = &bytes[start + 2..body_end];
         let marker = body_end - body.trim_ascii_start().len();
-        let spans_lines = block && has_line_end(&bytes[start..end], dialect.json5());
-        let line = next_line(text, end, dialect, spans_lines);
+        let line = targets.next(text, start, end, dialect);
         let before = names.len();
         let mut at = marker + MARKER.len();
         let list = &text[at..body_end];
@@ -120,7 +173,6 @@ pub(crate) fn apply(
                     at: offset..offset + name.len(),
                     rule: name.parse().ok(),
                     line: line.clone(),
-                    used: false,
                 });
             }
             at += part.len() + 1;
@@ -129,22 +181,26 @@ pub(crate) fn apply(
             empty.push(marker..marker + MARKER.len());
         }
     }
+    let mut lines: Vec<_> = names.iter().filter_map(|n| n.line.clone()).collect();
+    lines.dedup();
+    let mut used: HashMap<_, _> = names
+        .iter()
+        .filter_map(|n| Some(((n.line.as_ref()?.start, n.rule?), false)))
+        .collect();
     problems.retain(|p| {
         let rule = p.rule();
         if !hides(rule) {
             return true;
         }
-        // Lines only grow, and the names with none come last.
-        let i = names.partition_point(|n| n.line.as_ref().is_some_and(|l| l.start <= p.offset));
-        let mut hide = false;
-        for name in names[..i].iter_mut().rev() {
-            if name.line.as_ref().is_none_or(|l| l.end < p.offset) {
-                break;
-            }
-            if name.rule == Some(rule) {
-                name.used = true;
-                hide = true;
-            }
+        let i = lines.partition_point(|line| line.start <= p.offset);
+        let matched = i
+            .checked_sub(1)
+            .and_then(|i| lines.get(i))
+            .filter(|line| p.offset <= line.end)
+            .and_then(|line| used.get_mut(&(line.start, rule)));
+        let hide = matched.is_some();
+        if let Some(used) = matched {
+            *used = true;
         }
         if hide && let (Some(hidden), Some(first)) = (hidden.as_deref_mut(), p.related()) {
             hidden.push(first.offset);
@@ -167,7 +223,11 @@ pub(crate) fn apply(
             Some(rule) if config.severity(rule) == Severity::Off => return None,
             Some(Rule::Syntax) => Unused::Fixed,
             Some(rule) if !hides(rule) => Unused::WholeFile,
-            Some(_) if n.used || n.line.as_ref().is_some_and(|l| l.end >= checked) => {
+            Some(rule)
+                if n.line.as_ref().is_some_and(|l| {
+                    l.end >= checked || used.get(&(l.start, rule)) == Some(&true)
+                }) =>
+            {
                 return None;
             }
             Some(_) => Unused::Nothing,
@@ -306,7 +366,7 @@ fn line_end(bytes: &[u8], mut from: usize, json5: bool) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::marked;
+    use super::{Targets, has_line_end, marked, next_line};
     use crate::{Config, Dialect, Rule, Severity, check, fix};
 
     /// Each problem as `line:column rule: message`.
@@ -525,6 +585,37 @@ mod tests {
     fn a_repeated_name_is_fine() {
         let text = "{\"a\": 1,\n// jsonvet-ignore duplicate-key, duplicate-key\n\"a\": 2}";
         assert_eq!(jsonc(text), Vec::<String>::new());
+        let text = "{\"a\":1,\n// jsonvet-ignore duplicate-key, duplicate-key\n// jsonvet-ignore duplicate-key\n\"a\":2,\"a\":3}";
+        assert_eq!(jsonc(text), Vec::<String>::new());
+    }
+
+    #[test]
+    fn cached_targets_agree_with_individual_scans() {
+        for dialect in [Dialect::Jsonc, Dialect::Jwcc, Dialect::Json5] {
+            for gap in ["\n", "\r", "\u{2028}", "\n/* why\n*/", " \"x\",\n"] {
+                for tail in ["", "{}", "\n{}", "\n/* why */\n{}"] {
+                    let comment = "/* jsonvet-ignore duplicate-key */";
+                    let mut text = String::new();
+                    let mut comments = Vec::new();
+                    for _ in 0..4 {
+                        let start = text.len();
+                        text.push_str(comment);
+                        comments.push((start, text.len()));
+                        text.push_str(gap);
+                    }
+                    text.push_str(tail);
+                    let mut targets = Targets::default();
+                    for (start, end) in comments {
+                        let later = has_line_end(&text.as_bytes()[start..end], dialect.json5());
+                        assert_eq!(
+                            targets.next(&text, start, end, dialect),
+                            next_line(&text, end, dialect, later),
+                            "{dialect} {text:?}"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]

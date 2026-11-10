@@ -11,6 +11,36 @@ use std::fmt::Write as _;
 use jsonvet::{Config, Dialect, FormatOptions, Indent, Rule, check, format, parse};
 use proptest::prelude::*;
 
+#[test]
+fn formatting_preserves_suppression_targets() {
+    let config = Config::new(Dialect::Jsonc);
+    let text = "{\"a\":1,\n// jsonvet-ignore duplicate-key\n\"a\":2,\"b\":1,\"b\":2}\n";
+    assert_eq!(check(text, &config).problems(), []);
+    let error = format(text, &config, &FormatOptions::default()).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "not formatted: formatting would change which tokens an inline suppression covers"
+    );
+    let safe = "{\"a\":1,\n// jsonvet-ignore duplicate-key\n\"a\":2\n}";
+    assert!(format(safe, &config, &FormatOptions::default()).is_ok());
+    // Normalization changes atom spelling and adds commas, but keeps their identities.
+    let json5 = Config::new(Dialect::Json5);
+    let safe = "{a:1,\n// jsonvet-ignore duplicate-key\n'a':2\n}";
+    assert!(format(safe, &json5, &normalized()).is_ok());
+    let root = "// jsonvet-ignore invalid-number\n[1e999,1e999]";
+    assert!(matches!(
+        format(root, &json5, &width(8)),
+        Err(jsonvet::FormatError::SuppressionTargets)
+    ));
+    for name in ["syntax", "schema", "unknown-rule", ""] {
+        let text = format!("{{\"a\":1,\n// jsonvet-ignore {name}\n\"a\":2,\"b\":1,\"b\":2}}\n");
+        assert!(
+            format(&text, &config, &FormatOptions::default()).is_ok(),
+            "{name}"
+        );
+    }
+}
+
 fn fmt(dialect: Dialect, options: &FormatOptions, text: &str) -> String {
     match format(text, &Config::new(dialect), options) {
         Ok(out) => out,

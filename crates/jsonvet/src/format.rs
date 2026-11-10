@@ -12,6 +12,7 @@
 
 use std::borrow::Cow;
 use std::fmt;
+use std::ops::Range;
 
 use crate::parse::check_ending;
 use crate::{Config, Dialect, Report, Rule};
@@ -68,6 +69,8 @@ pub enum FormatError<'a> {
     Syntax(Report<'a>),
     /// The text is past what the formatter's 32-bit offsets reach, 512 MiB.
     InputTooLarge,
+    /// Reflowing the text would change the tokens covered by an inline suppression.
+    SuppressionTargets,
     /// The output would take this many bytes, more than 16 times the text or 64 MiB, whichever is
     /// more. Deep nesting does this: each level adds its indentation to every line below it.
     OutputTooLarge {
@@ -84,6 +87,9 @@ impl fmt::Display for FormatError<'_> {
                 write!(f, "{}", first.map_or_else(String::new, ToString::to_string))
             }
             FormatError::InputTooLarge => f.write_str("not formatted: the file is over 512 MiB"),
+            FormatError::SuppressionTargets => f.write_str(
+                "not formatted: formatting would change which tokens an inline suppression covers",
+            ),
             FormatError::OutputTooLarge { bytes } => {
                 // Decimal units, rounded to a tenth.
                 let (unit, size) = if *bytes >= 1_000_000_000 {
@@ -106,7 +112,8 @@ impl std::error::Error for FormatError<'_> {}
 
 /// Format one text, keeping comments and values with line endings normalized.
 /// A text with a syntax error comes back as [`FormatError::Syntax`] with its report,
-/// and nothing is formatted.
+/// and nothing is formatted. Formatting that changes the tokens covered by an inline suppression
+/// comes back as [`FormatError::SuppressionTargets`].
 ///
 /// ```
 /// use jsonvet::{format, Config, Dialect, FormatOptions};
@@ -207,7 +214,78 @@ pub fn format<'a>(
         options.bracket_spacing,
     );
     w.document(&parser.t, &doc);
-    w.finish()
+    let out = w.finish()?;
+    if parser
+        .t
+        .comments
+        .iter()
+        .chain(&doc.leading)
+        .chain(&doc.trailing)
+        .any(|&c| {
+            let comment = parser.t.comment(c);
+            crate::suppress::has_target(comment[2..].strip_suffix("*/").unwrap_or(&comment[2..]))
+        })
+        && suppression_targets(text, dialect) != suppression_targets(&out, dialect)
+    {
+        return Err(FormatError::SuppressionTargets);
+    }
+    Ok(out)
+}
+
+/// Token ordinals survive whitespace changes and JSON5 normalization. Commas can be added or
+/// removed by normalization, so they have no identity here.
+fn suppression_targets(text: &str, dialect: Dialect) -> Vec<Range<usize>> {
+    let mut lexer = Lexer {
+        text,
+        at: 0,
+        dialect,
+    };
+    let mut tokens = Vec::new();
+    let mut comments = Vec::new();
+    while let Some(token) = lexer.next() {
+        let (start, end) = (token.start as usize, token.end as usize);
+        match token.kind {
+            Kind::Line | Kind::Block => {
+                let body_end = if token.kind == Kind::Block {
+                    end - 2
+                } else {
+                    end
+                };
+                if crate::suppress::has_target(&text[start + 2..body_end]) {
+                    comments.push((start, end));
+                }
+            }
+            Kind::Comma => {}
+            _ => tokens.push(start),
+        }
+    }
+    let mut targets = crate::suppress::Targets::default();
+    comments
+        .into_iter()
+        .map(|(start, end)| {
+            let target = targets.next(text, start, end, dialect);
+            target.map_or(0..0, |line| {
+                tokens.partition_point(|&at| at < line.start)
+                    ..tokens.partition_point(|&at| at < line.end)
+            })
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::suppression_targets;
+    use crate::Dialect;
+
+    #[test]
+    fn equal_target_counts_do_not_hide_changed_token_identities() {
+        let first = "[\n// jsonvet-ignore invalid-number\n1e999,\n2e999\n]";
+        let second = "[\n1e999,\n// jsonvet-ignore invalid-number\n2e999\n]";
+        let first = suppression_targets(first, Dialect::Json5);
+        let second = suppression_targets(second, Dialect::Json5);
+        assert_eq!(first[0].len(), second[0].len());
+        assert_ne!(first, second);
+    }
 }
 
 /// The most text the 32-bit offsets, with one bit kept for rewritten strings, can point into.

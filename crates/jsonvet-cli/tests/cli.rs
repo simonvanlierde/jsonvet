@@ -36,6 +36,22 @@ fn no_hang(start: std::time::Instant) {
     assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
 }
 
+#[test]
+fn formatting_refuses_changed_suppression_targets_without_writing() {
+    let text = "{\"a\":1,\n// jsonvet-ignore duplicate-key\n\"a\":2,\"b\":1,\"b\":2}\n";
+    let dir = workdir(&[("s.jsonc", text)]);
+    let (code, _, out) = jsonvet_stderr(&dir, &["fmt", "s.jsonc"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains("formatting would change which tokens an inline suppression covers"),
+        "{out}"
+    );
+    assert_eq!(
+        fs::read_to_string(dir.join("s.jsonc")).expect("read input"),
+        text
+    );
+}
+
 /// A command for `bin` without the caller's `NO_COLOR`, `FORCE_COLOR`, `GITHUB_ACTIONS` and
 /// locale, which change how its output looks and what language it is in. A test that wants one
 /// sets it again.

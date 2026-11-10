@@ -448,6 +448,11 @@ mod tests {
         let deep = format(&"[".repeat(400), "json", 2, 80, true, false);
         assert!(deep.is_err());
         assert!(format("{}", "yaml", 2, 80, true, false).is_err());
+        let text = "{\"a\":1,\n// jsonvet-ignore duplicate-key\n\"a\":2,\"b\":1,\"b\":2}\n";
+        assert_eq!(
+            format(text, "jsonc", 2, 80, true, false).unwrap_err(),
+            "not formatted: formatting would change which tokens an inline suppression covers"
+        );
     }
 
     #[test]
