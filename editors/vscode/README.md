@@ -55,8 +55,8 @@ VS Code also has a JSON formatter. To format with jsonvet, pick it as the defaul
 }
 ```
 
-Format Document formats the whole file and Format Selection only the lines you selected: the
-rest of the file stays byte for byte as it was. The layout comes from `jsonvet.toml` and
+Format Document formats the whole file and Format Selection changes only the text you selected:
+the rest of the file stays byte for byte as it was. The layout comes from `jsonvet.toml` and
 `.editorconfig`, as for `jsonvet fmt`, not from the editor's tab size, so `jsonvet fmt --check`
 agrees with the editor.
 
