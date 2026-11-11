@@ -3929,7 +3929,7 @@ mod directories {
 mod file_reads {
     use std::fs;
     use std::path::{Path, PathBuf};
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
     use std::time::{Duration, Instant};
 
     use super::{command, workdir};
@@ -3981,7 +3981,7 @@ mod file_reads {
 
     #[cfg(unix)]
     fn fifo(path: &Path) {
-        let made = Command::new("mkfifo")
+        let made = std::process::Command::new("mkfifo")
             .arg(path)
             .status()
             .expect("run mkfifo");
@@ -3989,6 +3989,7 @@ mod file_reads {
     }
 
     const DUP: &str = "{\"a\": 1, \"a\": 2}";
+    #[cfg(unix)]
     const DUP_ERROR: &str = "x.json:1:10: error[duplicate-key] duplicate key $.a (first at 1:2)\n";
 
     #[cfg(unix)]
