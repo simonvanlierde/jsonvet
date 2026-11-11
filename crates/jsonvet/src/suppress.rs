@@ -813,9 +813,10 @@ mod tests {
             );
             problems(&text, &config)
         };
-        // An unquoted key, then a block comment after a token that holds a quote and starts with
-        // `/*/`. One at the start of the line is skipped before the line starts.
+        // An unquoted key, then block comments after a token that hold a quote, one of them
+        // starting with `/*/`. One at the start of the line is skipped before the line starts.
         assert_eq!(hidden("x: 'one\\"), Vec::<String>::new());
+        assert_eq!(hidden("x: /* ' */ 'one\\"), Vec::<String>::new());
         assert_eq!(hidden("x: /*/ ' */ 'one\\"), Vec::<String>::new());
         // A key longer than all the text before its line.
         let key = "k".repeat(60);
