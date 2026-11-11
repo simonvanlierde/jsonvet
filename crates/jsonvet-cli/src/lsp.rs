@@ -9,7 +9,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use jsonvet::{Config, RelatedKind, Severity};
+use jsonvet::{Config, Severity};
 use lsp_server::{Connection, ErrorCode, Message, Notification, Request, RequestId, Response};
 use serde_json::{Value, json};
 
@@ -545,12 +545,7 @@ fn diagnostics(
             "message": messages::problem(problem),
         });
         if let Some(related) = problem.related() {
-            let label = match related.kind {
-                RelatedKind::FirstOccurrence => "related.first-copy",
-                RelatedKind::Opened => "related.opened-here",
-                // NOTE: `RelatedKind` is non-exhaustive; `Start` is the only other kind so far.
-                _ => "related.starts-here",
-            };
+            let (_, label) = messages::RELATED[messages::related(related.kind)];
             let (start, end) = frame::one_char(&report, related.offset);
             diagnostic["relatedInformation"] = json!([{
                 "location": { "uri": uri, "range": lines.span(start..end) },

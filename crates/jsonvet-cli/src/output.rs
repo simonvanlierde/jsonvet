@@ -7,7 +7,7 @@ use std::io::{self, Write};
 
 use annotate_snippets::Renderer;
 use annotate_snippets::renderer::Style;
-use jsonvet::{Location, Problem, RelatedKind, Report, Severity, is_hidden};
+use jsonvet::{Location, Problem, Report, Severity, is_hidden};
 
 use crate::frame::{self, Mark, STYLED};
 use crate::{json, messages, sarif};
@@ -149,12 +149,8 @@ impl<W: Write> Printer<W> {
             },
             Format::Json => Sink::Json { started: false },
         };
-        let words = |what, label| (messages::text(what), messages::text(label));
-        let related = [
-            words("related.first-at", "related.first-copy"),
-            words("related.opened-at", "related.opened-here"),
-            words("related.started-at", "related.starts-here"),
-        ];
+        let related =
+            messages::RELATED.map(|(what, label)| (messages::text(what), messages::text(label)));
         Printer {
             out,
             sink,
@@ -176,12 +172,7 @@ impl<W: Write> Printer<W> {
         let title = message.len();
         // The related place, named in the message and marked in a frame, SARIF and JSON.
         let related = problem.related().map(|related| {
-            let (what, label) = match related.kind {
-                RelatedKind::FirstOccurrence => self.related[0],
-                RelatedKind::Opened => self.related[1],
-                // NOTE: `RelatedKind` is non-exhaustive; `Start` is the only other kind so far.
-                _ => self.related[2],
-            };
+            let (what, label) = self.related[messages::related(related.kind)];
             let at = report.location(related.offset);
             message.push_str(" (");
             let _ = jsonvet::fill(

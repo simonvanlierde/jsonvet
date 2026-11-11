@@ -9,7 +9,25 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fmt::Display;
 
-use jsonvet::Rule;
+use jsonvet::{RelatedKind, Rule};
+
+/// The message ids for each kind of related location, in [`related`] order: where it is, as
+/// "first at 1:2", and its label in a code frame or editor, as "first copy".
+pub(crate) const RELATED: [(&str, &str); 3] = [
+    ("related.first-at", "related.first-copy"),
+    ("related.opened-at", "related.opened-here"),
+    ("related.started-at", "related.starts-here"),
+];
+
+/// The index in [`RELATED`] of a related location of `kind`.
+pub(crate) fn related(kind: RelatedKind) -> usize {
+    match kind {
+        RelatedKind::FirstOccurrence => 0,
+        RelatedKind::Opened => 1,
+        // NOTE: `RelatedKind` is non-exhaustive; `Start` is the only other kind so far.
+        _ => 2,
+    }
+}
 
 /// The bundled translations: a locale name such as `de` or `pt_BR`, and its file. `build.rs`
 /// lists every `locales/*.toml`.
