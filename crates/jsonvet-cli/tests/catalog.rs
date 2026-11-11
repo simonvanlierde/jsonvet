@@ -12,12 +12,18 @@ const CATALOG: &str = "https://www.schemastore.org/api/json/catalog.json";
 const SCHEMA: &str = "https://www.schemastore.org/jsonvet-test.json";
 
 fn seed(cache: &Path, url: &str, body: &str) {
+    seed_at(cache, url, body, 0);
+}
+
+/// Seeds an entry fetched `age` seconds ago.
+fn seed_at(cache: &Path, url: &str, body: &str, age: u64) {
     let mut hash = std::collections::hash_map::DefaultHasher::new();
     url.hash(&mut hash);
     let time = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("clock")
-        .as_secs();
+        .as_secs()
+        - age;
     let envelope = serde_json::json!({"url": url, "fetched": time, "body": body});
     std::fs::write(
         cache.join(format!("{:016x}.json", hash.finish())),
@@ -167,5 +173,29 @@ fn matched_unsupported_origin_is_a_usage_error() {
     let result = run(&path, &["--no-config", "--schema-catalog", "package.json"]);
     assert_eq!(result.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&result.stderr).contains("unsupported catalog URL"));
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[test]
+fn stale_cache_is_used_with_a_warning_when_the_refresh_fails() {
+    let path = setup();
+    let cache = path.join("cache/jsonvet/schemastore");
+    let week_and_a_day = 8 * 24 * 60 * 60;
+    seed_at(
+        &cache,
+        CATALOG,
+        &serde_json::json!({"schemas":[{"url":SCHEMA,"fileMatch":["package.json"]}]}).to_string(),
+        week_and_a_day,
+    );
+    // The test transport answers any URL containing "/json" with a canned body that fails catalog
+    // parsing, which takes the same stale path as a network failure.
+    let result = run(&path, &["--no-config", "--schema-catalog", "package.json"]);
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        stderr.contains(&format!("warning: using stale cached {CATALOG}:")),
+        "{stderr}"
+    );
+    assert_eq!(result.status.code(), Some(1), "{stderr}");
+    assert!(String::from_utf8_lossy(&result.stdout).contains("error[schema]"));
     let _ = std::fs::remove_dir_all(path);
 }

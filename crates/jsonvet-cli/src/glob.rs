@@ -76,6 +76,8 @@ pub(crate) fn normalize(path: &str) -> String {
 /// `fnmatchcase`: `*` any run, `?` one character, `[abc]`, `[a-z]` and `[!abc]` classes. An
 /// unclosed `[` is a literal. Backtracks to the last `*` only, so it runs in linear time per
 /// `*` instead of exponential time.
+// NOTE: not globset: it matches `?` and classes per byte, not per character, and reads `{}` and
+// `^` as syntax, unlike check-json5 1.4.
 fn wildcard(pattern: &[char], text: &[char]) -> bool {
     let (mut p, mut t) = (0, 0);
     let mut star: Option<(usize, usize)> = None;

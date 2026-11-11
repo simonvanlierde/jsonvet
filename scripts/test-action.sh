@@ -125,7 +125,7 @@ mkdir "$tmp/bin"
 # shellcheck disable=SC2016
 printf '#!/usr/bin/env bash\necho "$*" >> "%s/gh.log"\n[[ -z "$GH_FAIL" ]]\n' "$tmp" > "$tmp/bin/gh"
 chmod +x "$tmp/bin/gh"
-wheel="$tmp/jsonvet-3.1.0-py3-none-manylinux_2_17_x86_64.whl"
+wheel="$tmp/jsonvet-3.1.0-py3-none-manylinux_2_28_x86_64.whl"
 PATH="$tmp/bin:$PATH" verify_wheel "$wheel" true 2>/dev/null || fail "an attested wheel was rejected"
 want="attestation verify $wheel --repo simonvanlierde/jsonvet --signer-workflow simonvanlierde/jsonvet/.github/workflows/release.yml"
 [[ "$(cat "$tmp/gh.log")" == "$want" ]] || fail "gh ran as [$(cat "$tmp/gh.log")], want [$want]"

@@ -419,6 +419,10 @@ fn a_bad_format_table_is_a_usage_error() {
             "unknown key `widht` (did you mean `width`?)",
         ),
         (
+            "per-file-format = [{ files = \"*.json\", fill-number = true }]",
+            "unknown key `fill-number` (did you mean `fill-numbers`?)",
+        ),
+        (
             "per-file-format = [{ files = \"*.json\", width = 0 }]",
             "`format.width` must be a whole number of 1 or more",
         ),
@@ -435,6 +439,10 @@ fn a_bad_format_table_is_a_usage_error() {
             "`format.bracket-spacing` must be true or false",
         ),
         (
+            "per-file-format = [{ files = \"*.json\", fill-numbers = \"yes\" }]",
+            "`format.fill-numbers` must be true or false",
+        ),
+        (
             "[format]\nwidth = 0\n",
             "`format.width` must be a whole number of 1 or more",
         ),
@@ -447,6 +455,10 @@ fn a_bad_format_table_is_a_usage_error() {
         (
             "[format]\nwidht = 80\n",
             "unknown key `widht` (did you mean `width`?) in `format`",
+        ),
+        (
+            "[format]\nfill-number = true\n",
+            "unknown key `fill-number` (did you mean `fill-numbers`?) in `format`",
         ),
         ("format = 1\n", "`format` must be a table"),
     ] {
@@ -582,6 +594,47 @@ fn objects_are_padded_with_spaces_unless_bracket_spacing_is_off() {
         out,
         "{\"a\": 1, \"b\": {\"c\": [1, {\"d\": 2}], \"e\": {}}}\n"
     );
+}
+
+#[test]
+fn number_arrays_fill_their_lines_where_fill_numbers_is_on() {
+    let text = "{\"a\":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26]}";
+    let filled = "{\n  \"a\": [\n    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,\n    22, 23, 24, 25, 26\n  ]\n}\n";
+    let dir = workdir(&[(
+        "jsonvet.toml",
+        "per-file-format = [{ files = \"off.json\", fill-numbers = false }]\n\
+         [format]\nfill-numbers = true\n",
+    )]);
+    let (_, out, err) = run(&dir, &["fmt", "--stdin-filename", "a.json"], text);
+    assert_eq!((out.as_str(), err.as_str()), (filled, ""));
+    let (_, out, _) = run(&dir, &["fmt", "--stdin-filename", "off.json"], text);
+    assert!(out.contains("\n    1,\n    2,\n"), "{out}");
+
+    // A per-file entry turns it on over the default, and so does the pyproject.toml table.
+    for (name, toml) in [
+        (
+            "jsonvet.toml",
+            "per-file-format = [{ files = \"on.json\", fill-numbers = true }]\n",
+        ),
+        (
+            "pyproject.toml",
+            "[tool.jsonvet]\nper-file-format = [{ files = \"on.json\", fill-numbers = true }]\n",
+        ),
+        (
+            "pyproject.toml",
+            "[tool.jsonvet.format]\nfill-numbers = true\n",
+        ),
+    ] {
+        let dir = workdir(&[(name, toml)]);
+        let (_, out, _) = run(&dir, &["fmt", "--stdin-filename", "on.json"], text);
+        assert_eq!(out, filled, "{toml}");
+    }
+    let dir = workdir(&[(
+        "jsonvet.toml",
+        "per-file-format = [{ files = \"on.json\", fill-numbers = true }]\n",
+    )]);
+    let (_, out, _) = run(&dir, &["fmt", "--stdin-filename", "other.json"], text);
+    assert!(out.contains("\n    1,\n    2,\n"), "{out}");
 }
 
 #[test]

@@ -2,7 +2,7 @@
 source: crates/jsonvet/tests/format.rs
 expression: "show(Dialect::Jsonc, &FormatOptions::default(),\n&[\"// head\\n\\n\\n// second\\n{\\\"a\\\":1} // tail\\n// last\\n\",\n\"{ // after the brace\\n\\\"a\\\": 1, // after the comma\\n// own line\\n\\\"b\\\": [1,2,3], /* block after */\\n\\\"c\\\": 4 // last, no comma\\n}\",\n\"{\\\"a\\\": /* after colon */ 2, \\\"b\\\" /* before colon */ : 3, \\\"c\\\": 4 /* before comma */, \\\"d\\\": 5}\",\n\"{\\\"a\\\": // line after colon\\n 1}\", \"{ // only\\n}\", \"[ /* only */ ]\",\n\"[\\n// own line\\n]\", \"[/* a */ 1, /* b */ 2, 3 /* c */]\",\n\"[1, /* between */ 2]\", \"[\\n  1, 2, // two\\n  3\\n]\",\n\"{\\\"a\\\": {\\\"b\\\": [1 /* deep */]}, \\\"c\\\": [2]}\",\n\"{\\n\\n\\n\\\"a\\\":1,\\n\\n\\n\\n// c\\n\\n\\\"b\\\":2\\n\\n\\n}\", \"[1,\\n/* a\\n   b */\\n2]\",\n\"{\\\"a\\\": [] // empty\\n}\", \"[1, 2 /* end */]\", \"{\\\"a\\\": 1 /* x */ }\",])"
 ---
-jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 // head
 
@@ -20,7 +20,7 @@ jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, brac
 
 === "// head\n\n// second\n{ \"a\": 1 } // tail\n// last\n"
 
-jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 { // after the brace
 "a": 1, // after the comma
@@ -38,7 +38,7 @@ jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, brac
 
 === "{ // after the brace\n  \"a\": 1, // after the comma\n  // own line\n  \"b\": [1, 2, 3], /* block after */\n  \"c\": 4 // last, no comma\n}\n"
 
-jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 {"a": /* after colon */ 2, "b" /* before colon */ : 3, "c": 4 /* before comma */, "d": 5}
 --- out
@@ -51,7 +51,7 @@ jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, brac
 
 === "{\n  \"a\": /* after colon */ 2,\n  \"b\" /* before colon */: 3,\n  \"c\": 4 /* before comma */,\n  \"d\": 5\n}\n"
 
-jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 {"a": // line after colon
  1}
@@ -63,7 +63,7 @@ jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, brac
 
 === "{\n  \"a\": // line after colon\n    1\n}\n"
 
-jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 { // only
 }
@@ -73,7 +73,7 @@ jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, brac
 
 === "{ // only\n}\n"
 
-jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 [ /* only */ ]
 --- out
@@ -82,7 +82,7 @@ jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, brac
 
 === "[ /* only */\n]\n"
 
-jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 [
 // own line
@@ -94,7 +94,7 @@ jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, brac
 
 === "[\n  // own line\n]\n"
 
-jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 [/* a */ 1, /* b */ 2, 3 /* c */]
 --- out
@@ -106,7 +106,7 @@ jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, brac
 
 === "[\n  /* a */ 1,\n  /* b */ 2,\n  3 /* c */\n]\n"
 
-jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 [1, /* between */ 2]
 --- out
@@ -117,7 +117,7 @@ jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, brac
 
 === "[\n  1,\n  /* between */ 2\n]\n"
 
-jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 [
   1, 2, // two
@@ -132,7 +132,7 @@ jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, brac
 
 === "[\n  1,\n  2, // two\n  3\n]\n"
 
-jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 {"a": {"b": [1 /* deep */]}, "c": [2]}
 --- out
@@ -147,7 +147,7 @@ jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, brac
 
 === "{\n  \"a\": {\n    \"b\": [\n      1 /* deep */\n    ]\n  },\n  \"c\": [2]\n}\n"
 
-jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 {
 
@@ -173,7 +173,7 @@ jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, brac
 
 === "{\n  \"a\": 1,\n\n  // c\n\n  \"b\": 2\n}\n"
 
-jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 [1,
 /* a
@@ -189,7 +189,7 @@ jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, brac
 
 === "[\n  1,\n  /* a\n     b */\n  2\n]\n"
 
-jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 {"a": [] // empty
 }
@@ -200,7 +200,7 @@ jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, brac
 
 === "{\n  \"a\": [] // empty\n}\n"
 
-jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 [1, 2 /* end */]
 --- out
@@ -211,7 +211,7 @@ jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, brac
 
 === "[\n  1,\n  2 /* end */\n]\n"
 
-jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+jsonc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 {"a": 1 /* x */ }
 --- out

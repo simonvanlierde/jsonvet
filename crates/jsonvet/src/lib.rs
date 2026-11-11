@@ -44,6 +44,7 @@ mod rule;
 mod suggest;
 mod suppress;
 mod unicode;
+mod utf16;
 
 pub use dialect::{Dialect, UnknownDialect};
 pub use event::{Event, EventKind};
@@ -57,6 +58,8 @@ pub use report::{Location, Report};
 pub use rule::{Config, Rule, Severity, UnknownRule};
 pub use suggest::{closest, did_you_mean};
 pub use unicode::is_hidden;
+#[doc(hidden)]
+pub use utf16::Utf16Index;
 
 /// Check one text and return every problem in it, in document order. Checking stops at the
 /// first syntax error; problems found before it stay in the report.

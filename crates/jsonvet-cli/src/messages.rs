@@ -176,7 +176,7 @@ const ENGLISH: &[(&str, &str)] = &[
     ),
     (
         "config.format-unknown-key",
-        "unknown key `{key}`{hint} in `format`; expected indent, width, normalize-json5 or bracket-spacing",
+        "unknown key `{key}`{hint} in `format`; expected indent, width, normalize-json5, bracket-spacing or fill-numbers",
     ),
     (
         "config.format-indent",
@@ -189,6 +189,10 @@ const ENGLISH: &[(&str, &str)] = &[
     (
         "config.format-bracket-spacing",
         "`format.bracket-spacing` must be true or false",
+    ),
+    (
+        "config.format-fill-numbers",
+        "`format.fill-numbers` must be true or false",
     ),
     (
         "config.format-normalize",

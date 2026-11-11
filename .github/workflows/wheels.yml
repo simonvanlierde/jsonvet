@@ -1,0 +1,78 @@
+name: wheels
+
+# The wheel matrix, called by release.yml (which uploads the wheels) and by wheels-check.yml
+# (which builds them without uploading, so a change that breaks a wheel fails on the pull request
+# and not at the tag).
+on:
+  workflow_call:
+    inputs:
+      upload:
+        description: Upload the wheels as artifacts, for the jobs that publish them.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  # The Rust that builds the published wheels, pinned so a rebuild of a tag gives the same
+  # compiler. Renovate bumps it; CI's hook job builds with the same one.
+  RELEASE_RUST: "1.99.1"
+
+jobs:
+  wheels:
+    strategy:
+      fail-fast: false
+      # The Linux build images are maturin-action's defaults for each row, pinned by digest
+      # (the action would pull the floating tag). Renovate bumps the digests.
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64
+            manylinux: auto
+            container: quay.io/pypa/manylinux_2_28_x86_64:latest@sha256:9555ba6c479fa69a2aa80ad1dc57154a60d562b19df159361d9379a02beb1e36
+          - os: ubuntu-latest
+            target: aarch64
+            manylinux: auto
+            container: ghcr.io/rust-cross/manylinux_2_28-cross:aarch64@sha256:ca53fa07ecf1c3e6408c51fbca64c036d9d29af832d3f8bb954910e89097f275
+          - os: ubuntu-latest
+            target: x86_64
+            manylinux: musllinux_1_2
+            container: ghcr.io/rust-cross/rust-musl-cross:x86_64-musl@sha256:ce75e9174325d4fbb3de85c309e2d7ca29f7500169bc4b5d2c611ff7e86d549a
+          - os: ubuntu-latest
+            target: aarch64
+            manylinux: musllinux_1_2
+            container: ghcr.io/rust-cross/rust-musl-cross:aarch64-musl@sha256:ecae5dd62d1c938c14f8071d36c16fa699860aace03bfb5284fb1216474d2643
+          - {os: macos-latest, target: x86_64-apple-darwin}
+          - {os: macos-latest, target: aarch64-apple-darwin}
+          - {os: windows-latest, target: x86_64-pc-windows-msvc}
+          - {os: windows-latest, target: aarch64-pc-windows-msvc}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # No cache: an entry written from any branch is restorable here, which would put
+      # attacker-controlled bytes into a wheel this workflow publishes.
+      - uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          maturin-version: v1.15.0
+          working-directory: crates/jsonvet-cli
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux || 'auto' }}
+          container: ${{ matrix.container || '' }}
+          rust-toolchain: ${{ env.RELEASE_RUST }}
+          args: --release --locked --out ../../dist
+      # The row's container fixes the platform tag, and PyPI rejects a plain linux_* one, which
+      # no pull request check would otherwise show before the release exists.
+      - if: matrix.container
+        env:
+          TAG: ${{ matrix.manylinux == 'auto' && 'manylinux_2_28' || matrix.manylinux }}
+          TARGET: ${{ matrix.target }}
+        run: ls dist/*-"${TAG}_${TARGET}".whl
+      - if: inputs.upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wheels-${{ matrix.os }}-${{ matrix.target }}-${{ matrix.manylinux || 'native' }}
+          path: dist/

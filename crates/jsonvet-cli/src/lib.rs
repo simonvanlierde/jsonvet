@@ -56,7 +56,9 @@ pub fn run() -> ExitCode {
     // The release profile aborts on a panic, which ends the process with a signal and no way to
     // report it. A hook runs first, so a bug exits 101 with a pointer to the issue tracker.
     std::panic::set_hook(Box::new(|info| {
-        eprintln!(
+        // NOTE: `eprintln!` would panic again here when stderr cannot be written, and abort.
+        let _ = writeln!(
+            io::stderr(),
             "jsonvet: internal error: {info}\n\nThis is a bug in jsonvet. Please report it at \
              https://github.com/simonvanlierde/jsonvet/issues with the command you ran and, if \
              you can share it, the file that caused it."
@@ -111,7 +113,8 @@ fn run_here() -> ExitCode {
     ) {
         Ok(code) => ExitCode::from(code),
         Err(message) => {
-            eprintln!("jsonvet: {message}");
+            // Nowhere to say it when stderr is the failure, but the exit code still tells.
+            let _ = writeln!(io::stderr(), "jsonvet: {message}");
             ExitCode::from(2)
         }
     }
@@ -219,7 +222,9 @@ pub fn run_with(
     // Standard input fixed to standard output leaves only standard error for the problems.
     let stdin_fix = args.fix && files.iter().any(|(_, file)| file == STDIN);
     let mut out = out;
-    let sink = Diagnostics::new(stdin_fix, &mut out);
+    let mut stderr = io::stderr();
+    // Standard error stands in for standard output's problems when that carries a fixed text.
+    let sink: &mut dyn Write = if stdin_fix { &mut stderr } else { &mut out };
     let mut printer = Printer::new(sink, args.format, annotate, look, stdin_fix);
     let mut fixed = FixRun::default();
     let mut counts = Counts::default();
@@ -237,12 +242,11 @@ pub fn run_with(
     let mut ahead = Vec::new();
     let written = loop {
         if rest.is_empty() {
-            for note in schemas.missing_notes() {
-                printer.note(note);
-            }
+            let noted = (schemas.missing_notes().into_iter()).try_for_each(|n| printer.note(n));
             let line = (!files.is_empty()).then(|| counts.summary(files.len()));
             let found = counts.errors + counts.warnings > 0;
-            break print_summary(&mut printer, line.as_deref(), terminal.tty, found);
+            break noted
+                .and_then(|()| print_summary(&mut printer, line.as_deref(), terminal.tty, found));
         }
         let shares = shares.get(files.len() - rest.len()..);
         let with_schema =
@@ -265,8 +269,8 @@ pub fn run_with(
         let mut selected = None;
         if let Some(catalog) = &mut catalog {
             selected = Some(catalog.select(chunk, &texts, &shown, &schemas)?);
-            for note in catalog.take_notes() {
-                printer.note(note);
+            if let Err(e) = (catalog.take_notes().into_iter()).try_for_each(|n| printer.note(n)) {
+                break Err(e);
             }
         }
         let chunk = selected.as_deref().unwrap_or(chunk);
@@ -296,7 +300,9 @@ pub fn run_with(
     };
     // A JSON or SARIF report on standard error is all of it, so the count stays out.
     let count = !stdin_fix || args.format == Format::Text;
-    let written = written.and_then(|()| fixed.finish(count, &mut out));
+    // The fixed text goes out even when the problems could not be written.
+    let finished = fixed.finish(count, &mut out);
+    let written = written.and(finished);
     conclude(written, &counts, args.max_warnings)
 }
 
@@ -397,14 +403,19 @@ fn take_chunk(
 fn weight(text: &Result<String, String>, with_schema: bool) -> usize {
     let size = text.as_ref().map_or(0, String::len);
     if with_schema {
-        size.saturating_mul(SCHEMA_BYTES).min(CHUNK_BYTES)
+        schema_bytes(size)
     } else {
         size
     }
 }
 
+/// [`SCHEMA_BYTES`] times `size`, capped at [`CHUNK_BYTES`].
+fn schema_bytes(size: usize) -> usize {
+    size.saturating_mul(SCHEMA_BYTES).min(CHUNK_BYTES)
+}
+
 /// The memory a file takes while a schema checks it, as far as a chunk counts it:
-/// [`SCHEMA_BYTES`] times its size, capped at [`CHUNK_BYTES`]. Standard input's size is known
+/// [`schema_bytes`] of its size. Standard input's size is known
 /// only once it is read, so it takes a chunk's worth. A file that cannot be read takes nothing:
 /// `read` reports why.
 fn schema_share(file: &OsStr) -> usize {
@@ -412,10 +423,7 @@ fn schema_share(file: &OsStr) -> usize {
         return CHUNK_BYTES;
     }
     let size = std::fs::metadata(file).map_or(0, |meta| meta.len());
-    usize::try_from(size)
-        .unwrap_or(usize::MAX)
-        .saturating_mul(SCHEMA_BYTES)
-        .min(CHUNK_BYTES)
+    schema_bytes(usize::try_from(size).unwrap_or(usize::MAX))
 }
 
 /// Each file's [`schema_share`], or 0 for a file with no schema; nothing if no file has one.
@@ -600,39 +608,6 @@ fn lock(resolver: &Mutex<Resolver>) -> std::sync::MutexGuard<'_, Resolver> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-/// Where the problems go: standard output, or standard error when standard output carries a
-/// fixed text.
-enum Diagnostics<'w, W: Write> {
-    Out(&'w mut W),
-    Stderr(io::Stderr),
-}
-
-impl<'w, W: Write> Diagnostics<'w, W> {
-    fn new(to_stderr: bool, out: &'w mut W) -> Self {
-        if to_stderr {
-            Diagnostics::Stderr(io::stderr())
-        } else {
-            Diagnostics::Out(out)
-        }
-    }
-}
-
-impl<W: Write> Write for Diagnostics<'_, W> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        match self {
-            Diagnostics::Out(out) => out.write(buf),
-            Diagnostics::Stderr(err) => err.write(buf),
-        }
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        match self {
-            Diagnostics::Out(out) => out.flush(),
-            Diagnostics::Stderr(err) => err.flush(),
-        }
-    }
-}
-
 /// What `--fix` did over the whole run.
 #[derive(Default)]
 struct FixRun {
@@ -644,15 +619,17 @@ struct FixRun {
 
 impl FixRun {
     /// Print the count to standard error when `count` is set, then standard input's fixed text to
-    /// `out`.
+    /// `out`, which is written even if the count was not.
     fn finish(&self, count: bool, out: &mut impl Write) -> io::Result<()> {
-        if count && let Some(summary) = self.summary() {
-            eprintln!("{summary}");
-        }
-        match &self.stdin {
+        let counted = match self.summary() {
+            Some(summary) if count => writeln!(io::stderr(), "{summary}"),
+            _ => Ok(()),
+        };
+        let text = match &self.stdin {
             Some(text) => out.write_all(text.as_bytes()).and_then(|()| out.flush()),
             None => Ok(()),
-        }
+        };
+        counted.and(text)
     }
 
     /// Such as `fixed 3 problems in 2 files`, or `None` when nothing was fixed.

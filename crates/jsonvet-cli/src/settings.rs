@@ -152,6 +152,7 @@ pub(crate) struct FormatSettings {
     pub(crate) width: Option<usize>,
     pub(crate) normalize_json5: Option<bool>,
     pub(crate) bracket_spacing: Option<bool>,
+    pub(crate) fill_numbers: Option<bool>,
 }
 
 impl FormatSettings {
@@ -161,6 +162,7 @@ impl FormatSettings {
             width: later.width.or(self.width),
             normalize_json5: later.normalize_json5.or(self.normalize_json5),
             bracket_spacing: later.bracket_spacing.or(self.bracket_spacing),
+            fill_numbers: later.fill_numbers.or(self.fill_numbers),
         }
     }
 }
@@ -951,13 +953,21 @@ fn format_table<'t>(
             ("normalize-json5", DeValue::Boolean(on)) => format.normalize_json5 = Some(*on),
             ("bracket-spacing", DeValue::Boolean(on)) => format.bracket_spacing = Some(*on),
             ("bracket-spacing", _) => return Err(wrong("config.format-bracket-spacing")),
+            ("fill-numbers", DeValue::Boolean(on)) => format.fill_numbers = Some(*on),
+            ("fill-numbers", _) => return Err(wrong("config.format-fill-numbers")),
             ("indent", _) => return Err(wrong("config.format-indent")),
             ("width", _) => return Err(wrong("config.format-width")),
             ("normalize-json5", _) => return Err(wrong("config.format-normalize")),
             (name, _) => {
                 let hint = messages::did_you_mean(
                     name,
-                    ["indent", "width", "normalize-json5", "bracket-spacing"],
+                    [
+                        "indent",
+                        "width",
+                        "normalize-json5",
+                        "bracket-spacing",
+                        "fill-numbers",
+                    ],
                 );
                 return Err(at(
                     key.span().start,
