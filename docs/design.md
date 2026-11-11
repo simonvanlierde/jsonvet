@@ -286,8 +286,8 @@ crafted file can do is a panic ([0002](decisions/0002-no-unsafe-code.md)).
 pre-commit installs a `language: python` hook with `pip install .`. The root `setup.py` is a
 placeholder that depends on the exact released `jsonvet` wheel, so a hook install downloads a
 binary and never compiles Rust ([0008](decisions/0008-binary-wheels-behind-a-placeholder.md)).
-maturin builds the wheels with `bindings = "bin"`, for Linux (glibc and musl), macOS and Windows,
-each on x86-64 and arm64.
+maturin builds the wheels with `bindings = "bin"`, for Linux (glibc 2.28 or newer, and musl),
+macOS and Windows, each on x86-64 and arm64.
 
 ## Testing
 
