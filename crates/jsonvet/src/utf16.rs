@@ -31,6 +31,11 @@ impl Utf16Index {
 
     /// The UTF-16 index of byte `offset`, a character boundary in `text`.
     pub fn at(&mut self, text: &str, offset: usize) -> usize {
+        // Inside a character, the cursor would undercount every later lookup.
+        debug_assert!(
+            text.is_char_boundary(offset),
+            "byte {offset} is inside a character"
+        );
         if offset >= self.byte {
             self.units += self.count(text, self.byte, offset);
         } else {
@@ -86,6 +91,22 @@ mod tests {
             }
         }
         let bound = 2 * text.len() + 2_000 * 4_096;
+        assert!(index.counted <= bound, "{} > {bound}", index.counted);
+    }
+
+    #[test]
+    fn line_relative_lookups_scan_at_most_a_chunk_each() {
+        // As the LSP asks for a distant column: the units before the offset, less those before
+        // its line's start, with the end of the text and two related places in turn.
+        let text = "é😀a".repeat(10_000);
+        let mut index = Utf16Index::default();
+        for _ in 0..1_000 {
+            for offset in [text.len(), 7 * 2_000, 7 * 9_000] {
+                let units = index.at(&text, offset) - index.at(&text, 0);
+                assert_eq!(units, offset / 7 * 4);
+            }
+        }
+        let bound = 2 * text.len() + 3_000 * 4_096;
         assert!(index.counted <= bound, "{} > {bound}", index.counted);
     }
 

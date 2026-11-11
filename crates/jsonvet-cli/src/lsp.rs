@@ -1207,7 +1207,8 @@ mod tests {
     }
 
     #[test]
-    fn alternating_related_positions_scan_at_most_a_chunk_each() {
+    fn alternating_related_positions_stay_exact() {
+        // How much they count is bounded in the core crate's `Utf16Index` tests.
         let text = "é😀a".repeat(10_000);
         let lines = Lines::new(&text, false);
         for _ in 0..1_000 {
@@ -1218,12 +1219,6 @@ mod tests {
                 );
             }
         }
-        let bound = 2 * text.len() + 3_000 * 4_096;
-        assert!(
-            lines.counted.get() <= bound,
-            "{} > {bound}",
-            lines.counted.get()
-        );
     }
 
     /// A folder of its own for `test`, with an empty `jsonvet.toml`, so the user's own config
