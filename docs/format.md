@@ -156,9 +156,10 @@ many numbers on each line as fit in the width, and the rest wrap:
 - Every JSON5 number form counts: `+1`, `.5`, `0x1F`, `Infinity` and `NaN`. A string, `true`,
   `false`, `null` or a nested container stops the fill.
 - A comment in the array, or a blank line between two numbers, keeps one number per line, as
-  without the setting.
-- The width counts the indent and the comma after each number. A number wider than the width
-  gets a line of its own.
+  without the setting. A blank line before the first number or before the `]` is dropped, and
+  the fill goes on.
+- The width counts the indent and the comma after each number, and a tab counts as four columns.
+  A number wider than the width gets a line of its own.
 - An array of arrays keeps one inner array per line, and each inner array fills.
 
 It is off by default, so existing files keep their layout.
