@@ -162,8 +162,11 @@ def machine() -> str:
     return f"{cores} cores of {article} {model} under {platform.system()}"
 
 
-def write(table: list[str], runs: int, ref_runs: int, old_runs: int, largest: str) -> None:
-    """Replace the text between the speed markers in docs/design.md, and the README's top speed-up."""
+def write(table: list[str], runs: int, ref_runs: int, old_runs: int, ups: dict[str, float]) -> None:
+    """Replace the text between the speed markers in docs/design.md, and the README's speed-ups.
+
+    `ups` maps each case to its speed-up over 1.4.1.
+    """
     text = DESIGN.read_text()
     start, end = text.index(MARKERS[0]) + len(MARKERS[0]), text.index(MARKERS[1])
     intro = (
@@ -174,7 +177,11 @@ def write(table: list[str], runs: int, ref_runs: int, old_runs: int, largest: st
     DESIGN.write_text(text[:start] + "\n".join([textwrap.fill(intro, 100), "", *table]) + "\n" + text[end:])
     # The README may set the claim in bold: "up to **N times faster** than".
     claim = r"(up to \**)[\d,]+(\s+times faster\**\s+than check-json5 1\.4\.1)"
-    README.write_text(re.sub(claim, rf"\g<1>{largest}\g<2>", README.read_text(), count=1))
+    readme = re.sub(claim, rf"\g<1>{max(ups.values()):,.0f}\g<2>", README.read_text(), count=1)
+    # "and 6-39x on JSON and JSONC": every case but the JSON5 one.
+    others = [up for name, up in ups.items() if "JSON5" not in name]
+    span = f"{min(others):,.0f}-{max(others):,.0f}x"
+    README.write_text(re.sub(r"[\d,]+-[\d,]+x( on JSON and JSONC)", rf"{span}\g<1>", readme, count=1))
 
 
 def main() -> int:
@@ -226,7 +233,7 @@ def main() -> int:
 
         header = ["Case", "check-json5 1.0.1", "check-json5 1.4.1", f"jsonvet {release}", "Speed-up over 1.4.1"]
         rows = [[*header, "over 1.0.1"]]
-        ups = []  # speed-ups over 1.4.1, for the README
+        ups = {}  # speed-ups over 1.4.1 by case, for the README
         for name, case in fixtures(files):
             exits = {verdict(tool, case, files) for tool in tools.values()}
             if len(exits) != 1:
@@ -239,7 +246,7 @@ def main() -> int:
                 | median(["1.0.1"], listed, args.old_runs, 0)
             )
             old, ref, new = times["1.0.1"], times["1.4.1"], times["jsonvet"]
-            ups.append(ref / new)
+            ups[name] = ref / new
             rows.append(
                 [
                     name,
@@ -253,7 +260,7 @@ def main() -> int:
     table = aligned(rows)
     print("\n".join(table))
     if args.write:
-        write(table, args.runs, args.ref_runs, args.old_runs, f"{max(ups):,.0f}")
+        write(table, args.runs, args.ref_runs, args.old_runs, ups)
     return 0
 
 
