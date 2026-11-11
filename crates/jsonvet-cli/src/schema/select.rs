@@ -2,6 +2,7 @@
 //! `--schema` gives, else the one a config file names, else the one a file's own `$schema`
 //! names (ADR 0012).
 
+use std::cell::Cell;
 use std::collections::{BTreeSet, HashMap};
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
@@ -146,9 +147,12 @@ impl Schemas {
         loaded
             .entry((key, quiet))
             .or_insert_with(|| {
+                // A catalog load can parse a cached, a fetched and a stale body in turn: each
+                // count replaces the last, so only the body it keeps stays counted.
+                let counted = Cell::new(0);
                 let admit = |count: usize| {
                     self.over()?;
-                    let patterns = self.patterns.load(Ordering::Relaxed) + count;
+                    let patterns = self.patterns.load(Ordering::Relaxed) - counted.get() + count;
                     if patterns > RUN_PATTERNS {
                         let error = messages::fill(
                             "schema.run-patterns",
@@ -161,6 +165,7 @@ impl Schemas {
                         return Err(self.over.get_or_init(|| error).clone());
                     }
                     self.patterns.store(patterns, Ordering::Relaxed);
+                    counted.set(count);
                     Ok(())
                 };
                 load(&admit).map(Arc::new)
@@ -385,6 +390,40 @@ mod tests {
         assert!(schemas.get(&dir.join("s.json"), false, read).is_ok());
         assert_eq!(reads.load(Ordering::Relaxed), 2);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn only_the_last_attempt_of_one_load_counts_its_patterns() {
+        // A catalog load may parse a cached, a fetched and a stale body; only the one it keeps
+        // stays counted.
+        let schemas = Schemas::default();
+        let loaded = schemas.get_catalog("https://json.schemastore.org/x.json", |admit| {
+            admit(600)?;
+            admit(600)?;
+            Schema::load_text(
+                std::path::Path::new("x.json"),
+                "{}",
+                &Settings::default(),
+                false,
+                admit,
+            )
+        });
+        assert_eq!(loaded.err(), None);
+        assert!(schemas.over().is_ok());
+        assert!(
+            schemas
+                .get_catalog("https://json.schemastore.org/y.json", |admit| {
+                    admit(super::RUN_PATTERNS)?;
+                    Schema::load_text(
+                        std::path::Path::new("y.json"),
+                        "{}",
+                        &Settings::default(),
+                        false,
+                        admit,
+                    )
+                })
+                .is_ok()
+        );
     }
 
     #[test]
