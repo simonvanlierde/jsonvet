@@ -72,6 +72,9 @@ jobs:
           - os: ubuntu-latest
             target: aarch64
             manylinux: auto
+            # The image's GCC 4.8.5 does not define __ARM_ARCH on aarch64, and ring's assembly
+            # (through rustls) refuses to build without it. Every aarch64 CPU is ARMv8.
+            cflags: -D__ARM_ARCH=8
             container: ghcr.io/rust-cross/manylinux2014-cross:aarch64@sha256:32c92568ebee8db53e0598c21bcd06a6dd1649d45d507646a8a49313c50325f8
           - os: ubuntu-latest
             target: x86_64
@@ -94,6 +97,9 @@ jobs:
       # No cache: an entry written from any branch is restorable here, which would put
       # attacker-controlled bytes into a wheel this workflow publishes.
       - uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        env:
+          # maturin-action passes CFLAGS* variables into its build container.
+          CFLAGS_aarch64_unknown_linux_gnu: ${{ matrix.cflags || '' }}
         with:
           maturin-version: v1.15.0
           working-directory: crates/jsonvet-cli
