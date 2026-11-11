@@ -28,11 +28,24 @@ pub(crate) enum Format {
 /// JSONPaths in messages show them. The runner also reads its older `##[command]` form anywhere
 /// in a line, so the `[` of `##[` shows as `\u005b`.
 pub(crate) fn printable(value: &str) -> String {
+    escaped(value, false)
+}
+
+/// A JSON string literal: [`printable`]'s rule, plus escaped quotes and backslashes, with CR and
+/// LF as `\u000d` and `\u000a`.
+pub(crate) fn string(value: &str) -> String {
+    format!("\"{}\"", escaped(value, true))
+}
+
+/// The one escaping rule behind [`printable`] and [`string`].
+fn escaped(value: &str, json: bool) -> String {
     let mut shown = String::with_capacity(value.len());
     for c in value.chars() {
         match c {
-            '\r' => shown.push_str("\\r"),
-            '\n' => shown.push_str("\\n"),
+            '"' if json => shown.push_str("\\\""),
+            '\\' if json => shown.push_str("\\\\"),
+            '\r' if !json => shown.push_str("\\r"),
+            '\n' if !json => shown.push_str("\\n"),
             c if c.is_control() || is_hidden(c) => escape_utf16(&mut shown, c),
             '[' if shown.ends_with("##") => shown.push_str("\\u005b"),
             c => shown.push(c),
@@ -43,9 +56,19 @@ pub(crate) fn printable(value: &str) -> String {
 
 /// Write `c` as `\uXXXX`, or as two of them, a UTF-16 surrogate pair, past U+FFFF, as JSON
 /// writes it.
-pub(crate) fn escape_utf16(out: &mut String, c: char) {
+fn escape_utf16(out: &mut String, c: char) {
     for unit in c.encode_utf16(&mut [0; 2]) {
         let _ = write!(out, "\\u{unit:04x}");
+    }
+}
+
+/// The level of a reported problem, the same word in SARIF, JSON and a GitHub annotation:
+/// `error` or `warning`.
+pub(crate) fn level(severity: Severity) -> &'static str {
+    if severity == Severity::Error {
+        "error"
+    } else {
+        "warning"
     }
 }
 
@@ -360,7 +383,7 @@ impl<W: Write> Printer<W> {
         writeln!(
             self.out,
             "::{} file={}{title}::{}",
-            sarif::level(severity),
+            level(severity),
             escape(&printable(file), true),
             escape(message, false)
         )
@@ -431,7 +454,7 @@ impl<W: Write> Printer<W> {
                     let notes = self
                         .notes
                         .iter()
-                        .map(|note| sarif::string(note))
+                        .map(|note| string(note))
                         .collect::<Vec<_>>()
                         .join(",");
                     write!(self.out, ",\"notes\":[{notes}]")?;
@@ -458,7 +481,22 @@ mod tests {
 
     use jsonvet::{Config, Dialect, check};
 
-    use super::{Format, Look, MAX_FRAMES, Printer, escape, line_start, printable};
+    use super::{Format, Look, MAX_FRAMES, Printer, escape, line_start, printable, string};
+
+    #[test]
+    fn strings_escape_quotes_backslashes_and_control_characters() {
+        assert_eq!(
+            string("a\"b\\c\n\r\u{1}\u{7f}\u{e9}"),
+            "\"a\\\"b\\\\c\\u000a\\u000d\\u0001\\u007f\u{e9}\""
+        );
+        assert_eq!(
+            string("\u{85}\u{9f}\u{202e}\u{200b}\u{ad}\u{e0041}"),
+            "\"\\u0085\\u009f\\u202e\\u200b\\u00ad\\udb40\\udc41\""
+        );
+        assert_eq!(string("a b"), "\"a b\"");
+        assert_eq!(string("##[add-mask]"), "\"##\\u005badd-mask]\"");
+        assert_eq!(printable("a\"b\\c\r\n"), "a\"b\\c\\r\\n");
+    }
 
     /// On a terminal in color, each problem is a code frame, with the same color codes on every
     /// platform.

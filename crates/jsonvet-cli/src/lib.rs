@@ -219,7 +219,9 @@ pub fn run_with(
     // Standard input fixed to standard output leaves only standard error for the problems.
     let stdin_fix = args.fix && files.iter().any(|(_, file)| file == STDIN);
     let mut out = out;
-    let sink = Diagnostics::new(stdin_fix, &mut out);
+    let mut stderr = io::stderr();
+    // Standard error stands in for standard output's problems when that carries a fixed text.
+    let sink: &mut dyn Write = if stdin_fix { &mut stderr } else { &mut out };
     let mut printer = Printer::new(sink, args.format, annotate, look, stdin_fix);
     let mut fixed = FixRun::default();
     let mut counts = Counts::default();
@@ -397,10 +399,15 @@ fn take_chunk(
 fn weight(text: &Result<String, String>, with_schema: bool) -> usize {
     let size = text.as_ref().map_or(0, String::len);
     if with_schema {
-        size.saturating_mul(SCHEMA_BYTES).min(CHUNK_BYTES)
+        schema_bytes(size)
     } else {
         size
     }
+}
+
+/// [`SCHEMA_BYTES`] times `size`, capped at [`CHUNK_BYTES`].
+fn schema_bytes(size: usize) -> usize {
+    size.saturating_mul(SCHEMA_BYTES).min(CHUNK_BYTES)
 }
 
 /// The memory a file takes while a schema checks it, as far as a chunk counts it:
@@ -412,10 +419,7 @@ fn schema_share(file: &OsStr) -> usize {
         return CHUNK_BYTES;
     }
     let size = std::fs::metadata(file).map_or(0, |meta| meta.len());
-    usize::try_from(size)
-        .unwrap_or(usize::MAX)
-        .saturating_mul(SCHEMA_BYTES)
-        .min(CHUNK_BYTES)
+    schema_bytes(usize::try_from(size).unwrap_or(usize::MAX))
 }
 
 /// Each file's [`schema_share`], or 0 for a file with no schema; nothing if no file has one.
@@ -598,39 +602,6 @@ fn lock(resolver: &Mutex<Resolver>) -> std::sync::MutexGuard<'_, Resolver> {
     resolver
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
-/// Where the problems go: standard output, or standard error when standard output carries a
-/// fixed text.
-enum Diagnostics<'w, W: Write> {
-    Out(&'w mut W),
-    Stderr(io::Stderr),
-}
-
-impl<'w, W: Write> Diagnostics<'w, W> {
-    fn new(to_stderr: bool, out: &'w mut W) -> Self {
-        if to_stderr {
-            Diagnostics::Stderr(io::stderr())
-        } else {
-            Diagnostics::Out(out)
-        }
-    }
-}
-
-impl<W: Write> Write for Diagnostics<'_, W> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        match self {
-            Diagnostics::Out(out) => out.write(buf),
-            Diagnostics::Stderr(err) => err.write(buf),
-        }
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        match self {
-            Diagnostics::Out(out) => out.flush(),
-            Diagnostics::Stderr(err) => err.flush(),
-        }
-    }
 }
 
 /// What `--fix` did over the whole run.

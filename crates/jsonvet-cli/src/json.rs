@@ -6,7 +6,7 @@ use std::ffi::OsStr;
 
 use jsonvet::{Location, Severity};
 
-use crate::sarif::{level, string};
+use crate::output::{level, string};
 
 /// The schema's version. A new field leaves it alone; a field that changes meaning or goes away
 /// raises it.

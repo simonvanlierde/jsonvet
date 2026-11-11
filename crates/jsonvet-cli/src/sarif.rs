@@ -5,9 +5,9 @@ use std::ffi::OsStr;
 use std::fmt::Write as _;
 use std::path::Path;
 
-use jsonvet::{Location, Severity, is_hidden};
+use jsonvet::{Location, Severity};
 
-use crate::output::escape_utf16;
+use crate::output::{level, string};
 use crate::rules;
 
 /// A file that could not be read gets its own rule, so it shows as an alert. GitHub code scanning
@@ -54,16 +54,6 @@ pub(crate) fn result(
     }
     json.push('}');
     json
-}
-
-/// The level of a reported problem, the same word in SARIF and in a GitHub annotation: `error`
-/// or `warning`.
-pub(crate) fn level(severity: Severity) -> &'static str {
-    if severity == Severity::Error {
-        "error"
-    } else {
-        "warning"
-    }
 }
 
 /// What comes before the first result: the document, its one run and the rules.
@@ -177,45 +167,11 @@ fn uri(file: &OsStr) -> (String, bool) {
     (uri, !absolute)
 }
 
-/// A JSON string literal.
-pub(crate) fn string(value: &str) -> String {
-    let mut json = String::with_capacity(value.len() + 2);
-    json.push('"');
-    for c in value.chars() {
-        match c {
-            '"' => json.push_str("\\\""),
-            '\\' => json.push_str("\\\\"),
-            // GitHub Actions reads `##[command]` anywhere in a log line, the SARIF printed
-            // there included; `\u005b` keeps the value and breaks the match.
-            '[' if json.ends_with("##") => json.push_str("\\u005b"),
-            // Also DEL, C1 controls and hidden characters, so a log view shows them.
-            c if c.is_control() || is_hidden(c) => escape_utf16(&mut json, c),
-            c => json.push(c),
-        }
-    }
-    json.push('"');
-    json
-}
-
 #[cfg(test)]
 mod tests {
     use std::ffi::OsStr;
 
-    use super::{string, uri};
-
-    #[test]
-    fn strings_escape_quotes_backslashes_and_control_characters() {
-        assert_eq!(
-            string("a\"b\\c\n\u{1}\u{7f}\u{e9}"),
-            "\"a\\\"b\\\\c\\u000a\\u0001\\u007f\u{e9}\""
-        );
-        assert_eq!(
-            string("\u{85}\u{9f}\u{202e}\u{200b}\u{ad}\u{e0041}"),
-            "\"\\u0085\\u009f\\u202e\\u200b\\u00ad\\udb40\\udc41\""
-        );
-        assert_eq!(string("a b"), "\"a b\"");
-        assert_eq!(string("##[add-mask]"), "\"##\\u005badd-mask]\"");
-    }
+    use super::uri;
 
     #[test]
     fn relative_paths_stay_relative_and_odd_bytes_are_encoded() {

@@ -235,7 +235,7 @@ fn github_annotations_follow_each_problem() {
 /// A file name or a key in a message reaches every output path escaped: a control character,
 /// bidi control or newline as a code point, a `##[` with its `[` escaped, a name starting with
 /// `::` after `./`, and `%`, `:` and `,` percent-encoded where an annotation needs it.
-/// `src/output.rs` and `src/sarif.rs` test the escaping itself; this checks each path uses it.
+/// `src/output.rs` tests the escaping itself; this checks each path uses it.
 #[test]
 fn each_output_path_escapes_names_and_messages() {
     let key = "\u{202a}##[k:%,";
