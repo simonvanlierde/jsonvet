@@ -560,6 +560,9 @@ fn identity(file: &OsStr, meta: io::Result<std::fs::Metadata>) -> Identity {
         use std::os::unix::fs::MetadataExt;
         return Identity::Inode(meta.dev(), meta.ino());
     }
+    // Elsewhere the metadata has no stable file id, so the canonical path stands in.
+    #[cfg(not(unix))]
+    let _ = meta;
     // A file that cannot be found stays as spelled, so it is reported once per spelling.
     Identity::Path(std::fs::canonicalize(file).unwrap_or_else(|_| file.into()))
 }
