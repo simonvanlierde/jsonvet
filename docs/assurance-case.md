@@ -83,6 +83,6 @@ Actions is reported upstream (SECURITY.md, "Scope").
   every release file, signed release tags, Renovate with a seven-day wait before a new version (a
   `Cargo.lock` refresh skips the wait and waits for review instead), and `cargo deny` on every pull
   request and every Monday.
-- **Bugs not caught by review.** Four cargo-fuzz targets on every pull request that touches the
-  library and for 20 minutes each every week, weekly mutation testing, a differential test
+- **Bugs not caught by review.** Every cargo-fuzz target runs for 30 seconds on each pull request
+  that touches the library, and for 20 minutes each every week, weekly mutation testing, a differential test
   against check-json5 1.4.1 on every pull request, and clippy's pedantic lints as errors.

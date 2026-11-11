@@ -101,7 +101,7 @@ A file or folder you name is always checked, even when an ignore file or `exclud
 `exclude` has no effect on the hook or the Action, which name each file: use the hook's own
 `exclude:` and the Action's `files` input there.
 
-A file that the arguments reach more than once, as a repeated name, a folder and a file in it, or a symlink, is checked once, under the name it was first given by.
+The arguments can reach a file more than once: as a repeated name, as a folder and a file in it, or as a symlink. jsonvet checks it once, under the name it was first given by.
 
 ## Output
 
@@ -163,7 +163,8 @@ off. Do not upload it.
 
 jsonvet reads regular files, and follows a symlink to one. A device, FIFO or socket prints
 `error: not a regular file`. When the output pipe closes early, as in `jsonvet … | head -1`,
-jsonvet stops quietly, with the verdict for the files it has checked.
+jsonvet stops quietly, with the verdict for the files it has checked. Any other failed write to
+standard output or standard error, such as a full disk, ends the run with exit 2.
 
 ## Standard input
 
@@ -398,8 +399,8 @@ dialect = "jwcc"
   ([JSON Schema limits](#json-schema-limits)).
 - `per-file-format` overrides formatting settings for files matching a glob, in entry order
   ([format settings](format.md#settings)).
-- `format` is a table of `indent`, `width`, `normalize-json5` and `bracket-spacing` for
-  `jsonvet fmt` ([formatting](format.md#settings)).
+- `format` is a table of `indent`, `width`, `normalize-json5`, `bracket-spacing` and
+  `fill-numbers` for `jsonvet fmt` ([formatting](format.md#settings)).
 
 ## GitHub Action
 
@@ -537,7 +538,7 @@ Catalogs and schemas stay fresh for seven days. If a refresh fails or returns un
 jsonvet uses a usable stale copy and warns on stderr. Without a usable copy, it stops with a
 usage error (exit 2). A download that cannot be written to the cache is still used, with a
 warning. Downloads allow three redirects and take at most 30 seconds each. After a timeout, an
-unknown host or a failed connection, the rest of the run tries no more downloads and uses cached
+unknown host or a connection error, the rest of the run tries no more downloads and uses cached
 copies; their warnings say they were not tried.
 The catalog is limited to 4 MiB, 10,000 entries and 100,000 patterns; a schema is limited to
 8 MiB. All schema validation limits below still apply.

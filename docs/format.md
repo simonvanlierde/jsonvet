@@ -1,6 +1,6 @@
 # Formatting
 
-`jsonvet fmt` rewrites JSON, JSONC, JWCC (HuJSON), JSON5 and JSON Lines files and keeps their
+`jsonvet fmt` rewrites files in all six dialects and keeps their
 comments. Why it works this way is in [design.md](design.md).
 
 ```bash
@@ -25,7 +25,8 @@ The pre-commit hook is `jsonvet-format`:
 
 - A container goes on one line if it fits in the line width. If not, each member gets its own
   line. An empty container is `{}` or `[]`. A one-line object has a space inside its braces,
-  `{ "a": [1, 2] }`, and a one-line array has none. The spaces count toward the width.
+  `{ "a": [1, 2] }`, and a one-line array has none. The spaces count toward the width. With
+  [`fill-numbers`](#fill-numbers) on, an array of numbers fills its lines instead.
 - An object stays expanded if you put a line break between its `{` and its first key, even when
   it would fit on one line, and so do the containers around it. Arrays follow the width only.
   JSON Lines records are always one line.
@@ -87,6 +88,7 @@ indent = 4              # spaces from 0 to 16, or "tab"
 width = 100             # columns, 1 or more
 normalize-json5 = true  # JSON5 files only
 bracket-spacing = false # {"a": 1} instead of { "a": 1 }
+fill-numbers = true     # as many numbers on a line as fit
 
 [[per-file-format]]
 files = "generated/*.json"
@@ -134,6 +136,34 @@ With `normalize-json5 = true`, a JSON5 file gets:
 
 Number forms stay as written. The setting does nothing for the other dialects.
 
+## fill-numbers
+
+With `fill-numbers = true`, an array that holds only numbers and does not fit on one line gets as
+many numbers on each line as fit in the width, and the rest wrap:
+
+```json
+{
+  "matrix": [
+    [
+      0.12, 0.98, 0.33, 0.47, 0.51, 0.06, 0.74, 0.29, 0.88, 0.15, 0.62, 0.41,
+      0.93, 0.37
+    ],
+    [0, 1]
+  ]
+}
+```
+
+- Every JSON5 number form counts: `+1`, `.5`, `0x1F`, `Infinity` and `NaN`. A string, `true`,
+  `false`, `null` or a nested container stops the fill.
+- A comment in the array, or a blank line between two numbers, keeps one number per line, as
+  without the setting. A blank line before the first number or before the `]` is dropped, and
+  the fill goes on.
+- The width counts the indent and the comma after each number, and a tab counts as four columns.
+  A number wider than the width gets a line of its own.
+- An array of arrays keeps one inner array per line, and each inner array fills.
+
+It is off by default, so existing files keep their layout.
+
 ## Options
 
 `jsonvet fmt` takes `--check`, `--dialect`, `--strict`, `--config`, `--no-config` and
@@ -168,4 +198,3 @@ is more, jsonvet works out its size without building it, prints
 - Sorting keys.
 - Range formatting from the command line. The language server formats a range
   ([editors](editors.md)).
-- Filling a number array across lines, as Prettier does.

@@ -2,7 +2,7 @@
 source: crates/jsonvet/tests/format.rs
 expression: "show(Dialect::JsonLines, &width(10),\n&[\"{\\\"a\\\":1,\\\"b\\\":[1,2,{\\\"c\\\":null}]}\\n[1,2,3]\\n\\\"x\\\"\\n\",\n\"{\\\"a\\\":1}\\n\\n   \\n{\\\"b\\\":2}\", \"  {  \\\"a\\\" :  1  }  \\r\\n[ ]\\r\\n\", \"\",\n\"{\\\"a\\\":\\n1}\\n\",])"
 ---
-jsonl FormatOptions { indent: Spaces(2), width: 10, normalize_json5: false, bracket_spacing: true }
+jsonl FormatOptions { indent: Spaces(2), width: 10, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 {"a":1,"b":[1,2,{"c":null}]}
 [1,2,3]
@@ -15,7 +15,7 @@ jsonl FormatOptions { indent: Spaces(2), width: 10, normalize_json5: false, brac
 
 === "{\"a\": 1, \"b\": [1, 2, {\"c\": null}]}\n[1, 2, 3]\n\"x\"\n"
 
-jsonl FormatOptions { indent: Spaces(2), width: 10, normalize_json5: false, bracket_spacing: true }
+jsonl FormatOptions { indent: Spaces(2), width: 10, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 {"a":1}
 
@@ -25,7 +25,7 @@ jsonl FormatOptions { indent: Spaces(2), width: 10, normalize_json5: false, brac
 syntax error: blank line; JSON Lines needs a value on every line
 === "syntax error: blank line; JSON Lines needs a value on every line"
 
-jsonl FormatOptions { indent: Spaces(2), width: 10, normalize_json5: false, bracket_spacing: true }
+jsonl FormatOptions { indent: Spaces(2), width: 10, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
   {  "a" :  1  }  
 [ ]
@@ -36,14 +36,14 @@ jsonl FormatOptions { indent: Spaces(2), width: 10, normalize_json5: false, brac
 
 === "{\"a\": 1}\r\n[]\r\n"
 
-jsonl FormatOptions { indent: Spaces(2), width: 10, normalize_json5: false, bracket_spacing: true }
+jsonl FormatOptions { indent: Spaces(2), width: 10, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 
 --- out
 
 === ""
 
-jsonl FormatOptions { indent: Spaces(2), width: 10, normalize_json5: false, bracket_spacing: true }
+jsonl FormatOptions { indent: Spaces(2), width: 10, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 {"a":
 1}

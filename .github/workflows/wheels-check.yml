@@ -1,0 +1,28 @@
+name: wheels-check
+
+# Builds the release wheels, with no upload, when a change could break one: a new dependency in
+# Cargo.lock (a C dependency can need a newer compiler than the Linux build images have), a
+# Cargo.toml (a feature or the release profile), the maturin or cargo config, or an edit to the
+# matrix. Otherwise they build only at the tag.
+on:
+  pull_request:
+    paths:
+      - Cargo.lock
+      - Cargo.toml
+      - crates/*/Cargo.toml
+      - crates/jsonvet-cli/pyproject.toml
+      - .cargo/config.toml
+      - .github/workflows/release.yml
+      - .github/workflows/wheels.yml
+      - .github/workflows/wheels-check.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  wheels:
+    uses: $/.github/workflows/wheels.yml

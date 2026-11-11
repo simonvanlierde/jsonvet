@@ -9,7 +9,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use jsonvet::{Config, Severity};
+use jsonvet::{Config, Severity, Utf16Index};
 use lsp_server::{Connection, ErrorCode, Message, Notification, Request, RequestId, Response};
 use serde_json::{Value, json};
 
@@ -612,6 +612,10 @@ fn code_actions(
     wants: &impl Fn(&str) -> bool,
     client: &Client,
 ) -> Value {
+    // Neither kind wanted: skip the config search and the fixes.
+    if !wants("quickfix") && !wants(FIX_ALL) {
+        return json!([]);
+    }
     let text = lines.text;
     let Ok(config) = config_for(path, &client.roots) else {
         return json!([]);
@@ -723,12 +727,17 @@ fn resolve_action(
         }
     };
     let lines = Lines::new(&document.text, client.utf8);
+    let target = (uri, document.version.as_ref().filter(|_| client.versioned));
     let mut action = params.clone();
-    action["edit"] = workspace_edit(
-        (uri, document.version.as_ref().filter(|_| client.versioned)),
-        &lines,
-        &fixed.text,
-    );
+    // A quick fix gets the same edits as when it is listed eagerly; fixing all diffs the text.
+    action["edit"] = match only {
+        Some(_) => workspace_edits(
+            target,
+            &lines,
+            fixed.fixes.iter().flat_map(|fix| fix.edits.iter().cloned()),
+        ),
+        None => workspace_edit(target, &lines, &fixed.text),
+    };
     Response::new_ok(request.id.clone(), action)
 }
 
@@ -910,9 +919,9 @@ struct Lines<'t> {
     text: &'t str,
     starts: Vec<usize>,
     utf8: bool,
-    /// Nearby offsets count on from these columns; checkpoints bound distant lookups.
+    /// Nearby offsets count on from these columns; the index bounds distant lookups.
     known: [Cell<(usize, usize)>; 2],
-    checkpoints: RefCell<Vec<(usize, usize)>>,
+    index: RefCell<Utf16Index>,
     #[cfg(test)]
     counted: Cell<usize>,
 }
@@ -934,7 +943,7 @@ impl<'t> Lines<'t> {
             starts,
             utf8,
             known,
-            checkpoints: RefCell::new(Vec::new()),
+            index: RefCell::default(),
             #[cfg(test)]
             counted: Cell::new(0),
         }
@@ -948,20 +957,9 @@ impl<'t> Lines<'t> {
             .map_or(0, |s| s.encode_utf16().count())
     }
 
+    /// The UTF-16 units before byte `offset`.
     fn prefix(&self, offset: usize) -> usize {
-        let mut checkpoints = self.checkpoints.borrow_mut();
-        if checkpoints.is_empty() {
-            checkpoints.push((0, 0));
-        }
-        while let Some(&(at, before)) = checkpoints.last().filter(|(at, _)| at + 4096 <= offset) {
-            let mut next = at + 4096;
-            while !self.text.is_char_boundary(next) {
-                next += 1;
-            }
-            checkpoints.push((next, before + self.count(at, next)));
-        }
-        let (at, before) = checkpoints[checkpoints.partition_point(|&(at, _)| at <= offset) - 1];
-        before + self.count(at, offset)
+        self.index.borrow_mut().at(self.text, offset)
     }
 
     /// The position of byte `offset`, a character boundary.
@@ -1209,7 +1207,8 @@ mod tests {
     }
 
     #[test]
-    fn alternating_related_positions_scan_at_most_a_chunk_each() {
+    fn alternating_related_positions_stay_exact() {
+        // How much they count is bounded in the core crate's `Utf16Index` tests.
         let text = "é😀a".repeat(10_000);
         let lines = Lines::new(&text, false);
         for _ in 0..1_000 {
@@ -1220,12 +1219,6 @@ mod tests {
                 );
             }
         }
-        let bound = 2 * text.len() + 3_000 * 4_096;
-        assert!(
-            lines.counted.get() <= bound,
-            "{} > {bound}",
-            lines.counted.get()
-        );
     }
 
     /// A folder of its own for `test`, with an empty `jsonvet.toml`, so the user's own config
@@ -1519,6 +1512,46 @@ mod tests {
             );
             client.stop();
         }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn resolved_quick_fixes_have_the_eager_edits() {
+        // One mixed-line-endings fix rewrites every minority line ending: several edits, past
+        // an astral character, with a lone CR.
+        let dir = folder("resolve-like-eager");
+        let file = uri(&dir.join("a.jsonc"));
+        let text = "[\n\"😀\",\r\n1,\r2,\r\n3,]";
+        let resolving = json!({"textDocument":{"codeAction":{
+            "dataSupport":true, "resolveSupport":{"properties":["edit"]},
+        }}});
+        let mut edits = Vec::new();
+        for capabilities in [json!({}), resolving] {
+            let (mut client, _) = Client::start(&capabilities);
+            client.open(&file, text);
+            let actions = client.request(
+                "textDocument/codeAction",
+                json!({ "textDocument": { "uri": file }, "range": range((0, 0), (4, 3)) }),
+            );
+            let actions = actions.as_array().expect("actions").clone();
+            let quick: Vec<Value> = actions
+                .into_iter()
+                .filter(|a| a["kind"] == "quickfix")
+                .map(|a| match a.get("edit") {
+                    Some(edit) => edit.clone(),
+                    None => client.request("codeAction/resolve", a)["edit"].clone(),
+                })
+                .collect();
+            edits.push(quick);
+            client.stop();
+        }
+        assert_eq!(edits[0].len(), 2, "{:?}", edits[0]);
+        assert!(
+            edits[0]
+                .iter()
+                .any(|e| e["changes"][&file].as_array().is_some_and(|e| e.len() > 1))
+        );
+        assert_eq!(edits[0], edits[1]);
         let _ = std::fs::remove_dir_all(dir);
     }
 

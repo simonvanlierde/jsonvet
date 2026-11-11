@@ -2,7 +2,7 @@
 source: crates/jsonvet/tests/format.rs
 expression: "show(Dialect::Jwcc, &FormatOptions::default(),\n&[\"{\\\"a\\\": 1, \\\"b\\\": [1, 2,],}\", \"{\\n\\\"a\\\": 1,\\n// c\\n\\\"b\\\": 2,\\n}\",\n\"[\\n  1,\\n  2, // two\\n]\", \"[1 /* x */,]\",])"
 ---
-jwcc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+jwcc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 {"a": 1, "b": [1, 2,],}
 --- out
@@ -10,7 +10,7 @@ jwcc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, brack
 
 === "{ \"a\": 1, \"b\": [1, 2] }\n"
 
-jwcc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+jwcc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 {
 "a": 1,
@@ -26,7 +26,7 @@ jwcc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, brack
 
 === "{\n  \"a\": 1,\n  // c\n  \"b\": 2,\n}\n"
 
-jwcc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+jwcc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 [
   1,
@@ -40,7 +40,7 @@ jwcc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, brack
 
 === "[\n  1,\n  2, // two\n]\n"
 
-jwcc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+jwcc FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 [1 /* x */,]
 --- out

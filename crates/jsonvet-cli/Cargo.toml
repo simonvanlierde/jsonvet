@@ -70,10 +70,12 @@ name = "codspeed"
 harness = false
 
 [dev-dependencies]
+# Counts the blocks tests/allocations.rs allocates; peak_alloc counts only bytes.
+dhat = "0.3.3"
 divan = { version = "6.0.0", package = "codspeed-divan-compat" }
 gungraun = "0.20.0"
 insta = "1.49.0"
-# Counts the heap tests/schema_memory.rs measures.
+# Counts the heap tests/schema_memory.rs and tests/format_memory.rs measure.
 peak_alloc = "0.3.0"
 proptest = "1.12.0"
 # In-memory HTTP responses test redirects without DNS or sockets; normal builds omit this feature.

@@ -17,6 +17,10 @@ README's "up to N times faster than check-json5 1.4.1" must name the table's lar
 The minimum supported Rust has three places too: `rust-version` in Cargo.toml, the toolchain of
 ci.yml's msrv job and `cargo +X` in the justfile's msrv recipe.
 
+The manylinux_2_28 build image's digest and `RELEASE_RUST` are repeated across workflows (the
+image in ci.yml's hook job and wheels.yml, the Rust in ci.yml, wheels.yml and bench.yml), and
+Renovate bumps each copy on its own, so the copies must stay equal.
+
 action.yml's description must stay under 125 characters, or the release cannot be listed on the
 GitHub Marketplace. The tag fixes it for good, so the check runs before one.
 
@@ -47,7 +51,7 @@ def pep440(cargo: str) -> str:
     return cargo
 
 
-def first(pattern: str, path: str) -> str | None:
+def first(pattern: str, path: str | Path) -> str | None:
     """The first group of the pattern's first match in the file, or None."""
     match = re.search(pattern, (ROOT / path).read_text(), re.MULTILINE | re.DOTALL)
     return match[1] if match else None
@@ -92,6 +96,16 @@ def main() -> int:
     largest = max((row[5].strip() for row in rows), key=lambda up: int(up.rstrip("x").replace(",", "")), default=None)
     claim = first(r"up to \**([\d,]+)\s+times faster\**\s+than check-json5 1\.4\.1", "README.md")
     print(f"{'README speed-up':16} {claim}x, table {largest}")
+    workflows = Path(".github/workflows")
+    image = r"container: (quay\.io/pypa/manylinux_2_28_x86_64:\S+)"
+    shared = {
+        "manylinux image": [first(image, workflows / name) for name in ("ci.yml", "wheels.yml")],
+        "RELEASE_RUST": [
+            first(r'RELEASE_RUST: "([^"]+)"', workflows / name) for name in ("ci.yml", "wheels.yml", "bench.yml")
+        ],
+    }
+    for where, copies in shared.items():
+        print(f"{where:16} {'equal' if len(set(copies)) == 1 and None not in copies else 'differ'}")
     about = first(r"^description: ([^\n]*)", "action.yml") or ""
     print(f"{'action about':16} {len(about)} characters")
     if (
@@ -102,6 +116,7 @@ def main() -> int:
         or len(set(msrvs.values())) != 1
         or speed != minor
         or f"{claim}x" != largest
+        or any(len(set(copies)) != 1 or None in copies for copies in shared.values())
         or not 0 < len(about) < MARKETPLACE_ABOUT
     ):
         print("versions differ", file=sys.stderr)

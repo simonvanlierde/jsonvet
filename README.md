@@ -28,7 +28,7 @@ and formats the text you paste. Nothing to install, and the text stays on your m
 
 - **Six dialects, one parser.** Each file is checked in the dialect its extension implies.
 - **Fixes.** `--fix` repairs what has a safe fix, such as a stray byte order mark.
-- **Formatting that keeps comments.** `jsonvet fmt` lays out JSON, JSONC, JWCC, JSON5 and JSON Lines
+- **Formatting that keeps comments.** `jsonvet fmt` lays out all six dialects
   and leaves your comments where they are.
 - **JSON Schema with positions.** Each schema error points at its value's line and column.
   Default runs stay offline; `--schema-catalog` opts into SchemaStore downloads.
@@ -82,10 +82,10 @@ uvx jsonvet .                    # check every JSON-like file under a folder, no
 uvx jsonvet --fix .              # also fix what has a safe fix, in place
 uvx jsonvet fmt .                # format the files, keeping their comments
 uvx jsonvet fmt --check .        # list files that need formatting; exit 1 if any
-jsonvet lsp                      # the language server, for your editor
 uv tool install jsonvet          # install it (or `pipx install jsonvet`)
 cargo install jsonvet-cli        # build it from source
 cargo binstall jsonvet-cli       # download the binary from the GitHub release
+jsonvet lsp                      # the language server, for your editor
 ```
 
 [uv](https://docs.astral.sh/uv/getting-started/installation/) provides `uvx`. Each
@@ -96,11 +96,15 @@ A folder stands for the JSON-like files under it, skipping hidden and ignored fi
 standard input. The [reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#fixing)
 covers `--fix`, [formatting](https://github.com/simonvanlierde/jsonvet/blob/main/docs/format.md)
 covers `jsonvet fmt`, and [editors](https://github.com/simonvanlierde/jsonvet/blob/main/docs/editors.md)
-covers `jsonvet lsp` in VS Code, Neovim, Helix and other editors.
+covers `jsonvet lsp` in Neovim, Helix and other editors, and building the VS Code extension.
 `jsonvet --help` lists every option, and the
 [reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md) has the details.
 
 ### Rust library
+
+```bash
+cargo add jsonvet
+```
 
 ```rust
 use jsonvet::{check, Config, Dialect};

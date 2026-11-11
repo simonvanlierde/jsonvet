@@ -2,7 +2,7 @@
 source: crates/jsonvet/tests/format.rs
 expression: "show(Dialect::Json5, &FormatOptions::default(),\n&[\"{a: 'single', \\\"b\\\": \\\"double\\\", 'c': 0x1F, d: +1, e: .5, f: 5., g: Infinity, h: -Infinity, i: NaN,}\",\n\"{a: [1, 2,], // c\\n b: 'it\\\\'s',\\n}\", \"{\\\\u0061: 1, 'a-b': 2}\",\n\"'it\\\\'s \\\"quoted\\\"'\", \"{\\\"line\\\": \\\"one \\\\\\ntwo\\\"}\",\n\"[0xDEAD, +.5e-3, 1e+5, -0]\",])"
 ---
-json5 FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+json5 FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 {a: 'single', "b": "double", 'c': 0x1F, d: +1, e: .5, f: 5., g: Infinity, h: -Infinity, i: NaN,}
 --- out
@@ -20,7 +20,7 @@ json5 FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, brac
 
 === "{\n  a: 'single',\n  \"b\": \"double\",\n  'c': 0x1F,\n  d: +1,\n  e: .5,\n  f: 5.,\n  g: Infinity,\n  h: -Infinity,\n  i: NaN,\n}\n"
 
-json5 FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+json5 FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 {a: [1, 2,], // c
  b: 'it\'s',
@@ -33,7 +33,7 @@ json5 FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, brac
 
 === "{\n  a: [1, 2], // c\n  b: 'it\\'s',\n}\n"
 
-json5 FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+json5 FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 {\u0061: 1, 'a-b': 2}
 --- out
@@ -41,7 +41,7 @@ json5 FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, brac
 
 === "{ \\u0061: 1, 'a-b': 2 }\n"
 
-json5 FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+json5 FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 'it\'s "quoted"'
 --- out
@@ -49,7 +49,7 @@ json5 FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, brac
 
 === "'it\\'s \"quoted\"'\n"
 
-json5 FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+json5 FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 {"line": "one \
 two"}
@@ -59,7 +59,7 @@ two" }
 
 === "{ \"line\": \"one \\\ntwo\" }\n"
 
-json5 FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+json5 FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 [0xDEAD, +.5e-3, 1e+5, -0]
 --- out

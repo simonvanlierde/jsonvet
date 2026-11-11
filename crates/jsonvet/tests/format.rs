@@ -353,6 +353,28 @@ enum Tree {
     Object(Vec<(String, Tree)>),
 }
 
+/// The number atoms of a dialect: the ones `fill-numbers` packs.
+fn number_atoms(dialect: Dialect) -> Vec<String> {
+    let mut atoms = vec!["1".to_owned(), "-0.5e3".to_owned(), "123456".to_owned()];
+    if dialect == Dialect::Json5 {
+        atoms.extend(["0x1F", ".5", "+1", "Infinity", "NaN", "-Infinity"].map(String::from));
+    }
+    atoms
+}
+
+/// A number-only array of up to 40 members, alone or in an object or array.
+fn number_array(dialect: Dialect) -> impl Strategy<Value = Tree> {
+    let numbers = prop::collection::vec(
+        prop::sample::select(number_atoms(dialect)).prop_map(Tree::Atom),
+        0..40,
+    )
+    .prop_map(Tree::Array);
+    prop_oneof![
+        numbers.clone().prop_map(|a| Tree::Array(vec![a])),
+        numbers.prop_map(|a| Tree::Object(vec![("\"k0\"".to_owned(), a)])),
+    ]
+}
+
 fn tree(dialect: Dialect) -> impl Strategy<Value = Tree> {
     let json5 = dialect == Dialect::Json5;
     let mut atoms = vec![
@@ -387,18 +409,23 @@ fn tree(dialect: Dialect) -> impl Strategy<Value = Tree> {
 
 /// Text for the tree with a random gap at every place a token could be separated from the next:
 /// white space, blank lines, and in the dialects that have them, comments with a number each.
-fn render(tree: &Tree, dialect: Dialect, seed: u64, trailing: bool) -> String {
+fn render(tree: &Tree, dialect: Dialect, seed: u64, trailing: bool, plain: bool) -> String {
     struct Out<'d> {
         text: String,
         rng: Rng,
         dialect: Dialect,
         trailing: bool,
+        plain: bool,
         marker: &'d std::cell::Cell<usize>,
     }
     impl Out<'_> {
         fn gap(&mut self) {
-            let comments = self.dialect.comments_allowed();
-            let choice = self.rng.next(if comments { 16 } else { 5 });
+            let comments = self.dialect.comments_allowed() && !self.plain;
+            let choice = if self.plain {
+                2 + self.rng.next(2)
+            } else {
+                self.rng.next(if comments { 16 } else { 5 })
+            };
             let n = self.marker.get();
             self.marker.set(n + 1);
             let piece = match choice {
@@ -460,6 +487,7 @@ fn render(tree: &Tree, dialect: Dialect, seed: u64, trailing: bool) -> String {
         rng: Rng(seed),
         dialect,
         trailing,
+        plain,
         marker: &marker,
     };
     out.gap();
@@ -499,7 +527,7 @@ fn events(text: &str, config: &Config) -> Vec<String> {
         .collect()
 }
 
-fn options(width: usize, indent: usize, normalize: bool, pad: bool) -> FormatOptions {
+fn options(width: usize, indent: usize, normalize: bool, pad: bool, fill: bool) -> FormatOptions {
     FormatOptions {
         indent: if indent == 0 {
             Indent::Tab
@@ -509,6 +537,7 @@ fn options(width: usize, indent: usize, normalize: bool, pad: bool) -> FormatOpt
         width,
         normalize_json5: normalize,
         bracket_spacing: pad,
+        fill_numbers: fill,
     }
 }
 
@@ -549,15 +578,37 @@ proptest! {
 
     #[test]
     fn formatting_twice_changes_nothing_and_loses_nothing(
+        (dialect, t, seed, trailing, width, indent, normalize, pad, fill) in prop::sample::select(vec![
+            Dialect::Json, Dialect::IJson, Dialect::Jsonc, Dialect::Jwcc, Dialect::Json5,
+        ])
+        .prop_flat_map(|d| (Just(d), tree(d), any::<u64>(), any::<bool>(), prop::sample::select(vec![1, 12, 30, 80]), 0usize..5, any::<bool>(), any::<bool>(), any::<bool>()))
+    ) {
+        let trailing = trailing && matches!(dialect, Dialect::Jwcc | Dialect::Json5);
+        let text = render(&t, dialect, seed, trailing, false);
+        if let Err(message) = check_promises(&text, dialect, &options(width, indent, normalize, pad, fill)) {
+            prop_assert!(false, "{}", message);
+        }
+    }
+
+    /// Number-only arrays that really fill: widths near the numbers' size, plain gaps.
+    #[test]
+    fn filled_number_arrays_are_stable_and_lose_nothing(
         (dialect, t, seed, trailing, width, indent, normalize, pad) in prop::sample::select(vec![
             Dialect::Json, Dialect::IJson, Dialect::Jsonc, Dialect::Jwcc, Dialect::Json5,
         ])
-        .prop_flat_map(|d| (Just(d), tree(d), any::<u64>(), any::<bool>(), prop::sample::select(vec![1, 12, 30, 80]), 0usize..5, any::<bool>(), any::<bool>()))
+        .prop_flat_map(|d| (Just(d), number_array(d), any::<u64>(), any::<bool>(), 8usize..40, 0usize..5, any::<bool>(), any::<bool>()))
     ) {
         let trailing = trailing && matches!(dialect, Dialect::Jwcc | Dialect::Json5);
-        let text = render(&t, dialect, seed, trailing);
-        if let Err(message) = check_promises(&text, dialect, &options(width, indent, normalize, pad)) {
+        let text = render(&t, dialect, seed, trailing, true);
+        let options = options(width, indent, normalize, pad, true);
+        if let Err(message) = check_promises(&text, dialect, &options) {
             prop_assert!(false, "{}", message);
+        }
+        // A row of several numbers never runs past the width, a tab counting four columns.
+        let out = format(&text, &Config::new(dialect), &options).unwrap();
+        for line in out.lines().filter(|l| !l.contains(['[', '{', ':', ']', '}'])) {
+            let cols = line.chars().map(|c| if c == '\t' { 4 } else { 1 }).sum::<usize>();
+            prop_assert!(!line.trim().contains(' ') || cols <= width, "{} wide: {:?}", cols, out);
         }
     }
 
@@ -565,7 +616,7 @@ proptest! {
     fn strict_json_keeps_its_value(
         (t, seed, width) in (tree(Dialect::Json), any::<u64>(), prop::sample::select(vec![1, 20, 80]))
     ) {
-        let text = render(&t, Dialect::Json, seed, false);
+        let text = render(&t, Dialect::Json, seed, false, false);
         let out = format(&text, &Config::new(Dialect::Json), &self::width(width)).unwrap();
         let before: serde_json::Value = serde_json::from_str(&text).unwrap();
         let after: serde_json::Value = serde_json::from_str(&out).unwrap();
@@ -580,7 +631,7 @@ proptest! {
         let eol = if crlf { "\r\n" } else { "\n" };
         let text: String = records
             .iter()
-            .map(|(t, seed)| render(t, Dialect::Json, *seed, false).replace(['\n', '\r'], " ") + eol)
+            .map(|(t, seed)| render(t, Dialect::Json, *seed, false, false).replace(['\n', '\r'], " ") + eol)
             .collect();
         let config = Config::new(Dialect::JsonLines);
         let once = format(&text, &config, &FormatOptions::default()).unwrap();
@@ -652,6 +703,129 @@ fn braces_are_padded_by_default_and_the_padding_counts_toward_the_width() {
         format("[{}, {\"a\": [{}]}]", &json, &FormatOptions::default()).unwrap(),
         "[{}, { \"a\": [{}] }]\n"
     );
+}
+
+fn filled(width: usize) -> FormatOptions {
+    FormatOptions {
+        width,
+        fill_numbers: true,
+        ..FormatOptions::default()
+    }
+}
+
+/// Formats with `fill-numbers` on, and checks that a second run changes nothing.
+fn fill(dialect: Dialect, width: usize, text: &str) -> String {
+    let config = Config::new(dialect);
+    let once = format(text, &config, &filled(width)).expect("formatted");
+    assert_eq!(
+        format(&once, &config, &filled(width)).expect("formatted twice"),
+        once
+    );
+    once
+}
+
+#[test]
+fn number_arrays_fill_the_width_when_asked() {
+    let json = Dialect::Json;
+    let seven = "[1,2,3,4,5,6,7]";
+    // The width counts the indent and the comma: "  4, 5, 6, 7" is 12 columns.
+    assert_eq!(fill(json, 12, seven), "[\n  1, 2, 3,\n  4, 5, 6, 7\n]\n");
+    assert_eq!(fill(json, 11, seven), "[\n  1, 2, 3,\n  4, 5, 6,\n  7\n]\n");
+    assert_eq!(fill(json, 10, seven), "[\n  1, 2, 3,\n  4, 5, 6,\n  7\n]\n");
+    assert_eq!(fill(json, 9, seven), "[\n  1, 2,\n  3, 4,\n  5, 6, 7\n]\n");
+    assert_eq!(fill(json, 80, seven), "[1, 2, 3, 4, 5, 6, 7]\n");
+    let off = format(seven, &Config::new(json), &width(12)).unwrap();
+    assert_eq!(off, "[\n  1,\n  2,\n  3,\n  4,\n  5,\n  6,\n  7\n]\n");
+    // A number wider than the width still gets a line of its own.
+    assert_eq!(
+        fill(json, 6, "[123456789, 1, 2]"),
+        "[\n  123456789,\n  1, 2\n]\n"
+    );
+    // Each inner array of a matrix fills; the outer one keeps a row per line.
+    assert_eq!(
+        fill(json, 14, "[[1,2,3,4,5,6,7],[8,9]]"),
+        "[\n  [\n    1, 2, 3,\n    4, 5, 6, 7\n  ],\n  [8, 9]\n]\n"
+    );
+    assert_eq!(
+        fill(json, 12, "{\"a\": [1,2,3,4,5,6,7]}"),
+        "{\n  \"a\": [\n    1, 2, 3,\n    4, 5, 6,\n    7\n  ]\n}\n"
+    );
+    assert_eq!(
+        fill(
+            Dialect::Json5,
+            25,
+            "[+1, .5, 0x1F, Infinity, -NaN, 1e3, -2]"
+        ),
+        "[\n  +1, .5, 0x1F, Infinity,\n  -NaN, 1e3, -2\n]\n"
+    );
+    // JWCC keeps the trailing comma, and it counts toward the width.
+    assert_eq!(
+        fill(Dialect::Jwcc, 12, "[1,2,3,4,5,6,7,]"),
+        "[\n  1, 2, 3,\n  4, 5, 6,\n  7,\n]\n"
+    );
+    assert_eq!(
+        fill(json, 12, "[1,2,3,4,5,6,7]\r\n"),
+        "[\r\n  1, 2, 3,\r\n  4, 5, 6, 7\r\n]\r\n"
+    );
+    // A tab counts as four columns, as for a broken container: "\t4, 5, 6, 7" is 14, so 7 fits at
+    // 14 and wraps at 13. At 12 the first line "\t1, 2, 3," is exactly full.
+    let tab = |width| FormatOptions {
+        indent: Indent::Tab,
+        ..filled(width)
+    };
+    let tabbed = |width| format(seven, &Config::new(json), &tab(width)).unwrap();
+    assert_eq!(tabbed(14), "[\n\t1, 2, 3,\n\t4, 5, 6, 7\n]\n");
+    assert_eq!(tabbed(13), "[\n\t1, 2, 3,\n\t4, 5, 6,\n\t7\n]\n");
+    assert_eq!(tabbed(12), "[\n\t1, 2, 3,\n\t4, 5, 6,\n\t7\n]\n");
+    assert_eq!(tabbed(11), "[\n\t1, 2,\n\t3, 4,\n\t5, 6, 7\n]\n");
+    // A blank line before the first number or before `]` goes, so it does not stop the fill.
+    assert_eq!(fill(json, 12, "[\n\n1,2,3,4,5,6,7]"), fill(json, 12, seven));
+    assert_eq!(fill(json, 12, "[1,2,3,4,5,6,7\n\n]"), fill(json, 12, seven));
+    assert_eq!(
+        fill(Dialect::Jwcc, 12, "[1,2,3,4,5,6,7,\n\n]"),
+        fill(Dialect::Jwcc, 12, "[1,2,3,4,5,6,7,]")
+    );
+}
+
+/// The example in docs/format.md, typed out so the page cannot drift from the formatter.
+#[test]
+fn the_fill_numbers_example_in_the_docs_is_what_the_formatter_writes() {
+    let input = r#"{"matrix": [[0.12, 0.98, 0.33, 0.47, 0.51, 0.06, 0.74, 0.29, 0.88, 0.15, 0.62, 0.41, 0.93, 0.37], [0, 1]]}"#;
+    let doc = r#"{
+  "matrix": [
+    [
+      0.12, 0.98, 0.33, 0.47, 0.51, 0.06, 0.74, 0.29, 0.88, 0.15, 0.62, 0.41,
+      0.93, 0.37
+    ],
+    [0, 1]
+  ]
+}
+"#;
+    assert_eq!(fill(Dialect::Json, 80, input), doc);
+}
+
+#[test]
+fn number_arrays_with_anything_else_in_them_keep_a_number_per_line() {
+    for (dialect, text) in [
+        (Dialect::Json, "[1,2,3,\n\n4,5,6,7]"),
+        (Dialect::Json, "[1,2,3,\"4\",5,6,7]"),
+        (Dialect::Json, "[1,2,3,true,5,6,7]"),
+        (Dialect::Json, "[1,2,3,false,5,6,7]"),
+        (Dialect::Json, "[1,2,3,null,5,6,7]"),
+        (Dialect::Json, "[1,2,3,[4],5,6,7]"),
+        (Dialect::Json5, "[1,2,3,'4',5,6,7]"),
+        (Dialect::Jsonc, "[1,2,3, // c\n4,5,6,7]"),
+        (Dialect::Jsonc, "[ // c\n1,2,3,4,5,6,7]"),
+        (Dialect::Jsonc, "[1,2,3,4,5,6,7\n// c\n]"),
+        (Dialect::Jsonc, "[1,2,3 // c\n]"),
+        (Dialect::Json5, "[1,2,3,\n// c\n4,5,6,7]"),
+        (Dialect::Json5, "[1,2,3, /* c */ 4,5,6,7]"),
+        (Dialect::Jsonc, "[1,2,3,/* c */4,5,6,7]"),
+        (Dialect::Json, "{\"a\":1,\"b\":2,\"c\":3,\"d\":4}"),
+    ] {
+        let off = format(text, &Config::new(dialect), &width(12)).unwrap();
+        assert_eq!(fill(dialect, 12, text), off, "{text}");
+    }
 }
 
 #[test]

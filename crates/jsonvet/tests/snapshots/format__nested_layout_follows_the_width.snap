@@ -2,7 +2,7 @@
 source: crates/jsonvet/tests/format.rs
 expression: "show(Dialect::Json, &width(30),\n&[\"{\\\"short\\\": [1, 2, 3], \\\"longer\\\": [\\\"aaaaaaaaaa\\\", \\\"bbbbbbbbbb\\\", \\\"cccccccccc\\\"], \\\"obj\\\": {\\\"k\\\": \\\"v\\\"}}\",\n\"[[1, 2], [3, 4], [\\\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\"]]\",])"
 ---
-json FormatOptions { indent: Spaces(2), width: 30, normalize_json5: false, bracket_spacing: true }
+json FormatOptions { indent: Spaces(2), width: 30, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 {"short": [1, 2, 3], "longer": ["aaaaaaaaaa", "bbbbbbbbbb", "cccccccccc"], "obj": {"k": "v"}}
 --- out
@@ -18,7 +18,7 @@ json FormatOptions { indent: Spaces(2), width: 30, normalize_json5: false, brack
 
 === "{\n  \"short\": [1, 2, 3],\n  \"longer\": [\n    \"aaaaaaaaaa\",\n    \"bbbbbbbbbb\",\n    \"cccccccccc\"\n  ],\n  \"obj\": { \"k\": \"v\" }\n}\n"
 
-json FormatOptions { indent: Spaces(2), width: 30, normalize_json5: false, bracket_spacing: true }
+json FormatOptions { indent: Spaces(2), width: 30, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 [[1, 2], [3, 4], ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]]
 --- out

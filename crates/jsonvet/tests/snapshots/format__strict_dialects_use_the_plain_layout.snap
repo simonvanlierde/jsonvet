@@ -2,7 +2,7 @@
 source: crates/jsonvet/tests/format.rs
 expression: out
 ---
-json FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+json FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 {"name": "jsonvet", "keywords": ["json", "json5", "jsonc", "lint", "pre-commit"], "nested": {"a": [1, 2, {"b": null}]}}
 --- out
@@ -14,7 +14,7 @@ json FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, brack
 
 === "{\n  \"name\": \"jsonvet\",\n  \"keywords\": [\"json\", \"json5\", \"jsonc\", \"lint\", \"pre-commit\"],\n  \"nested\": { \"a\": [1, 2, { \"b\": null }] }\n}\n"
 
-json FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+json FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 [[], {}, [[]]]
 --- out
@@ -22,7 +22,7 @@ json FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, brack
 
 === "[[], {}, [[]]]\n"
 
-i-json FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+i-json FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 {"name": "jsonvet", "keywords": ["json", "json5", "jsonc", "lint", "pre-commit"], "nested": {"a": [1, 2, {"b": null}]}}
 --- out
@@ -34,7 +34,7 @@ i-json FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bra
 
 === "{\n  \"name\": \"jsonvet\",\n  \"keywords\": [\"json\", \"json5\", \"jsonc\", \"lint\", \"pre-commit\"],\n  \"nested\": { \"a\": [1, 2, { \"b\": null }] }\n}\n"
 
-json FormatOptions { indent: Spaces(2), width: 40, normalize_json5: false, bracket_spacing: true }
+json FormatOptions { indent: Spaces(2), width: 40, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 {"name": "jsonvet", "keywords": ["json", "json5", "jsonc", "lint", "pre-commit"], "nested": {"a": [1, 2, {"b": null}]}}
 --- out
@@ -54,14 +54,14 @@ json FormatOptions { indent: Spaces(2), width: 40, normalize_json5: false, brack
 
 === "{\n  \"name\": \"jsonvet\",\n  \"keywords\": [\n    \"json\",\n    \"json5\",\n    \"jsonc\",\n    \"lint\",\n    \"pre-commit\"\n  ],\n  \"nested\": {\n    \"a\": [1, 2, { \"b\": null }]\n  }\n}\n"
 
-json FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+json FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 {"a": 1,}
 --- out
 syntax error: trailing comma before `}` is not allowed in json; the jwcc and json5 dialects allow this
 === "syntax error: trailing comma before `}` is not allowed in json; the jwcc and json5 dialects allow this"
 
-json FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true }
+json FormatOptions { indent: Spaces(2), width: 80, normalize_json5: false, bracket_spacing: true, fill_numbers: false }
 --- in
 // c
 1

@@ -243,7 +243,7 @@ crates/jsonvet/        library: the parser, rules and positions. Depends on hash
 crates/jsonvet-cli/    binaries jsonvet and check-json5: arguments, config, output, --schema
                        (jsonschema, serde_json) and the language server, `jsonvet lsp`
                        (lsp-server). Built into the PyPI wheels by maturin.
-crates/jsonvet-wasm/   the library as WebAssembly for the playground: two exports, `check` and `version`
+crates/jsonvet-wasm/   the library as WebAssembly for the playground: `check`, `fix`, `format` and `version`
 editors/vscode/        the VS Code extension: a thin client for `jsonvet lsp`, in TypeScript
 playground/            the browser playground: a static page around the wasm. Deployed by pages.yml.
 compat/check-json5/    the check-json5 package on PyPI: depends on jsonvet, nothing else
@@ -276,7 +276,7 @@ error mode: the problems in the file are its output. A `Report` is `Send` but no
 `location` caches line starts inside it.
 
 The parser keeps an explicit stack of frames, not recursion, so the depth limit is a setting and
-not the call stack's size. Past 16 keys, an object's keys go through a hash index keyed with std's
+not the call stack's size. Past 32 keys, an object's keys go through a hash index keyed with std's
 SipHash from the OS, so a crafted file cannot make the check quadratic
 ([0003](decisions/0003-siphash-for-duplicate-keys.md)). There is no `unsafe` code, so the worst a
 crafted file can do is a panic ([0002](decisions/0002-no-unsafe-code.md)).
@@ -286,15 +286,15 @@ crafted file can do is a panic ([0002](decisions/0002-no-unsafe-code.md)).
 pre-commit installs a `language: python` hook with `pip install .`. The root `setup.py` is a
 placeholder that depends on the exact released `jsonvet` wheel, so a hook install downloads a
 binary and never compiles Rust ([0008](decisions/0008-binary-wheels-behind-a-placeholder.md)).
-maturin builds the wheels with `bindings = "bin"`, for Linux (glibc and musl), macOS and Windows,
-each on x86-64 and arm64.
+maturin builds the wheels with `bindings = "bin"`, for Linux (glibc 2.28 or newer, and musl),
+macOS and Windows, each on x86-64 and arm64.
 
 ## Testing
 
 How to run each layer is in [CONTRIBUTING.md](../CONTRIBUTING.md#tests). CI runs on Linux, macOS
 and Windows, and on the oldest supported Rust (1.88). What each layer is for:
 
-- **Conformance** (json5-tests, all 114 cases): the spec's own answer for what must pass or fail.
+- **Conformance** (json5-tests, all 114 cases of the pinned submodule, counted in `crates/jsonvet/tests/conformance.rs`): the spec's own answer for what must pass or fail.
 - **Corpus:** one file per edge case, survey finding and fuzz finding, and one reviewed snapshot
   of every exit code and output line.
 - **Conformance matrix:** the same files through other parsers, in

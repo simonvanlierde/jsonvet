@@ -44,6 +44,9 @@ pub struct FormatOptions {
     /// A space inside the braces of an object on one line: `{ "a": 1 }`. On by default. JSON
     /// Lines records are always written without.
     pub bracket_spacing: bool,
+    /// An array of numbers only, with no comment or blank line in it, that does not fit on one
+    /// line gets as many numbers on each line as fit. Off by default: each number on its own line.
+    pub fill_numbers: bool,
 }
 
 impl Default for FormatOptions {
@@ -53,6 +56,7 @@ impl Default for FormatOptions {
             width: 80,
             normalize_json5: false,
             bracket_spacing: true,
+            fill_numbers: false,
         }
     }
 }
@@ -200,6 +204,8 @@ pub fn format<'a>(
     parser.pad = options.bracket_spacing;
     parser.reserve();
     let doc = parser.document();
+    // Freed before the output is built, so the two do not add up at the peak.
+    parser.open = Vec::new();
     // The first pass only measures, so the output is built once, at its size, and never when it
     // would be huge.
     let mut counted = writer(true, 0, options.bracket_spacing);
@@ -669,6 +675,8 @@ struct Parser<'a> {
     /// Whether an object on one line has a space inside its braces.
     pad: bool,
     t: Tree<'a>,
+    /// The members of every open container, innermost last, so one vector serves them all.
+    open: Vec<Member>,
 }
 
 impl<'a> Parser<'a> {
@@ -690,6 +698,7 @@ impl<'a> Parser<'a> {
                 text,
                 ..Tree::default()
             },
+            open: Vec::new(),
         }
     }
 
@@ -958,7 +967,7 @@ impl<'a> Parser<'a> {
                 && matches!(self.kind(), Some(Kind::Open | Kind::Atom))
                 && self.cur.is_some_and(|t| t.nl > 0));
         let open_trailing = self.store(open_trailing);
-        let mut members = Vec::new();
+        let base = self.open.len();
         let mut commented = Vec::new();
         let mut trailing_comma = false;
         let mut width = 2 + usize::from(object && self.pad) * 2;
@@ -979,13 +988,13 @@ impl<'a> Parser<'a> {
             forced |= parsed.forced;
             width += parsed.width + 2;
             if let Some(lists) = parsed.comments {
-                commented.push((narrow(members.len()), lists));
+                commented.push((narrow(self.open.len() - base), lists));
             }
-            members.push(parsed.member);
+            self.open.push(parsed.member);
             trailing_comma = parsed.comma;
         }
         // Each member counted its separator; the last has none.
-        width = if members.is_empty() {
+        width = if self.open.len() == base {
             2
         } else {
             width.saturating_sub(2)
@@ -993,8 +1002,8 @@ impl<'a> Parser<'a> {
         forced |= !pending.is_empty();
         let tail = self.store(pending);
         let start = narrow(self.t.members.len());
-        let count = narrow(members.len());
-        self.t.members.extend(members);
+        let count = narrow(self.open.len() - base);
+        self.t.members.extend(self.open.drain(base..));
         self.t
             .extras
             .extend(commented.into_iter().map(|(i, lists)| (start + i, lists)));
@@ -1066,6 +1075,19 @@ fn key_text(text: &str) -> Cow<'_, str> {
 }
 
 // ---- layout ----
+
+fn atom_span(value: Value) -> Span {
+    Span {
+        start: value.start,
+        len: value.len,
+    }
+}
+
+/// Whether an atom in a valid array is a number: not a string, `true`, `false` or `null`. In
+/// JSON5 that takes in `+1`, `.5`, `0x1F`, `Infinity` and `NaN`.
+fn is_number(atom: &str) -> bool {
+    !atom.starts_with(['"', '\'']) && !matches!(atom, "true" | "false" | "null")
+}
 
 /// Writes the output, and counts it. Past `limit` bytes it drops what it holds and only counts,
 /// so the size of an output too big to build is still known.
@@ -1311,6 +1333,10 @@ impl Writer<'_> {
             Trailing::Keep => c.trailing_comma,
             Trailing::Always => true,
         };
+        if self.fills(t, c) {
+            self.filled(t, members, depth, comma_last);
+            return;
+        }
         self.put_char(if c.object { '{' } else { '[' });
         for &o in t.list(c.open_trailing) {
             self.put(" ");
@@ -1380,6 +1406,45 @@ impl Writer<'_> {
         }
         self.line(depth, false);
         self.put_char(if c.object { '}' } else { ']' });
+    }
+
+    /// Whether `c` is an array to fill: numbers only, and no comment or blank line between them.
+    /// A blank line before the first number does not count, as it goes.
+    fn fills(&self, t: &Tree<'_>, c: &Container) -> bool {
+        let end = c.members.start + c.members.len;
+        let first_extra = t.extras.partition_point(|(j, _)| *j < c.members.start);
+        self.options.fill_numbers
+            && !c.object
+            && c.open_trailing.len == 0
+            && c.tail.len == 0
+            && t.extras.get(first_extra).is_none_or(|(j, _)| *j >= end)
+            && t.members_of(c).iter().enumerate().all(|(i, m)| {
+                (i == 0 || !m.blank_before())
+                    && m.value.container().is_none()
+                    && is_number(t.atom(atom_span(m.value)))
+            })
+    }
+
+    /// An array of numbers over several lines, with as many on each line as fit in the width.
+    /// A number wider than the width still gets a line.
+    fn filled(&mut self, t: &Tree<'_>, members: &[Member], depth: usize, comma_last: bool) {
+        self.put_char('[');
+        for (i, m) in members.iter().enumerate() {
+            let atom = t.atom(atom_span(m.value));
+            let comma = i + 1 < members.len() || comma_last;
+            let width = atom.chars().count() + usize::from(comma);
+            if i == 0 || self.col + 1 + width > self.options.width {
+                self.line(depth + 1, false);
+            } else {
+                self.put(" ");
+            }
+            self.put(atom);
+            if comma {
+                self.put(",");
+            }
+        }
+        self.line(depth, false);
+        self.put_char(']');
     }
 
     /// A key, its colon and its value, starting at the current position on a line at `depth`.

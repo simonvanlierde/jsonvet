@@ -22,7 +22,7 @@ use crate::unicode::{
 use crate::{Config, Dialect, Problem, Rule, Severity};
 
 /// Past this many keys, an object's duplicate check switches from a linear scan to a hash map.
-const LINEAR_KEYS: usize = 16;
+const LINEAR_KEYS: usize = 32;
 
 /// The largest integer a double holds exactly: 2⁵³ − 1.
 const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
@@ -70,8 +70,12 @@ pub(crate) fn walk<'a>(
 pub(crate) struct Scan {
     /// The offset of each trailing comma a dialect forbids.
     pub(crate) commas: Vec<usize>,
-    /// Each object member that is followed by a `,`, in the order their commas appear.
+    /// Each object member that is followed by a `,`, in the order their commas appear, when
+    /// `keep_members` is set.
     pub(crate) members: Vec<Member>,
+    /// Whether to record `members`: only dropping a duplicate key reads them, and they take one
+    /// entry per member of the file.
+    keep_members: bool,
     /// The offset of the last `,` read.
     last_comma: usize,
     /// Where the current member's key starts, for each open object: kept here so the check
@@ -131,8 +135,11 @@ pub(crate) struct Member {
 }
 
 /// Check the whole `text` as [`check`] does, and note what the fixes need.
-pub(crate) fn scan(text: &str, config: &Config) -> (Vec<Problem>, Scan) {
-    let mut scan = Scan::default();
+pub(crate) fn scan(text: &str, config: &Config, keep_members: bool) -> (Vec<Problem>, Scan) {
+    let mut scan = Scan {
+        keep_members,
+        ..Scan::default()
+    };
     let problems = walk_scan::<true>(text, 0..text.len(), config, None, Some(&mut scan)).problems;
     (problems, scan)
 }
@@ -405,7 +412,7 @@ impl<'a> Keys<'a> {
             }
             list.push((key.clone(), at));
             if list.len() == LINEAR_KEYS + 1 {
-                // One allocation: growing key by key to 17 took four, rehashing each time.
+                // One allocation: growing key by key would take several, rehashing each time.
                 self.index.reserve(2 * LINEAR_KEYS, |&(h, _)| spread(h));
                 for (i, (k, _)) in (0..).zip(list.iter()) {
                     let hash = short_hash(&self.state, k);
@@ -454,14 +461,13 @@ fn short_hash(state: &RandomState, key: &[u8]) -> u32 {
 }
 
 /// How many of the eight bytes in `word`, read little-endian, are ASCII digits before the first
-/// that is not. A digit is `0x30..=0x39`: its high nibble is 3, and adding 6 keeps it 3. Adding
-/// 6 carries into the next byte only from a byte of `0xFA` or more, which is no digit itself, so
-/// the bytes before the first non-digit are always right.
+/// that is not. XOR with `0x30` turns a digit into 0 to 9, and a byte is a digit when neither it
+/// nor it plus `0x76` has its top bit set. Adding `0x76` carries into the next byte only from
+/// one that is `0x8A` or more after the XOR, which is no digit itself, so the bytes before the
+/// first non-digit are always right.
 fn digit_run(word: u64) -> usize {
-    const HIGH: u64 = 0xF0F0_F0F0_F0F0_F0F0;
-    const THREES: u64 = 0x3030_3030_3030_3030;
-    const SIXES: u64 = 0x0606_0606_0606_0606;
-    let other = ((word & HIGH) ^ THREES) | ((word.wrapping_add(SIXES) & HIGH) ^ THREES);
+    let x = word ^ 0x3030_3030_3030_3030;
+    let other = (x | x.wrapping_add(0x7676_7676_7676_7676)) & 0x8080_8080_8080_8080;
     other.trailing_zeros() as usize / 8
 }
 
@@ -848,7 +854,7 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
             Some(b',') => {
                 if SCAN && let Some(scan) = self.scan.as_deref_mut() {
                     scan.last_comma = self.pos;
-                    if object {
+                    if object && scan.keep_members {
                         let start = self.depth.checked_sub(1).and_then(|d| scan.starts.get(d));
                         scan.members.push(Member {
                             start: start.copied().unwrap_or(0),
@@ -961,18 +967,22 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
             b'\'' => return Err(self.single_quoted(self.pos)),
             b'-' | b'+' | b'.' | b'0'..=b'9' | b'I' | b'N' => {
                 self.number()?;
+                // Sliced only when events are wanted: the slice checks char boundaries.
+                if self.events.is_none() {
+                    return Ok(self.state_after_value());
+                }
                 EventKind::Number(&self.text[start..self.pos])
             }
             b't' => {
-                self.literal("`true`", "a value")?;
+                self.literal::<4>("`true`", "a value")?;
                 EventKind::Bool(true)
             }
             b'f' => {
-                self.literal("`false`", "a value")?;
+                self.literal::<5>("`false`", "a value")?;
                 EventKind::Bool(false)
             }
             b'n' => {
-                self.literal("`null`", "a value")?;
+                self.literal::<4>("`null`", "a value")?;
                 EventKind::Null
             }
             _ => return Err(self.unexpected("a value")),
@@ -1360,8 +1370,8 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
             _ => {}
         }
         match self.peek() {
-            Some(b'I') => self.nan_or_infinity(start, "`Infinity`"),
-            Some(b'N') => self.nan_or_infinity(start, "`NaN`"),
+            Some(b'I') => self.nan_or_infinity::<8>(start, "`Infinity`"),
+            Some(b'N') => self.nan_or_infinity::<3>(start, "`NaN`"),
             Some(b'0') if matches!(self.bytes.get(self.pos + 1), Some(b'x' | b'X')) => {
                 self.hex_number(start)
             }
@@ -1435,15 +1445,13 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
         let rest = &self.bytes[self.pos..];
         let mut len = 0;
         // Eight bytes at a time while eight are left, for long runs such as canada.json's
-        // `43.420273000000009`. A run of one digit, the most common, takes the byte loop.
-        if rest.get(1).is_some_and(u8::is_ascii_digit) {
-            while let Some(&eight) = rest.get(len..).and_then(<[u8]>::first_chunk::<8>) {
-                let digits = digit_run(u64::from_le_bytes(eight));
-                len += digits;
-                if digits < 8 {
-                    self.pos += len;
-                    return len > 0;
-                }
+        // `43.420273000000009`, then a byte at a time.
+        while let Some(&eight) = rest.get(len..).and_then(<[u8]>::first_chunk::<8>) {
+            let digits = digit_run(u64::from_le_bytes(eight));
+            len += digits;
+            if digits < 8 {
+                self.pos += len;
+                return len > 0;
             }
         }
         while len < rest.len() && rest[len].is_ascii_digit() {
@@ -1454,7 +1462,11 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
     }
 
     /// `NaN` or `Infinity`, which only JSON5 allows. `start` is at the sign, if there is one.
-    fn nan_or_infinity(&mut self, start: usize, word: &'static str) -> Result<(), Fail> {
+    fn nan_or_infinity<const N: usize>(
+        &mut self,
+        start: usize,
+        word: &'static str,
+    ) -> Result<(), Fail> {
         if !self.json5 {
             return Err(
                 if self.text[self.pos..].starts_with(word.trim_matches('`')) {
@@ -1464,7 +1476,7 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
                 },
             );
         }
-        self.literal(word, self.after_sign(start))
+        self.literal::<N>(word, self.after_sign(start))
     }
 
     /// What a word at the current position stands in for: a value, or after a sign at `start`
@@ -1479,15 +1491,31 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
 
     /// A literal such as `null`. `word` comes in backticks, as an error message shows it; a
     /// different word whole in its place shows as found where `instead` was needed.
-    fn literal(&mut self, word: &'static str, instead: &'static str) -> Result<(), Fail> {
-        let start = self.pos;
-        // Every caller passes the word in backticks.
-        let bare = &word.as_bytes()[1..word.len() - 1];
-        if self.bytes[start..].starts_with(bare) {
-            self.pos += bare.len();
+    /// `N` is the word's length without the backticks, so the match compares a known length
+    /// inline instead of calling `memcmp`.
+    #[inline]
+    fn literal<const N: usize>(
+        &mut self,
+        word: &'static str,
+        instead: &'static str,
+    ) -> Result<(), Fail> {
+        debug_assert_eq!(word.len(), N + 2, "{word} is not N bytes in backticks");
+        if self.bytes[self.pos..].starts_with(&word.as_bytes()[1..=N]) {
+            self.pos += N;
             return Ok(());
         }
-        for &expected in bare {
+        self.not_literal(word, instead)
+    }
+
+    /// The error for a [`Self::literal`] that does not match.
+    // Out of line, so the match inlines without the error code: the whole function inlined into
+    // `document` cost numbers.json and deep.json 2 to 4% more instructions, and a call for every
+    // match cost rows.json 2% more time.
+    #[cold]
+    #[inline(never)]
+    fn not_literal(&mut self, word: &'static str, instead: &'static str) -> Result<(), Fail> {
+        let start = self.pos;
+        for &expected in &word.as_bytes()[1..word.len() - 1] {
             if self.peek() != Some(expected) {
                 // A different word, such as `None` for `NaN`, shows whole; a cut-off `nul` or
                 // `nul]` still says which literal it started.
@@ -1833,7 +1861,7 @@ mod tests {
     #[test]
     fn digit_run_stops_at_the_first_non_digit() {
         // Every byte value at every position, after digits and before 0xFF, whose carry from
-        // adding 6 must not reach back.
+        // adding 0x76 must not reach back.
         for b in 0..=u8::MAX {
             for at in 0..8 {
                 let mut word = [b'7'; 8];

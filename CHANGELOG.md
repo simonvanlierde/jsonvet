@@ -8,6 +8,22 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
+### Added
+
+- `fill-numbers = true` in `[format]` or `per-file-format` puts as many numbers on each line as
+  fit in an array of numbers only, as Prettier does. An array with a comment or a blank line in it
+  keeps one number per line. Off by default ([fill-numbers](docs/format.md#fill-numbers)).
+
+### Changed
+
+- The Linux glibc wheels are built for `manylinux_2_28`, not `manylinux2014`, so they need glibc
+  2.28 or newer (Debian 10, Ubuntu 20.04, RHEL 8). RHEL 7, Amazon Linux 2 and Ubuntu 18.04 fall
+  back to the source distribution, which needs Rust. The musllinux wheels are unchanged.
+- Checking is 4 to 8% faster on most files and a quarter faster on files of short numbers.
+- `--fix` takes about a quarter less memory on a large file: only `--unsafe-fixes` keeps where
+  each object member is. `jsonvet fmt` no longer allocates for each array and object, and
+  `--schema` on JSON Lines no longer allocates for each line.
+
 ## [3.4.0] - 2026-11-11
 
 ### Added
@@ -16,7 +32,8 @@ version for a new option or output, the patch version for a fix.
   matching a glob. Matching entries apply after `[format]` in file order, in both `jsonvet fmt`
   and the editor ([format settings](docs/format.md#settings)).
 - `--schema-catalog` selects schemas by file name from SchemaStore. It enables HTTPS downloads
-  explicitly, caches them for seven days, and warns when an offline run uses stale cached data.
+  explicitly and caches them for seven days. When a refresh fails, it uses the stale copy and
+  warns. After a network failure, the rest of the run downloads nothing.
   Local schema choices still win. Only SchemaStore-hosted, self-contained schemas are supported
   ([catalog](docs/usage.md#schemastore-catalog)).
 - In JSONC, JWCC and JSON5, a comment such as `// jsonvet-ignore duplicate-key` turns a rule off

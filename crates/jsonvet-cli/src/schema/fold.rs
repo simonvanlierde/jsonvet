@@ -54,6 +54,11 @@ impl<'e> Fold<'e> {
         }
     }
 
+    /// Build the next document in the vectors of `tree`, which is done with.
+    pub(super) fn recycle(&mut self, tree: Tree<'e>) {
+        self.build.recycle(tree);
+    }
+
     /// Take the next event, and give back the document it completes, if any.
     pub(super) fn event(&mut self, event: &Event<'e>) -> Option<Document<'e>> {
         let i = self.seen;

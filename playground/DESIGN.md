@@ -201,7 +201,7 @@ Both parts are outlined controls: a 1px ink border, no fill, the tint on hover a
 
 The popover is a native `popover`, set in the same mono. A heading, then one row per setting that
 applies to the dialect: a faint label and a compact control, between dashed rules. A choice (indent:
-2, 4, tab) and an on/off setting (bracket spacing, drop duplicate keys, normalize JSON5, JSON5 only)
+2, 4, tab) and an on/off setting (bracket spacing, drop duplicate keys, normalize JSON5, fill number arrays, JSON5 only)
 are segmented controls with `role="radiogroup"`, one tab stop each and arrow keys inside; the
 chosen part has the tint and a 2px ink bar at its foot, like a stage. A number (width) is a small
 field. The foot shows the same settings as real config on the tint, with a copy icon in its corner: a `[format]` table

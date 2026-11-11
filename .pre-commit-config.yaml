@@ -16,6 +16,8 @@ repos:
           - id: no-commit-to-branch
           - id: trailing-whitespace
             args: ["--markdown-linebreak-ext", "md"]
+            # Formatter snapshots show inputs with trailing spaces on purpose.
+            exclude: \.snap$
 
     # The released hook on our own JSON; the top-level exclude skips corpora that fail on purpose.
     - repo: https://github.com/simonvanlierde/jsonvet

@@ -338,3 +338,41 @@ fn a_run_that_fixes_nothing_prints_what_a_run_without_fix_prints() {
     }
     assert_eq!(read(&dir, "late.json"), "[1,] x\n");
 }
+
+/// A stderr that cannot be written (`/dev/full`) ends the run with exit 2, not an abort, and the
+/// fixed text still reaches standard output.
+#[cfg(target_os = "linux")] // macOS has no /dev/full
+#[test]
+fn a_stderr_that_cannot_be_written_exits_2_with_the_fixed_text() {
+    let dir = workdir(&[]);
+    for (args, input, start) in [
+        (&["--fix", "-"][..], "{\"a\":1,\n\"a\":2,}", "{\"a\":1,"),
+        (
+            &["--fix", "--format", "json", "-"][..],
+            "{\"a\":1,\n\"a\":2,}",
+            "{\"a\":1,",
+        ),
+        (&["fmt", "-"][..], "[1,", ""),
+    ] {
+        let full = std::fs::OpenOptions::new()
+            .write(true)
+            .open("/dev/full")
+            .expect("open /dev/full");
+        let mut child = command()
+            .args(args)
+            .current_dir(&dir)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::from(full))
+            .spawn()
+            .expect("run jsonvet");
+        let mut stdin = child.stdin.take().expect("a stdin pipe");
+        stdin.write_all(input.as_bytes()).expect("write stdin");
+        drop(stdin);
+        let out = child.wait_with_output().expect("wait");
+        assert_eq!(out.status.code(), Some(2), "{args:?}");
+        let text = String::from_utf8(out.stdout).expect("UTF-8 output");
+        assert!(text.starts_with(start), "{args:?}: {text}");
+    }
+    let _ = fs::remove_dir_all(&dir);
+}
