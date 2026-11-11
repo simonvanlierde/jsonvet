@@ -2,7 +2,7 @@
 
 import { ConfigurationTarget, type ExtensionContext, window, workspace } from "vscode";
 import { LanguageClient, type ServerOptions } from "vscode-languageclient/node";
-import { withoutBuiltIn } from "./diagnostics.ts";
+import { afterAnswer, languageIdOf, shouldAskAboutBuiltIn, withoutBuiltIn } from "./diagnostics.ts";
 
 let client: LanguageClient | undefined;
 
@@ -21,9 +21,8 @@ export async function activate(context: ExtensionContext): Promise<void> {
     documentSelector,
     middleware: {
       handleDiagnostics(uri, diagnostics, next) {
-        const document = workspace.textDocuments.find((open) => open.uri.toString() === uri.toString());
         const builtIn = workspace.getConfiguration("json", uri).get<boolean>("validate.enable", true);
-        next(uri, withoutBuiltIn(document?.languageId ?? "", builtIn, diagnostics));
+        next(uri, withoutBuiltIn(languageIdOf(workspace.textDocuments, uri), builtIn, diagnostics));
       },
     },
   });
@@ -51,7 +50,10 @@ export function deactivate(): Promise<void> | undefined {
 async function askAboutBuiltInValidation(context: ExtensionContext): Promise<void> {
   const json = workspace.getConfiguration("json");
   const asked = "askedAboutBuiltInValidation";
-  if (!workspace.workspaceFolders || !json.get<boolean>("validate.enable", true) || context.workspaceState.get(asked)) {
+  const builtIn = json.get<boolean>("validate.enable", true);
+  if (
+    !shouldAskAboutBuiltIn(Boolean(workspace.workspaceFolders), builtIn, Boolean(context.workspaceState.get(asked)))
+  ) {
     return;
   }
   const turnOff = "Turn it off";
@@ -62,11 +64,12 @@ async function askAboutBuiltInValidation(context: ExtensionContext): Promise<voi
     turnOff,
     "Keep it",
   );
-  if (choice === undefined) {
+  const { remember, disable } = afterAnswer(choice, turnOff);
+  if (!remember) {
     return;
   }
   await context.workspaceState.update(asked, true);
-  if (choice === turnOff) {
+  if (disable) {
     await json.update("validate.enable", false, ConfigurationTarget.Workspace);
   }
 }

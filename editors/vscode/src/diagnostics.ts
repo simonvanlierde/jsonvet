@@ -16,3 +16,26 @@ export function withoutBuiltIn<D extends { code?: Code }>(languageId: string, bu
   }
   return diagnostics.filter(({ code }) => !BUILT_IN.has(String(typeof code === "object" ? code.value : code)));
 }
+
+/// The language of the open document at `uri`, or "" when it is not open, which keeps everything.
+/// Compares by string, as VS Code hands the middleware a different `Uri` object than the document's.
+export function languageIdOf(
+  documents: readonly { uri: { toString(): string }; languageId: string }[],
+  uri: { toString(): string },
+): string {
+  return documents.find((open) => open.uri.toString() === uri.toString())?.languageId ?? "";
+}
+
+/// Whether to ask about turning VS Code's JSON validation off: only with a folder open, while it
+/// is on, and when the workspace has not answered before.
+export function shouldAskAboutBuiltIn(hasFolder: boolean, builtIn: boolean, asked: boolean): boolean {
+  return hasFolder && builtIn && !asked;
+}
+
+/// What to do with the answer to that question. No choice, a closed message, remembers nothing.
+export function afterAnswer<T extends string>(
+  choice: T | undefined,
+  turnOff: T,
+): { remember: boolean; disable: boolean } {
+  return { remember: choice !== undefined, disable: choice === turnOff };
+}
