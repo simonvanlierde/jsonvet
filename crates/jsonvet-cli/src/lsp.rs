@@ -193,7 +193,7 @@ fn serve(connection: &Connection) -> Result<bool, String> {
                     send(Message::Notification(published))?;
                 }
             }
-            Message::Response(_) => {}
+            Message::Response(response) => refused(response).map_or(Ok(()), send)?,
         }
         for request in schema_watches(&params, &documents, &mut schema_paths, &mut watch_revision) {
             send(Message::Request(request))?;
@@ -201,6 +201,20 @@ fn serve(connection: &Connection) -> Result<bool, String> {
     }
     // The client went without saying exit.
     Ok(false)
+}
+
+/// A log message for an error answer to one of the server's own requests, the file watch
+/// registrations: a refused one leaves config and schema files unwatched.
+fn refused(response: Response) -> Option<Message> {
+    let error = response.response_result.err()?;
+    let message = messages::fill(
+        "lsp.refused",
+        &[("id", &response.id), ("error", &error.message)],
+    );
+    Some(Message::Notification(Notification::new(
+        "window/logMessage".to_owned(),
+        json!({ "type": 1, "message": message }),
+    )))
 }
 
 /// Update the exact schema watches when open documents change the set of files they read.
@@ -397,8 +411,13 @@ fn update(
             .as_str()?
             .to_owned();
             let path = path_of(&uri)?;
-            let checked = (!superseded).then(|| diagnostics(&uri, &path, &text, client));
-            let (diagnostics, schemas) = checked.unwrap_or_default();
+            let (diagnostics, schemas) = if superseded {
+                // Keep the last check's schemas, so their watches stay until the next check.
+                let schemas = documents.get(&uri).map(|document| document.schemas.clone());
+                (Vec::new(), schemas.unwrap_or_default())
+            } else {
+                diagnostics(&uri, &path, &text, client)
+            };
             *revision = revision.checked_add(1)?;
             let document = Document {
                 text,
@@ -1603,6 +1622,35 @@ mod tests {
     }
 
     #[test]
+    fn a_request_the_client_refuses_is_logged() {
+        let (client, _) = Client::start(&json!({}));
+        let refused = lsp_server::Response::new_err(
+            RequestId::from("watch".to_owned()),
+            lsp_server::ErrorCode::InvalidParams as i32,
+            "no file watching".to_owned(),
+        );
+        client
+            .connection
+            .sender
+            .send(Message::Response(refused))
+            .expect("sent");
+        let logged = loop {
+            if let Message::Notification(note) = receive(&client.connection)
+                && note.method == "window/logMessage"
+            {
+                break note.params;
+            }
+        };
+        assert_eq!(logged["type"], 1);
+        let message = logged["message"].as_str().expect("message");
+        assert!(
+            message.contains("watch") && message.contains("no file watching"),
+            "{message}"
+        );
+        client.stop();
+    }
+
+    #[test]
     fn requests_before_initialization_get_server_not_initialized() {
         let (server, client) = Connection::memory();
         client
@@ -2654,6 +2702,39 @@ mod tests {
             json!([{ "globPattern": { "baseUri": uri_of(&dir), "pattern": "s[[]1[]].json" } }])
         );
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_superseded_change_keeps_the_schemas_its_watches_follow() {
+        let schemas = std::collections::BTreeSet::from([PathBuf::from("/s.json")]);
+        let mut documents = std::collections::HashMap::new();
+        documents.insert(
+            "file:///a.json".to_owned(),
+            super::Document {
+                text: "{}".to_owned(),
+                version: None,
+                revision: 1,
+                schemas: schemas.clone(),
+            },
+        );
+        let change = Notification::new(
+            "textDocument/didChange".to_owned(),
+            json!({
+                "textDocument": { "uri": "file:///a.json", "version": 2 },
+                "contentChanges": [{ "text": "{\"a\": 1}" }],
+            }),
+        );
+        let server = super::Client {
+            roots: Vec::new(),
+            utf8: false,
+            resolve: false,
+            versioned: false,
+        };
+        let published = super::update(&change, &mut documents, &mut 1, &server, true);
+        assert!(published.is_none());
+        let document = &documents["file:///a.json"];
+        assert_eq!(document.text, "{\"a\": 1}");
+        assert_eq!(document.schemas, schemas);
     }
 
     #[test]
