@@ -109,6 +109,16 @@ until the end. JSON and text write each problem as they get it, but the library 
 problems until its report is done, about 110 bytes each: 20 million duplicate keys in a 120 MB
 file took 2.3 GB.
 
+### Inline suppressions
+
+`per-file-rules` sets a severity for the files a glob matches, but not for one line. In `jsonc`,
+`jwcc` and `json5`, a comment `// jsonvet-ignore RULE` turns a rule off for the next line that
+starts with a token, and the comment can say why after ` -- `. Because a comment can outlive the
+problem it hid, the `unused-suppression` rule reports one that hides nothing. A rule that is always
+an error or is about the whole file cannot be suppressed; set the latter in `per-file-rules`. The
+code is `crates/jsonvet/src/suppress.rs`, and
+[usage.md](usage.md#unused-suppression) lists the details.
+
 ### Output
 
 File names and messages come from the files you check, so jsonvet escapes anything that could
