@@ -4,7 +4,7 @@ Status: accepted (2026-10-20)
 
 ## Context
 
-Past 16 keys, an object's keys go through a hash index. With a weak or fixed hash, a file built
+Past 32 keys, an object's keys go through a hash index. With a weak or fixed hash, a file built
 to collide its keys makes that quadratic, and jsonvet runs in CI on pull requests.
 
 ## Options

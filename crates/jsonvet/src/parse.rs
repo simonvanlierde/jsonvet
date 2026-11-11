@@ -22,7 +22,7 @@ use crate::unicode::{
 use crate::{Config, Dialect, Problem, Rule, Severity};
 
 /// Past this many keys, an object's duplicate check switches from a linear scan to a hash map.
-const LINEAR_KEYS: usize = 16;
+const LINEAR_KEYS: usize = 32;
 
 /// The largest integer a double holds exactly: 2⁵³ − 1.
 const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
@@ -405,7 +405,7 @@ impl<'a> Keys<'a> {
             }
             list.push((key.clone(), at));
             if list.len() == LINEAR_KEYS + 1 {
-                // One allocation: growing key by key to 17 took four, rehashing each time.
+                // One allocation: growing key by key would take several, rehashing each time.
                 self.index.reserve(2 * LINEAR_KEYS, |&(h, _)| spread(h));
                 for (i, (k, _)) in (0..).zip(list.iter()) {
                     let hash = short_hash(&self.state, k);

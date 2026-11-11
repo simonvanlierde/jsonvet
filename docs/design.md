@@ -276,7 +276,7 @@ error mode: the problems in the file are its output. A `Report` is `Send` but no
 `location` caches line starts inside it.
 
 The parser keeps an explicit stack of frames, not recursion, so the depth limit is a setting and
-not the call stack's size. Past 16 keys, an object's keys go through a hash index keyed with std's
+not the call stack's size. Past 32 keys, an object's keys go through a hash index keyed with std's
 SipHash from the OS, so a crafted file cannot make the check quadratic
 ([0003](decisions/0003-siphash-for-duplicate-keys.md)). There is no `unsafe` code, so the worst a
 crafted file can do is a panic ([0002](decisions/0002-no-unsafe-code.md)).
