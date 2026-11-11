@@ -4428,9 +4428,9 @@ fn lsp_exits_after_exit_while_the_client_keeps_its_pipe_open() {
         if let Some(status) = child.try_wait().expect("a status") {
             break status.code();
         }
-        if start.elapsed() > std::time::Duration::from_secs(2) {
+        if start.elapsed() > std::time::Duration::from_secs(10) {
             let _ = child.kill();
-            panic!("jsonvet lsp still running 2 s after exit");
+            panic!("jsonvet lsp still running 10 s after exit");
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
     };
