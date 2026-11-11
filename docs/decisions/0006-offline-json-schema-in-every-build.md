@@ -1,6 +1,7 @@
 # 6. `--schema` on the jsonschema crate, offline, in every build
 
-Status: accepted (2026-10-18), superseded in part by [0016](0016-opt-in-schemastore-catalog.md) (2026-11-10)
+Status: accepted (2026-10-18), superseded in part by
+[0016](0016-opt-in-schemastore-catalog.md) (2026-11-10)
 
 ## Context
 

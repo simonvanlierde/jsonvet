@@ -577,8 +577,8 @@ fn diagnostics(
 }
 
 /// A resolver for the file at `path` that stops its config search at the workspace folder
-/// holding it, the deepest where folders nest, or at a nearer `.git`. A file outside them all stops at its own
-/// folder. With no folders, every file is outside them: the editor's working directory, often
+/// holding it, the deepest where folders nest, or at a nearer `.git`. A file outside them all
+/// stops at its own folder. With no folders, every file is outside them: the editor's working directory, often
 /// `/` or the home folder, would let a config file far above apply.
 fn resolver(path: &Path, roots: &[PathBuf]) -> Result<Resolver, String> {
     let root = roots

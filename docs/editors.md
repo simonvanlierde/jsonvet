@@ -3,10 +3,11 @@
 `jsonvet lsp` is a language server: it speaks the Language Server Protocol on standard input and
 output, so any editor that has a client for it can show jsonvet's problems as you type. It offers:
 
-- **Problems** in each open file, checked as `jsonvet FILE` would check it, except that the config search stops at the
-  workspace folder (below): the dialect, rules and schema come from the nearest `jsonvet.toml` and
-  the file's own `$schema` ([configuration](usage.md#configuration-file)). A config file or schema
-  that cannot be used is one error at the start of the file.
+- **Problems** in each open file, checked as `jsonvet FILE` would check it, except that the config
+  search stops at the workspace folder (below): the dialect, rules and schema come from the
+  nearest `jsonvet.toml` and the file's own `$schema`
+  ([configuration](usage.md#configuration-file)). A config file or schema that cannot be used is
+  one error at the start of the file.
 - **Quick fixes** for the problems that have a safe fix, as `--fix` makes it
   ([fixing](usage.md#fixing)), and one action that applies them all, of the kind
   `source.fixAll.jsonvet`. Duplicate keys get no fix: dropping one changes what the file means.

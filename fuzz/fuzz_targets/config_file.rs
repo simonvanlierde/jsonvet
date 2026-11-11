@@ -1,6 +1,6 @@
 //! Arbitrary bytes as a `jsonvet.toml` or the `pyproject.toml` of a project, through the loader
-//! behind `per-file-rules`, `per-file-format`, `rules`, `dialects`, `schemas` and the rest: it returns
-//! `Ok` or an error message, and never panics. An error is one line.
+//! behind `per-file-rules`, `per-file-format`, `rules`, `dialects`, `schemas` and the rest: it
+//! returns `Ok` or an error message, and never panics. An error is one line.
 #![no_main]
 
 use std::path::Path;
