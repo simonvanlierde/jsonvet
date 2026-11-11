@@ -1491,23 +1491,31 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
 
     /// A literal such as `null`. `word` comes in backticks, as an error message shows it; a
     /// different word whole in its place shows as found where `instead` was needed.
-    /// `N` is the word's length without the backticks, so the match below compares a known
-    /// length inline instead of calling `memcmp`.
-    // Inlined into `document`, it cost numbers.json and deep.json 2 to 4% more instructions.
-    #[inline(never)]
+    /// `N` is the word's length without the backticks, so the match compares a known length
+    /// inline instead of calling `memcmp`.
+    #[inline]
     fn literal<const N: usize>(
         &mut self,
         word: &'static str,
         instead: &'static str,
     ) -> Result<(), Fail> {
         debug_assert_eq!(word.len(), N + 2, "{word} is not N bytes in backticks");
-        let start = self.pos;
-        let bare = &word.as_bytes()[1..=N];
-        if self.bytes[start..].starts_with(bare) {
-            self.pos += bare.len();
+        if self.bytes[self.pos..].starts_with(&word.as_bytes()[1..=N]) {
+            self.pos += N;
             return Ok(());
         }
-        for &expected in bare {
+        self.not_literal(word, instead)
+    }
+
+    /// The error for a [`Self::literal`] that does not match.
+    // Out of line, so the match inlines without the error code: the whole function inlined into
+    // `document` cost numbers.json and deep.json 2 to 4% more instructions, and a call for every
+    // match cost rows.json 2% more time.
+    #[cold]
+    #[inline(never)]
+    fn not_literal(&mut self, word: &'static str, instead: &'static str) -> Result<(), Fail> {
+        let start = self.pos;
+        for &expected in &word.as_bytes()[1..word.len() - 1] {
             if self.peek() != Some(expected) {
                 // A different word, such as `None` for `NaN`, shows whole; a cut-off `nul` or
                 // `nul]` still says which literal it started.
