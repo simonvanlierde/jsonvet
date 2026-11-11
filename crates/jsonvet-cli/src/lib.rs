@@ -463,7 +463,7 @@ fn expand(
         |arg| {
             let meta = std::fs::metadata(arg);
             let dir = arg != STDIN && meta.as_ref().is_ok_and(std::fs::Metadata::is_dir);
-            (dir, identity(arg, meta))
+            (dir, identity(arg, &meta))
         },
     );
     // The identity of each of `files`, or `None` for a file a walk found.
@@ -554,7 +554,7 @@ enum Identity {
 }
 
 /// The identity of `file`, from `meta`, what `std::fs::metadata` said about it.
-fn identity(file: &OsStr, meta: io::Result<std::fs::Metadata>) -> Identity {
+fn identity(file: &OsStr, meta: &io::Result<std::fs::Metadata>) -> Identity {
     #[cfg(unix)]
     if let Ok(meta) = meta {
         use std::os::unix::fs::MetadataExt;
@@ -581,7 +581,7 @@ fn unique(files: Vec<OsString>, ids: Vec<Option<Identity>>, threads: usize) -> V
             || false,
             |(file, id)| {
                 id.clone()
-                    .unwrap_or_else(|| identity(file, std::fs::metadata(file)))
+                    .unwrap_or_else(|| identity(file, &std::fs::metadata(file)))
             },
         )
     };
