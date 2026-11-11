@@ -327,7 +327,13 @@ HTML and run, from the repository root, with Playwright's Chromium:
 
 ```sh
 playwright screenshot --viewport-size=1200,630 file://$PWD/docs/og-card.html playground/og.png
+sed -i.bak "s|og.png?v=[0-9a-f]*|og.png?v=$(shasum -a 256 playground/og.png | cut -c1-8)|" playground/index.html
+rm playground/index.html.bak
 ```
+
+The `sed` line sets the `?v=` on the `og:image` URL to the PNG's hash. Link previews are cached by
+image URL, so without it Facebook, Slack, Discord and iMessage keep the old card.
+`playground/og.test.mjs` fails when the two disagree.
 
 Link previews show it at 300-500 px and some crop to the centred 630 px square, so the name, the
 snippet and the address sit in that square at 36 px or larger. The snippet is the duplicate-key
