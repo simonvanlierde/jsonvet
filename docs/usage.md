@@ -194,6 +194,7 @@ name exists. To be sure, put `--` before the file names: `jsonvet -- --x.json`.
 
 A severity is `error`, `warning` (or `warn`), or `ignore` (or `off`). An ignored rule is not
 checked at all. Warnings fail a run only when there are more than `--max-warnings N`.
+`syntax`, `unreadable` and `schema` stay errors whatever a setting says.
 
 `jsonvet --list-rules` lists the rules and `jsonvet --explain RULE` prints one of the sections
 below. SARIF output links each rule to its section here.

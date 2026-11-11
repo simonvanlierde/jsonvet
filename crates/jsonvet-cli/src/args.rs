@@ -66,9 +66,9 @@ Options:
   -V, --version                 Print the version.
 
 Rules: syntax, duplicate-key, invalid-number, invalid-code-point, byte-order-mark,
-missing-final-newline, mixed-line-endings, unused-suppression, unreadable, schema. unreadable (a
-file that cannot be read) and schema (a value the file's JSON Schema rejects) are always errors:
---error, --warn, --ignore and settings files do not take them.
+missing-final-newline, mixed-line-endings, unused-suppression, unreadable, schema. syntax,
+unreadable (a file that cannot be read) and schema (a value the file's JSON Schema rejects) are
+always errors: --error, --warn, --ignore and settings files do not change them.
 
 In jsonc, jwcc and json5, a comment `jsonvet-ignore RULE[, RULE...]` turns those rules off for
 the next line. unused-suppression reports one that hides nothing.

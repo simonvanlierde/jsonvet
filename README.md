@@ -144,9 +144,9 @@ fail as JSON are config files with comments. To check a file as strict JSON, use
 | `unreadable`            | a file that is missing, not a regular file, or not readable UTF-8 | error, always                                    |
 | `schema`                | a value the file's JSON Schema rejects                            | error, always                                    |
 
-Change a rule's severity with `--error`, `--warn` or `--ignore`; `unreadable` and `schema` stay
-errors. In `jsonc`, `jwcc` and `json5`, a comment `// jsonvet-ignore duplicate-key` turns a rule
-off for the next line. Warnings fail a run only past
+Change a rule's severity with `--error`, `--warn` or `--ignore`; `syntax`, `unreadable` and
+`schema` stay errors, whatever a setting says. In `jsonc`, `jwcc` and `json5`, a comment
+`// jsonvet-ignore duplicate-key` turns a rule off for the next line. Warnings fail a run only past
 `--max-warnings N`.
 
 ## Configuration
