@@ -286,7 +286,14 @@ fn fetch(url: &str, max: u64) -> Result<String, Failed> {
             // ureq rejects a body at its read limit; resource checks the inclusive cap.
             .limit(max + 1)
             .read_to_string()
-            .map_err(|error| Failed::network(&error));
+            .map_err(|error| match &error {
+                // Too large, or not UTF-8: about this body, not the network.
+                ureq::Error::BodyExceedsLimit(_) => Failed::other(&error),
+                ureq::Error::Io(io) if io.kind() == std::io::ErrorKind::InvalidData => {
+                    Failed::other(&error)
+                }
+                _ => Failed::network(&error),
+            });
     }
     Err(Failed::other(messages::text("catalog.redirect")))
 }
@@ -714,7 +721,7 @@ mod tests {
             "//www.schemastore.org/a",
         ] {
             assert!(allowed(url).is_err(), "{url}");
-            assert!(fetch(url, SCHEMA_BYTES).is_err(), "{url}");
+            assert!(!fetch(url, SCHEMA_BYTES).expect_err(url).network, "{url}");
         }
     }
 
@@ -749,7 +756,7 @@ mod tests {
             b"{}",
         );
         assert_eq!(fetch(START, 2).expect("three approved redirects"), "{}");
-        assert!(fetch(START, 1).is_err());
+        assert!(!fetch(START, 1).expect_err("over the byte limit").network);
         let cache = folder();
         let text = |text: &str| Ok(text.to_owned());
         assert_eq!(
@@ -764,7 +771,19 @@ mod tests {
             &[("location", LOOP), ("content-length", "0")],
             b"",
         );
-        assert!(fetch(LOOP, 2).is_err());
+        assert!(!fetch(LOOP, 2).expect_err("too many redirects").network);
+    }
+
+    #[test]
+    fn a_bad_status_or_body_is_about_one_url() {
+        use ureq::unversioned::transport::set_handler;
+
+        const MISSING: &str = "https://www.schemastore.org/missing.json";
+        const BINARY: &str = "https://www.schemastore.org/binary.json";
+        set_handler(MISSING, 404, &[("content-length", "0")], b"");
+        set_handler(BINARY, 200, &[("content-length", "2")], b"\xff\xfe");
+        assert!(!fetch(MISSING, 2).expect_err("404").network);
+        assert!(!fetch(BINARY, 2).expect_err("not UTF-8").network);
     }
 
     #[test]
@@ -782,6 +801,7 @@ mod tests {
             b"",
         );
         let error = fetch(START, 2).expect_err("a redirect must name an approved HTTPS origin");
+        assert!(!error.network);
         assert!(
             error
                 .message
