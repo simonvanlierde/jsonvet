@@ -72,11 +72,14 @@ To apply every safe fix when you save:
   only, so a folder you open cannot point it at a program of its own. Reload the window after you
   change it.
 
-The extension does not run in Restricted Mode: on Windows, `jsonvet` from `PATH` could be a
-`jsonvet.exe` in the folder you opened.
+The extension does not run in Restricted Mode: a `jsonvet` found on `PATH` could be one that the
+folder you opened holds.
 
 ## Building
 
+The extension is not on the Marketplace yet. Build it from the repository root, then install it:
+
 ```bash
-just vsix    # from the repository root: editors/vscode/jsonvet-<version>.vsix
+just vsix    # writes editors/vscode/jsonvet-<version>.vsix
+code --install-extension editors/vscode/jsonvet-<version>.vsix
 ```

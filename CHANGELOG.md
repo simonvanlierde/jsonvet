@@ -16,7 +16,8 @@ version for a new option or output, the patch version for a fix.
   matching a glob. Matching entries apply after `[format]` in file order, in both `jsonvet fmt`
   and the editor ([format settings](docs/format.md#settings)).
 - `--schema-catalog` selects schemas by file name from SchemaStore. It enables HTTPS downloads
-  explicitly, caches them for seven days, and warns when an offline run uses stale cached data.
+  explicitly and caches them for seven days. When a refresh fails, it uses the stale copy and
+  warns. After a network failure, the rest of the run downloads nothing.
   Local schema choices still win. Only SchemaStore-hosted, self-contained schemas are supported
   ([catalog](docs/usage.md#schemastore-catalog)).
 - In JSONC, JWCC and JSON5, a comment such as `// jsonvet-ignore duplicate-key` turns a rule off

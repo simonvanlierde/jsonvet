@@ -101,7 +101,7 @@ A file or folder you name is always checked, even when an ignore file or `exclud
 `exclude` has no effect on the hook or the Action, which name each file: use the hook's own
 `exclude:` and the Action's `files` input there.
 
-A file that the arguments reach more than once, as a repeated name, a folder and a file in it, or a symlink, is checked once, under the name it was first given by.
+The arguments can reach a file more than once: as a repeated name, as a folder and a file in it, or as a symlink. jsonvet checks it once, under the name it was first given by.
 
 ## Output
 
@@ -537,7 +537,7 @@ Catalogs and schemas stay fresh for seven days. If a refresh fails or returns un
 jsonvet uses a usable stale copy and warns on stderr. Without a usable copy, it stops with a
 usage error (exit 2). A download that cannot be written to the cache is still used, with a
 warning. Downloads allow three redirects and take at most 30 seconds each. After a timeout, an
-unknown host or a failed connection, the rest of the run tries no more downloads and uses cached
+unknown host or a connection error, the rest of the run tries no more downloads and uses cached
 copies; their warnings say they were not tried.
 The catalog is limited to 4 MiB, 10,000 entries and 100,000 patterns; a schema is limited to
 8 MiB. All schema validation limits below still apply.

@@ -1,6 +1,6 @@
 # Formatting
 
-`jsonvet fmt` rewrites JSON, JSONC, JWCC (HuJSON), JSON5 and JSON Lines files and keeps their
+`jsonvet fmt` rewrites files in all six dialects and keeps their
 comments. Why it works this way is in [design.md](design.md).
 
 ```bash

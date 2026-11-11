@@ -243,7 +243,7 @@ crates/jsonvet/        library: the parser, rules and positions. Depends on hash
 crates/jsonvet-cli/    binaries jsonvet and check-json5: arguments, config, output, --schema
                        (jsonschema, serde_json) and the language server, `jsonvet lsp`
                        (lsp-server). Built into the PyPI wheels by maturin.
-crates/jsonvet-wasm/   the library as WebAssembly for the playground: two exports, `check` and `version`
+crates/jsonvet-wasm/   the library as WebAssembly for the playground: `check`, `fix`, `format` and `version`
 editors/vscode/        the VS Code extension: a thin client for `jsonvet lsp`, in TypeScript
 playground/            the browser playground: a static page around the wasm. Deployed by pages.yml.
 compat/check-json5/    the check-json5 package on PyPI: depends on jsonvet, nothing else
@@ -294,7 +294,7 @@ each on x86-64 and arm64.
 How to run each layer is in [CONTRIBUTING.md](../CONTRIBUTING.md#tests). CI runs on Linux, macOS
 and Windows, and on the oldest supported Rust (1.88). What each layer is for:
 
-- **Conformance** (json5-tests, all 114 cases): the spec's own answer for what must pass or fail.
+- **Conformance** (json5-tests, all 114 cases of the pinned submodule, counted in `crates/jsonvet/tests/conformance.rs`): the spec's own answer for what must pass or fail.
 - **Corpus:** one file per edge case, survey finding and fuzz finding, and one reviewed snapshot
   of every exit code and output line.
 - **Conformance matrix:** the same files through other parsers, in

@@ -116,6 +116,9 @@ licence and has no RustSec advisory or unmaintained notice. Renovate bumps the p
 - **Fuzzing.** `just fuzz check` (or `diff_serde_json`, `diff_json5`, `parse`, `fix`, `config`, `config_file`) runs a target
   for 20 minutes on a nightly toolchain. A new json5 version in `fuzz/` can need new skips in
   `diff_json5`: read its skip list before you call a divergence a jsonvet bug.
+- **Language server.** `cargo nextest run -p jsonvet-cli lsp` runs the in-process tests. The stdio
+  test is `lsp_checks_a_document_over_stdio_and_exits_0_after_shutdown` in
+  `crates/jsonvet-cli/tests/cli.rs`.
 - **Mutation testing.** `just mutants` takes over an hour on one CI runner, so `mutants.yml` runs
   it weekly in 64 shards, 15 at a time; its `shards` input reruns only the ones you list. It fails
   when a mutant survives that `.cargo/mutants.toml` does not list. List one there only when it
