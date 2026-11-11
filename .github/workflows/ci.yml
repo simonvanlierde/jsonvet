@@ -20,7 +20,7 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # The Rust that builds the release wheels; keep it equal to RELEASE_RUST in release.yml.
+  # The Rust that builds the release wheels; keep it equal to RELEASE_RUST in wheels.yml.
   RELEASE_RUST: "1.99.1"
   # The uv every job sets up, as in release.yml and mise.toml. Renovate bumps all three.
   PINNED_UV: "0.13.5"

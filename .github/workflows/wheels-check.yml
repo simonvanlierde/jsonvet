@@ -1,0 +1,23 @@
+name: wheels-check
+
+# Builds the release wheels, with no upload, when a change could break one: a new dependency in
+# Cargo.lock (a C dependency can need a newer compiler than the Linux build images have) or an
+# edit to the matrix. Otherwise they build only at the tag.
+on:
+  pull_request:
+    paths:
+      - Cargo.lock
+      - .github/workflows/release.yml
+      - .github/workflows/wheels.yml
+      - .github/workflows/wheels-check.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  wheels:
+    uses: $/.github/workflows/wheels.yml
