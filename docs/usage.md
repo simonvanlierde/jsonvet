@@ -534,7 +534,8 @@ No document text or local paths are sent to SchemaStore.
 
 Catalogs and schemas stay fresh for seven days. If a refresh fails or returns unusable data,
 jsonvet uses a usable stale copy and warns on stderr. Without a usable copy, it stops with a
-usage error (exit 2). Downloads allow three redirects and take at most 30 seconds each.
+usage error (exit 2). A download that cannot be written to the cache is still used, with a
+warning. Downloads allow three redirects and take at most 30 seconds each.
 The catalog is limited to 4 MiB, 10,000 entries and 100,000 patterns; a schema is limited to
 8 MiB. All schema validation limits below still apply.
 

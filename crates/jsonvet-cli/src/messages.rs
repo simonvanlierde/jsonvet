@@ -47,6 +47,10 @@ const ENGLISH: &[(&str, &str)] = &[
         "warning: using stale cached {url}: {error}",
     ),
     (
+        "catalog.cache-write",
+        "warning: cannot cache {url}: {error}",
+    ),
+    (
         "catalog.fetch",
         "cannot load {url} and no usable cached copy exists: {error}",
     ),

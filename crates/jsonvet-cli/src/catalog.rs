@@ -337,12 +337,19 @@ fn resource<T>(
         if body.len() as u64 > max {
             return Err(messages::text("catalog.too-large").to_owned());
         }
-        let parsed = parse(&body)?;
-        save(cache, url, &body)?;
-        Ok(parsed)
+        parse(&body).map(|parsed| (parsed, body))
     });
     match fetched {
-        Ok(parsed) => Ok(parsed),
+        Ok((parsed, body)) => {
+            // A cache that cannot be written only costs the next run a download.
+            if let Err(error) = save(cache, url, &body) {
+                notes.push(messages::fill(
+                    "catalog.cache-write",
+                    &[("url", &url), ("error", &error)],
+                ));
+            }
+            Ok(parsed)
+        }
         Err(error) => {
             if let Some(parsed) = old.and_then(|(body, _)| parse(&body).ok()) {
                 notes.push(messages::fill(
@@ -510,6 +517,28 @@ mod tests {
             .expect("oversized cache envelope");
         assert!(cached(&cache, CATALOG, 16).is_err());
         let _ = std::fs::remove_dir_all(cache);
+    }
+
+    #[test]
+    fn a_download_that_cannot_be_cached_is_still_used() {
+        // A regular file where the cache directory goes, so every cache write fails.
+        let blocked = folder().join("file");
+        std::fs::write(&blocked, "").expect("blocking file");
+        let mut notes = Vec::new();
+        let schemas = super::resource(
+            &blocked,
+            CATALOG,
+            CATALOG_BYTES,
+            &|_, _| Ok(r#"{"schemas":[]}"#.to_owned()),
+            entries,
+            &mut notes,
+        )
+        .expect("downloaded catalog");
+        assert!(schemas.is_empty());
+        assert_eq!(notes.len(), 1);
+        assert!(notes[0].contains("cannot cache"), "{notes:?}");
+        assert!(notes[0].contains(CATALOG));
+        let _ = std::fs::remove_dir_all(blocked.parent().expect("cache"));
     }
 
     #[test]
