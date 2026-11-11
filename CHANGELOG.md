@@ -10,6 +10,8 @@ version for a new option or output, the patch version for a fix.
 
 ### Changed
 
+- Checking is 4 to 8% faster on most files and a quarter faster on files of short numbers.
+
 - `--fix` takes about a quarter less memory on a large file: only `--unsafe-fixes` keeps where
   each object member is. `jsonvet fmt` no longer allocates for each array and object, and
   `--schema` on JSON Lines no longer allocates for each line.
