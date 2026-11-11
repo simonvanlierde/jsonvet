@@ -133,8 +133,9 @@ impl Catalog {
     ) -> Result<Option<Arc<Schema>>, String> {
         let down = &self.down;
         let fetch = |url: &str, max: u64| {
-            if let Some(message) = down.borrow().clone() {
-                return Err(Failed::network(&message));
+            if let Some(message) = down.borrow().as_deref() {
+                let skipped = messages::fill("catalog.skipped", &[("error", &message)]);
+                return Err(Failed::network(&skipped));
             }
             fetch(url, max).inspect_err(|failed| {
                 if failed.network {
@@ -244,6 +245,18 @@ fn allowed(url: &str) -> Result<(), String> {
     }
 }
 
+/// A failed download. A timeout, an unknown host, a refused connection or a broken one counts as
+/// a network failure, which the next download would wait out too. Any other error, such as a
+/// status, a TLS error or a body that is too large or not UTF-8, fails fast and is about one URL.
+fn failed(error: &ureq::Error) -> Failed {
+    use ureq::Error;
+    match error {
+        Error::Timeout(_) | Error::HostNotFound | Error::ConnectionFailed => Failed::network(error),
+        Error::Io(io) if io.kind() != std::io::ErrorKind::InvalidData => Failed::network(error),
+        _ => Failed::other(error),
+    }
+}
+
 fn fetch(url: &str, max: u64) -> Result<String, Failed> {
     let start = std::time::Instant::now();
     let mut url = url.to_owned();
@@ -258,10 +271,7 @@ fn fetch(url: &str, max: u64) -> Result<String, Failed> {
             .timeout_global(Some(remaining))
             .build()
             .new_agent();
-        let mut response = agent.get(&url).call().map_err(|error| match error {
-            ureq::Error::StatusCode(_) => Failed::other(&error),
-            _ => Failed::network(&error),
-        })?;
+        let mut response = agent.get(&url).call().map_err(|error| failed(&error))?;
         if response.status().is_redirection() {
             let location = response
                 .headers()
@@ -286,14 +296,7 @@ fn fetch(url: &str, max: u64) -> Result<String, Failed> {
             // ureq rejects a body at its read limit; resource checks the inclusive cap.
             .limit(max + 1)
             .read_to_string()
-            .map_err(|error| match &error {
-                // Too large, or not UTF-8: about this body, not the network.
-                ureq::Error::BodyExceedsLimit(_) => Failed::other(&error),
-                ureq::Error::Io(io) if io.kind() == std::io::ErrorKind::InvalidData => {
-                    Failed::other(&error)
-                }
-                _ => Failed::network(&error),
-            });
+            .map_err(|error| failed(&error));
     }
     Err(Failed::other(messages::text("catalog.redirect")))
 }
@@ -477,6 +480,10 @@ mod tests {
         let notes = catalog.take_notes();
         assert_eq!(notes.len(), 2, "{notes:?}");
         assert!(notes.iter().all(|note| note.contains("timed out")));
+        assert!(
+            notes[1].contains("not tried after an earlier download failed"),
+            "{notes:?}"
+        );
         let _ = std::fs::remove_dir_all(cache);
     }
 
@@ -772,6 +779,29 @@ mod tests {
             b"",
         );
         assert!(!fetch(LOOP, 2).expect_err("too many redirects").network);
+    }
+
+    #[test]
+    fn only_errors_every_download_would_meet_stop_the_run() {
+        use std::io::{Error as Io, ErrorKind};
+        use ureq::Error;
+        for error in [
+            Error::Timeout(ureq::Timeout::Global),
+            Error::HostNotFound,
+            Error::ConnectionFailed,
+            Error::Io(Io::from(ErrorKind::ConnectionReset)),
+        ] {
+            assert!(failed(&error).network, "{error}");
+        }
+        for error in [
+            Error::StatusCode(503),
+            Error::BodyExceedsLimit(1),
+            Error::Io(Io::from(ErrorKind::InvalidData)),
+            Error::LargeResponseHeader(1, 1),
+            Error::Tls("handshake"),
+        ] {
+            assert!(!failed(&error).network, "{error}");
+        }
     }
 
     #[test]
