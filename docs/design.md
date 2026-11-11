@@ -320,6 +320,20 @@ a build provenance attestation ([SECURITY.md](../SECURITY.md#verifying-a-release
 are not built with `cargo auditable`, which maturin cannot run without a cargo wrapper in every
 build container, so the SBOM lists the dependencies instead.
 
+## Social card
+
+`playground/og.png` (1200x630) is rendered from `docs/og-card.html`, not drawn by hand. Edit the
+HTML and run, from the repository root, with Playwright's Chromium:
+
+```sh
+playwright screenshot --viewport-size=1200,630 file://$PWD/docs/og-card.html playground/og.png
+```
+
+Link previews show it at 300-500 px and some crop to the centred 630 px square, so the name, the
+snippet and the address sit in that square at 36 px or larger. The snippet is the duplicate-key
+example from the playground's sample text. The serif falls back to Liberation Serif where Charter
+is missing.
+
 ## Dependencies and pins
 
 Every version falls in one of five groups, which `.github/renovate.json5` encodes.
