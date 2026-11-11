@@ -40,11 +40,17 @@ fn folder(name: &str) -> PathBuf {
     dir
 }
 
-/// [`ROWS`] small records of numbers, strings and arrays, each written by `row` from its index,
+/// `count` small records of numbers, strings and arrays, each written by `row` from its index,
 /// after `open` and joined by `between`, then `close`.
-fn rows(open: &str, between: &str, close: &str, row: impl Fn(&mut String, usize)) -> String {
+fn rows(
+    count: usize,
+    open: &str,
+    between: &str,
+    close: &str,
+    row: impl Fn(&mut String, usize),
+) -> String {
     let mut text = String::from(open);
-    for i in 0..ROWS {
+    for i in 0..count {
         if i > 0 {
             text.push_str(between);
         }
@@ -71,8 +77,8 @@ fn heap(args: Vec<OsString>) -> (dhat::HeapStats, Result<u8, String>, String) {
     let stats = dhat::HeapStats::get();
     drop(profiler);
     eprintln!(
-        "allocated {} blocks, {} bytes",
-        stats.total_blocks, stats.total_bytes
+        "allocated {} blocks, {} bytes, peak {}",
+        stats.total_blocks, stats.total_bytes, stats.max_bytes
     );
     (stats, code, String::from_utf8_lossy(&out).into_owned())
 }
@@ -89,7 +95,7 @@ fn fmt_allocates_a_fixed_number_of_blocks() {
     let _counting = counting();
     let dir = folder("fmt");
     // About 8 MB, 7 containers a row.
-    let text = rows("[\n", ",\n", "\n]\n", |text, i| {
+    let text = rows(ROWS, "[\n", ",\n", "\n]\n", |text, i| {
         write!(
             text,
             "{{\"x\":{i},\"y\":[{i},\"s\",{{\"a\":[1,2,3]}}],\"t\":\"text\",\"u\":[[{i}],[{i}]]}}"
@@ -106,6 +112,13 @@ fn fmt_allocates_a_fixed_number_of_blocks() {
     ]);
     assert_eq!(code, Ok(1), "{out}");
     assert_under(stats.total_blocks, 1_000);
+    // The member stack is freed once the tree is parsed, before the output is built. Kept, the
+    // peak is 68,909,531 bytes here; freed, 66,812,379. Both are exact on every run.
+    assert!(
+        stats.max_bytes <= 67_900_000,
+        "peaked at {} bytes, over 67,900,000: is the member stack freed after parsing?",
+        stats.max_bytes
+    );
 }
 
 /// Each line of JSON Lines builds its tree in the vectors of the line before. About 8,600 blocks
@@ -115,7 +128,7 @@ fn fmt_allocates_a_fixed_number_of_blocks() {
 fn schema_on_json_lines_allocates_a_fixed_number_of_blocks() {
     let _counting = counting();
     let dir = folder("lines");
-    let text = rows("", "\n", "\n", |text, i| {
+    let text = rows(ROWS, "", "\n", "\n", |text, i| {
         write!(text, "{{\"x\": {i}, \"y\": [{i}, \"s\"], \"t\": \"text\"}}")
             .expect("write to a string");
     });
@@ -137,14 +150,10 @@ fn schema_on_json_lines_allocates_a_fixed_number_of_blocks() {
     assert_under(stats.total_blocks, 20_000);
 }
 
-/// `--fix` on a trailing comma in each of [`ROWS`] objects. Each fix holds its edits, so a comma
-/// takes 2 blocks, 200,156 in all. The bytes catch a scan that keeps each member when only
-/// `--unsafe-fixes` reads them: 679 bytes a comma, against 930 with them.
-#[test]
-fn fix_allocates_two_blocks_a_comma() {
-    let _counting = counting();
-    let dir = folder("fix");
-    let text = rows("[\n", ",\n", "\n]\n", |text, i| {
+/// What `--fix` allocates on `count` rows that each end in a trailing comma.
+fn fix_stats(name: &str, count: usize) -> dhat::HeapStats {
+    let dir = folder(name);
+    let text = rows(count, "[\n", ",\n", "\n]\n", |text, i| {
         write!(
             text,
             "{{\"x\": {i}, \"y\": [{i}, \"s\"], \"t\": \"text\",}}"
@@ -162,11 +171,30 @@ fn fix_allocates_two_blocks_a_comma() {
     ]);
     assert_eq!(code, Ok(0), "{out}");
     assert!(!fs::read_to_string(&file).expect("read").contains(",}"));
-    let commas = ROWS as u64;
-    assert_under(stats.total_blocks, 2 * commas + 1_000);
+    stats
+}
+
+/// `--fix` on a trailing comma in each row. Each fix holds its edits, so a comma takes 2 blocks
+/// (200,156 in all at [`ROWS`]). The count is the slope between two sizes, so a fixed cost in
+/// the run does not move it. The bytes catch a scan that keeps each member when only
+/// `--unsafe-fixes` reads them: 679 bytes a comma, against 930 with them.
+#[test]
+fn fix_allocates_two_blocks_a_comma() {
+    let _counting = counting();
+    let full = fix_stats("fix", ROWS);
+    let half = fix_stats("fix-half", ROWS / 2);
+    let extra = (ROWS - ROWS / 2) as u64;
+    let blocks = full.total_blocks.saturating_sub(half.total_blocks);
     assert!(
-        stats.total_bytes <= 800 * commas,
-        "allocated {} bytes, over 800 a comma",
-        stats.total_bytes
+        blocks <= 2 * extra + 100,
+        "allocated {blocks} blocks for {extra} more commas ({} at {ROWS} rows, {} at {}), over 2 per comma",
+        full.total_blocks,
+        half.total_blocks,
+        ROWS / 2,
+    );
+    assert!(
+        full.total_bytes <= 800 * ROWS as u64,
+        "allocated {} bytes, over 800 per comma",
+        full.total_bytes
     );
 }
