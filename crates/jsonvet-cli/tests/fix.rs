@@ -341,7 +341,7 @@ fn a_run_that_fixes_nothing_prints_what_a_run_without_fix_prints() {
 
 /// A stderr that cannot be written (`/dev/full`) ends the run with exit 2, not an abort, and the
 /// fixed text still reaches standard output.
-#[cfg(unix)]
+#[cfg(target_os = "linux")] // macOS has no /dev/full
 #[test]
 fn a_stderr_that_cannot_be_written_exits_2_with_the_fixed_text() {
     let dir = workdir(&[]);
