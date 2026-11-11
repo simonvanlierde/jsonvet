@@ -262,8 +262,9 @@ pub fn run_with(
         } else {
             vec![None; texts.len()]
         };
-        let selected = catalog::select(&mut catalog, chunk, &texts, &shown, &schemas)?;
+        let mut selected = None;
         if let Some(catalog) = &mut catalog {
+            selected = Some(catalog.select(chunk, &texts, &shown, &schemas)?);
             for note in catalog.take_notes() {
                 printer.note(note);
             }

@@ -15,32 +15,6 @@ use crate::schema::{Schema, select::Schemas};
 use crate::settings::Settings;
 use crate::{messages, output};
 
-pub(crate) fn select(
-    catalog: &mut Option<Catalog>,
-    chunk: &[crate::schema::select::Job],
-    texts: &[(Result<String, String>, bool)],
-    shown: &impl Fn(&std::ffi::OsStr) -> std::ffi::OsString,
-    schemas: &Schemas,
-) -> Result<Option<Vec<crate::schema::select::Job>>, String> {
-    let Some(catalog) = catalog else {
-        return Ok(None);
-    };
-    let mut selected = chunk.to_vec();
-    for (((settings, schema), file), (text, _)) in selected.iter_mut().zip(texts) {
-        if schema.is_none()
-            && let Ok(text) = text
-        {
-            let name = shown(file).to_string_lossy().into_owned();
-            if !crate::schema::select::names_local_schema(&name, text, settings) {
-                *schema = catalog
-                    .schema(&name, schemas)
-                    .map_err(|error| output::printable(&error))?;
-            }
-        }
-    }
-    Ok(Some(selected))
-}
-
 const CATALOG: &str = "https://www.schemastore.org/api/json/catalog.json";
 const WEEK: u64 = 7 * 24 * 60 * 60;
 const CATALOG_BYTES: u64 = 4 << 20;
@@ -89,6 +63,30 @@ impl Failed {
 }
 
 impl Catalog {
+    /// `chunk` with a catalog schema for each readable file that has no schema of its own.
+    pub(crate) fn select(
+        &mut self,
+        chunk: &[crate::schema::select::Job],
+        texts: &[(Result<String, String>, bool)],
+        shown: &impl Fn(&std::ffi::OsStr) -> std::ffi::OsString,
+        schemas: &Schemas,
+    ) -> Result<Vec<crate::schema::select::Job>, String> {
+        let mut selected = chunk.to_vec();
+        for (((settings, schema), file), (text, _)) in selected.iter_mut().zip(texts) {
+            if schema.is_none()
+                && let Ok(text) = text
+            {
+                let name = shown(file).to_string_lossy().into_owned();
+                if !crate::schema::select::names_local_schema(&name, text, settings) {
+                    *schema = self
+                        .schema(&name, schemas)
+                        .map_err(|error| output::printable(&error))?;
+                }
+            }
+        }
+        Ok(selected)
+    }
+
     pub(crate) fn take_notes(&mut self) -> Vec<String> {
         std::mem::take(&mut self.notes)
     }
