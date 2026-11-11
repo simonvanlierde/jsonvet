@@ -158,7 +158,8 @@ def machine() -> str:
         model = re.sub(r"^(AMD|Intel\(R\)) |\(\w+\)| w/ .*| CPU .*|\s+\d+-Core Processor", "", found[1]).strip()
     # The CPUs this process may run on: under taskset or a pinned slot, fewer than the machine has.
     cores = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count()
-    return f"{cores} cores of a {model} under {platform.system()}"
+    article = "an" if model[:1] in "AEIOU" else "a"
+    return f"{cores} cores of {article} {model} under {platform.system()}"
 
 
 def write(table: list[str], runs: int, ref_runs: int, old_runs: int, largest: str) -> None:

@@ -10,8 +10,6 @@ version for a new option or output, the patch version for a fix.
 
 ## [3.4.0] - 2026-11-10
 
-<!-- TODO: 3.4.0 ships with a new speed table: run the `bench` workflow on the release branch and apply its patch. -->
-
 ### Added
 
 - `per-file-format` overrides indent, width, JSON5 normalization and bracket spacing for files
