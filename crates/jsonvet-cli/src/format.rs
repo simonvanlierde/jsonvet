@@ -92,7 +92,7 @@ pub(crate) fn run(
     for done in done {
         let done = done?;
         for problem in &done.problems {
-            eprintln!("{problem}");
+            writeln!(io::stderr(), "{problem}").map_err(write_error)?;
         }
         out.write_all(done.out.as_bytes()).map_err(write_error)?;
         failed |= done.failed;

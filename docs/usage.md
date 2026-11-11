@@ -163,7 +163,8 @@ off. Do not upload it.
 
 jsonvet reads regular files, and follows a symlink to one. A device, FIFO or socket prints
 `error: not a regular file`. When the output pipe closes early, as in `jsonvet … | head -1`,
-jsonvet stops quietly, with the verdict for the files it has checked.
+jsonvet stops quietly, with the verdict for the files it has checked. Any other failed write to
+standard output or standard error, such as a full disk, ends the run with exit 2.
 
 ## Standard input
 

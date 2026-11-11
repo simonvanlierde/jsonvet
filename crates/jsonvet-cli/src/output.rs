@@ -429,13 +429,16 @@ impl<W: Write> Printer<W> {
     }
 
     /// Runtime notes belong inside a structured report, especially when it occupies stderr.
-    pub(crate) fn note(&mut self, message: String) {
-        if !self.stderr_report || matches!(self.sink, Sink::Text { .. }) {
-            eprintln!("jsonvet: {}", printable(&message));
-        }
+    pub(crate) fn note(&mut self, message: String) -> io::Result<()> {
+        let written = if !self.stderr_report || matches!(self.sink, Sink::Text { .. }) {
+            writeln!(io::stderr(), "jsonvet: {}", printable(&message))
+        } else {
+            Ok(())
+        };
         if !matches!(self.sink, Sink::Text { .. }) {
             self.notes.push(message);
         }
+        written
     }
 
     /// Write what can only come once every file was checked: the end of the SARIF or JSON
@@ -463,7 +466,11 @@ impl<W: Write> Printer<W> {
             }
             Sink::Sarif { written, dropped } => {
                 if *dropped > 0 && !self.stderr_report {
-                    eprintln!("jsonvet: {}", sarif::dropped_message(*dropped));
+                    writeln!(
+                        io::stderr(),
+                        "jsonvet: {}",
+                        sarif::dropped_message(*dropped)
+                    )?;
                 }
                 if *written == 0 {
                     self.out.write_all(sarif::start().as_bytes())?;
