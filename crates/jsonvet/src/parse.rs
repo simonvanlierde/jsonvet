@@ -964,15 +964,15 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
                 EventKind::Number(&self.text[start..self.pos])
             }
             b't' => {
-                self.literal("`true`", "a value")?;
+                self.literal::<4>("`true`", "a value")?;
                 EventKind::Bool(true)
             }
             b'f' => {
-                self.literal("`false`", "a value")?;
+                self.literal::<5>("`false`", "a value")?;
                 EventKind::Bool(false)
             }
             b'n' => {
-                self.literal("`null`", "a value")?;
+                self.literal::<4>("`null`", "a value")?;
                 EventKind::Null
             }
             _ => return Err(self.unexpected("a value")),
@@ -1360,8 +1360,8 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
             _ => {}
         }
         match self.peek() {
-            Some(b'I') => self.nan_or_infinity(start, "`Infinity`"),
-            Some(b'N') => self.nan_or_infinity(start, "`NaN`"),
+            Some(b'I') => self.nan_or_infinity::<8>(start, "`Infinity`"),
+            Some(b'N') => self.nan_or_infinity::<3>(start, "`NaN`"),
             Some(b'0') if matches!(self.bytes.get(self.pos + 1), Some(b'x' | b'X')) => {
                 self.hex_number(start)
             }
@@ -1454,7 +1454,11 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
     }
 
     /// `NaN` or `Infinity`, which only JSON5 allows. `start` is at the sign, if there is one.
-    fn nan_or_infinity(&mut self, start: usize, word: &'static str) -> Result<(), Fail> {
+    fn nan_or_infinity<const N: usize>(
+        &mut self,
+        start: usize,
+        word: &'static str,
+    ) -> Result<(), Fail> {
         if !self.json5 {
             return Err(
                 if self.text[self.pos..].starts_with(word.trim_matches('`')) {
@@ -1464,7 +1468,7 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
                 },
             );
         }
-        self.literal(word, self.after_sign(start))
+        self.literal::<N>(word, self.after_sign(start))
     }
 
     /// What a word at the current position stands in for: a value, or after a sign at `start`
@@ -1479,10 +1483,18 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
 
     /// A literal such as `null`. `word` comes in backticks, as an error message shows it; a
     /// different word whole in its place shows as found where `instead` was needed.
-    fn literal(&mut self, word: &'static str, instead: &'static str) -> Result<(), Fail> {
+    /// `N` is the word's length without the backticks, so the match below compares a known
+    /// length inline instead of calling `memcmp`.
+    // Inlined into `document`, it cost numbers.json and deep.json 2 to 4% more instructions.
+    #[inline(never)]
+    fn literal<const N: usize>(
+        &mut self,
+        word: &'static str,
+        instead: &'static str,
+    ) -> Result<(), Fail> {
+        debug_assert_eq!(word.len(), N + 2, "{word} is not N bytes in backticks");
         let start = self.pos;
-        // Every caller passes the word in backticks.
-        let bare = &word.as_bytes()[1..word.len() - 1];
+        let bare = &word.as_bytes()[1..=N];
         if self.bytes[start..].starts_with(bare) {
             self.pos += bare.len();
             return Ok(());

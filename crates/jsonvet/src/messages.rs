@@ -270,7 +270,7 @@ mod tests {
     fn every_part_the_parser_names_has_an_id() {
         let source = include_str!("parse.rs");
         let code = source.split("#[cfg(test)]").next().unwrap_or(source);
-        let callers = ["unexpected", "nan_or_infinity", "literal(", "structural"];
+        let callers = ["unexpected", "nan_or_infinity", "literal::<", "structural"];
         let mut checked = 0;
         for line in code
             .lines()
