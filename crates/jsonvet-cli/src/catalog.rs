@@ -127,7 +127,6 @@ impl Catalog {
             return Ok(None);
         };
         let url = &entry.url;
-        allowed(url)?;
         let schema = schemas.get_catalog(url, |admit| {
             resource(
                 &self.cache,
@@ -270,13 +269,10 @@ fn cached(cache: &Path, url: &str, max: u64) -> Result<Option<(String, u64)>, St
         return Ok(None);
     }
     let path = cache_path(cache, url);
-    if !path.exists() {
+    if !std::fs::symlink_metadata(&path).is_ok_and(|metadata| !metadata.is_symlink()) {
         return Ok(None);
     }
     // JSON string escaping can expand the body sixfold. read_small also refuses non-files.
-    if std::fs::symlink_metadata(&path).is_ok_and(|metadata| metadata.is_symlink()) {
-        return Ok(None);
-    }
     let text = crate::read_small(&path, max * 6 + 4096).map_err(|error| error.to_string())?;
     let value: Value = serde_json::from_str(&text).map_err(|error| error.to_string())?;
     let body = value
