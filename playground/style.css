@@ -54,6 +54,9 @@ button { font: inherit; color: inherit; }
    before whichever part starts a wrapped line is hidden. */
 .slug-part, .meta:has(> *) { margin-inline-start: -2.4ch; clip-path: inset(-8px -8px -8px calc(2.4ch - 4px)); }
 .slug-part > :not([hidden])::before, .meta > *::before { content: "·"; content: "·" / ""; display: inline-block; width: 2.4ch; text-align: center; color: var(--dim); }
+/* A part that wraps starts its next line at the left edge, not inside the clipped strip. */
+.slug-part > * { padding-inline-start: 2.4ch; text-indent: -2.4ch; }
+.slug-part > *::before, .slug-part > * > * { text-indent: 0; } /* inline-block links and buttons would inherit the hanging indent */
 .slug b, .slug #name, .slug #set { color: var(--ink); font-weight: 600; }
 .slug b { font-weight: 700; }
 .speed { color: var(--ink); }

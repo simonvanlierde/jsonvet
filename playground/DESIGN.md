@@ -267,7 +267,8 @@ licence" and "Simon van Lierde · source on GitHub · docs · speed figures".
 `playground/docs/` with `docs.css` over this stylesheet. The slug reads `jsonvet · docs · <page>` on
 the left and `playground · this page on GitHub` on the right. A mono nav of the pages sits beside the
 text from 860px, the page in view marked with the stage's 2px ink bar on its left; under 860px it
-wraps above the text, the bar at its foot. The text is prose in the serif up to 46rem; code and
+wraps above the text, the bar at its foot. A page with three or more sections lists them, as small
+mono links, under its own nav item from 860px, so a long reference can be jumped through. The text is prose in the serif up to 68ch; code and
 tables sit on the tint or between hairlines, and code blocks and wide tables scroll inside their own focusable boxes.
 No syntax colours: the One-Pen Rule holds here too. A skip link comes first, and the colophon keeps
 the theme toggle.

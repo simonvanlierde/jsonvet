@@ -183,7 +183,7 @@ NOTES = {
 }
 
 MARK = {True: "✓", False: "✗"}
-CRASH = "💥"
+CRASH = "‼"
 
 
 def snapshot() -> dict[str, tuple[bool, bool]]:
@@ -364,7 +364,7 @@ def main() -> None:
         f"Run on {summary['date']}; a full run took {summary['seconds']} s. How it works and how to",
         "rerun it: [conformance/README.md](../conformance/README.md).",
         "",
-        "Cells: ✓ the parser agrees with the expected verdict, ✗ it disagrees, 💥 it crashed or",
+        "Cells: ✓ the parser agrees with the expected verdict, ✗ it disagrees, ‼ it crashed or",
         f"took longer than {TIMEOUT} s. Where the spec allows both verdicts (expected: either), the cell",
         "shows what the parser did: A accepted, R rejected. Duplicate keys count as valid in the",
         "syntax tables (jsonvet runs with `--ignore duplicate-key`); they have their own table.",

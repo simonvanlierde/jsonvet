@@ -76,9 +76,32 @@ test("each page keeps the CSP, a skip link and its landmarks, with no inline scr
 
 test("tables and code scroll in a focusable, named box", () => {
   const page = html["docs/conformance.html"];
-  const table = '<div class="scroll" tabindex="0" role="region" aria-label="Table"><table>';
+  const table = '<div class="scroll" tabindex="0" role="region" aria-label="Table[^"]*"><table>';
   assert.equal(page.match(/<table>/g).length, page.match(new RegExp(table, "g")).length);
-  assert.match(html["docs/format.html"], /<pre tabindex="0" role="region" aria-label="Code"><code/);
+  assert.match(html["docs/format.html"], /<pre tabindex="0" role="region" aria-label="Code(: [^"]*)?"><code/);
+});
+
+test("region labels are unique on each page", () => {
+  for (const [path, text] of Object.entries(html)) {
+    const labels = [...text.matchAll(/role="region" aria-label="([^"]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(
+      labels.filter((l, i) => labels.indexOf(l) !== i),
+      [],
+      path,
+    );
+  }
+  assert.match(html["docs/conformance.html"], /aria-label="Table: /);
+});
+
+test("a long page lists its sections in the nav, and they exist", () => {
+  const page = html["docs/usage.html"];
+  const nav = page.match(/<a href="usage.html" aria-current="page">Reference<\/a><ul>(.*?)<\/ul>/)[1];
+  const links = [...nav.matchAll(/<a href="#([^"]+)">/g)].map((m) => m[1]);
+  const h2s = [...page.matchAll(/<h2 id="([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(links.length >= 3);
+  assert.deepEqual(links, h2s);
+  for (const id of links) assert.ok(ids(page).has(id), id);
+  assert.doesNotMatch(html["docs/index.html"], /aria-current="page">[^<]*<\/a><ul>/);
 });
 
 test("ids are unique on each page, the template's among them", () => {
@@ -97,6 +120,11 @@ test("a decision record's description is not its status line", () => {
   for (const [path] of Object.entries(html).filter(([p]) => p.startsWith("docs/decisions/")))
     assert.doesNotMatch(description(path), /^Status:/, path);
   assert.match(description("docs/decisions/0002-no-unsafe-code.html"), /\s.*\s/);
+});
+
+test("no description ends in a colon", () => {
+  for (const path of Object.keys(html))
+    assert.doesNotMatch(html[path].match(/<meta name="description" content="([^"]*)"/)[1], /:$/, path);
 });
 
 test("the playground's links into the pages resolve", () => {

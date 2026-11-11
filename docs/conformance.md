@@ -8,7 +8,7 @@ duplicate-key variants. Each dialect's table lists the parsers that claim that d
 Run on 2026-11-10; a full run took 108 s. How it works and how to
 rerun it: [conformance/README.md](../conformance/README.md).
 
-Cells: ✓ the parser agrees with the expected verdict, ✗ it disagrees, 💥 it crashed or
+Cells: ✓ the parser agrees with the expected verdict, ✗ it disagrees, ‼ it crashed or
 took longer than 10 s. Where the spec allows both verdicts (expected: either), the cell
 shows what the parser did: A accepted, R rejected. Duplicate keys count as valid in the
 syntax tables (jsonvet runs with `--ignore duplicate-key`); they have their own table.
@@ -60,8 +60,8 @@ Files where at least one parser disagrees (26):
 | [corpus/json5/unclosed-comment-own-star-slash.json](../tests/corpus/json5/unclosed-comment-own-star-slash.json) | invalid † | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ |
 | [corpus/json5/unclosed-comment.json](../tests/corpus/json5/unclosed-comment.json) | invalid † | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ |
 | [json5-tests/comments/unterminated-block-comment.txt](../tests/json5-tests/comments/unterminated-block-comment.txt) | invalid | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ |
-| [corpus/json5/depth-10000.json](../tests/corpus/json5/depth-10000.json) | either † | A | 💥 | R | A | A | A | A |
-| [corpus/json5/depth-10001.json](../tests/corpus/json5/depth-10001.json) | either † | A | 💥 | R | A | A | A | R |
+| [corpus/json5/depth-10000.json](../tests/corpus/json5/depth-10000.json) | either † | A | ‼ | R | A | A | A | A |
+| [corpus/json5/depth-10001.json](../tests/corpus/json5/depth-10001.json) | either † | A | ‼ | R | A | A | A | R |
 
 <details><summary>Files where every parser agrees (145)</summary>
 

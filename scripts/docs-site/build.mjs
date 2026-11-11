@@ -105,6 +105,16 @@ function rewrite(href, src, pages, subs) {
 /** One doc as HTML, with its title and first paragraph. */
 function render(src, pages, subs) {
   const slug = slugger();
+  const h2s = [];
+  // Boxes are labelled by the heading above them, so each landmark name is unique on the page.
+  let heading = "";
+  const uses = new Map();
+  const label = (kind) => {
+    const key = `${kind}: ${heading}`;
+    const n = (uses.get(key) ?? 0) + 1;
+    uses.set(key, n);
+    return esc((heading ? key : kind) + (n > 1 ? ` (${n})` : ""));
+  };
   const marked = new Marked({
     gfm: true,
     renderer: {
@@ -112,39 +122,51 @@ function render(src, pages, subs) {
         return Renderer.prototype.link.call(this, { ...token, href: rewrite(token.href, src, pages, subs) });
       },
       heading({ tokens, depth }) {
-        return `<h${depth} id="${esc(slug(toText(tokens)))}">${this.parser.parseInline(tokens)}</h${depth}>\n`;
+        const text = toText(tokens);
+        const id = slug(text);
+        heading = text;
+        if (depth === 2) h2s.push({ id, text });
+        return `<h${depth} id="${esc(id)}">${this.parser.parseInline(tokens)}</h${depth}>\n`;
       },
       // Wide tables and code scroll on their own, and take focus so a keyboard can scroll them.
       table(token) {
-        return `<div class="scroll" tabindex="0" role="region" aria-label="Table">${Renderer.prototype.table.call(this, token)}</div>\n`;
+        return `<div class="scroll" tabindex="0" role="region" aria-label="${label("Table")}">${Renderer.prototype.table.call(this, token)}</div>\n`;
       },
       code(token) {
         return Renderer.prototype.code
           .call(this, token)
-          .replace(/^<pre>/, '<pre tabindex="0" role="region" aria-label="Code">');
+          .replace(/^<pre>/, `<pre tabindex="0" role="region" aria-label="${label("Code")}">`);
       },
     },
   });
   const markdown = readFileSync(resolve(ROOT, src), "utf8");
   const tokens = marked.lexer(markdown);
   const h1 = tokens.find((t) => t.type === "heading" && t.depth === 1);
-  // A decision record opens with "Status: accepted (...)", which says nothing about the page.
-  const first = tokens.find((t) => t.type === "paragraph" && !t.text.startsWith("Status:"));
+  // A decision record opens with "Status: accepted (...)", which says nothing about the page, and
+  // a paragraph that ends in a colon only introduces a list.
+  const text = (t) => toText(t.tokens).replace(/\s+/g, " ").trim();
+  const first = tokens.find((t) => t.type === "paragraph" && !t.text.startsWith("Status:") && !text(t).endsWith(":"));
   const body = marked.parser(tokens);
   return {
     body,
+    h2s,
     title: toText(h1.tokens),
-    summary: first ? toText(first.tokens).replace(/\s+/g, " ") : "",
+    summary: first ? text(first).split(/(?<=[.!?])\s+(?=[A-Z])/)[0] : "",
   };
 }
 
-function page({ out, src, title, summary, body }, stamp) {
+function page({ out, src, title, summary, body, h2s = [] }, stamp) {
   const up = "../".repeat(out.split("/").length);
   const section = src.startsWith("docs/decisions/") ? "docs/decisions/README.md" : src;
   const nav = NAV.map(([file, label]) => {
     const href = linkTo(out, pageOf(file));
     const current = file === src ? ' aria-current="page"' : file === section ? ' class="here"' : "";
-    return `<li><a href="${href}"${current}>${label}</a></li>`;
+    // A long page lists its sections under its own item, for the wide layout.
+    const inner =
+      file === src && h2s.length >= 3
+        ? `<ul>${h2s.map((h) => `<li><a href="#${esc(h.id)}">${esc(h.text)}</a></li>`).join("")}</ul>`
+        : "";
+    return `<li><a href="${href}"${current}>${label}</a>${inner}</li>`;
   }).join("");
   const source = src ? `<span><a href="${REPO}/blob/main/${src}">this page on GitHub</a></span>` : "";
   return `<!doctype html>
