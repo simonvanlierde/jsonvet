@@ -8,6 +8,12 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
+### Added
+
+- `fill-numbers = true` in `[format]` or `per-file-format` puts as many numbers on each line as
+  fit in an array of numbers only, as Prettier does. An array with a comment or a blank line in it
+  keeps one number per line. Off by default ([fill-numbers](docs/format.md#fill-numbers)).
+
 ## [3.4.0] - 2026-11-11
 
 ### Added

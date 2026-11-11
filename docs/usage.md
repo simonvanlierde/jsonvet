@@ -398,8 +398,8 @@ dialect = "jwcc"
   ([JSON Schema limits](#json-schema-limits)).
 - `per-file-format` overrides formatting settings for files matching a glob, in entry order
   ([format settings](format.md#settings)).
-- `format` is a table of `indent`, `width`, `normalize-json5` and `bracket-spacing` for
-  `jsonvet fmt` ([formatting](format.md#settings)).
+- `format` is a table of `indent`, `width`, `normalize-json5`, `bracket-spacing` and
+  `fill-numbers` for `jsonvet fmt` ([formatting](format.md#settings)).
 
 ## GitHub Action
 

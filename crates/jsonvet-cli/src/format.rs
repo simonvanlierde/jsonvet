@@ -31,6 +31,7 @@ fn options(settings: &FormatSettings, user: bool, style: editorconfig::Style) ->
         width: pick(settings.width, style.width, user).unwrap_or(defaults.width),
         normalize_json5: settings.normalize_json5.unwrap_or(defaults.normalize_json5),
         bracket_spacing: settings.bracket_spacing.unwrap_or(defaults.bracket_spacing),
+        fill_numbers: settings.fill_numbers.unwrap_or(defaults.fill_numbers),
     }
 }
 
@@ -219,6 +220,7 @@ mod tests {
             width: Some(60),
             normalize_json5: Some(true),
             bracket_spacing: None,
+            fill_numbers: Some(true),
         };
         let got = options(&settings, false, style);
         assert_eq!((got.indent, got.width), (Indent::Tab, 60));
@@ -230,7 +232,7 @@ mod tests {
             got.bracket_spacing,
             FormatOptions::default().bracket_spacing
         );
-        assert!(got.normalize_json5);
+        assert!(got.normalize_json5 && got.fill_numbers);
         let got = options(&FormatSettings::default(), false, Style::default());
         assert_eq!(
             (got.indent, got.width, got.normalize_json5),

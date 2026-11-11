@@ -29,6 +29,7 @@ export const SETTINGS = [
     tool: "format", key: "normalize", label: "Normalize JSON5", kind: "bool", default: false, dialects: ["json5"],
     toml: "normalize-json5", arg: (v) => v,
   },
+  { tool: "format", key: "fill", label: "Fill number arrays", kind: "bool", default: false, toml: "fill-numbers", arg: (v) => v },
 ];
 
 const rowsOf = (tool) => SETTINGS.filter((r) => r.tool === tool);

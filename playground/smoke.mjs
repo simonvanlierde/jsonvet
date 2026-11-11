@@ -39,7 +39,7 @@ const wasmCases = [
   ["fix", fix("[1, 2,]", "json", false, new Uint32Array(0)), fixed],
   ["fix of a clean text", fix("[1]", "json", true, new Uint32Array(0)), "null"],
   ["fix of one place", fix("[1,]", "json", false, new Uint32Array([2])), '{"text":"[1]","fixes":[{"rule":"syntax","index":2,"safe":true}]}'],
-  ["format", format('{"a":[1,2]}', "json", 2, 80, true, false), '{ "a": [1, 2] }\n'],
+  ["format", format('{"a":[1,2]}', "json", 2, 80, true, false, false), '{ "a": [1, 2] }\n'],
 ];
 for (const [name, got, expected] of wasmCases) {
   if (got !== expected) {
@@ -48,7 +48,7 @@ for (const [name, got, expected] of wasmCases) {
   }
 }
 try {
-  format("[1 2]", "json", 2, 80, true, false);
+  format("[1 2]", "json", 2, 80, true, false, false);
   console.error("format of a syntax error did not refuse");
   failed = true;
 } catch (e) {

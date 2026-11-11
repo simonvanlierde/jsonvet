@@ -128,7 +128,7 @@ pub fn fix(text: &str, dialect: &str, unsafe_fixes: bool, only: &[u32]) -> Resul
 }
 
 /// Format `text` as `jsonvet fmt` does. `indent` is the spaces for one level, 0 for a tab; `width`
-/// the most columns a container may take on one line; `normalize_json5` applies to JSON5 only.
+/// the most columns a container may take on one line; `normalize_json5` applies to JSON5 only; `fill_numbers` fills number arrays.
 ///
 /// # Errors
 ///
@@ -142,6 +142,7 @@ pub fn format(
     width: u32,
     bracket_spacing: bool,
     normalize_json5: bool,
+    fill_numbers: bool,
 ) -> Result<String, String> {
     let config = Config::new(dialect.parse::<Dialect>().map_err(|e| e.to_string())?);
     let options = FormatOptions {
@@ -153,6 +154,7 @@ pub fn format(
         width: width as usize,
         normalize_json5,
         bracket_spacing,
+        fill_numbers,
     };
     jsonvet::format(text, &config, &options).map_err(|e| match &e {
         FormatError::Syntax(report) => report.problems().first().map_or_else(String::new, |p| {
@@ -514,41 +516,45 @@ mod tests {
     fn format_uses_the_options() {
         let text = "{\"a\":[1,2],\"b\":{}}";
         assert_eq!(
-            format(text, "json", 2, 80, true, false).as_deref(),
+            format(text, "json", 2, 80, true, false, false).as_deref(),
             Ok("{ \"a\": [1, 2], \"b\": {} }\n")
         );
         assert_eq!(
-            format(text, "json", 4, 10, false, false).as_deref(),
+            format(text, "json", 4, 10, false, false, false).as_deref(),
             Ok("{\n    \"a\": [\n        1,\n        2\n    ],\n    \"b\": {}\n}\n")
         );
-        let tab = format(text, "json", 0, 10, true, false).unwrap_or_default();
+        let tab = format(text, "json", 0, 10, true, false, false).unwrap_or_default();
         assert!(tab.contains("\n\t\"a\""), "{tab:?}");
+        assert_eq!(
+            format("[1,2,3,4,5,6,7]", "json", 2, 12, true, false, true).as_deref(),
+            Ok("[\n  1, 2, 3,\n  4, 5, 6, 7\n]\n")
+        );
     }
 
     #[test]
     fn format_normalizes_json5_only_when_asked() {
         let text = "{'a': 1}";
         assert_eq!(
-            format(text, "json5", 2, 80, true, false).as_deref(),
+            format(text, "json5", 2, 80, true, false, false).as_deref(),
             Ok("{ 'a': 1 }\n")
         );
         assert_eq!(
-            format(text, "json5", 2, 80, true, true).as_deref(),
+            format(text, "json5", 2, 80, true, true, false).as_deref(),
             Ok("{ a: 1 }\n")
         );
     }
 
     #[test]
     fn format_says_why_it_refused() {
-        let err = format("{\n\"a\": [1 2]}", "json", 2, 80, true, false).unwrap_err();
+        let err = format("{\n\"a\": [1 2]}", "json", 2, 80, true, false, false).unwrap_err();
         assert!(err.starts_with("2:"), "{err}");
         assert!(err.contains("missing `,`"), "{err}");
-        let deep = format(&"[".repeat(400), "json", 2, 80, true, false);
+        let deep = format(&"[".repeat(400), "json", 2, 80, true, false, false);
         assert!(deep.is_err());
-        assert!(format("{}", "yaml", 2, 80, true, false).is_err());
+        assert!(format("{}", "yaml", 2, 80, true, false, false).is_err());
         let text = "{\"a\":1,\n// jsonvet-ignore duplicate-key\n\"a\":2,\"b\":1,\"b\":2}\n";
         assert_eq!(
-            format(text, "jsonc", 2, 80, true, false).unwrap_err(),
+            format(text, "jsonc", 2, 80, true, false, false).unwrap_err(),
             "not formatted: formatting would change which problems an inline suppression hides"
         );
     }

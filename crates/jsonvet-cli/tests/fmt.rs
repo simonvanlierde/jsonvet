@@ -435,6 +435,10 @@ fn a_bad_format_table_is_a_usage_error() {
             "`format.bracket-spacing` must be true or false",
         ),
         (
+            "per-file-format = [{ files = \"*.json\", fill-numbers = \"yes\" }]",
+            "`format.fill-numbers` must be true or false",
+        ),
+        (
             "[format]\nwidth = 0\n",
             "`format.width` must be a whole number of 1 or more",
         ),
@@ -582,6 +586,21 @@ fn objects_are_padded_with_spaces_unless_bracket_spacing_is_off() {
         out,
         "{\"a\": 1, \"b\": {\"c\": [1, {\"d\": 2}], \"e\": {}}}\n"
     );
+}
+
+#[test]
+fn number_arrays_fill_their_lines_where_fill_numbers_is_on() {
+    let text = "{\"a\":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26]}";
+    let filled = "{\n  \"a\": [\n    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,\n    22, 23, 24, 25, 26\n  ]\n}\n";
+    let dir = workdir(&[(
+        "jsonvet.toml",
+        "per-file-format = [{ files = \"off.json\", fill-numbers = false }]\n\
+         [format]\nfill-numbers = true\n",
+    )]);
+    let (_, out, err) = run(&dir, &["fmt", "--stdin-filename", "a.json"], text);
+    assert_eq!((out.as_str(), err.as_str()), (filled, ""));
+    let (_, out, _) = run(&dir, &["fmt", "--stdin-filename", "off.json"], text);
+    assert!(out.contains("\n    1,\n    2,\n"), "{out}");
 }
 
 #[test]
