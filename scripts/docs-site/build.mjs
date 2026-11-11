@@ -35,14 +35,11 @@ const pageOf = (src) =>
 /** A relative link from one page to another, to the folder for an index page. */
 const linkTo = (from, to) => posix.relative(posix.dirname(from), to).replace(/(^|\/)index\.html$/, "$1") || "./";
 
-const toText = (html) =>
-  html
-    .replace(/<[^>]*>/g, "")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, "&");
+/** The plain text of inline tokens, as GitHub reads a heading for its anchor. */
+const toText = (tokens) => {
+  const parser = new Parser();
+  return parser.parseInline(tokens, parser.textRenderer);
+};
 const esc = (text) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 /** GitHub's heading anchors (github-slugger): lower case, punctuation but `-` and `_` dropped,
@@ -73,7 +70,7 @@ export function anchorsOf(file) {
     marked
       .lexer(readFileSync(resolve(ROOT, file), "utf8"))
       .filter((t) => t.type === "heading")
-      .map((t) => slug(toText(Parser.parseInline(t.tokens)))),
+      .map((t) => slug(toText(t.tokens))),
   );
 }
 
@@ -115,8 +112,7 @@ function render(src, pages, subs) {
         return Renderer.prototype.link.call(this, { ...token, href: rewrite(token.href, src, pages, subs) });
       },
       heading({ tokens, depth }) {
-        const inner = this.parser.parseInline(tokens);
-        return `<h${depth} id="${esc(slug(toText(inner)))}">${inner}</h${depth}>\n`;
+        return `<h${depth} id="${esc(slug(toText(tokens)))}">${this.parser.parseInline(tokens)}</h${depth}>\n`;
       },
       // Wide tables and code scroll on their own, and take focus so a keyboard can scroll them.
       table(token) {
@@ -134,8 +130,8 @@ function render(src, pages, subs) {
   const body = marked.parser(tokens);
   return {
     body,
-    title: toText(Parser.parseInline(h1.tokens)),
-    summary: first ? toText(Parser.parseInline(first.tokens)).replace(/\s+/g, " ") : "",
+    title: toText(h1.tokens),
+    summary: first ? toText(first.tokens).replace(/\s+/g, " ") : "",
   };
 }
 
