@@ -105,7 +105,7 @@ pub fn try_fix_at(
     unsafe_fixes: bool,
     only: Option<&[usize]>,
 ) -> Result<Fixed, Option<Vec<Problem>>> {
-    let (problems, scan) = parse::scan(text, config);
+    let (problems, scan) = parse::scan(text, config, unsafe_fixes);
     // Without a trailing comma the scan reads the text as `check` does.
     let same = scan.commas.is_empty();
     if problems.iter().any(|p| p.rule() == Rule::Syntax) {
@@ -187,7 +187,7 @@ pub fn try_fix_at(
         // A dropped member can hold the first ending, so the endings that stay pick the target,
         // as they do when the drop is fixed on its own first.
         let text = apply(text, std::mem::take(&mut edits));
-        let (problems, scan) = parse::scan(&text, config);
+        let (problems, scan) = parse::scan(&text, config, false);
         target = scan
             .target
             .filter(|_| problems.iter().any(|p| p.rule() == Rule::MixedLineEndings));

@@ -579,6 +579,13 @@ impl<'e> Checking<'_, 'e> {
         let Some(document) = self.fold.event(event) else {
             return;
         };
+        self.document(&document);
+        // The next line of JSON Lines builds its tree in this one's vectors.
+        self.fold.recycle(document.tree);
+    }
+
+    /// Check one complete document.
+    fn document(&mut self, document: &fold::Document<'e>) {
         if let Some((offset, reason)) = document.unchecked {
             self.errors.push((
                 offset,

@@ -70,8 +70,12 @@ pub(crate) fn walk<'a>(
 pub(crate) struct Scan {
     /// The offset of each trailing comma a dialect forbids.
     pub(crate) commas: Vec<usize>,
-    /// Each object member that is followed by a `,`, in the order their commas appear.
+    /// Each object member that is followed by a `,`, in the order their commas appear, when
+    /// `keep_members` is set.
     pub(crate) members: Vec<Member>,
+    /// Whether to record `members`: only dropping a duplicate key reads them, and they take one
+    /// entry per member of the file.
+    keep_members: bool,
     /// The offset of the last `,` read.
     last_comma: usize,
     /// Where the current member's key starts, for each open object: kept here so the check
@@ -131,8 +135,11 @@ pub(crate) struct Member {
 }
 
 /// Check the whole `text` as [`check`] does, and note what the fixes need.
-pub(crate) fn scan(text: &str, config: &Config) -> (Vec<Problem>, Scan) {
-    let mut scan = Scan::default();
+pub(crate) fn scan(text: &str, config: &Config, keep_members: bool) -> (Vec<Problem>, Scan) {
+    let mut scan = Scan {
+        keep_members,
+        ..Scan::default()
+    };
     let problems = walk_scan::<true>(text, 0..text.len(), config, None, Some(&mut scan)).problems;
     (problems, scan)
 }
@@ -847,7 +854,7 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
             Some(b',') => {
                 if SCAN && let Some(scan) = self.scan.as_deref_mut() {
                     scan.last_comma = self.pos;
-                    if object {
+                    if object && scan.keep_members {
                         let start = self.depth.checked_sub(1).and_then(|d| scan.starts.get(d));
                         scan.members.push(Member {
                             start: start.copied().unwrap_or(0),

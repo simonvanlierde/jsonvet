@@ -161,6 +161,20 @@ impl<'e> Builder<'e> {
         self.add(Entry::Object(from, to, offset(end - self.tree.base)), at)
     }
 
+    /// Keep the vectors of `tree`, emptied, for the next document.
+    pub(super) fn recycle(&mut self, mut tree: Tree<'e>) {
+        tree.entries.clear();
+        tree.strings.clear();
+        tree.at.clear();
+        tree.elems.clear();
+        tree.members.clear();
+        tree.raws.clear();
+        tree.root = 0;
+        tree.base = 0;
+        // `tree` came from this builder, so its source and dialect are already this one's.
+        self.tree = tree;
+    }
+
     pub(super) fn finish(&mut self, root: u32) -> Tree<'e> {
         self.elems.clear();
         self.members.clear();
