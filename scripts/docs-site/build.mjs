@@ -1,8 +1,8 @@
 // Renders docs/*.md and docs/decisions/*.md into playground/docs/, as HTML pages in the
 // playground's header, theme and CSP. The Markdown stays the only source: links between docs go
 // to the pages, links to other files in the repository go to GitHub. A link to a file that does
-// not exist stops the build. Usage: node build.mjs [OUT_DIR]; COMMIT, when set, is stamped on the
-// style and script URLs as pages.yml stamps the playground's.
+// not exist stops the build. COMMIT, when set, is stamped on the style and script URLs as pages.yml
+// stamps the playground's.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { posix, resolve } from "node:path";
@@ -116,17 +116,20 @@ function render(src, pages, subs) {
       },
       // Wide tables and code scroll on their own, and take focus so a keyboard can scroll them.
       table(token) {
-        return `<div class="scroll" tabindex="0">${Renderer.prototype.table.call(this, token)}</div>\n`;
+        return `<div class="scroll" tabindex="0" role="region" aria-label="Table">${Renderer.prototype.table.call(this, token)}</div>\n`;
       },
       code(token) {
-        return Renderer.prototype.code.call(this, token).replace(/^<pre>/, '<pre tabindex="0">');
+        return Renderer.prototype.code
+          .call(this, token)
+          .replace(/^<pre>/, '<pre tabindex="0" role="region" aria-label="Code">');
       },
     },
   });
   const markdown = readFileSync(resolve(ROOT, src), "utf8");
   const tokens = marked.lexer(markdown);
   const h1 = tokens.find((t) => t.type === "heading" && t.depth === 1);
-  const first = tokens.find((t) => t.type === "paragraph");
+  // A decision record opens with "Status: accepted (...)", which says nothing about the page.
+  const first = tokens.find((t) => t.type === "paragraph" && !t.text.startsWith("Status:"));
   const body = marked.parser(tokens);
   return {
     body,
@@ -212,6 +215,6 @@ export function build(outDir, commit = "") {
 }
 
 if (import.meta.main) {
-  const out = resolve(process.argv[2] ?? resolve(ROOT, "playground/docs"));
+  const out = resolve(ROOT, "playground/docs");
   console.log(`${build(out, process.env.COMMIT ?? "").length} pages in ${out}`);
 }

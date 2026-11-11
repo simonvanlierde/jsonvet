@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { posix, resolve } from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { anchorsOf, build, REPO, ROOT, slugger } from "./build.mjs";
 
 // The site's root, as deployed: playground/ with the pages in docs/.
 const site = mkdtempSync(resolve(tmpdir(), "docs-site-"));
+after(() => rmSync(site, { recursive: true, force: true }));
 const pages = build(resolve(site, "docs"), "abc123");
 const html = Object.fromEntries(pages.map((p) => [`docs/${p}`, readFileSync(resolve(site, "docs", p), "utf8")]));
 const ids = (text) => new Set([...text.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]));
@@ -73,8 +74,47 @@ test("each page keeps the CSP, a skip link and its landmarks, with no inline scr
   }
 });
 
-test("tables and code scroll in a focusable box", () => {
+test("tables and code scroll in a focusable, named box", () => {
   const page = html["docs/conformance.html"];
-  assert.equal(page.match(/<table>/g).length, page.match(/<div class="scroll" tabindex="0"><table>/g).length);
-  assert.match(html["docs/format.html"], /<pre tabindex="0"><code/);
+  const table = '<div class="scroll" tabindex="0" role="region" aria-label="Table"><table>';
+  assert.equal(page.match(/<table>/g).length, page.match(new RegExp(table, "g")).length);
+  assert.match(html["docs/format.html"], /<pre tabindex="0" role="region" aria-label="Code"><code/);
+});
+
+test("ids are unique on each page, the template's among them", () => {
+  for (const [path, text] of Object.entries(html)) {
+    const all = [...text.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(
+      all.filter((id, i) => all.indexOf(id) !== i),
+      [],
+      path,
+    );
+  }
+});
+
+test("a decision record's description is not its status line", () => {
+  const description = (page) => html[page].match(/<meta name="description" content="([^"]*)"/)[1];
+  for (const [path] of Object.entries(html).filter(([p]) => p.startsWith("docs/decisions/")))
+    assert.doesNotMatch(description(path), /^Status:/, path);
+  assert.match(description("docs/decisions/0002-no-unsafe-code.html"), /\s.*\s/);
+});
+
+test("the playground's links into the pages resolve", () => {
+  const broken = [];
+  const links = [...readFileSync(resolve(ROOT, "playground/index.html"), "utf8").matchAll(/href="(docs\/[^"]*)"/g)].map(
+    (m) => m[1],
+  );
+  // main.mjs links each problem's rule to docs/usage.html#<rule>. The ids are the rules' in
+  // rule.rs, and the CLI's own two.
+  const rules = readFileSync(resolve(ROOT, "crates/jsonvet/src/rule.rs"), "utf8").matchAll(/Rule::\w+ => "([a-z-]+)"/g);
+  for (const id of [...new Set([...rules].map((m) => m[1])), "unreadable", "schema"])
+    links.push(`docs/usage.html#${id}`);
+  assert.ok(links.length > 10);
+  for (const href of links) {
+    const [ref, anchor] = href.split("#");
+    const page = html[ref.endsWith("/") ? `${ref}index.html` : ref];
+    if (!page) broken.push(href);
+    else if (anchor && !ids(page).has(anchor)) broken.push(`${href} (no such anchor)`);
+  }
+  assert.deepEqual(broken, []);
 });

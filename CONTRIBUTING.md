@@ -21,7 +21,7 @@ Some checks need tools that `mise.toml` does not install:
 | samply, perf | `just profile` and `just counters` (perf: Linux only) |
 | wasm-bindgen-cli and wasm-opt | `just playground` |
 | docker | `just matrix` |
-| pnpm (Node comes from `mise.toml`) | `just vsix` and the `vscode` job |
+| pnpm (Node comes from `mise.toml`) | `just vsix`, `just playground` and the `vscode` job |
 | cargo-release | releasing |
 
 ## Checks
@@ -42,6 +42,8 @@ when `GH_TOKEN` is set, so without it `just lint` can pass where CI fails.
   `just differential`.
 - `vscode`, the extension in `editors/vscode`: `cd editors/vscode && pnpm install --frozen-lockfile
   && pnpm run check && pnpm test && pnpm run build`.
+  The job also runs the docs pages' tests (`pnpm --dir scripts/docs-site test`), which check links
+  into files outside `docs/`.
 - `hook`, `action` and `packaging`, which build the wheels and run the hook and the Action as
   users do.
 

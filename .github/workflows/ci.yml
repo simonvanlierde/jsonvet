@@ -68,6 +68,8 @@ jobs:
       - run: uv run conformance/run.py --check
 
   # The VS Code client in editors/vscode: lint, types, unit tests and the bundle `just vsix` packages.
+  # It also runs the docs pages' tests, which check links into README.md, tests/ and the rest of
+  # the repository that pages.yml's path filter does not watch.
   vscode:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -78,6 +80,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          submodules: true # tests/json5-tests, which docs/conformance.md links to
       # The Node in mise.toml, which the extension is checked and built with locally too.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -89,6 +92,8 @@ jobs:
       - run: pnpm run check
       - run: pnpm test
       - run: pnpm run build
+      - run: pnpm --dir ../../scripts/docs-site install --frozen-lockfile
+      - run: pnpm --dir ../../scripts/docs-site test
 
   test:
     strategy:
