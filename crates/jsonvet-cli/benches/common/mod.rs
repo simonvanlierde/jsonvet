@@ -1,6 +1,5 @@
-//! The generated files both `--schema` suites run on: `schema.rs` counts instructions of the binary
-//! under gungraun, `codspeed.rs` times the same runs in-process. One generator keeps their inputs,
-//! and so their baselines, comparable.
+//! The generated files the `--schema` suite runs on: `schema.rs` counts instructions of the binary
+//! under gungraun.
 
 use std::fs;
 use std::path::{Path, PathBuf};

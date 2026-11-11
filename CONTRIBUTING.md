@@ -48,8 +48,7 @@ when `GH_TOKEN` is set, so without it `just lint` can pass where CI fails.
 Other workflows:
 
 - On a pull request: `semver.yml` (`cargo semver-checks`), `fuzz.yml` (30 seconds a target),
-  `coverage.yml` (Codecov) and `codspeed.yml` (benchmarks, only when the crates, Cargo files or
-  SchemaStore fixtures change).
+  `coverage.yml` (Codecov).
 - Every week: `fuzz.yml` and `mutants.yml` in full. Every Monday: `advisories.yml`, so a new
   RustSec advisory against `Cargo.lock` fails a run without waiting for a pull request.
 - `pages.yml` builds and tests the playground on a pull request that touches it, and deploys it
@@ -135,9 +134,6 @@ licence and has no RustSec advisory or unmaintained notice. Renovate bumps the p
   than 1% over the base branch. Compare two commits with `just counts --save-baseline=base` on one
   and `just counts --baseline=base` on the other. In a Docker container, set
   `GUNGRAUN_ALLOW_ASLR=yes`. `gungraun-runner` must be the gungraun version in `Cargo.lock`.
-- **CodSpeed.** CodSpeed comments each pull request's change in time, peak memory and
-  allocations on the divan benchmarks in each crate's `benches/codspeed.rs`. Nothing fails on it:
-  the `bench` job is the gate.
 - **Profiling.** `just profile-files` writes the bench files and 13 large cases to
   `target/profile-files`: one per scanner path (pretty and minified objects, rows, strings,
   numbers, deep nesting, JSONC, JSON5, JSON Lines) and canada, citm_catalog and twitter from

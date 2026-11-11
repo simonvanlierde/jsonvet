@@ -2,7 +2,6 @@
 
 [![CI](https://github.com/simonvanlierde/jsonvet/actions/workflows/ci.yml/badge.svg)](https://github.com/simonvanlierde/jsonvet/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/simonvanlierde/jsonvet/branch/main/graph/badge.svg)](https://codecov.io/gh/simonvanlierde/jsonvet)
-[![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://app.codspeed.io/simonvanlierde/jsonvet?utm_source=badge)
 [![PyPI](https://img.shields.io/pypi/v/jsonvet)](https://pypi.org/project/jsonvet/)
 [![crates.io](https://img.shields.io/crates/v/jsonvet)](https://crates.io/crates/jsonvet)
 [![Marketplace](https://img.shields.io/badge/marketplace-jsonvet-blue?logo=github)](https://github.com/marketplace/actions/jsonvet)

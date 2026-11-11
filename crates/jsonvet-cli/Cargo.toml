@@ -63,14 +63,7 @@ libc = "0.2.191"
 name = "schema"
 harness = false
 
-# divan benchmarks of `--schema` that CodSpeed measures in CI (.github/workflows/codspeed.yml):
-# benches/codspeed.rs.
-[[bench]]
-name = "codspeed"
-harness = false
-
 [dev-dependencies]
-divan = { version = "6.0.0", package = "codspeed-divan-compat" }
 gungraun = "0.20.0"
 insta = "1.49.0"
 # Counts the heap tests/schema_memory.rs measures.

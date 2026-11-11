@@ -136,8 +136,8 @@ fn print_summary(
     printer.finish()
 }
 
-/// Where output goes, as far as text output's look depends on it. Public only for
-/// `benches/codspeed.rs`; not part of the crate's API.
+/// Where output goes, as far as text output's look depends on it. Public only for the memory
+/// tests; not part of the crate's API.
 #[doc(hidden)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Terminal {
@@ -159,8 +159,8 @@ pub fn check_config_text(path: &Path, text: &str) -> Result<(), String> {
 
 /// The command, with its inputs passed in: 0 when no file has an error, 1 when one does.
 /// On a terminal, text output ends with a count of the problems. A usage error comes back as
-/// `Err`, which `run` turns into exit status 2. Public only for `benches/codspeed.rs`, which
-/// measures `--schema` in-process; not part of the crate's API.
+/// `Err`, which `run` turns into exit status 2. Public only for the memory
+/// tests, which measure `--schema` in-process; not part of the crate's API.
 #[doc(hidden)]
 #[allow(
     clippy::too_many_lines,

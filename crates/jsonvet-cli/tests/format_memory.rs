@@ -36,7 +36,7 @@ fn counting() -> MutexGuard<'static, ()> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-/// Rows as the CodSpeed cases write them, small records of numbers, strings and arrays, with a
+/// Rows as the bench cases write them, small records of numbers, strings and arrays, with a
 /// comment before every tenth, to at least `bytes` bytes.
 fn rows(bytes: usize) -> String {
     let mut text = String::from("[\n");

@@ -51,7 +51,7 @@ fn folder(name: &str) -> PathBuf {
     dir
 }
 
-/// Rows as the CodSpeed cases write them, small records of numbers, strings and arrays, after
+/// Rows as the bench cases write them, small records of numbers, strings and arrays, after
 /// `open` and joined by `between`, to at least `bytes` bytes, then `close`.
 fn rows(bytes: usize, open: &str, between: &str, close: &str) -> String {
     let mut text = String::from(open);
