@@ -1,5 +1,6 @@
 //! Explicit SchemaStore fetching; documents and repository settings never enable it.
 
+use std::cell::RefCell;
 use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -58,6 +59,33 @@ pub(crate) struct Catalog {
     cache: PathBuf,
     entries: Option<Vec<Entry>>,
     notes: Vec<String>,
+    /// The first network failure of the run: later downloads fail the same way at once instead
+    /// of each waiting for its own timeout.
+    down: RefCell<Option<String>>,
+}
+
+/// Why a download failed. A network failure, such as a timeout or a refused connection, means
+/// the next download would fail too; a status, origin or redirect error is about one URL.
+#[derive(Debug)]
+struct Failed {
+    message: String,
+    network: bool,
+}
+
+impl Failed {
+    fn network(message: &(impl ToString + ?Sized)) -> Self {
+        Self {
+            message: message.to_string(),
+            network: true,
+        }
+    }
+
+    fn other(message: &(impl ToString + ?Sized)) -> Self {
+        Self {
+            message: message.to_string(),
+            network: false,
+        }
+    }
 }
 
 impl Catalog {
@@ -87,6 +115,7 @@ impl Catalog {
             cache: base.join("jsonvet/schemastore"),
             entries: None,
             notes: Vec::new(),
+            down: RefCell::default(),
         })
     }
 
@@ -102,8 +131,20 @@ impl Catalog {
         &mut self,
         name: &str,
         schemas: &Schemas,
-        fetch: &impl Fn(&str, u64) -> Result<String, String>,
+        fetch: &impl Fn(&str, u64) -> Result<String, Failed>,
     ) -> Result<Option<Arc<Schema>>, String> {
+        let down = &self.down;
+        let fetch = |url: &str, max: u64| {
+            if let Some(message) = down.borrow().clone() {
+                return Err(Failed::network(&message));
+            }
+            fetch(url, max).inspect_err(|failed| {
+                if failed.network {
+                    down.replace(Some(failed.message.clone()));
+                }
+            })
+        };
+        let fetch = &fetch;
         if self.entries.is_none() {
             self.entries = Some(resource(
                 &self.cache,
@@ -205,31 +246,32 @@ fn allowed(url: &str) -> Result<(), String> {
     }
 }
 
-fn fetch(url: &str, max: u64) -> Result<String, String> {
+fn fetch(url: &str, max: u64) -> Result<String, Failed> {
     let start = std::time::Instant::now();
     let mut url = url.to_owned();
     for _ in 0..=3 {
-        allowed(&url)?;
+        allowed(&url).map_err(|error| Failed::other(&error))?;
         let remaining = Duration::from_secs(30)
             .checked_sub(start.elapsed())
-            .ok_or_else(|| messages::text("catalog.timeout").to_owned())?;
+            .ok_or_else(|| Failed::network(messages::text("catalog.timeout")))?;
         let agent = ureq::Agent::config_builder()
             .https_only(true)
             .max_redirects(0)
             .timeout_global(Some(remaining))
             .build()
             .new_agent();
-        let mut response = agent.get(&url).call().map_err(|error| error.to_string())?;
+        let mut response = agent.get(&url).call().map_err(|error| match error {
+            ureq::Error::StatusCode(_) => Failed::other(&error),
+            _ => Failed::network(&error),
+        })?;
         if response.status().is_redirection() {
             let location = response
                 .headers()
                 .get("location")
                 .and_then(|v| v.to_str().ok())
-                .ok_or_else(|| messages::text("catalog.redirect").to_owned())?;
+                .ok_or_else(|| Failed::other(messages::text("catalog.redirect")))?;
             url = if location.starts_with('/') && !location.starts_with("//") {
-                let uri: ureq::http::Uri = url
-                    .parse()
-                    .map_err(|error: ureq::http::uri::InvalidUri| error.to_string())?;
+                let uri: ureq::http::Uri = url.parse().map_err(|error| Failed::other(&error))?;
                 format!(
                     "https://{}{location}",
                     uri.authority()
@@ -246,9 +288,9 @@ fn fetch(url: &str, max: u64) -> Result<String, String> {
             // ureq rejects a body at its read limit; resource checks the inclusive cap.
             .limit(max + 1)
             .read_to_string()
-            .map_err(|error| error.to_string());
+            .map_err(|error| Failed::network(&error));
     }
-    Err(messages::text("catalog.redirect").to_owned())
+    Err(Failed::other(messages::text("catalog.redirect")))
 }
 
 fn cache_path(cache: &Path, url: &str) -> PathBuf {
@@ -316,7 +358,7 @@ fn resource<T>(
     cache: &Path,
     url: &str,
     max: u64,
-    fetch: &impl Fn(&str, u64) -> Result<String, String>,
+    fetch: &impl Fn(&str, u64) -> Result<String, Failed>,
     parse: impl Fn(&str) -> Result<T, String>,
     notes: &mut Vec<String>,
 ) -> Result<T, String> {
@@ -329,12 +371,14 @@ fn resource<T>(
     {
         return Ok(parsed);
     }
-    let fetched = fetch(url, max).and_then(|body| {
-        if body.len() as u64 > max {
-            return Err(messages::text("catalog.too-large").to_owned());
-        }
-        parse(&body).map(|parsed| (parsed, body))
-    });
+    let fetched = fetch(url, max)
+        .map_err(|failed| failed.message)
+        .and_then(|body| {
+            if body.len() as u64 > max {
+                return Err(messages::text("catalog.too-large").to_owned());
+            }
+            parse(&body).map(|parsed| (parsed, body))
+        });
     match fetched {
         Ok((parsed, body)) => {
             // A cache that cannot be written only costs the next run a download.
@@ -371,7 +415,7 @@ mod tests {
         cache: &Path,
         url: &str,
         max: u64,
-        fetch: &impl Fn(&str, u64) -> Result<String, String>,
+        fetch: &impl Fn(&str, u64) -> Result<String, Failed>,
         parse: impl Fn(&str) -> Result<T, String>,
     ) -> Result<T, String> {
         super::resource(cache, url, max, fetch, parse, &mut Vec::new())
@@ -396,8 +440,69 @@ mod tests {
         std::fs::write(path, value.to_string()).expect("expire");
     }
 
-    fn offline(_: &str, _: u64) -> Result<String, String> {
-        Err("offline".to_owned())
+    fn offline(_: &str, _: u64) -> Result<String, Failed> {
+        Err(Failed::network("offline"))
+    }
+
+    #[test]
+    fn after_a_network_failure_stale_copies_are_used_without_waiting() {
+        let cache = folder();
+        let schema = "https://json.schemastore.org/x.json";
+        let catalog = serde_json::json!({"schemas": [{"url": schema, "fileMatch": ["x.json"]}]});
+        save(&cache, CATALOG, &catalog.to_string()).expect("cached catalog");
+        save(&cache, schema, "{}").expect("cached schema");
+        expire(&cache, CATALOG);
+        expire(&cache, schema);
+        let calls = AtomicU64::new(0);
+        let timeout = |_: &str, _: u64| {
+            calls.fetch_add(1, Ordering::Relaxed);
+            Err(Failed::network("timed out"))
+        };
+        let mut catalog = Catalog {
+            cache: cache.clone(),
+            entries: None,
+            notes: Vec::new(),
+            down: RefCell::default(),
+        };
+        let found = catalog
+            .schema_with("x.json", &Schemas::default(), &timeout)
+            .expect("stale schema");
+        assert!(found.is_some());
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        let notes = catalog.take_notes();
+        assert_eq!(notes.len(), 2, "{notes:?}");
+        assert!(notes.iter().all(|note| note.contains("timed out")));
+        let _ = std::fs::remove_dir_all(cache);
+    }
+
+    #[test]
+    fn an_error_about_one_url_does_not_stop_other_downloads() {
+        let cache = folder();
+        let schema = "https://json.schemastore.org/x.json";
+        let catalog = serde_json::json!({"schemas": [{"url": schema, "fileMatch": ["x.json"]}]});
+        save(&cache, CATALOG, &catalog.to_string()).expect("cached catalog");
+        expire(&cache, CATALOG);
+        let calls = AtomicU64::new(0);
+        let fetch = |url: &str, _: u64| {
+            calls.fetch_add(1, Ordering::Relaxed);
+            if url == CATALOG {
+                Err(Failed::other("404"))
+            } else {
+                Ok("{}".to_owned())
+            }
+        };
+        let mut catalog = Catalog {
+            cache: cache.clone(),
+            entries: None,
+            notes: Vec::new(),
+            down: RefCell::default(),
+        };
+        let found = catalog
+            .schema_with("x.json", &Schemas::default(), &fetch)
+            .expect("fresh schema");
+        assert!(found.is_some());
+        assert_eq!(calls.load(Ordering::Relaxed), 2);
+        let _ = std::fs::remove_dir_all(cache);
     }
 
     #[test]
@@ -414,6 +519,7 @@ mod tests {
                     .expect("catalog entry without fileMatch"),
             ),
             notes: Vec::new(),
+            down: RefCell::default(),
         };
         assert!(
             catalog
@@ -432,6 +538,7 @@ mod tests {
             cache: cache.clone(),
             entries: None,
             notes: Vec::new(),
+            down: RefCell::default(),
         };
         assert!(
             catalog
@@ -677,7 +784,11 @@ mod tests {
             b"",
         );
         let error = fetch(START, 2).expect_err("a redirect must name an approved HTTPS origin");
-        assert!(error.contains("unsupported catalog URL //json.schemastore.org/schema"));
+        assert!(
+            error
+                .message
+                .contains("unsupported catalog URL //json.schemastore.org/schema")
+        );
     }
 
     #[test]
@@ -687,6 +798,7 @@ mod tests {
             cache: cache.clone(),
             entries: None,
             notes: Vec::new(),
+            down: RefCell::default(),
         };
         let calls = AtomicU64::new(0);
         let download = |url: &str, _: u64| {
