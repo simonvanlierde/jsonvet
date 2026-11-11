@@ -1,3 +1,7 @@
 # esbuild runs from its platform package, so its install script, which only checks that, is not needed.
 allowBuilds:
   esbuild: false
+# GHSA-g3hv-75wg-m249 is fixed in minimatch 11.0.1; vscode-languageclient 11.0.0 still asks for
+# ^10.2.6 and only calls `new Minimatch(pattern, options)`, which 11 keeps.
+overrides:
+  minimatch: ^11.0.1
