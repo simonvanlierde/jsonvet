@@ -3,11 +3,11 @@
 `jsonvet lsp` is a language server: it speaks the Language Server Protocol on standard input and
 output, so any editor that has a client for it can show jsonvet's problems as you type. It offers:
 
-- **Problems** in each open file, checked as `jsonvet FILE` would check it, except that the config
-  search stops at the workspace folder (below): the dialect, rules and schema come from the
-  nearest `jsonvet.toml` and the file's own `$schema`
-  ([configuration](usage.md#configuration-file)). A config file or schema that cannot be used is
-  one error at the start of the file.
+- **Problems** in each open file, checked as `jsonvet FILE` would check it. The dialect, rules and
+  schema come from the nearest `jsonvet.toml` and the file's own `$schema`
+  ([configuration](usage.md#configuration-file)), but the config search stops at the workspace
+  folder (below). A config file or schema that cannot be used is one error at the start of the
+  file.
 - **Quick fixes** for the problems that have a safe fix, as `--fix` makes it
   ([fixing](usage.md#fixing)), and one action that applies them all, of the kind
   `source.fixAll.jsonvet`. Duplicate keys get no fix: dropping one changes what the file means.
@@ -46,6 +46,13 @@ arrive while a check runs are checked once, at the latest text.
 The extension in [editors/vscode](../editors/vscode/README.md) is a thin client for `jsonvet lsp`.
 Its README says how it shares JSON and JSONC files with VS Code's own JSON validation.
 
+The extension is not on the Marketplace yet. Build it with `just vsix` from the repository root,
+then install it:
+
+```bash
+code --install-extension editors/vscode/jsonvet-<version>.vsix
+```
+
 ## Neovim
 
 With Neovim 0.11 or later, in `init.lua`:
@@ -53,7 +60,7 @@ With Neovim 0.11 or later, in `init.lua`:
 ```lua
 vim.lsp.config("jsonvet", {
   cmd = { "jsonvet", "lsp" },
-  filetypes = { "json", "jsonc", "json5" },
+  filetypes = { "json", "jsonc", "json5", "jsonl" },
   root_markers = { "jsonvet.toml", ".git" },
 })
 vim.lsp.enable("jsonvet")
@@ -77,9 +84,14 @@ language-servers = ["jsonvet"]
 [[language]]
 name = "jsonc"
 language-servers = ["jsonvet"]
+
+[[language]]
+name = "json5"
+language-servers = ["jsonvet"]
 ```
 
-Listing jsonvet alone replaces Helix's default JSON server, so problems do not show twice.
+Listing jsonvet alone replaces Helix's default JSON server, so problems do not show twice. Helix
+treats `.jsonl` files as `json`, so they are covered. It has no JWCC language.
 
 ## Other editors
 
