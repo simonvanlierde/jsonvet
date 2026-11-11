@@ -482,7 +482,10 @@ mod tests {
         }
         assert_eq!(
             parsed(&["lsp", "a.json"]).err(),
-            Some("`jsonvet lsp` takes no options or files, not `a.json`".to_owned())
+            Some(
+                "`jsonvet lsp` takes only `--stdio`, `--help` and `--version`, not `a.json`"
+                    .to_owned()
+            )
         );
         // Anywhere but first, `lsp` is a file.
         assert_eq!(check(&["a.json", "lsp"]).files, ["a.json", "lsp"]);

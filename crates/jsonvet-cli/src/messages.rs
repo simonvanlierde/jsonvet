@@ -86,7 +86,7 @@ const ENGLISH: &[(&str, &str)] = &[
     ("error.unsafe-fixes", "--unsafe-fixes needs --fix"),
     (
         "error.lsp-option",
-        "`jsonvet lsp` takes no options or files, not `{option}`",
+        "`jsonvet lsp` takes only `--stdio`, `--help` and `--version`, not `{option}`",
     ),
     ("error.unknown-option", "unknown option `{option}`"),
     ("error.not-utf8", "not valid UTF-8: {value}"),
