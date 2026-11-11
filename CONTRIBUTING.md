@@ -145,8 +145,10 @@ licence and has no RustSec advisory or unmaintained notice. Renovate bumps the p
   and `just counts --baseline=base` on the other. In a Docker container, set
   `GUNGRAUN_ALLOW_ASLR=yes`. `gungraun-runner` must be the gungraun version in `Cargo.lock`.
 - **CodSpeed.** CodSpeed comments each pull request's change in time, peak memory and
-  allocations on the divan benchmarks in each crate's `benches/codspeed.rs`. Nothing fails on it:
-  the `bench` job is the gate.
+  allocations on the divan benchmarks in each crate's `benches/codspeed.rs`. Its check fails on a
+  slowdown, but it is not a required check, because its path filter would leave docs-only pull
+  requests waiting on it: the `bench` job is the gate. Neither sees wall time, so time a scanner
+  change with `hyperfine -N` as well (decision 0004).
 - **Profiling.** `just profile-files` writes the bench files and 13 large cases to
   `target/profile-files`: one per scanner path (pretty and minified objects, rows, strings,
   numbers, deep nesting, JSONC, JSON5, JSON Lines) and canada, citm_catalog and twitter from
