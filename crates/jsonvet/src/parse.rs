@@ -454,14 +454,13 @@ fn short_hash(state: &RandomState, key: &[u8]) -> u32 {
 }
 
 /// How many of the eight bytes in `word`, read little-endian, are ASCII digits before the first
-/// that is not. A digit is `0x30..=0x39`: its high nibble is 3, and adding 6 keeps it 3. Adding
-/// 6 carries into the next byte only from a byte of `0xFA` or more, which is no digit itself, so
-/// the bytes before the first non-digit are always right.
+/// that is not. XOR with `0x30` turns a digit into 0 to 9, and a byte is a digit when neither it
+/// nor it plus `0x76` has its top bit set. Adding `0x76` carries into the next byte only from
+/// one that is `0x8A` or more after the XOR, which is no digit itself, so the bytes before the
+/// first non-digit are always right.
 fn digit_run(word: u64) -> usize {
-    const HIGH: u64 = 0xF0F0_F0F0_F0F0_F0F0;
-    const THREES: u64 = 0x3030_3030_3030_3030;
-    const SIXES: u64 = 0x0606_0606_0606_0606;
-    let other = ((word & HIGH) ^ THREES) | ((word.wrapping_add(SIXES) & HIGH) ^ THREES);
+    let x = word ^ 0x3030_3030_3030_3030;
+    let other = (x | x.wrapping_add(0x7676_7676_7676_7676)) & 0x8080_8080_8080_8080;
     other.trailing_zeros() as usize / 8
 }
 
@@ -961,6 +960,10 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
             b'\'' => return Err(self.single_quoted(self.pos)),
             b'-' | b'+' | b'.' | b'0'..=b'9' | b'I' | b'N' => {
                 self.number()?;
+                // Sliced only when events are wanted: the slice checks char boundaries.
+                if self.events.is_none() {
+                    return Ok(self.state_after_value());
+                }
                 EventKind::Number(&self.text[start..self.pos])
             }
             b't' => {
@@ -1435,15 +1438,13 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
         let rest = &self.bytes[self.pos..];
         let mut len = 0;
         // Eight bytes at a time while eight are left, for long runs such as canada.json's
-        // `43.420273000000009`. A run of one digit, the most common, takes the byte loop.
-        if rest.get(1).is_some_and(u8::is_ascii_digit) {
-            while let Some(&eight) = rest.get(len..).and_then(<[u8]>::first_chunk::<8>) {
-                let digits = digit_run(u64::from_le_bytes(eight));
-                len += digits;
-                if digits < 8 {
-                    self.pos += len;
-                    return len > 0;
-                }
+        // `43.420273000000009`, then a byte at a time.
+        while let Some(&eight) = rest.get(len..).and_then(<[u8]>::first_chunk::<8>) {
+            let digits = digit_run(u64::from_le_bytes(eight));
+            len += digits;
+            if digits < 8 {
+                self.pos += len;
+                return len > 0;
             }
         }
         while len < rest.len() && rest[len].is_ascii_digit() {
@@ -1833,7 +1834,7 @@ mod tests {
     #[test]
     fn digit_run_stops_at_the_first_non_digit() {
         // Every byte value at every position, after digits and before 0xFF, whose carry from
-        // adding 6 must not reach back.
+        // adding 0x76 must not reach back.
         for b in 0..=u8::MAX {
             for at in 0..8 {
                 let mut word = [b'7'; 8];
