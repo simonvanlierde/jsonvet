@@ -10,16 +10,6 @@ version for a new option or output, the patch version for a fix.
 
 ## [3.4.0] - 2026-11-11
 
-Most users need no change. Check this if it applies to you. Both affect only files that already
-hold a comment starting `jsonvet-ignore`, which 3.3 read as a plain comment:
-
-1. A new rule, `unused-suppression`, is on by default as a warning in JSONC, JWCC and JSON5, so a
-   run with `--max-warnings 0` now fails on a suppression that hides nothing. Remove the comment,
-   or turn the rule off with `--ignore unused-suppression`.
-2. `jsonvet fmt` refuses a file when formatting would change which problems a suppression hides,
-   and leaves it as it is. Put the affected members on separate lines, then format again
-   ([formatting](docs/format.md#what-it-does)).
-
 ### Added
 
 - `per-file-format` overrides indent, width, JSON5 normalization and bracket spacing for files
@@ -36,7 +26,9 @@ hold a comment starting `jsonvet-ignore`, which 3.3 read as a plain comment:
   names an unknown rule, names a rule that is always an error or is about the whole file, or
   repeats a rule for the same line, so stale ones don't pile up ([unused-suppression](docs/usage.md#unused-suppression)).
   With `--fix --unsafe-fixes`, a duplicate key keeps all its copies when one of them is
-  suppressed, or when dropping one would change a line a suppression applies to.
+  suppressed, or when dropping one would change a line a suppression applies to. `jsonvet fmt`
+  leaves a file unchanged when formatting would change which problems a suppression hides
+  ([formatting](docs/format.md#what-it-does)).
 - `per-file-rules` in `jsonvet.toml` sets rule severities for the files a glob matches, such as
   `per-file-rules = [{ files = "legacy/*.json", duplicate-key = "ignore" }]`. It works in every
   dialect, also JSON, I-JSON and JSON Lines, where no comment can turn a rule off. Matching entries
