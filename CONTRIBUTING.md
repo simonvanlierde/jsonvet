@@ -34,8 +34,9 @@ when `GH_TOKEN` is set, so without it `just lint` can pass where CI fails.
 
 `just check` leaves out these jobs in `ci.yml`:
 
-- `test` on the other two OSes. On macOS it also runs `scripts/test-action.sh`, the Action
-  script's tests, under bash 3.2. Run `bash scripts/test-action.sh` yourself when you change
+- `test` on the other two OSes, with clippy there too, since code behind `cfg(unix)` or
+  `cfg(windows)` warns only on its own OS. On macOS it also runs `scripts/test-action.sh`, the
+  Action script's tests, under bash 3.2. Run `bash scripts/test-action.sh` yourself when you change
   `scripts/action.sh`.
 - `msrv`, `scaling`, `bench` and `differential`: `just msrv`, `just scaling`, `just counts` and
   `just differential`.
