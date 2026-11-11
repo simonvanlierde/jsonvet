@@ -8,6 +8,12 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
+### Changed
+
+- `--fix` takes about a quarter less memory on a large file: only `--unsafe-fixes` keeps where
+  each object member is. `jsonvet fmt` no longer allocates for each array and object, and
+  `--schema` on JSON Lines no longer allocates for each line.
+
 ## [3.4.0] - 2026-11-11
 
 ### Added

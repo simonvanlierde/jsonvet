@@ -200,6 +200,8 @@ pub fn format<'a>(
     parser.pad = options.bracket_spacing;
     parser.reserve();
     let doc = parser.document();
+    // Freed before the output is built, so the two do not add up at the peak.
+    parser.open = Vec::new();
     // The first pass only measures, so the output is built once, at its size, and never when it
     // would be huge.
     let mut counted = writer(true, 0, options.bracket_spacing);
@@ -669,6 +671,8 @@ struct Parser<'a> {
     /// Whether an object on one line has a space inside its braces.
     pad: bool,
     t: Tree<'a>,
+    /// The members of every open container, innermost last, so one vector serves them all.
+    open: Vec<Member>,
 }
 
 impl<'a> Parser<'a> {
@@ -690,6 +694,7 @@ impl<'a> Parser<'a> {
                 text,
                 ..Tree::default()
             },
+            open: Vec::new(),
         }
     }
 
@@ -958,7 +963,7 @@ impl<'a> Parser<'a> {
                 && matches!(self.kind(), Some(Kind::Open | Kind::Atom))
                 && self.cur.is_some_and(|t| t.nl > 0));
         let open_trailing = self.store(open_trailing);
-        let mut members = Vec::new();
+        let base = self.open.len();
         let mut commented = Vec::new();
         let mut trailing_comma = false;
         let mut width = 2 + usize::from(object && self.pad) * 2;
@@ -979,13 +984,13 @@ impl<'a> Parser<'a> {
             forced |= parsed.forced;
             width += parsed.width + 2;
             if let Some(lists) = parsed.comments {
-                commented.push((narrow(members.len()), lists));
+                commented.push((narrow(self.open.len() - base), lists));
             }
-            members.push(parsed.member);
+            self.open.push(parsed.member);
             trailing_comma = parsed.comma;
         }
         // Each member counted its separator; the last has none.
-        width = if members.is_empty() {
+        width = if self.open.len() == base {
             2
         } else {
             width.saturating_sub(2)
@@ -993,8 +998,8 @@ impl<'a> Parser<'a> {
         forced |= !pending.is_empty();
         let tail = self.store(pending);
         let start = narrow(self.t.members.len());
-        let count = narrow(members.len());
-        self.t.members.extend(members);
+        let count = narrow(self.open.len() - base);
+        self.t.members.extend(self.open.drain(base..));
         self.t
             .extras
             .extend(commented.into_iter().map(|(i, lists)| (start + i, lists)));
