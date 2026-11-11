@@ -1,6 +1,6 @@
-# 6. JSON Schema with offline references and an opt-in catalog
+# 6. `--schema` on the jsonschema crate, offline, in every build
 
-Status: accepted (2026-10-18)
+Status: accepted (2026-10-18), superseded in part by [0016](0016-opt-in-schemastore-catalog.md) (2026-11-10)
 
 ## Context
 
@@ -20,19 +20,6 @@ Offline jsonschema, so every `$ref` stays inside the schema file, in every build
 (#54). A cargo feature first kept it out of the wheels, but nearly every install comes from PyPI:
 about 900 a week, against 11 crates.io downloads in total (2026-10-18).
 
-Updated 2026-11-10: `--schema-catalog` explicitly enables HTTPS SchemaStore downloads by file
-name, after explicit, configured and local document schemas. Configuration files cannot
-enable networking. Default runs and the language server stay offline. Document `$schema`
-URLs and external `$ref`s remain offline in every mode.
-
-Downloads use a blocking HTTPS client with certificate validation. Only the three exact
-SchemaStore origins are supported, including redirects; matched third-party entries fail
-clearly. This avoids arbitrary network destinations without adding DNS filtering or a second
-URL library. Catalogs and schemas are cached for seven days. A failed refresh uses a usable
-stale copy with a warning; an uncached failure is a usage error. Cache entries record their
-URL and replace atomically only after validation. Size, time and redirect limits are in
-[usage.md](../usage.md#schemastore-catalog).
-
 ## Consequences
 
 The x86-64 wheel grew from 0.67 to 4.33 MB, still under prek and ruff, and a plain check starts in
@@ -46,5 +33,5 @@ The limit tests in `cli.rs`'s `mod schema`, and the `packaging` CI job, which bu
 
 ## Revisit if
 
-Users need catalog schemas on other origins, jsonschema's `Json` trait settles so it can read our
+Users ask for schemas picked by file name, jsonschema's `Json` trait settles so it can read our
 events directly, or the wheel size draws complaints.
