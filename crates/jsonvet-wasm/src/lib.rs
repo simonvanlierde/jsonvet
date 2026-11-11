@@ -128,7 +128,8 @@ pub fn fix(text: &str, dialect: &str, unsafe_fixes: bool, only: &[u32]) -> Resul
 }
 
 /// Format `text` as `jsonvet fmt` does. `indent` is the spaces for one level, 0 for a tab; `width`
-/// the most columns a container may take on one line; `normalize_json5` applies to JSON5 only; `fill_numbers` fills number arrays.
+/// the most columns a container may take on one line; `normalize_json5` applies to JSON5 only;
+/// `fill_numbers` fills number arrays.
 ///
 /// # Errors
 ///
