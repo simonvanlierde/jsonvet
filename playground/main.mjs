@@ -46,7 +46,7 @@ const already = {
 };
 // How a related place reads in a problem's entry, as the CLI writes it after the message.
 const near = { "first copy": "first at", "opened here": "opened at", "starts here": "started at" };
-const DOCS = "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#";
+const DOCS = "docs/usage.html#";
 const SAMPLE = input.value;
 const SAMPLE_NAME = "staging.json";
 const MAX_ITEMS = 200;

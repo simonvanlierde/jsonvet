@@ -1,6 +1,7 @@
 name: pages
 
-# The browser playground: crates/jsonvet-wasm built to WebAssembly, and playground/ around it.
+# The browser playground: crates/jsonvet-wasm built to WebAssembly, and playground/ around it,
+# with docs/ rendered into playground/docs/ by scripts/docs-site.
 # A pull request builds it; a push to main also deploys it to GitHub Pages. An open, ready pull
 # request also gets a preview Worker, which preview-retire.yml deletes again.
 on:
@@ -10,6 +11,8 @@ on:
       - "crates/jsonvet/**"
       - "crates/jsonvet-wasm/**"
       - "playground/**"
+      - "docs/**"
+      - "scripts/docs-site/**"
       - Cargo.toml
       - Cargo.lock
       - .github/workflows/pages.yml
@@ -20,6 +23,8 @@ on:
       - "crates/jsonvet/**"
       - "crates/jsonvet-wasm/**"
       - "playground/**"
+      - "docs/**"
+      - "scripts/docs-site/**"
       - Cargo.toml
       - Cargo.lock
       - .github/workflows/pages.yml
@@ -46,6 +51,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          submodules: true # tests/json5-tests, which conformance.md links to
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: stable
@@ -64,6 +70,20 @@ jobs:
       # The page's helpers: line and column mapping, which has to match jsonvet's, share links, the
       # proof layout and the made-up hosts file.
       - run: node --test playground/*.test.mjs
+      # The docs pages: lint, the link and anchor tests, then the pages, stamped with the commit as
+      # the playground's files are below.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: scripts/docs-site/package.json
+      - run: pnpm --dir scripts/docs-site install --frozen-lockfile
+      - run: pnpm --dir scripts/docs-site run check
+      - run: pnpm --dir scripts/docs-site test
+      - run: pnpm --dir scripts/docs-site run build
+        env:
+          COMMIT: ${{ github.sha }}
       - run: cargo build --locked -p jsonvet-wasm --target wasm32-unknown-unknown --profile wasm
       - run: >-
           wasm-bindgen --target web --no-typescript --out-dir playground/pkg
@@ -96,12 +116,13 @@ jobs:
           grep -q "style.css?v=${COMMIT}" playground/index.html
           grep -q "jsonvet_wasm_bg.wasm?v=${COMMIT}" playground/index.html
           ! grep -E '(href|src)="[^"]*\.(mjs|js|css|wasm)"' playground/index.html
-      # Chrome is on the runner: load the stamped page from a local server and read its status.
+      # Chrome is on the runner: load the stamped page from a local server and read its status, then
+      # a docs page.
       - name: Load the page in Chrome
         run: playground/browser-check.sh
-      # A pull request keeps screenshots of its page, desktop and phone in light and dark, as an
-      # artifact that the `screenshots` job links from the pull request, since Pages cannot host a
-      # preview.
+      # A pull request keeps screenshots of its page and two docs pages, desktop and phone in light
+      # and dark, as an artifact that the `screenshots` job links from the pull request, since Pages
+      # cannot host a preview.
       - name: Take screenshots of the page
         if: github.event_name == 'pull_request'
         run: playground/screenshots.sh "${RUNNER_TEMP}/screenshots"

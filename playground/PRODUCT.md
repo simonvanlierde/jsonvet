@@ -79,7 +79,9 @@ the page: a share link keeps it in the URL fragment, which browsers do not send 
 - A strict Content-Security-Policy: no inline script or style, no external hosts, no network
   access but the page's own files. `playground/smoke.mjs` enforces it.
 - No runtime dependencies and no build step for the page: plain HTML, CSS and ES modules beside
-  the wasm-bindgen output in `playground/pkg/`.
+  the wasm-bindgen output in `playground/pkg/`. The docs pages in `playground/docs/` are the one
+  build step: `scripts/docs-site/build.mjs` renders `docs/*.md` with marked when the site is built,
+  so the Markdown stays the only source and the pages carry no script but `theme.js`.
 - Large input stays usable: above 5,000 rows the gutter and highlights turn off, above 200,000
   characters a check waits for a pause in typing, past either the other five dialects are not
   checked, and the list shows at most 200 problems.
@@ -107,7 +109,7 @@ the page: a share link keeps it in the URL fragment, which browsers do not send 
 - The sample text in `index.html`: a config with a comment, a trailing comma and a `port` key
   repeated inside `server`, so it fails as JSON, and each dialect gives a different verdict.
 - The social card `playground/og.png`: the name, one duplicate key struck and circled, and the address, rendered from `docs/og-card.html`.
-- The speed figures in docs/design.md#speed, linked from the colophon.
+- The speed figures in docs/design.md#speed, linked from the colophon as a docs page.
 - No testimonials, user counts or quotes exist; none may be invented.
 
 ## Product Principles

@@ -252,6 +252,7 @@ the full check and lint suite.
   [design](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md),
   [accessibility](https://github.com/simonvanlierde/jsonvet/blob/main/docs/accessibility.md) and
   [CHANGELOG](https://github.com/simonvanlierde/jsonvet/blob/main/CHANGELOG.md).
+- The same docs as web pages: <https://simonvanlierde.com/jsonvet/docs/>.
 - [CONTRIBUTING.md](https://github.com/simonvanlierde/jsonvet/blob/main/CONTRIBUTING.md),
   [ROADMAP.md](https://github.com/simonvanlierde/jsonvet/blob/main/ROADMAP.md) and
   [GOVERNANCE.md](https://github.com/simonvanlierde/jsonvet/blob/main/GOVERNANCE.md).

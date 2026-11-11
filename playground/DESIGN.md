@@ -177,10 +177,10 @@ rule and the margin's grid. The only inset strokes are the selected stage's and 
 #### Slug
 
 `jsonvet · proof of staging.json · set in JSON5 · 11 lines · copy link` on the left; `checked in
-0.08 ms · all six in 0.4 ms · try a 2.7 MB file · back to the sample` on the right. The proof's
-name is the sample's, a dropped file's, "hosts.json" with a note that it was made in the page, "a
-shared text" or "your text". "copy link" and the two links on the right are buttons styled as
-underlined text. The all-six timing dims while the other dialects wait for a pause in typing, and
+0.08 ms · all six in 0.4 ms · try a 2.7 MB file · back to the sample · docs` on the right. The
+proof's name is the sample's, a dropped file's, "hosts.json" with a note that it was made in the
+page, "a shared text" or "your text". "copy link" and the two links on the right are buttons styled
+as underlined text, and "docs" is a link in the same style. The all-six timing dims while the other dialects wait for a pause in typing, and
 is hidden for a long text, which only the chosen dialect checks.
 
 #### Proof stages
@@ -260,6 +260,17 @@ workflow step, `jsonvet fmt` on the command line), each under a `#` comment line
 
 The privacy and JSON Schema sentence in small italic, then two mono lines: "jsonvet <version> · MIT or Apache-2.0
 licence" and "Simon van Lierde · source on GitHub · docs · speed figures".
+
+#### Docs pages
+
+`docs/*.md` and the decision records, rendered by `scripts/docs-site/build.mjs` into
+`playground/docs/` with `docs.css` over this stylesheet. The slug reads `jsonvet · docs · <page>` on
+the left and `playground · this page on GitHub` on the right. A mono nav of the pages sits beside the
+text from 860px, the page in view marked with the stage's 2px ink bar on its left; under 860px it
+wraps above the text, the bar at its foot. The text is prose in the serif up to 46rem; code and
+tables sit on the tint or between hairlines, and a wide table scrolls inside its own focusable box.
+No syntax colours: the One-Pen Rule holds here too. A skip link comes first, and the colophon keeps
+the theme toggle.
 
 ### Do's and Don'ts
 

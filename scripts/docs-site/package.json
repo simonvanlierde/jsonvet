@@ -1,0 +1,15 @@
+{
+  "name": "jsonvet-docs-site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "biome check",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.4",
+    "marked": "18.1.2"
+  },
+  "packageManager": "pnpm@12.17.0"
+}

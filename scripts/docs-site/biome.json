@@ -1,0 +1,10 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "files": {
+    "includes": ["*.mjs", "*.json"]
+  },
+  "formatter": {
+    "indentStyle": "space",
+    "lineWidth": 120
+  }
+}

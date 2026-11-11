@@ -52,8 +52,10 @@ Other workflows:
   SchemaStore fixtures change).
 - Every week: `fuzz.yml` and `mutants.yml` in full. Every Monday: `advisories.yml`, so a new
   RustSec advisory against `Cargo.lock` fails a run without waiting for a pull request.
-- `pages.yml` builds and tests the playground on a pull request that touches it, and deploys it
-  from main. On a pull request it also keeps screenshots of the page (`playground/screenshots.sh`:
+- `pages.yml` builds and tests the playground on a pull request that touches it or `docs/`, and
+  deploys it from main. It renders `docs/*.md` into the site's `docs/` pages with
+  `scripts/docs-site` (`pnpm test` there checks every link and anchor between them). On a pull
+  request it also keeps screenshots of the page and two docs pages (`playground/screenshots.sh`:
   desktop and phone, light and dark) as the `playground-screenshots` artifact for 14 days, and a
   comment on the pull request links the newest one. `just playground [PORT]` does the same build and tests, and serves it at
   <http://127.0.0.1:8000>, or at the PORT you pass.

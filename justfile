@@ -171,7 +171,8 @@ threads DIR=(target / "profile-files") CPUS="0,0-1,0-3,0-7": profiling-build
 
 # Build the playground as pages.yml does, then serve it at http://127.0.0.1:8000. Needs the
 # wasm32 target and wasm-bindgen-cli at the version in Cargo.lock; the deploy also runs wasm-opt.
-# Runs the page's tests and smoke test before serving, as pages.yml does.
+# Runs the page's tests and smoke test before serving, and builds the docs pages into
+# playground/docs, as pages.yml does.
 playground PORT="8000":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -181,6 +182,10 @@ playground PORT="8000":
         exit 1
     fi
     node --test playground/*.test.mjs
+    pnpm --dir scripts/docs-site install --frozen-lockfile
+    pnpm --dir scripts/docs-site run check
+    pnpm --dir scripts/docs-site test
+    pnpm --dir scripts/docs-site run build
     cargo build --locked -p jsonvet-wasm --target wasm32-unknown-unknown --profile wasm
     wasm-bindgen --target web --no-typescript --out-dir playground/pkg \
         {{ target }}/wasm32-unknown-unknown/wasm/jsonvet_wasm.wasm
