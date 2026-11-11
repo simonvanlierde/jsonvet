@@ -50,7 +50,8 @@ Other workflows:
 - On a pull request: `semver.yml` (`cargo semver-checks`), `fuzz.yml` (30 seconds a target),
   `coverage.yml` (Codecov) and `codspeed.yml` (benchmarks, only when the crates, Cargo files or
   SchemaStore fixtures change), and `wheels-check.yml` (the release wheels, built without an
-  upload, only when `Cargo.lock` or the wheel matrix in `wheels.yml` changes).
+  upload, only when `Cargo.lock`, a `Cargo.toml`, `.cargo/config.toml`, the maturin config or the
+  wheel matrix in `wheels.yml` changes).
 - Every week: `fuzz.yml` and `mutants.yml` in full. Every Monday: `advisories.yml`, so a new
   RustSec advisory against `Cargo.lock` fails a run without waiting for a pull request.
 - `pages.yml` builds and tests the playground on a pull request that touches it, and deploys it
