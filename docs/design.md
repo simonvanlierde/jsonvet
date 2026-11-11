@@ -286,8 +286,8 @@ crafted file can do is a panic ([0002](decisions/0002-no-unsafe-code.md)).
 pre-commit installs a `language: python` hook with `pip install .`. The root `setup.py` is a
 placeholder that depends on the exact released `jsonvet` wheel, so a hook install downloads a
 binary and never compiles Rust ([0008](decisions/0008-binary-wheels-behind-a-placeholder.md)).
-maturin builds the wheels with `bindings = "bin"`, for Linux (glibc and musl), macOS and Windows,
-each on x86-64 and arm64.
+maturin builds the wheels with `bindings = "bin"`, for Linux (glibc 2.28 or newer, and musl),
+macOS and Windows, each on x86-64 and arm64.
 
 ## Testing
 
@@ -319,6 +319,26 @@ the binaries from the wheels, so PyPI and the GitHub release ship the same bytes
 a build provenance attestation ([SECURITY.md](../SECURITY.md#verifying-a-release)). The binaries
 are not built with `cargo auditable`, which maturin cannot run without a cargo wrapper in every
 build container, so the SBOM lists the dependencies instead.
+
+## Social card
+
+`playground/og.png` (1200x630) is rendered from `docs/og-card.html`, not drawn by hand. Edit the
+HTML and run, from the repository root, with Playwright's Chromium:
+
+```sh
+playwright screenshot --viewport-size=1200,630 file://$PWD/docs/og-card.html playground/og.png
+sed -i.bak "s|og.png?v=[0-9a-f]*|og.png?v=$(shasum -a 256 playground/og.png | cut -c1-8)|" playground/index.html
+rm playground/index.html.bak
+```
+
+The `sed` line sets the `?v=` on the `og:image` URL to the PNG's hash. Link previews are cached by
+image URL, so without it Facebook, Slack, Discord and iMessage keep the old card.
+`playground/og.test.mjs` fails when the two disagree.
+
+Link previews show it at 300-500 px and some crop to the centred 630 px square, so the name, the
+snippet and the address sit in that square at 36 px or larger. The snippet is the duplicate-key
+example from the playground's sample text. The serif falls back to Liberation Serif where Charter
+is missing.
 
 ## Dependencies and pins
 

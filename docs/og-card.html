@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>jsonvet social card</title>
+<!-- Source of playground/og.png. Render: see docs/design.md, "Social card". -->
+<style>
+  :root {
+    --paper: #fbfaf5; --ink: #1a1916; --faint: #6b675e; --pen: #c0251b;
+    --serif: Charter, "Bitstream Charter", "Sitka Text", Cambria, "Iowan Old Style", Georgia, "Liberation Serif", serif;
+    --mono: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1200px; height: 630px; background: var(--paper); color: var(--ink); overflow: hidden; }
+  /* Everything that carries meaning sits in the centred 630 px column. */
+  main { position: absolute; left: 285px; top: 0; width: 630px; height: 630px; padding: 48px 24px 0; }
+  h1 { font: 700 132px/1 var(--serif); letter-spacing: -0.03em; }
+  .job { margin-top: 10px; font: 400 40px/1.2 var(--serif); color: var(--faint); }
+  pre { margin-top: 30px; font: 400 40px/56px var(--mono); }
+  .ring { display: inline-block; padding: 0 6px; margin: 0 -6px; border: 3px solid var(--pen); border-radius: 50%; }
+  .cut { text-decoration: line-through; text-decoration-thickness: 4px; text-decoration-color: var(--pen); }
+  .note { font: italic 400 40px/1 var(--serif); color: var(--pen); margin-top: 8px; }
+  .note code { font: 400 36px var(--mono); font-style: normal; }
+  .url { position: absolute; left: 24px; bottom: 40px; font: 400 36px/1 var(--mono); color: var(--faint); }
+  /* Rules either side, a proof's galley margin, outside the safe column only. */
+  body::before, body::after { content: ""; position: absolute; top: 0; bottom: 0; width: 2px; background: #dcd8cc; }
+  body::before { left: 225px; } body::after { right: 225px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>jsonvet</h1>
+  <p class="job">A linter and formatter for JSON</p>
+  <pre>"server": {
+  <span class="ring">"port"</span>: 8080,
+  <span class="cut">"port"</span>: 8443,</pre>
+  <p class="note">duplicate key <code>$.server.port</code></p>
+  <p class="url">simonvanlierde.com/jsonvet</p>
+</main>
+</body>
+</html>

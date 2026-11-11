@@ -14,6 +14,12 @@ version for a new option or output, the patch version for a fix.
   fit in an array of numbers only, as Prettier does. An array with a comment or a blank line in it
   keeps one number per line. Off by default ([fill-numbers](docs/format.md#fill-numbers)).
 
+### Changed
+
+- The Linux glibc wheels are built for `manylinux_2_28`, not `manylinux2014`, so they need glibc
+  2.28 or newer (Debian 10, Ubuntu 20.04, RHEL 8). RHEL 7, Amazon Linux 2 and Ubuntu 18.04 fall
+  back to the source distribution, which needs Rust. The musllinux wheels are unchanged.
+
 ## [3.4.0] - 2026-11-11
 
 ### Added

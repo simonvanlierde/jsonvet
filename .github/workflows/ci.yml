@@ -20,7 +20,7 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # The Rust that builds the release wheels; keep it equal to RELEASE_RUST in release.yml.
+  # The Rust that builds the release wheels; keep it equal to RELEASE_RUST in wheels.yml.
   RELEASE_RUST: "1.99.1"
   # The uv every job sets up, as in release.yml and mise.toml. Renovate bumps all three.
   PINNED_UV: "0.13.5"
@@ -254,9 +254,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The same image as release.yml's x86_64 manylinux row.
+          # The same image as wheels.yml's x86_64 manylinux row.
           - os: ubuntu-latest
-            container: quay.io/pypa/manylinux2014_x86_64:latest@sha256:f6a6f153c9cf45470507ebbc27013e5db14ce21331b62fd2c540561f25e5f0a5
+            container: quay.io/pypa/manylinux_2_28_x86_64:latest@sha256:9555ba6c479fa69a2aa80ad1dc57154a60d562b19df159361d9379a02beb1e36
           - os: macos-latest
           - os: windows-latest
     runs-on: ${{ matrix.os }}

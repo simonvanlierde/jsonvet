@@ -49,7 +49,9 @@ Other workflows:
 
 - On a pull request: `semver.yml` (`cargo semver-checks`), `fuzz.yml` (30 seconds a target),
   `coverage.yml` (Codecov) and `codspeed.yml` (benchmarks, only when the crates, Cargo files or
-  SchemaStore fixtures change).
+  SchemaStore fixtures change), and `wheels-check.yml` (the release wheels, built without an
+  upload, only when `Cargo.lock`, a `Cargo.toml`, `.cargo/config.toml`, the maturin config or the
+  wheel matrix in `wheels.yml` changes).
 - Every week: `fuzz.yml` and `mutants.yml` in full. Every Monday: `advisories.yml`, so a new
   RustSec advisory against `Cargo.lock` fails a run without waiting for a pull request.
 - `pages.yml` builds and tests the playground on a pull request that touches it, and deploys it
@@ -215,7 +217,9 @@ git commit -s -m "docs: speed figures for X.Y" -- docs/design.md README.md
 just matrix                               # records the new version in the matrix
 git commit -s -m "docs: re-run the conformance matrix for X.Y.Z" -- docs/conformance.md README.md conformance/results
 uv run scripts/check-versions.py
-git push -u origin release/X.Y.Z          # then open the pull request and squash-merge it
+git push -u origin release/X.Y.Z          # then open the pull request
+gh pr checks                              # the `wheels / wheels (...)` rows must be green
+                                          # then squash-merge it
 git switch main && git pull --ff-only
 git log -1 --oneline                      # must be "chore: release X.Y.Z (#NN)"
 git tag -s vX.Y.Z -m vX.Y.Z               # signed with your git signing key
@@ -230,6 +234,19 @@ publishes everything ([design.md](docs/design.md#publishing)). Each publish job 
 approval: the `pypi` environment twice (the wheels, then `check-json5`) and `crates-io` once. If a
 publish job fails, use "Re-run failed jobs", never "Re-run all jobs". A full re-run builds the
 wheels again, so PyPI and the GitHub release could hold different builds.
+
+"Re-run failed jobs" uses the workflow file at the tagged commit, so a fix to a workflow needs a
+new commit and a moved tag. Which way depends on how far the release got:
+
+- **Nothing is on PyPI yet** (a wheels row, `smoke` or `github-release` failed). Fix main through
+  a pull request. Delete the remote tag with `git push origin :refs/tags/vX.Y.Z`, then sign and
+  push the tag again on the new release commit, as above. `github-release` replaces a leftover
+  draft for the same tag and refuses a published release, so the old draft needs no cleanup.
+- **PyPI already has a file.** Never move the tag. Ship a patch version.
+
+The release pull request changes `Cargo.toml` and `Cargo.lock`, so `wheels-check.yml` builds the
+wheels on it. Look at its `wheels / wheels (...)` checks before you tag. They cannot be required
+checks, because the workflow only runs for some paths.
 
 A pre-release has a `-` in its tag (`v3.1.0-rc.1`). cargo-release bumps only the crates for one.
 Edit the other places by hand, with the PEP 440 form (`3.2.0rc1`) in `setup.py` and the
