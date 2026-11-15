@@ -31,3 +31,4 @@ a link or a renamed test is fine.
 | [0015](0015-a-language-server-on-lsp-server.md) | A language server in the CLI, on lsp-server, with messages in serde_json | 2026-11-06 |
 | [0016](0016-opt-in-schemastore-catalog.md) | An opt-in SchemaStore catalog over HTTPS | 2026-11-10 |
 | [0017](0017-docs-pages-built-with-marked.md) | The docs pages are built from the Markdown with marked | 2026-11-11 |
+| [0018](0018-docs-search.md) | Docs search is a build-time index in a script of its own | 2026-11-15 |

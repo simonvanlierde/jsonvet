@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { posix, resolve } from "node:path";
 import { after, test } from "node:test";
+import { prepare, search } from "../../playground/search.mjs";
 import { decode } from "../../playground/share.mjs";
 import { anchorsOf, build, REPO, ROOT, slugger } from "./build.mjs";
 import { shown } from "./matrix.mjs";
@@ -81,6 +82,50 @@ test("each page keeps the CSP, a skip link and its landmarks, with no inline scr
     for (const tag of ["<header", "<nav", '<main id="content"', "<footer"])
       assert.ok(text.includes(tag), `${path} ${tag}`);
     assert.equal(text.match(/<h1[ >]/g)?.length, 1, `${path}: one h1`);
+  }
+});
+
+test("search: the index covers every page and heading, each page loads the script, and nothing is inline", async () => {
+  const text = readFileSync(resolve(site, "docs/search-index.js"), "utf8");
+  assert.match(text, /^export default \[/);
+  const index = (await import(`data:text/javascript,${encodeURIComponent(text)}`)).default;
+  const byUrl = new Map(index.map(([url, , sections]) => [url, sections]));
+  for (const [path, page] of Object.entries(html)) {
+    const url = path.slice("docs/".length).replace(/(^|\/)index\.html$/, "$1");
+    // The matrix page's own headings have no ids, so only the ones with an id can be a target.
+    const headings = [...page.matchAll(/<h[1-4] id="([^"]+)"/g)].map((m) => m[1]);
+    if (url === "") {
+      assert.ok(!byUrl.has(url), "the contents page is not indexed");
+      continue;
+    }
+    assert.deepEqual(
+      (byUrl.get(url) ?? []).map(([id]) => id),
+      headings,
+      path,
+    );
+    assert.match(page, /<script type="module" src="(\.\.\/)*search\.mjs\?v=abc123"><\/script>/, path);
+    assert.match(page, /<search id="docs-search" class="find" hidden>/, path);
+  }
+  for (const [, , sections] of index)
+    for (const [id, heading, words] of sections) {
+      assert.ok(heading && id);
+      assert.doesNotMatch(words, /[<>&;]|\s\s|^\s|\s$/, id);
+      assert.equal(new Set(words.split(" ")).size, words ? words.split(" ").length : 1, `${id}: a word twice`);
+    }
+  // Body text is found through the index, as a reader would.
+  const found = search(prepare(index), "duplicate-key");
+  assert.deepEqual([found[0].url, found[0].id], ["usage.html", "duplicate-key"]);
+  // The index is a file of the site's own, so the CSP's `script-src 'self'` covers it with no
+  // connect-src, and the search script stays the only one besides theme.js.
+  for (const page of Object.values(html)) {
+    const scripts = [...page.matchAll(/<script[^>]*\ssrc="([^"]+)"/g)].map((m) =>
+      m[1].replace(/^(\.\.\/)*|\?.*$/g, ""),
+    );
+    assert.deepEqual(scripts, ["theme.js", "search.mjs"]);
+    assert.doesNotMatch(
+      page.match(/http-equiv="Content-Security-Policy" content="([^"]*)"/)[1],
+      /connect-src|wasm-unsafe-eval/,
+    );
   }
 });
 

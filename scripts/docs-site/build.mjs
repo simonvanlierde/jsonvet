@@ -1,12 +1,13 @@
 // Renders docs/*.md and docs/decisions/*.md into playground/docs/, as HTML pages in the
 // playground's header, theme and CSP. The Markdown stays the only source: links between docs go
 // to the pages, links to other files in the repository go to GitHub. A link to a file that does
-// not exist stops the build. COMMIT, when set, is stamped on the style and script URLs as pages.yml
-// stamps the playground's.
+// not exist stops the build. It also writes search-index.js for playground/search.mjs. COMMIT, when
+// set, is stamped on the style and script URLs as pages.yml stamps the playground's.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { posix, resolve } from "node:path";
 import { Marked, Parser, Renderer } from "marked";
+import { tokens } from "../../playground/search.mjs";
 import { matrixPage } from "./matrix.mjs";
 
 export const ROOT = resolve(import.meta.dirname, "../..");
@@ -194,6 +195,7 @@ function page({ out, src, title, summary, body, h2s = [] }, stamp) {
 <link rel="stylesheet" href="${up}style.css${stamp}">
 <link rel="stylesheet" href="${up}docs.css${stamp}">
 <script src="${up}theme.js${stamp}"></script>
+<script type="module" src="${up}search.mjs${stamp}"></script>
 </head>
 <body>
 <a class="skip" href="#content">Skip to the text</a>
@@ -202,7 +204,14 @@ function page({ out, src, title, summary, body, h2s = [] }, stamp) {
   <p class="slug-part"><span><a href="${up}">playground</a></span>${source}</p>
 </header>
 <div class="wrap docs">
-<nav aria-label="Docs"><ul>${nav}</ul></nav>
+<nav aria-label="Docs">
+<search id="docs-search" class="find" hidden>
+<label for="docs-q">Search the docs</label>
+<input id="docs-q" type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="docs-results" autocomplete="off" spellcheck="false" placeholder="Press / to search">
+<p class="vh" role="status"></p>
+<ul id="docs-results" role="listbox" aria-label="Search results" hidden></ul>
+</search>
+<ul>${nav}</ul></nav>
 <main id="content" class="prose">
 ${body}</main>
 </div>
@@ -214,6 +223,35 @@ ${body}</main>
 </body>
 </html>
 `;
+}
+
+const decode = (text) =>
+  text.replace(/&(amp|lt|gt|quot|#39);/g, (_, e) => ({ amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'" })[e]);
+const plain = (html) =>
+  decode(html.replace(/<[^>]+>/g, " "))
+    .replace(/\s+/g, " ")
+    .trim();
+
+/** The search index: per page its address and title, and per section (a heading with the text
+ * under it) the id, the heading and the lower-case words of the body, each once. The words are
+ * made here, so the browser loads no Markdown or HTML and does no parsing. The sections of the
+ * contents page are skipped, as it only repeats the other pages' summaries. */
+export function searchIndex(rendered) {
+  return rendered
+    .filter((r) => r.src)
+    .map(({ out, title, body }) => {
+      const sections = body
+        .split(/(?=<h[1-4] id=")/)
+        .map((chunk) => chunk.match(/^<h([1-4]) id="([^"]+)">(.*?)<\/h\1>([\s\S]*)$/))
+        .filter(Boolean)
+        .map(([, , id, inner, rest]) => {
+          const heading = plain(inner);
+          const own = new Set(tokens(heading));
+          const words = [...new Set(tokens(plain(rest)))].filter((w) => w.length > 1 && !own.has(w));
+          return [decode(id), heading, words.join(" ")];
+        });
+      return [out.replace(/(^|\/)index\.html$/, "$1"), title, sections];
+    });
 }
 
 /** Writes every page into `outDir`, emptied first, and returns their paths relative to it. */
@@ -244,6 +282,7 @@ export function build(outDir, commit = "") {
     mkdirSync(resolve(outDir, posix.dirname(doc.out)), { recursive: true });
     writeFileSync(resolve(outDir, doc.out), page(doc, stamp));
   }
+  writeFileSync(resolve(outDir, "search-index.js"), `export default ${JSON.stringify(searchIndex(rendered))};\n`);
   return rendered.map((r) => r.out);
 }
 

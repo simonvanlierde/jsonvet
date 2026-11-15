@@ -8,6 +8,12 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
+### Added
+
+- The docs pages have a search box, which finds a heading or text on any page and jumps to its
+  section. Press `/` to focus it. It needs script; without it the pages work as before
+  ([ADR 0018](docs/decisions/0018-docs-search.md)).
+
 ## [3.5.0] - 2026-11-15
 
 ### Added

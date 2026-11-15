@@ -47,6 +47,29 @@
 .docs nav ul ul { position: static; margin: 0 0 6px; font-size: 12.5px; }
 .docs nav ul ul a { padding-left: 22px; }
 
+/* Search (playground/search.mjs). The box is hidden until the script runs, so without script the
+   nav is as it was. The results overlay the page below the box. */
+.find { position: relative; margin-bottom: 10px; }
+.find label { display: block; padding: 0 0 3px 10px; color: var(--faint); font: 13px/1.6 var(--mono); }
+.find input { box-sizing: border-box; width: 100%; min-height: 44px; margin: 0; padding: 6px 10px; border: 1px solid var(--faint); border-radius: 0; background: var(--paper); color: var(--ink); font: 16px/1.4 var(--mono); }
+.find input:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+.docs .find ul { display: block; position: absolute; z-index: 3; top: 100%; left: 0; width: min(26rem, 100%); max-height: 70vh; margin: 2px 0 0; padding: 0; overflow-y: auto; list-style: none; font: inherit; background: var(--paper); border: 1px solid var(--ink); }
+.find li + li { border-top: 1px solid var(--rule); }
+.find li { min-height: 44px; padding: 6px 10px; color: var(--ink); font: 14px/1.4 var(--mono); cursor: pointer; }
+.find li:hover { background: var(--tint); }
+.find li span { display: block; overflow-wrap: anywhere; }
+.find .where { color: var(--faint); font-size: 12.5px; }
+.find [aria-selected="true"] { background: var(--tint); box-shadow: inset 2px 0 var(--ink); }
+@media (min-width: 861px) {
+  /* The whole nav sticks, so the box stays in reach on a long page. */
+  .docs nav { position: sticky; top: 18px; align-self: start; }
+  .docs nav > ul { position: static; }
+  .docs .find ul { width: min(26rem, calc(100vw - 48px)); }
+}
+@media (forced-colors: active) {
+  .find [aria-selected="true"] { outline: 2px solid Highlight; }
+}
+
 @media (min-width: 861px) {
   .prose td > a:only-child, .prose td > code { white-space: nowrap; }
 }
