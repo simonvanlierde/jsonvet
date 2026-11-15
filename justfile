@@ -62,7 +62,7 @@ vsix:
 
 # Re-run the conformance matrix (needs docker), then render docs/conformance.md.
 matrix:
-    cargo build --release -p jsonvet-cli
+    cargo build --release --locked -p jsonvet-cli
     uv run conformance/run.py --jsonvet {{ target }}/release/jsonvet
     uv run conformance/report.py
 
@@ -104,7 +104,7 @@ major:
 
 # Time jsonvet against check-json5 1.4.1 (needs hyperfine).
 bench *ARGS:
-    cargo build --release -p jsonvet-cli
+    cargo build --release --locked -p jsonvet-cli
     uv run scripts/bench.py --jsonvet {{ target }}/release/jsonvet {{ ARGS }}
 
 # Write bench.py's files and 13 large inputs, one per scanner path plus three real-world files
