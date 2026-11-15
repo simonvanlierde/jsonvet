@@ -32,3 +32,4 @@ a link or a renamed test is fine.
 | [0016](0016-opt-in-schemastore-catalog.md) | An opt-in SchemaStore catalog over HTTPS | 2026-11-10 |
 | [0017](0017-docs-pages-built-with-marked.md) | The docs pages are built from the Markdown with marked | 2026-11-11 |
 | [0018](0018-docs-search.md) | Docs search is a build-time index in a script of its own | 2026-11-15 |
+| [0019](0019-docs-on-starlight.md) | The docs are built with Starlight, under a docs CSP that hashes its inline scripts | 2026-11-16 |

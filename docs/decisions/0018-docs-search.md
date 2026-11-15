@@ -1,6 +1,6 @@
 # 18. Docs search is a build-time index in a script of its own
 
-Status: accepted (2026-11-15)
+Status: superseded by [0019](0019-docs-on-starlight.md) (2026-11-16)
 
 ## Context
 

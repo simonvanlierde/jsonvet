@@ -1,6 +1,6 @@
 # 17. The docs pages are built from the Markdown with marked
 
-Status: accepted (2026-11-11)
+Status: superseded by [0019](0019-docs-on-starlight.md) (2026-11-16)
 
 ## Context
 

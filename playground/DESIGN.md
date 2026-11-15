@@ -263,22 +263,23 @@ licence" and "Simon van Lierde · source on GitHub · docs · speed figures".
 
 #### Docs pages
 
-`docs/*.md` and the decision records, rendered by `scripts/docs-site/build.mjs` into
-`playground/docs/` with `docs.css` over this stylesheet. The slug reads `jsonvet · docs · <page>` on
-the left and `playground · this page on GitHub` on the right. A mono nav of the pages sits beside the
-text from 860px, the page in view marked with the stage's 2px ink bar on its left; under 860px it
-wraps above the text, the bar at its foot. A page with three or more sections lists them, as small
-mono links, under its own nav item from 860px, so a long reference can be jumped through. The text is prose in the serif up to 68ch; code and
-tables sit on the tint or between hairlines, and code blocks and wide tables scroll inside their own focusable boxes.
-No syntax colours: the One-Pen Rule holds here too. A skip link comes first, and the colophon keeps
-the theme toggle.
+`docs/*.md` and the decision records, built by Starlight (`scripts/docs-site`, ADR 0019) into the
+site's `docs/` pages, with the tokens of this stylesheet mapped onto Starlight's variables in
+`src/styles/jsonvet.css`: Charter for the prose, the mono for the sidebar and code, warm paper, ink
+for the page in view (the stage's ink bar on its left in the sidebar) and the pen for focus only.
+The header carries the site name, the search and the theme choice; the sidebar lists the pages and
+the right column the page's sections. The text is prose in the serif; code and tables sit on the
+tint or between hairlines, and code blocks and wide tables scroll inside their own focusable, named
+boxes. No syntax colours: the One-Pen Rule holds here too. A skip link comes first, and the footer
+keeps the colophon line. Without script the system's theme holds and the sidebar opens from the menu
+button.
 
 #### Matrix page
 
 `docs/matrix.html`, built by `scripts/docs-site/matrix.mjs` from `docs/conformance.json`, which
 `conformance/report.py` writes next to `docs/conformance.md`. No script: the dialect and the filter
 are radio inputs set as segmented controls (the tint and the 2px ink bar), read by `:has()` in
-`docs.css`; a browser without `:has()` shows every table unfiltered. The filter's legend gives the
+`scripts/docs-site/src/styles/matrix.css`; a browser without `:has()` shows every table unfiltered. The filter's legend gives the
 counts and disables an empty choice. Rows are the files, grouped by folder under a faint mono
 heading, with the name in a sticky first column; the columns are the dialect's parser runs, their
 names turned upright. Cells are text marks (✓ ✗ ‼ A R) in ink, with the parser and verdict in words
