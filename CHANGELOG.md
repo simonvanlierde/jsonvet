@@ -17,6 +17,9 @@ version for a new option or output, the patch version for a fix.
   `gh attestation verify --bundle` without fetching them from GitHub. The binaries and the jsonvet
   wheels also get an attestation of the SBOM, `jsonvet.cdx.intoto.jsonl`
   ([verifying a release](SECURITY.md#verifying-a-release)).
+- The Linux and macOS binaries, in the wheels and the GitHub release archives, embed their
+  dependency list, so `cargo audit bin jsonvet` and other scanners can check an installed binary
+  ([verifying a release](SECURITY.md#verifying-a-release)).
 - The check-json5 package ships its licence file.
 - The docs are published as pages at <https://simonvanlierde.com/jsonvet/docs/>.
 - The social card is redesigned.

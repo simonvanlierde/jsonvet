@@ -17,6 +17,8 @@ on:
       - .github/workflows/wheels-check.yml
       - .github/workflows/smoke.yml
       - scripts/smoke.py
+      - scripts/cargo-auditable
+      - scripts/check-auditable.py
       - compat/**
 
 permissions:

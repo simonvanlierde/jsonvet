@@ -53,6 +53,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The binaries embed their dependency list (`cargo auditable`) through scripts/cargo-auditable,
+      # which maturin runs as its cargo. Not on Windows: maturin cannot run a shell script as cargo.
+      # The pinned release is a static x86-64 Linux binary, which also runs in the build containers.
+      - if: runner.os != 'Windows'
+        uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
+        with:
+          tool: cargo-auditable@0.7.7
+      - if: runner.os != 'Windows'
+        run: |
+          mkdir .auditable
+          cp "$(command -v cargo-auditable)" .auditable/
+          echo "CARGO=$GITHUB_WORKSPACE/scripts/cargo-auditable" >> "$GITHUB_ENV"
       # No cache: an entry written from any branch is restorable here, which would put
       # attacker-controlled bytes into a wheel this workflow publishes.
       - uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
@@ -63,6 +75,8 @@ jobs:
           manylinux: ${{ matrix.manylinux || 'auto' }}
           container: ${{ matrix.container || '' }}
           rust-toolchain: ${{ env.RELEASE_RUST }}
+          # The container does not get $CARGO, which has no CARGO_ prefix.
+          before-script-linux: export CARGO="$GITHUB_WORKSPACE/scripts/cargo-auditable"
           args: --release --locked --out ../../dist
       # The row's container fixes the platform tag, and PyPI rejects a plain linux_* one, which
       # no pull request check would otherwise show before the release exists.
@@ -71,6 +85,9 @@ jobs:
           TAG: ${{ matrix.manylinux == 'auto' && 'manylinux_2_28' || matrix.manylinux }}
           TARGET: ${{ matrix.target }}
         run: ls dist/*-"${TAG}_${TARGET}".whl
+      # A broken wiring still builds a working wheel, so the build fails here, on every row.
+      - if: runner.os != 'Windows'
+        run: python3 scripts/check-auditable.py dist/*.whl
       - if: inputs.upload
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

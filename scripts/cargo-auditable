@@ -1,0 +1,6 @@
+#!/bin/sh
+# Stands in for cargo in a maturin build (CARGO=scripts/cargo-auditable), so the binaries carry
+# their dependency list: maturin has no flag for `cargo auditable`, but it runs the cargo that
+# $CARGO names. The binary is in .auditable/ for the build containers, which see the workspace
+# and nothing of the runner's ~/.cargo.
+PATH="${GITHUB_WORKSPACE:-.}/.auditable:$PATH" CARGO=cargo exec cargo-auditable auditable "$@"

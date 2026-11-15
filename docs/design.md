@@ -269,9 +269,12 @@ GitHub release it drafted, with the binary archives, the SBOM and `SHA256SUMS`. 
 the binaries from the wheels, so PyPI and the GitHub release ship the same bytes. Every file gets
 a build provenance attestation, the binaries an attestation of the SBOM, and the release carries
 both bundles ([SECURITY.md](../SECURITY.md#verifying-a-release)). The release fails when the SBOM
-lists no components. The binaries
-are not built with `cargo auditable`, which maturin cannot run without a cargo wrapper in every
-build container, so the SBOM lists the dependencies instead.
+lists no components. The Linux and macOS binaries are built with `cargo auditable`, so
+`cargo audit bin jsonvet` reads their dependency list from the `.dep-v0` section. maturin has no
+flag for it, so `wheels.yml` points `$CARGO` at `scripts/cargo-auditable`, which runs the real
+cargo through `cargo auditable`, and fails the build when a wheel's binary lacks the section
+(`scripts/check-auditable.py`). The Windows binaries have none: maturin cannot run a shell script
+as cargo there, and the SBOM covers them.
 
 ## Social card
 

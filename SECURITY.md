@@ -96,6 +96,9 @@ of the SBOM, `jsonvet.cdx.intoto.jsonl` on the release: add
 shows the wheels' own PEP 740 attestations on each file's page. To check downloaded archives
 against the release's checksums, run `sha256sum --check --ignore-missing SHA256SUMS`.
 
+The Linux and macOS binaries also embed their dependency list, so a scanner can check an
+installed binary: `cargo audit bin $(command -v jsonvet)` (`cargo install cargo-audit`).
+
 The GitHub Action runs this check on the wheel it downloads, and stops if it fails. It cannot pin
 a hash instead, because the wheels are built after the tag it is pinned to. Without `gh` on the
 runner it installs the wheel unchecked ([reference](docs/usage.md#github-action)), but someone who
