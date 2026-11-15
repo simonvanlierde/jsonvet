@@ -24,6 +24,13 @@ version for a new option or output, the patch version for a fix.
   each object member is. `jsonvet fmt` no longer allocates for each array and object, and
   `--schema` on JSON Lines no longer allocates for each line.
 
+### Fixed
+
+- A folder walk no longer hangs on a FIFO at a nested repository's `.git/info/exclude`, or aborts
+  on a link there to `/dev/zero`: it stops with a usage error, as for `.gitignore`. The walk now
+  reads `.gitignore`, `.ignore` and `info/exclude` itself, with the type checked on the open file,
+  so a file swapped for a FIFO after the check cannot hang it either.
+
 ## [3.4.0] - 2026-11-11
 
 ### Added

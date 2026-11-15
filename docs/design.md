@@ -232,8 +232,9 @@ users see are in the [reference](usage.md#configuration-file).
 Config, schema and ignore files are read only when they are regular files under a size cap, as
 checked files are: a committed link to `/dev/zero` would fill memory, and a FIFO would hang the
 run. A config file may be a symlink that leads anywhere on the machine, so its errors show the
-line and column only. The `ignore` crate reads `.gitignore` and `.ignore` with no such check, so
-the walk checks those two in each folder before it enters it.
+line and column only. The `ignore` crate reads ignore files with no such check, so the
+walk turns its readers off, reads `.gitignore`, `.ignore` and `info/exclude` itself with that
+check, and matches them in its filter as the crate would.
 
 ## Architecture
 

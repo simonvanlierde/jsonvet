@@ -93,8 +93,8 @@ walk works as ripgrep's does:
   and git's global and `info/exclude` files name.
 - It skips what the `exclude` setting names, and everything under a folder it names.
 - It does not follow symlinks.
-- It stops with a usage error at a `.gitignore` or `.ignore` that is not a regular file or holds
-  more than 16 MB.
+- It stops with a usage error at a `.gitignore`, `.ignore` or `info/exclude` that is not a
+  regular file or holds more than 16 MB.
 - It lists each folder's files in sorted order.
 
 A file or folder you name is always checked, even when an ignore file or `exclude` names it. So
