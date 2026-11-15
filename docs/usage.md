@@ -347,7 +347,9 @@ Always an error: `--error`, `--warn`, `--ignore` and settings files do not take 
 
 - A glob without `/` matches the file name at any depth. A glob with `/` matches the whole path,
   and `*` also matches `/`.
-- A glob compares exact code points. A `\` in a path is read as `/`.
+- A glob compares exact code points. A `\` in a path or a glob is read as `/`.
+- A glob is normalized as a path is. `./gen` and `gen/` both match the folder `gen` at the top
+  only, as globs with `/`.
 - On the command line, a glob is relative to the working directory. pre-commit runs from the
   repository root.
 - In a config file, a glob is relative to the folder that holds the file. With `--config`, a file

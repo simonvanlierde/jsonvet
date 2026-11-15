@@ -10,10 +10,12 @@ pub(crate) struct Glob {
 }
 
 impl Glob {
+    /// The pattern is normalized as paths are, so `./gen` and `gen/` match `gen`. Its `/` is
+    /// judged before that, so they still match the whole path, not a name at any depth.
     pub(crate) fn new(pattern: &str) -> Glob {
         Glob {
-            chars: pattern.chars().collect(),
-            whole: pattern.contains('/'),
+            chars: normalize(pattern).chars().collect(),
+            whole: pattern.contains(['/', '\\']),
         }
     }
 
@@ -178,6 +180,20 @@ mod tests {
         assert!(matches("[a-c]?.json", "bz.json"));
         assert!(matches("[.json", "[.json"), "an unclosed `[` is a literal");
         assert!(matches(".vscode/*", ".vscode/settings.json"));
+    }
+
+    /// A pattern is normalized as a path is, so `./c.json` and `gen/` match `c.json` and `gen`,
+    /// and still only at the top, as patterns with `/`.
+    #[test]
+    fn patterns_are_normalized_as_paths_are() {
+        assert!(matches("./c.json", "c.json"));
+        assert!(matches("./c.json", "./c.json"));
+        assert!(!matches("./c.json", "sub/c.json"));
+        assert!(matches("gen/", "gen"));
+        assert!(!matches("gen/", "sub/gen"));
+        assert!(matches("./gen", "gen"));
+        assert!(matches("src//*.json", "src/x.json"));
+        assert!(matches("src\\*.json", "src/x.json"));
     }
 
     #[test]
