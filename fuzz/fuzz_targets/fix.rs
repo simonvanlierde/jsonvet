@@ -26,7 +26,9 @@ fuzz_target!(|text: &str| {
                     | Rule::ByteOrderMark
                     | Rule::MissingFinalNewline
                     | Rule::MixedLineEndings => true,
-                    Rule::DuplicateKey => unsafe_fixes,
+                    // A suppression comment on a member's line keeps its duplicate: dropping
+                    // the member would move the comment onto other tokens.
+                    Rule::DuplicateKey => unsafe_fixes && !text.contains("jsonvet-ignore"),
                     _ => false,
                 };
                 assert!(

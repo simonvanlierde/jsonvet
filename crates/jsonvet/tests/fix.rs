@@ -150,6 +150,22 @@ fn duplicate_keys_are_an_unsafe_fix() {
 }
 
 #[test]
+fn a_duplicate_on_a_suppression_line_stays_with_mixed_endings_fixed() {
+    // The comment names no rule that hides the duplicate, but dropping the first member would
+    // take the comment with it and uncover the tokens on its line, so the duplicate stays.
+    let text = "{\"a\"//jsonvet-ignore\r.\n:1,\"a\":2\r}";
+    let config = Config::new(Dialect::Jwcc);
+    let fixed = try_fix(text, &config, true, None).expect("fixes");
+    assert_eq!(fixed.text, "{\"a\"//jsonvet-ignore\r.\n:1,\"a\":2\n}");
+    assert!(
+        check(&fixed.text, &config)
+            .problems()
+            .iter()
+            .any(|p| p.rule() == Rule::DuplicateKey)
+    );
+}
+
+#[test]
 fn keeps_the_last_of_three_and_leaves_comments() {
     let text = "{\n  \"a\": 1, // first\n  \"b\": 0,\n  \"a\": 2 /* mid */,\n  \"a\": 3\n}\n";
     assert_eq!(
