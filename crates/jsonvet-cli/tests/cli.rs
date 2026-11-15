@@ -3851,6 +3851,7 @@ mod directories {
             ("pkg/gen/a.json", DUP),
             ("pkg/excluded.json", DUP),
             ("pkg/kept.json", DUP),
+            ("pkg/bad.json", DUP),
             ("nested/.git/HEAD", ""),
             ("nested/excluded.json", DUP),
             ("nested/ignored.json", DUP),
@@ -3858,6 +3859,8 @@ mod directories {
             ("common/info/exclude", "wt-excluded.json\n"),
             ("wt/wt-excluded.json", DUP),
             ("wt/kept.json", DUP),
+            ("modules/sub/HEAD", ""),
+            ("sub/kept.json", DUP),
         ]);
         let gitdir = dir.join("gitdirs/wt");
         fs::write(
@@ -3865,6 +3868,10 @@ mod directories {
             format!("gitdir: {}\n", gitdir.display()),
         )
         .expect("write");
+        // Reading stops at a line that is not UTF-8, as the `ignore` crate's reader did.
+        fs::write(dir.join("pkg/.ignore"), b"bad.json\n\xff\nkept.json\n").expect("write");
+        // A submodule's git folder has no `commondir`, so it adds no `info/exclude`.
+        fs::write(dir.join("sub/.git"), "gitdir: ../modules/sub\n").expect("write");
         let user = dir.join(".user");
         let run = |cwd: &std::path::Path, arg: &str| {
             let out = super::command(env!("CARGO_BIN_EXE_jsonvet"))
@@ -3887,6 +3894,7 @@ mod directories {
                     walked("./.keep.json"),
                     walked("./nested/excluded.json"),
                     walked("./pkg/kept.json"),
+                    walked("./sub/kept.json"),
                     walked("./wt/kept.json"),
                 ]
                 .concat()
@@ -4183,6 +4191,11 @@ mod file_reads {
             "{err}"
         );
         fs::remove_file(dir.join("common/info/exclude")).expect("remove the FIFO");
+        fs::remove_file(dir.join("gitdirs/wt/commondir")).expect("remove commondir");
+        fifo(&dir.join("gitdirs/wt/commondir"));
+        let (code, _, err) = run_for(&dir.join("wt"), &user, &["."], 5);
+        assert_eq!(code, 2);
+        assert!(err.ends_with("wt/commondir: not a regular file\n"), "{err}");
         let _ = fs::remove_dir_all(&dir);
     }
 

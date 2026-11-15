@@ -1233,8 +1233,11 @@ fn ignore_rules(dir: &Path, file: Option<&Path>) -> Result<Gitignore, String> {
                     Ok(text) => text,
                     Err(e) => {
                         let valid = &bytes[..e.valid_up_to()];
-                        let whole = valid.iter().rposition(|&b| b == b'\n').map_or(0, |i| i + 1);
-                        std::str::from_utf8(&valid[..whole]).unwrap_or_default()
+                        let whole = valid
+                            .iter()
+                            .rposition(|&b| b == b'\n')
+                            .map_or(&[][..], |end| &valid[..end]);
+                        std::str::from_utf8(whole).unwrap_or_default()
                     }
                 };
                 let text = text.strip_prefix('\u{feff}').unwrap_or(text);
