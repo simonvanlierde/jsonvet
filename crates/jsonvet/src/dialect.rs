@@ -81,10 +81,17 @@ impl Dialect {
     /// `.json` files default to JSON5, because most `.json` files that fail as JSON are config
     /// files with comments.
     pub fn for_path(path: &Path) -> Option<Dialect> {
-        let name = path.file_name()?.to_str()?;
-        let (_, ext) = name.rsplit_once('.').unwrap_or_default();
-        let find = |table: &[(&str, Dialect)], key: &str| {
-            table.iter().find(|(k, _)| *k == key).map(|&(_, d)| d)
+        // Bytes, so a name that is not UTF-8 still matches: every key is ASCII.
+        let name = path.file_name()?.as_encoded_bytes();
+        let ext = name
+            .iter()
+            .rposition(|&b| b == b'.')
+            .map_or(&[][..], |dot| &name[dot + 1..]);
+        let find = |table: &[(&str, Dialect)], key: &[u8]| {
+            table
+                .iter()
+                .find(|(k, _)| k.as_bytes() == key)
+                .map(|&(_, d)| d)
         };
         find(Self::FILE_NAMES, name).or_else(|| find(Self::EXTENSIONS, ext))
     }
@@ -160,6 +167,23 @@ impl FromStr for Dialect {
 #[cfg(test)]
 mod tests {
     use super::Dialect;
+
+    /// A name that is not UTF-8 still has an extension, so a walk checks the file.
+    #[cfg(unix)]
+    #[test]
+    fn a_name_that_is_not_utf8_takes_its_extensions_dialect() {
+        use std::os::unix::ffi::OsStrExt;
+        let path = |name: &[u8]| std::path::PathBuf::from(std::ffi::OsStr::from_bytes(name));
+        assert_eq!(
+            Dialect::for_path(&path(b"c\xff.json")),
+            Some(Dialect::Json5)
+        );
+        assert_eq!(
+            Dialect::for_path(&path(b"d/c\xff.jsonl")),
+            Some(Dialect::JsonLines)
+        );
+        assert_eq!(Dialect::for_path(&path(b"c.json\xff")), None);
+    }
 
     #[test]
     fn all_lists_every_dialect_at_its_index() {

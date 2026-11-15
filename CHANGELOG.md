@@ -32,6 +32,8 @@ version for a new option or output, the patch version for a fix.
 - `--fix` and `jsonvet fmt` on Unix create the temporary file with the file's permissions, so the
   new text of a file only its owner may read is never readable by others, even for a moment or in
   a temporary file a killed run leaves behind.
+- A folder walk checks a file whose name is not UTF-8, such as `c<0xff>.json`, by its extension.
+  It skipped such a file and exited 0. `Dialect::for_path` now matches the name's bytes.
 
 ## [3.4.0] - 2026-11-11
 
