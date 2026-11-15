@@ -1,5 +1,5 @@
 {
- "date": "2026-11-10",
+ "date": "2026-11-15",
  "timeout": 10,
  "parsers": {
   "js-json5": {
@@ -173,7 +173,7 @@
   "jsonvet-json": {
    "language": "jsonvet",
    "package": "jsonvet",
-   "version": "3.4.0 (51501e0)",
+   "version": "3.5.0 (adaa25c)",
    "uses": [
     "json"
    ]
@@ -181,7 +181,7 @@
   "jsonvet-json5": {
    "language": "jsonvet",
    "package": "jsonvet",
-   "version": "3.4.0 (51501e0)",
+   "version": "3.5.0 (adaa25c)",
    "uses": [
     "json5"
    ]
@@ -189,7 +189,7 @@
   "jsonvet-jsonc": {
    "language": "jsonvet",
    "package": "jsonvet",
-   "version": "3.4.0 (51501e0)",
+   "version": "3.5.0 (adaa25c)",
    "uses": [
     "jsonc"
    ]
@@ -197,7 +197,7 @@
   "jsonvet-jwcc": {
    "language": "jsonvet",
    "package": "jsonvet",
-   "version": "3.4.0 (51501e0)",
+   "version": "3.5.0 (adaa25c)",
    "uses": [
     "jwcc"
    ]
@@ -205,7 +205,7 @@
   "jsonvet-jsonl": {
    "language": "jsonvet",
    "package": "jsonvet",
-   "version": "3.4.0 (51501e0)",
+   "version": "3.5.0 (adaa25c)",
    "uses": [
     "jsonl"
    ]
@@ -213,7 +213,7 @@
   "jsonvet-dupes": {
    "language": "jsonvet",
    "package": "jsonvet",
-   "version": "3.4.0 (51501e0)",
+   "version": "3.5.0 (adaa25c)",
    "uses": [
     "dupes"
    ]
