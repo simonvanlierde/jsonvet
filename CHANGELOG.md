@@ -29,6 +29,9 @@ version for a new option or output, the patch version for a fix.
 - A glob that starts with `./` or ends with `/`, such as `files = "./c.json"` or
   `exclude = ["gen/"]`, matches the path it names: globs are normalized as paths are. It matched
   nothing before, so a `dialects` entry with `./c.json` left the file in its default dialect.
+- `--fix` and `jsonvet fmt` on Unix create the temporary file with the file's permissions, so the
+  new text of a file only its owner may read is never readable by others, even for a moment or in
+  a temporary file a killed run leaves behind.
 
 ## [3.4.0] - 2026-11-11
 
