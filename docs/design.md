@@ -266,7 +266,9 @@ A pushed `vX.Y.Z` tag starts `release.yml`, not a published GitHub release, so t
 immutable. The workflow publishes to PyPI and crates.io by trusted publishing, then publishes the
 GitHub release it drafted, with the binary archives, the SBOM and `SHA256SUMS`. The archives hold
 the binaries from the wheels, so PyPI and the GitHub release ship the same bytes. Every file gets
-a build provenance attestation ([SECURITY.md](../SECURITY.md#verifying-a-release)). The binaries
+a build provenance attestation, the binaries an attestation of the SBOM, and the release carries
+both bundles ([SECURITY.md](../SECURITY.md#verifying-a-release)). The release fails when the SBOM
+lists no components. The binaries
 are not built with `cargo auditable`, which maturin cannot run without a cargo wrapper in every
 build container, so the SBOM lists the dependencies instead.
 

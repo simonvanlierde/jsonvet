@@ -88,7 +88,11 @@ gh attestation verify jsonvet-x86_64-unknown-linux-gnu.tar.gz --repo simonvanlie
   --signer-workflow simonvanlierde/jsonvet/.github/workflows/release.yml
 ```
 
-The same works on a wheel downloaded from PyPI (`pip download jsonvet --no-deps`). PyPI also
+The same works on a wheel downloaded from PyPI (`pip download jsonvet --no-deps`). The release
+also holds the attestations as `jsonvet.intoto.jsonl`, so `--bundle jsonvet.intoto.jsonl` checks a
+file without asking GitHub for them. The binaries and the jsonvet wheels also have an attestation
+of the SBOM, `jsonvet.cdx.intoto.jsonl` on the release: add
+`--predicate-type https://cyclonedx.org/bom` to check it. PyPI also
 shows the wheels' own PEP 740 attestations on each file's page. To check downloaded archives
 against the release's checksums, run `sha256sum --check --ignore-missing SHA256SUMS`.
 

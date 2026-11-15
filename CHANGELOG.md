@@ -13,6 +13,11 @@ version for a new option or output, the patch version for a fix.
 - `fill-numbers = true` in `[format]` or `per-file-format` puts as many numbers on each line as
   fit in an array of numbers only, as Prettier does. An array with a comment or a blank line in it
   keeps one number per line. Off by default ([fill-numbers](docs/format.md#fill-numbers)).
+- The GitHub release holds its attestations as `jsonvet.intoto.jsonl`, for
+  `gh attestation verify --bundle` without fetching them from GitHub. The binaries and the jsonvet
+  wheels also get an attestation of the SBOM, `jsonvet.cdx.intoto.jsonl`
+  ([verifying a release](SECURITY.md#verifying-a-release)).
+- The check-json5 package ships its licence file.
 - The docs are published as pages at <https://simonvanlierde.com/jsonvet/docs/>.
 - The social card is redesigned.
 
