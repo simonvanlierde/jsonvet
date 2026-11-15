@@ -155,4 +155,5 @@ preview-out/
 
 # The docs pages, built by scripts/docs-site/build.mjs
 /playground/docs/
+/playground/404.html
 /scripts/docs-site/node_modules/

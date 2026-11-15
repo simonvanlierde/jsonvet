@@ -249,3 +249,28 @@ test("a file's text names its invisible characters, and its share link opens the
   assert.ok(text.startsWith(bom));
   assert.deepEqual(await decode(`${dialect}:${data}`), { dialect: "json5", text });
 });
+
+test("each page has a canonical address and the social card's tags", () => {
+  const card = readFileSync(resolve(ROOT, "playground/index.html"), "utf8").match(
+    /property="og:image" content="([^"]+)"/,
+  )[1];
+  for (const [path, text] of Object.entries(html)) {
+    for (const tag of [
+      'rel="canonical"',
+      'property="og:title"',
+      'property="og:description"',
+      'property="og:url"',
+      'name="twitter:card"',
+    ])
+      assert.ok(text.includes(tag), `${path} ${tag}`);
+    assert.ok(text.includes(`property="og:image" content="${card}"`), `${path}: the playground's card`);
+  }
+});
+
+test("a 404 page sits at the site's root, styled by absolute paths and kept out of search", () => {
+  const text = readFileSync(resolve(site, "404.html"), "utf8");
+  assert.match(text, /<h1 id="page-not-found">/);
+  assert.match(text, /href="\/jsonvet\/style\.css/);
+  assert.match(text, /name="robots" content="noindex"/);
+  assert.doesNotMatch(text, /rel="canonical"|<nav/);
+});

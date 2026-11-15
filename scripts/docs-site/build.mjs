@@ -4,6 +4,7 @@
 // not exist stops the build. It also writes search-index.js for playground/search.mjs. COMMIT, when
 // set, is stamped on the style and script URLs as pages.yml stamps the playground's.
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { posix, resolve } from "node:path";
 import { Marked, Parser, Renderer } from "marked";
@@ -13,6 +14,12 @@ import { matrixPage } from "./matrix.mjs";
 export const ROOT = resolve(import.meta.dirname, "../..");
 export const REPO = "https://github.com/simonvanlierde/jsonvet";
 const SITE = "https://simonvanlierde.com/jsonvet/";
+// The social card is the playground's: the same image, alt text and cache-busting hash.
+const CARD = readFileSync(resolve(import.meta.dirname, "../../playground/og.png"));
+const CARD_ALT = readFileSync(resolve(import.meta.dirname, "../../playground/index.html"), "utf8").match(
+  /og:image:alt" content="([^"]*)"/,
+)[1];
+const CARD_URL = `${SITE}og.png?v=${createHash("sha256").update(CARD).digest("hex").slice(0, 8)}`;
 const CSP =
   "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'";
 
@@ -166,8 +173,12 @@ function render(src, pages, subs) {
   };
 }
 
-function page({ out, src, title, summary, body, h2s = [] }, stamp) {
-  const up = "../".repeat(out.split("/").length);
+/**
+ * One page. A `bare` page (the 404) has no nav, and its `up` is absolute, since it is served at
+ * any depth.
+ */
+function page({ out, src, title, summary, body, h2s = [], bare = false }, stamp) {
+  const up = bare ? "/jsonvet/" : "../".repeat(out.split("/").length);
   const section = src.startsWith("docs/decisions/") ? "docs/decisions/README.md" : src;
   const nav = NAV.map(([file, label]) => {
     const href = linkTo(out, pageOf(file));
@@ -189,7 +200,20 @@ function page({ out, src, title, summary, body, h2s = [] }, stamp) {
 <title>${esc(title)} · jsonvet docs</title>
 <link rel="icon" href="${up}favicon.svg" type="image/svg+xml">
 <meta name="description" content="${esc(summary)}">
-<link rel="canonical" href="${SITE}docs/${out.replace(/(^|\/)index\.html$/, "$1")}">
+${
+  bare
+    ? '<meta name="robots" content="noindex">'
+    : `<link rel="canonical" href="${SITE}docs/${out.replace(/(^|\/)index\.html$/, "$1")}">
+<meta property="og:type" content="website">
+<meta property="og:title" content="${esc(title)} · jsonvet docs">
+<meta property="og:description" content="${esc(summary)}">
+<meta property="og:url" content="${SITE}docs/${out.replace(/(^|\/)index\.html$/, "$1")}">
+<meta property="og:image" content="${CARD_URL}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="${CARD_ALT}">
+<meta name="twitter:card" content="summary_large_image">`
+}
 <meta name="theme-color" content="#fbfaf5" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1b1915" media="(prefers-color-scheme: dark)">
 <link rel="stylesheet" href="${up}style.css${stamp}">
@@ -203,15 +227,15 @@ function page({ out, src, title, summary, body, h2s = [] }, stamp) {
   <p class="slug-part"><span><a href="${up}"><b>jsonvet</b></a></span><span>docs</span><span>${esc(title)}</span></p>
   <p class="slug-part"><span><a href="${up}">playground</a></span>${source}</p>
 </header>
-<div class="wrap docs">
-<nav aria-label="Docs">
+<div class="wrap docs${bare ? " bare" : ""}">
+${bare ? "" : `<nav aria-label="Docs">
 <search id="docs-search" class="find" hidden>
 <label for="docs-q">Search the docs</label>
 <input id="docs-q" type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="docs-results" autocomplete="off" spellcheck="false" placeholder="Press / to search">
 <p class="vh" role="status"></p>
 <ul id="docs-results" role="listbox" aria-label="Search results" hidden></ul>
 </search>
-<ul>${nav}</ul></nav>
+<ul>${nav}</ul></nav>`}
 <main id="content" class="prose">
 ${body}</main>
 </div>
@@ -277,6 +301,21 @@ export function build(outDir, commit = "") {
     summary: "The jsonvet reference, design notes, conformance matrix and decision records.",
     body: `<h1 id="jsonvet-docs">jsonvet docs</h1>\n<ul class="contents">\n${list}\n</ul>\n`,
   });
+  // GitHub Pages serves this file for any address under the site that has no page.
+  writeFileSync(
+    resolve(outDir, "../404.html"),
+    page(
+      {
+        out: "404.html",
+        src: "",
+        title: "Page not found",
+        summary: "There is no page at this address.",
+        bare: true,
+        body: `<h1 id="page-not-found">Page not found</h1>\n<p>There is no page at this address. Try the <a href="/jsonvet/">playground</a> or the <a href="/jsonvet/docs/">docs contents</a>.</p>\n`,
+      },
+      stamp,
+    ),
+  );
   rmSync(outDir, { recursive: true, force: true });
   for (const doc of rendered) {
     mkdirSync(resolve(outDir, posix.dirname(doc.out)), { recursive: true });

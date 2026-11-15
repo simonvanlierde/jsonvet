@@ -6,6 +6,7 @@
 /* WCAG 2.2 target size (2.5.8), as the playground's own links have it. */
 .slug a { display: inline-block; min-height: 24px; line-height: 24px; }
 .docs { flex: 1; display: grid; grid-template-columns: 11rem minmax(0, 1fr); gap: 0 48px; padding-block: 18px 0; }
+.docs.bare { grid-template-columns: minmax(0, 1fr); }
 .docs nav ul { position: sticky; top: 18px; margin: 0; padding: 0; list-style: none; font: 13px/1.6 var(--mono); }
 .docs nav a { display: block; min-height: 24px; padding: 3px 0 3px 10px; color: var(--faint); text-decoration: none; }
 .docs nav a:hover { color: var(--ink); }
