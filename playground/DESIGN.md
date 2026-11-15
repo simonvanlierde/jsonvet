@@ -249,7 +249,7 @@ after a syntax error, why the marks are off for a big text, and the drop and F8 
 
 #### Use this check
 
-A `details` fold, closed by default, with a tab list (pre-commit or prek hook, GitHub Action,
+A `details` fold, open by default from 860px and closed below, with a tab list (pre-commit or prek hook, GitHub Action,
 command line), arrow keys between tabs. Each panel holds a focusable, scrolling `pre` on the tint
 and a copy icon in its corner, as in the options popovers. The snippets use the version from the wasm's `version()` and add
 `--dialect DIALECT:*.json` for any dialect but JSON5. Each panel holds the check, then the same
@@ -298,5 +298,5 @@ table's place; below that they follow the table.
 - Do build message text as DOM nodes; never pass it through `innerHTML`.
 - Don't add inline style or script, external fonts or any other host: the CSP refuses them, and
   `smoke.mjs` checks it. Positions set from script go through the CSSOM.
-- Don't add a second accent, a title block, boxes round the proof, rounded corners or shadows.
+- Don't add a second accent, a title block beyond the one-line h1 above the dialects, boxes round the proof, rounded corners or shadows.
 - Don't use the pen for anything that is not a correction.

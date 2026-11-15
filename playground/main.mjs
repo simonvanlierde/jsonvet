@@ -67,6 +67,8 @@ const MAX_LINK = 50_000;
 const MAX_FILE = 10 << 20;
 const none = new Uint32Array(0);
 const wide = matchMedia("(min-width: 860px)");
+// The "Use this check" fold starts open on a wide screen, where it costs no first-screen room.
+document.querySelector(".use").open = wide.matches;
 
 // pages.yml stamps the commit on main.mjs's URL, so the files it loads match the ones deployed.
 const version = new URL(import.meta.url).search;
