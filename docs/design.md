@@ -58,15 +58,15 @@ are intended, besides the line ends and paths above:
 
 <!-- speed:start -->
 Median of 40 runs of jsonvet from `uv run scripts/bench.py`, on 4 cores of an EPYC 9V74 under Linux
-(2026-11-11), of 10 for 1.4.1 and of 3 for 1.0.1. Every tool gives the same verdict in every case:
+(2026-11-15), of 10 for 1.4.1 and of 3 for 1.0.1. Every tool gives the same verdict in every case:
 
-| Case                       | check-json5 1.0.1 | check-json5 1.4.1 | jsonvet 3.4 | Speed-up over 1.4.1 | over 1.0.1 |
+| Case                       | check-json5 1.0.1 | check-json5 1.4.1 | jsonvet 3.5 | Speed-up over 1.4.1 | over 1.0.1 |
 | -------------------------- | ----------------: | ----------------: | ----------: | ------------------: | ---------: |
-| 1,100 config files         |          2,732 ms |             48 ms |      6.6 ms |                  7x |       417x |
-| 2.7 MB JSON                |         15,145 ms |             53 ms |      9.1 ms |                  6x |     1,657x |
-| 2.7 MB JSON, duplicate key |         14,888 ms |            488 ms |     12.5 ms |                 39x |     1,189x |
-| 120 KB JSONC               |            738 ms |             28 ms |      1.7 ms |                 16x |       422x |
-| 1.8 MB JSON5               |         17,252 ms |         17,087 ms |      8.9 ms |              1,916x |     1,934x |
+| 1,100 config files         |          2,476 ms |             43 ms |      5.6 ms |                  8x |       443x |
+| 2.7 MB JSON                |         13,043 ms |             47 ms |      7.9 ms |                  6x |     1,659x |
+| 2.7 MB JSON, duplicate key |         13,496 ms |            428 ms |     10.8 ms |                 39x |     1,245x |
+| 120 KB JSONC               |            665 ms |             24 ms |      1.6 ms |                 15x |       426x |
+| 1.8 MB JSON5               |         15,343 ms |         15,453 ms |      7.9 ms |              1,965x |     1,951x |
 <!-- speed:end -->
 
 1.4 sent strict JSON and JSONC to Python's C parser, so those were already fast, and everything
