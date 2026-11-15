@@ -68,7 +68,8 @@ export function shown(bytes) {
 
 function cellOf(column, run) {
   const words = `${VERDICT[run.verdict]}, ${MARK[run.mark]}`;
-  return `<td title="${esc(`${column} ${words}`)}"><span aria-hidden="true">${run.mark}</span><span class="vh">${words}</span></td>`;
+  const bad = run.mark === "✗" || run.mark === "‼" ? ' class="bad"' : "";
+  return `<td${bad} title="${esc(`${column} ${words}`)}"><span aria-hidden="true">${run.mark}</span><span class="vh">${words}</span></td>`;
 }
 
 function dialectTable(d) {
@@ -141,6 +142,7 @@ ${f.note ? `<p class="why">${inline(f.note)}</p>` : ""}`;
   });
   return `<section class="detail" id="${esc(fileId(path))}">
 <h2>${esc(short(path))}</h2>
+<p class="back"><a href="#conformance-matrix">Back to the matrix</a></p>
 <p class="meta"><span>${bytes.length.toLocaleString("en")} bytes</span><span><a href="${fileUrl(path)}">on GitHub</a></span></p>
 ${shownText}
 ${dialects.join("\n")}
@@ -164,6 +166,7 @@ ${list}`;
     });
   return `<section class="detail" id="parser/${name}">
 <h2>${name}</h2>
+<p class="back"><a href="#conformance-matrix">Back to the matrix</a></p>
 <p class="meta"><span>${esc(info.language)}</span>${info.package ? `<span>${esc(info.package)}</span>` : ""}<span>${esc(info.version)}</span></p>
 ${parts.join("\n")}
 </section>`;

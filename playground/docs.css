@@ -90,10 +90,14 @@
 .matrix .dialect th, .matrix .dialect td { padding: 2px 6px; text-align: center; white-space: nowrap; }
 .matrix .dialect th[scope="row"], .matrix .dialect thead th:first-child { position: sticky; left: 0; z-index: 1; min-width: 9rem; max-width: 15rem; text-align: left; white-space: normal; overflow-wrap: anywhere; background: var(--paper); }
 .matrix .dialect td:nth-child(2), .matrix .dialect thead th:nth-child(2) { text-align: left; color: var(--faint); }
-.matrix .dialect thead th { vertical-align: bottom; font-weight: 400; }
+.matrix .dialect thead th { position: sticky; top: 0; z-index: 2; background: var(--paper); vertical-align: bottom; font-weight: 400; }
+.matrix .dialect thead th:first-child { z-index: 3; }
+.matrix .dialect td.bad { font-weight: 700; background: var(--tint); }
+.detail .back { margin: 0 0 4px; font-size: .9375rem; }
+@media (max-width: 480px) { .matrix .dialect th[scope="row"], .matrix .dialect thead th:first-child { min-width: 0; max-width: 6.5rem; font-size: 11px; } }
 .matrix th.run span { writing-mode: vertical-rl; transform: rotate(180deg); }
 .matrix th.run a { display: inline-block; min-width: 24px; padding: 4px 0; }
-.matrix .group th { padding-top: 12px; text-align: left; color: var(--faint); font-weight: 400; background: var(--paper); }
+.matrix .group th { position: sticky; left: 0; padding-top: 12px; text-align: left; color: var(--faint); font-weight: 400; background: var(--paper); }
 .matrix tbody th a { display: inline-block; min-height: 24px; line-height: 24px; }
 .matrix tr.some td { font-weight: 600; }
 
