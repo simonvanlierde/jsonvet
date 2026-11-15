@@ -504,7 +504,7 @@ mod tests {
         let frame = frames("[1 2]");
         assert!(
             frame.ends_with(
-                "\n  = help: https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#syntax\n"
+                "\n  = help: https://simonvanlierde.com/jsonvet/docs/usage.html#syntax\n"
             ),
             "{frame}"
         );

@@ -75,7 +75,7 @@ pub(crate) fn start() -> String {
         concat!(
             r#"{{"$schema":"https://json.schemastore.org/sarif-2.1.0.json","version":"2.1.0","#,
             r#""runs":[{{"tool":{{"driver":{{"name":"jsonvet","version":"{}","#,
-            r#""informationUri":"https://github.com/simonvanlierde/jsonvet","rules":[{}]}}}},"#,
+            r#""informationUri":"https://simonvanlierde.com/jsonvet/","rules":[{}]}}}},"#,
             // Relative URIs name `%SRCROOT%`, which SARIF wants declared. It has no `uri`: the
             // working directory's absolute path would make the output differ by machine, and
             // GitHub code scanning resolves it against the checkout.

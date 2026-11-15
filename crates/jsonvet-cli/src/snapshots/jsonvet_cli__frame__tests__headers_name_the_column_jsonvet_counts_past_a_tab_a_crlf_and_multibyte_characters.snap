@@ -13,4 +13,4 @@ error[duplicate-key]: duplicate key $["é中"]
 2 |     "é中": 1,
   |     - here
   |
-  = help: https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#duplicate-key
+  = help: https://simonvanlierde.com/jsonvet/docs/usage.html#duplicate-key

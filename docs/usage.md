@@ -487,8 +487,8 @@ jsonvet --format json config.json5 | jq -r '.diagnostics[] | "\(.file):\(.line) 
 
 ```json
 {"version":1,"diagnostics":[
-{"file":"dup.json","rule":"duplicate-key","url":"https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#duplicate-key","severity":"error","message":"duplicate key $.a (first at 2:3)","line":3,"column":3,"offset":14,"related":[{"message":"first copy","line":2,"column":3,"offset":4}]},
-{"file":"gone.json","rule":"unreadable","url":"https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#unreadable","severity":"error","message":"no such file","line":null,"column":null,"offset":null,"related":[]}
+{"file":"dup.json","rule":"duplicate-key","url":"https://simonvanlierde.com/jsonvet/docs/usage.html#duplicate-key","severity":"error","message":"duplicate key $.a (first at 2:3)","line":3,"column":3,"offset":14,"related":[{"message":"first copy","line":2,"column":3,"offset":4}]},
+{"file":"gone.json","rule":"unreadable","url":"https://simonvanlierde.com/jsonvet/docs/usage.html#unreadable","severity":"error","message":"no such file","line":null,"column":null,"offset":null,"related":[]}
 ]}
 ```
 

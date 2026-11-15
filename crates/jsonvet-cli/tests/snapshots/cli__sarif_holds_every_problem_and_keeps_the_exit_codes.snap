@@ -78,7 +78,7 @@ expression: "serde_json::to_string_pretty(&sarif).expect(\"JSON\")"
       ],
       "tool": {
         "driver": {
-          "informationUri": "https://github.com/simonvanlierde/jsonvet",
+          "informationUri": "https://simonvanlierde.com/jsonvet/",
           "name": "jsonvet",
           "rules": [
             {
@@ -88,7 +88,7 @@ expression: "serde_json::to_string_pretty(&sarif).expect(\"JSON\")"
               "help": {
                 "text": "The file is not valid in its dialect: a missing or extra comma, a comment in strict JSON, an unclosed string. jsonvet reports the first one and stops there, since what follows cannot be read reliably. --fix removes a trailing comma where the dialect forbids it.\n\n  Bad (json):  {\"a\": 1,}\n  Good (json): {\"a\": 1}"
               },
-              "helpUri": "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#syntax",
+              "helpUri": "https://simonvanlierde.com/jsonvet/docs/usage.html#syntax",
               "id": "syntax",
               "shortDescription": {
                 "text": "the first syntax error; checking stops there"
@@ -101,7 +101,7 @@ expression: "serde_json::to_string_pretty(&sarif).expect(\"JSON\")"
               "help": {
                 "text": "Most parsers keep the last copy of a repeated key and drop the others without a word, so a value is lost; RFC 8259 leaves the result undefined. The message gives the key's JSONPath and where its first copy is. --fix --unsafe-fixes keeps the last copy and drops the others.\n\n  Bad:  {\"port\": 80, \"port\": 8080}\n  Good: {\"port\": 8080}"
               },
-              "helpUri": "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#duplicate-key",
+              "helpUri": "https://simonvanlierde.com/jsonvet/docs/usage.html#duplicate-key",
               "id": "duplicate-key",
               "shortDescription": {
                 "text": "a key repeated in one object"
@@ -114,7 +114,7 @@ expression: "serde_json::to_string_pretty(&sarif).expect(\"JSON\")"
               "help": {
                 "text": "I-JSON (RFC 7493) asks for numbers a double can hold, and for integers within 2^53 - 1 either side of zero, so that every parser reads them the same. jsonvet reports an overflow, and an integer written as digits alone past that limit.\n\n  Bad (i-json):  {\"id\": 9007199254740993}\n  Good (i-json): {\"id\": \"9007199254740993\"}"
               },
-              "helpUri": "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#invalid-number",
+              "helpUri": "https://simonvanlierde.com/jsonvet/docs/usage.html#invalid-number",
               "id": "invalid-number",
               "shortDescription": {
                 "text": "a number a double cannot hold, or an integer past 2^53 - 1"
@@ -127,7 +127,7 @@ expression: "serde_json::to_string_pretty(&sarif).expect(\"JSON\")"
               "help": {
                 "text": "I-JSON (RFC 7493) forbids lone surrogates and noncharacters in strings: many decoders reject them or replace them with U+FFFD.\n\n  Bad (i-json):  {\"a\": \"\\ud800\"}\n  Good (i-json): {\"a\": \"\\ud83d\\ude00\"}"
               },
-              "helpUri": "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#invalid-code-point",
+              "helpUri": "https://simonvanlierde.com/jsonvet/docs/usage.html#invalid-code-point",
               "id": "invalid-code-point",
               "shortDescription": {
                 "text": "a lone surrogate or a noncharacter in a string"
@@ -140,7 +140,7 @@ expression: "serde_json::to_string_pretty(&sarif).expect(\"JSON\")"
               "help": {
                 "text": "RFC 8259 says JSON text must not start with a byte order mark (U+FEFF), and many parsers fail on one. Save the file as UTF-8 without a BOM. --fix removes it.\n\n  Bad:  <U+FEFF>{\"a\": 1}\n  Good: {\"a\": 1}"
               },
-              "helpUri": "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#byte-order-mark",
+              "helpUri": "https://simonvanlierde.com/jsonvet/docs/usage.html#byte-order-mark",
               "id": "byte-order-mark",
               "shortDescription": {
                 "text": "a byte order mark at the start of the file"
@@ -153,7 +153,7 @@ expression: "serde_json::to_string_pretty(&sarif).expect(\"JSON\")"
               "help": {
                 "text": "JSON Lines ends every record with a newline. Without one, the next record appended joins the last line and breaks it. --fix adds it.\n\n  Bad (jsonl):  {\"a\": 1}<end of file>\n  Good (jsonl): {\"a\": 1}<newline>"
               },
-              "helpUri": "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#missing-final-newline",
+              "helpUri": "https://simonvanlierde.com/jsonvet/docs/usage.html#missing-final-newline",
               "id": "missing-final-newline",
               "shortDescription": {
                 "text": "a JSON Lines file that does not end with a newline"
@@ -166,7 +166,7 @@ expression: "serde_json::to_string_pretty(&sarif).expect(\"JSON\")"
               "help": {
                 "text": "A file that uses more than one kind of line ending (LF, CRLF or a lone CR) shows whole files as changed in a diff, and tools split its lines differently. jsonvet reports the first ending that differs from the file's first one. --fix rewrites every ending to the first one.\n\n  Bad:  {\"a\": 1,<CRLF>\"b\": 2,<LF>\"c\": 3}\n  Good: {\"a\": 1,<CRLF>\"b\": 2,<CRLF>\"c\": 3}"
               },
-              "helpUri": "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#mixed-line-endings",
+              "helpUri": "https://simonvanlierde.com/jsonvet/docs/usage.html#mixed-line-endings",
               "id": "mixed-line-endings",
               "shortDescription": {
                 "text": "a file that mixes LF, CRLF and CR line endings"
@@ -179,7 +179,7 @@ expression: "serde_json::to_string_pretty(&sarif).expect(\"JSON\")"
               "help": {
                 "text": "In jsonc, jwcc and json5, a comment jsonvet-ignore RULE turns RULE off for the next line that starts with a token. Name more rules with commas, and give a reason after --. This rule reports a name in such a comment that hides nothing, is no rule, is a rule that is always an error (syntax, unreadable or schema), is a rule about the whole file (byte-order-mark, mixed-line-endings or missing-final-newline), or repeats a rule that an earlier name already gives for the same line. A name whose rule is off for the file is not reported. A suppression that names unused-suppression hides nothing, so it is reported too.\n\n  Bad:  {\"a\": 1, // jsonvet-ignore duplicate-key<newline>\"b\": 2}\n  Good: {\"a\": 1,<newline>\"b\": 2}"
               },
-              "helpUri": "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#unused-suppression",
+              "helpUri": "https://simonvanlierde.com/jsonvet/docs/usage.html#unused-suppression",
               "id": "unused-suppression",
               "shortDescription": {
                 "text": "a jsonvet-ignore comment that hides nothing or names a rule it cannot hide"
@@ -192,7 +192,7 @@ expression: "serde_json::to_string_pretty(&sarif).expect(\"JSON\")"
               "help": {
                 "text": "jsonvet could not check the file at all: it does not exist, is a device, FIFO or socket, could not be read, or is not UTF-8. It always fails the run, and no option changes that."
               },
-              "helpUri": "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#unreadable",
+              "helpUri": "https://simonvanlierde.com/jsonvet/docs/usage.html#unreadable",
               "id": "unreadable",
               "shortDescription": {
                 "text": "a file that does not exist, is not a regular file, could not be read, or is not UTF-8"
@@ -205,7 +205,7 @@ expression: "serde_json::to_string_pretty(&sarif).expect(\"JSON\")"
               "help": {
                 "text": "A value the file's JSON Schema rejects, such as a missing required key or a string where the schema wants a number. The schema comes from --schema, the config file's schemas or a local $schema in the file, then falls back to SchemaStore when --schema-catalog is on. Always an error: --error, --warn, --ignore and settings files do not take this rule."
               },
-              "helpUri": "https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#schema",
+              "helpUri": "https://simonvanlierde.com/jsonvet/docs/usage.html#schema",
               "id": "schema",
               "shortDescription": {
                 "text": "a value the file's JSON Schema rejects"

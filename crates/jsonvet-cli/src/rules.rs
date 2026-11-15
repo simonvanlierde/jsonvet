@@ -7,9 +7,9 @@ use jsonvet::{Dialect, Rule, Severity};
 use crate::messages;
 use crate::sarif::{SCHEMA, UNREADABLE};
 
-/// Where each rule's section is: `docs/usage.md#<id>` on GitHub.
+/// Where each rule's section is: `docs/usage.md#<id>`, as the published page.
 pub(crate) fn help_uri(id: &str) -> String {
-    format!("https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#{id}")
+    format!("https://simonvanlierde.com/jsonvet/docs/usage.html#{id}")
 }
 
 /// Every rule a problem can come under, in the order the docs list them: the library's rules,

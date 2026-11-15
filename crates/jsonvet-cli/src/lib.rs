@@ -1685,7 +1685,7 @@ mod tests {
             (
                 1,
                 "error[syntax]: expected a value, found `True`; did you mean `true`?\n \
-                 --> l.jsonl:2:7\n  |\n2 | {\"a\": True}\n  |       ^^^^\n  |\n  = help: https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#syntax\n\n\
+                 --> l.jsonl:2:7\n  |\n2 | {\"a\": True}\n  |       ^^^^\n  |\n  = help: https://simonvanlierde.com/jsonvet/docs/usage.html#syntax\n\n\
                  1 error in 1 of 1 file\n"
                     .to_owned()
             )
@@ -1695,7 +1695,7 @@ mod tests {
             (
                 1,
                 "error[schema]: 1 is not of type \"string\" (at $.a)\n \
-                 --> d.json:2:8\n  |\n2 |   \"a\": 1\n  |        ^\n  |\n  = help: https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#schema\n\n\
+                 --> d.json:2:8\n  |\n2 |   \"a\": 1\n  |        ^\n  |\n  = help: https://simonvanlierde.com/jsonvet/docs/usage.html#schema\n\n\
                  1 error in 1 of 1 file\n"
                     .to_owned()
             )

@@ -157,6 +157,13 @@ test("the playground's links into the pages resolve", () => {
   assert.deepEqual(broken, []);
 });
 
+test("the CLI links each rule to a page the site publishes", () => {
+  const src = readFileSync(resolve(ROOT, "crates/jsonvet-cli/src/rules.rs"), "utf8");
+  const [, ref, prefix] = src.match(/"https:\/\/simonvanlierde\.com\/jsonvet\/(docs\/usage\.html)(#)\{id\}"/) ?? [];
+  assert.equal(prefix, "#", "help_uri points at the site's usage page");
+  assert.ok(html[ref]);
+});
+
 test("the matrix page has a table per dialect, and details for every file and parser", () => {
   const page = html["docs/matrix.html"];
   const data = JSON.parse(readFileSync(resolve(ROOT, "docs/conformance.json"), "utf8"));

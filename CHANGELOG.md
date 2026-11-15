@@ -29,6 +29,7 @@ version for a new option or output, the patch version for a fix.
 
 ### Changed
 
+- The help link under each diagnostic, the `url` in JSON output, the SARIF `helpUri` and `informationUri`, and the package `documentation` field point at the published pages on simonvanlierde.com, not at files on GitHub.
 - The Linux glibc wheels are built for `manylinux_2_28`, not `manylinux2014`, so they need glibc
   2.28 or newer (Debian 10, Ubuntu 20.04, RHEL 8). RHEL 7, Amazon Linux 2 and Ubuntu 18.04 fall
   back to the source distribution, which needs Rust. The musllinux wheels are unchanged.
