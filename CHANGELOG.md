@@ -8,6 +8,8 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-11-15
+
 ### Added
 
 - `fill-numbers = true` in `[format]` or `per-file-format` puts as many numbers on each line as
@@ -813,7 +815,8 @@ hook's output, or imports `pre_commit_hooks.check_json5`, needs a change (see Ch
 
 - Renamed from `pre-commit-check-json5` to `check-json5`.
 
-[Unreleased]: https://github.com/simonvanlierde/jsonvet/compare/v3.4.0...HEAD
+[Unreleased]: https://github.com/simonvanlierde/jsonvet/compare/v3.5.0...HEAD
+[3.5.0]: https://github.com/simonvanlierde/jsonvet/compare/v3.4.0...v3.5.0
 [3.4.0]: https://github.com/simonvanlierde/jsonvet/compare/v3.3.1...v3.4.0
 [3.3.1]: https://github.com/simonvanlierde/jsonvet/compare/v3.3.0...v3.3.1
 [3.3.0]: https://github.com/simonvanlierde/jsonvet/compare/v3.2.0...v3.3.0

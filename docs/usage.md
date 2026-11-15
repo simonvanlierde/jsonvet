@@ -77,7 +77,7 @@ run, so you review the change and commit again.
 
 ```yaml
 - repo: https://github.com/simonvanlierde/jsonvet
-  rev: v3.4.0
+  rev: v3.5.0
   hooks:
     - id: jsonvet
       args: [--fix]
