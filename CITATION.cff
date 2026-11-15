@@ -14,7 +14,9 @@ identifiers:
   - type: doi
     value: "10.5281/zenodo.23461825"
     description: "All versions of jsonvet"
-license: "MIT OR Apache-2.0"
+license:
+  - MIT
+  - Apache-2.0
 keywords:
   - "json"
   - "json5"
