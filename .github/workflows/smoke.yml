@@ -1,0 +1,71 @@
+name: smoke
+
+# Installs each built wheel and runs it. Called by release.yml, before anything uploads, and by
+# wheels-check.yml, so a wheel that installs but does not run fails on the pull request. It
+# downloads the artifacts of a `wheels.yml` run with `upload: true`; it publishes nothing.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  # The uv release.yml pins; Renovate bumps all of them together.
+  PINNED_UV: "0.13.5"
+
+jobs:
+  # Install each wheel a hosted runner can run from what the matrix built, and run it, before
+  # anything uploads. The musl wheels run in smoke-musl; the aarch64 musl wheel is cross-built and
+  # published untested.
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-latest, wheel: wheels-ubuntu-latest-x86_64-auto}
+          - {os: macos-latest, wheel: wheels-macos-latest-aarch64-apple-darwin-native}
+          - {os: windows-latest, wheel: wheels-windows-latest-x86_64-pc-windows-msvc-native}
+          # An Intel runner, since the macOS x86-64 wheel is cross-built on Apple silicon.
+          - {os: macos-15-intel, wheel: wheels-macos-latest-x86_64-apple-darwin-native}
+          - {os: ubuntu-24.04-arm, wheel: wheels-ubuntu-latest-aarch64-auto}
+          - {os: windows-11-arm, wheel: wheels-windows-latest-aarch64-pc-windows-msvc-native}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      # For scripts/smoke.py only; the wheels come from the artifacts.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ matrix.wheel }}
+          path: dist/
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: ${{ env.PINNED_UV }}
+          enable-cache: false
+      - run: uv build --out-dir compat-dist compat/check-json5
+      - shell: bash
+        run: uv run scripts/smoke.py dist/*.whl compat-dist/*.whl
+
+  # The musllinux x86-64 wheel in Alpine, whose libc it is built for. Plain pip and sh: the image
+  # has no uv, and the wheel has no dependencies.
+  smoke-musl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: wheels-ubuntu-latest-x86_64-musllinux_1_2
+          path: dist/
+      - run: |
+          docker run --rm -v "$PWD/dist:/dist:ro" \
+            python:3.13-alpine@sha256:8bcfa47b04b853a17aaf909362b847b2112fd6ec4105ea553ef9a43bafbb5916 \
+            sh -ec '
+              pip install --no-index --no-deps /dist/*.whl
+              jsonvet --version
+              echo "{\"a\": 1, \"a\": 2}" > /tmp/dup.json
+              # Exit 1 is a problem found, as scripts/smoke.py expects; 2 would be a broken binary.
+              jsonvet /tmp/dup.json && exit 1
+              test $? -eq 1
+            '

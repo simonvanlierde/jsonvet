@@ -1,8 +1,8 @@
 name: wheels
 
 # The wheel matrix, called by release.yml (which uploads the wheels) and by wheels-check.yml
-# (which builds them without uploading, so a change that breaks a wheel fails on the pull request
-# and not at the tag).
+# (which builds them and passes them to the smoke jobs, so a change that breaks a wheel fails on
+# the pull request and not at the tag).
 on:
   workflow_call:
     inputs:

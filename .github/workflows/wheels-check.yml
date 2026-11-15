@@ -1,7 +1,7 @@
 name: wheels-check
 
-# Builds the release wheels, with no upload, when a change could break one: a new dependency in
-# Cargo.lock (a C dependency can need a newer compiler than the Linux build images have), a
+# Builds the release wheels and smoke-tests them (smoke.yml), publishing nothing, when a change
+# could break one: a new dependency in Cargo.lock (a C dependency can need a newer compiler than the Linux build images have), a
 # Cargo.toml (a feature or the release profile), the maturin or cargo config, or an edit to the
 # matrix. Otherwise they build only at the tag.
 on:
@@ -15,6 +15,9 @@ on:
       - .github/workflows/release.yml
       - .github/workflows/wheels.yml
       - .github/workflows/wheels-check.yml
+      - .github/workflows/smoke.yml
+      - scripts/smoke.py
+      - compat/**
 
 permissions:
   contents: read
@@ -26,3 +29,9 @@ concurrency:
 jobs:
   wheels:
     uses: $/.github/workflows/wheels.yml
+    with:
+      upload: true # for the smoke jobs; the artifacts are never published from a pull request
+
+  smoke:
+    needs: wheels
+    uses: $/.github/workflows/smoke.yml
