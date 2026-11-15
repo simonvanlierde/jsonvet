@@ -12,7 +12,7 @@ You need docker and uv. Third-party parsers never run on the host; see below.
 ```sh
 cargo build --release -p jsonvet-cli
 uv run conformance/run.py      # writes conformance/results/
-uv run conformance/report.py   # writes docs/conformance.md
+uv run conformance/report.py   # writes docs/conformance.md and .json
 ```
 
 The first run pulls four images and builds the drivers into `conformance/.work/` (ignored by git).

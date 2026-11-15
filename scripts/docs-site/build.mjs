@@ -7,6 +7,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { posix, resolve } from "node:path";
 import { Marked, Parser, Renderer } from "marked";
+import { matrixPage } from "./matrix.mjs";
 
 export const ROOT = resolve(import.meta.dirname, "../..");
 export const REPO = "https://github.com/simonvanlierde/jsonvet";
@@ -14,24 +15,32 @@ const SITE = "https://simonvanlierde.com/jsonvet/";
 const CSP =
   "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'";
 
+// The one page that is not from Markdown: matrix.mjs renders it from this file.
+const MATRIX = "docs/conformance.json";
+
 // The docs nav, in reading order. Every docs/*.md needs a row, so a new page cannot go unlisted.
 const NAV = [
   ["docs/usage.md", "Reference"],
   ["docs/format.md", "Formatting"],
   ["docs/editors.md", "Editors"],
   ["docs/design.md", "Design"],
+  ["docs/architecture.md", "Architecture"],
   ["docs/conformance.md", "Conformance"],
+  [MATRIX, "Matrix"],
   ["docs/accessibility.md", "Accessibility"],
   ["docs/assurance-case.md", "Assurance case"],
   ["docs/decisions/README.md", "Decisions"],
+  ["docs/roadmap.md", "Roadmap"],
 ];
 
 /** The page a doc becomes, relative to the output folder: usage.html, decisions/index.html. */
 const pageOf = (src) =>
-  src
-    .replace(/^docs\//, "")
-    .replace(/(^|\/)README\.md$/, "$1index.html")
-    .replace(/\.md$/, ".html");
+  src === MATRIX
+    ? "matrix.html"
+    : src
+        .replace(/^docs\//, "")
+        .replace(/(^|\/)README\.md$/, "$1index.html")
+        .replace(/\.md$/, ".html");
 /** A relative link from one page to another, to the folder for an index page. */
 const linkTo = (from, to) => posix.relative(posix.dirname(from), to).replace(/(^|\/)index\.html$/, "$1") || "./";
 
@@ -40,7 +49,8 @@ const toText = (tokens) => {
   const parser = new Parser();
   return parser.parseInline(tokens, parser.textRenderer);
 };
-const esc = (text) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+export const esc = (text) =>
+  text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 /** GitHub's heading anchors (github-slugger): lower case, punctuation but `-` and `_` dropped,
  * spaces to `-`, and a repeat gets `-1`, `-2` and so on. */
@@ -76,7 +86,7 @@ export function anchorsOf(file) {
 
 // Submodules are not in this repository on GitHub, so their files link to their own repository at
 // the commit pinned here.
-function submodules() {
+export function submodules() {
   const config = existsSync(resolve(ROOT, ".gitmodules")) ? readFileSync(resolve(ROOT, ".gitmodules"), "utf8") : "";
   return [...config.matchAll(/path = (\S+)\s+url = (\S+)/g)].map(([, path, url]) => {
     const commit = execFileSync("git", ["-C", ROOT, "rev-parse", `HEAD:${path}`], { encoding: "utf8" }).trim();
@@ -217,6 +227,7 @@ export function build(outDir, commit = "") {
   const subs = submodules();
   const stamp = commit ? `?v=${commit}` : "";
   const rendered = sources.map((src) => ({ src, out: pageOf(src), ...render(src, pages, subs) }));
+  rendered.push({ src: MATRIX, out: pageOf(MATRIX), ...matrixPage() });
   const list = NAV.map(([file, label]) => {
     const doc = rendered.find((r) => r.src === file);
     return `<li><a href="${linkTo("index.html", pageOf(file))}">${label}</a>: ${esc(doc.summary)}</li>`;

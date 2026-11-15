@@ -20,7 +20,7 @@ lint:
     cargo fmt --all --check
     cargo clippy --workspace --all-targets --locked -- -D warnings
     RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
-    cargo deny check --hide-inclusion-graph
+    cargo deny check --hide-inclusion-graph advisories bans licenses sources
     prek run ruff-check ruff-format zizmor --all-files --show-diff-on-failure
     uv run scripts/check-versions.py
     just matrix-check
@@ -62,7 +62,7 @@ vsix:
 
 # Re-run the conformance matrix (needs docker), then render docs/conformance.md.
 matrix:
-    cargo build --release -p jsonvet-cli
+    cargo build --release --locked -p jsonvet-cli
     uv run conformance/run.py --jsonvet {{ target }}/release/jsonvet
     uv run conformance/report.py
 
@@ -70,10 +70,10 @@ matrix:
 matrix-lock:
     uv run conformance/run.py --lock
 
-# ci.yml `lint`: the rendered page is up to date. Fails on uncommitted edits to those two files.
+# ci.yml `lint`: the rendered page is up to date. Fails on uncommitted edits to those files.
 matrix-check:
     uv run conformance/report.py
-    git diff --exit-code docs/conformance.md README.md
+    git diff --exit-code docs/conformance.md docs/conformance.json README.md
 
 # Fuzz one target for 20 minutes, as fuzz.yml does: check, diff_serde_json, diff_json5, parse, fix, config or config_file.
 fuzz TARGET:
@@ -104,7 +104,7 @@ major:
 
 # Time jsonvet against check-json5 1.4.1 (needs hyperfine).
 bench *ARGS:
-    cargo build --release -p jsonvet-cli
+    cargo build --release --locked -p jsonvet-cli
     uv run scripts/bench.py --jsonvet {{ target }}/release/jsonvet {{ ARGS }}
 
 # Write bench.py's files and 13 large inputs, one per scanner path plus three real-world files

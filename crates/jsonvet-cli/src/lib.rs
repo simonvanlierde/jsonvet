@@ -8,6 +8,8 @@ use std::process::ExitCode;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use ignore::Match;
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use jsonvet::{Dialect, Problem, Report, Severity};
 
 mod args;
@@ -479,6 +481,8 @@ fn expand(
     // Folders that share no file need no check for repeats: the walk follows no symlinks.
     let mut roots = Vec::new();
     let mut distinct = true;
+    // The user's global git ignore file, read once for every folder.
+    let mut global = None;
     for (arg, (dir, id)) in args.into_iter().zip(found) {
         if !dir {
             distinct = false;
@@ -487,58 +491,14 @@ fn expand(
             continue;
         }
         let start = files.len();
-        // The walk reads the ignore files of the folder, and of every folder above it when it
-        // can find them, before the filter sees anything.
         let above = std::fs::canonicalize(&arg).ok();
         match &above {
             Some(root) => roots.push(root.clone()),
             None => distinct = false,
         }
-        if let Some(problem) = std::iter::once(Path::new(&arg))
-            .chain(above.iter().flat_map(|dir| dir.ancestors()))
-            .find_map(unsafe_ignore_file)
-        {
-            return Err(problem);
-        }
-        let skipped = Arc::new(Mutex::new(None));
-        let skip = Arc::clone(&skipped);
-        // The filter must own what it reads.
-        let resolver = Arc::clone(resolver);
-        // A config file that cannot be read excludes nothing here: the run reports it when it
-        // looks up the settings of the files under it.
-        let walk = ignore::WalkBuilder::new(&arg)
-            .filter_entry(move |entry| {
-                // The walk reads a folder's ignore files once the filter lets the folder in.
-                if entry.file_type().is_some_and(|t| t.is_dir())
-                    && let Some(problem) = unsafe_ignore_file(entry.path())
-                {
-                    // A poisoned lock still holds the message.
-                    skip.lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .get_or_insert(problem);
-                    return false;
-                }
-                let settings = lock(&resolver).for_file(entry.path());
-                !settings.is_ok_and(|settings| settings.excluded(entry.path()))
-            })
-            .build();
-        for entry in walk {
-            let entry = entry
-                .map_err(|e| output::printable(&messages::fill("error.walk", &[("error", &e)])))?;
-            if entry.file_type().is_some_and(|t| t.is_file())
-                && Dialect::for_path(entry.path()).is_some()
-            {
-                files.push(entry.into_path().into_os_string());
-                ids.push(None);
-            }
-        }
-        if let Some(problem) = skipped
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take()
-        {
-            return Err(problem);
-        }
+        let global = global.get_or_insert_with(|| Arc::new(Gitignore::global().0));
+        walk(&arg, above, global, resolver, &mut files)?;
+        ids.resize(files.len(), None);
         files[start..].sort_unstable();
     }
     // Checking costs a call to the system for each file, 12% of a run over 10,000 small files.
@@ -551,6 +511,101 @@ fn expand(
         return Ok(files);
     }
     Ok(unique(files, ids, threads))
+}
+
+/// Add to `files` the files under the folder `arg` that jsonvet checks by default, in the order
+/// the walk finds them. `above` is the folder as a canonical path, if it has one, and `global`
+/// the rules of the user's global git ignore file.
+fn walk(
+    arg: &OsStr,
+    above: Option<PathBuf>,
+    global: &Arc<Gitignore>,
+    resolver: &Arc<Mutex<Resolver>>,
+    files: &mut Vec<OsString>,
+) -> Result<(), String> {
+    let global = Arc::clone(global);
+    // The rules of the folders above the walk, from `/` down, then of the walk's own.
+    let mut rules = None;
+    let mut ups: Vec<_> = above
+        .iter()
+        .flat_map(|dir| dir.ancestors().skip(1))
+        .collect();
+    ups.reverse();
+    for dir in ups {
+        rules = folder_rules(rules.as_ref(), dir, true)?;
+    }
+    let root = PathBuf::from(arg);
+    let rules = folder_rules(rules.as_ref(), &root, false)?;
+    let absolute = above.unwrap_or_default();
+    // The rules of each folder the walk has let in, by its path as walked.
+    let mut folders = std::collections::HashMap::new();
+    folders.insert(root.clone(), rules);
+    let folders = Mutex::new(folders);
+    let skipped = Arc::new(Mutex::new(None));
+    let skip = Arc::clone(&skipped);
+    // The filter must own what it reads.
+    let resolver = Arc::clone(resolver);
+    // A config file that cannot be read excludes nothing here: the run reports it when it
+    // looks up the settings of the files under it. The `ignore` crate's own ignore-file
+    // readers stay off: they open a FIFO or `/dev/zero` unchecked.
+    let walk = ignore::WalkBuilder::new(arg)
+        .standard_filters(false)
+        .filter_entry(move |entry| {
+            let path = entry.path();
+            let dir = entry.file_type().is_some_and(|t| t.is_dir());
+            let mut folders = folders
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let rules = path
+                .parent()
+                .and_then(|up| folders.get(up))
+                .cloned()
+                .flatten();
+            let matched = rules.as_ref().map_or(ignore::Match::None, |rules| {
+                let absolute = || absolute.join(path.strip_prefix(&root).unwrap_or(path));
+                rules.matched(path, dir, absolute, &global)
+            });
+            if matched.is_ignore() || (matched.is_none() && hidden(entry)) {
+                return false;
+            }
+            let settings = lock(&resolver).for_file(path);
+            if settings.is_ok_and(|settings| settings.excluded(path)) {
+                return false;
+            }
+            if dir {
+                match folder_rules(rules.as_ref(), path, false) {
+                    Ok(rules) => {
+                        folders.insert(path.to_path_buf(), rules);
+                    }
+                    Err(problem) => {
+                        // A poisoned lock still holds the message.
+                        skip.lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .get_or_insert(problem);
+                        return false;
+                    }
+                }
+            }
+            true
+        })
+        .build();
+    for entry in walk {
+        let entry = entry
+            .map_err(|e| output::printable(&messages::fill("error.walk", &[("error", &e)])))?;
+        if entry.file_type().is_some_and(|t| t.is_file())
+            && Dialect::for_path(entry.path()).is_some()
+        {
+            files.push(entry.into_path().into_os_string());
+        }
+    }
+    if let Some(problem) = skipped
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take()
+    {
+        return Err(problem);
+    }
+    Ok(())
 }
 
 /// What names a file apart from its spelling.
@@ -1031,43 +1086,193 @@ pub(crate) const MAX_SCHEMA_BYTES: u64 = 64 << 20;
 /// file, or a symlink to one, is opened, so a FIFO cannot hang the run and `/dev/zero` cannot
 /// fill memory.
 pub(crate) fn read_small(path: &Path, max: u64) -> io::Result<String> {
+    String::from_utf8(read_small_bytes(path, max)?).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "stream did not contain valid UTF-8",
+        )
+    })
+}
+
+/// [`read_small`], as bytes.
+fn read_small_bytes(path: &Path, max: u64) -> io::Result<Vec<u8>> {
     let Some((file, _)) = open_regular(path)? else {
         return Err(io::Error::other(messages::text("read.not-regular")));
     };
-    let mut text = String::new();
+    let mut bytes = Vec::new();
     // The cap holds even for a file that grows after the check.
-    file.take(max + 1).read_to_string(&mut text)?;
-    if text.len() as u64 > max {
+    file.take(max + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > max {
         let mb = max >> 20;
         return Err(io::Error::other(messages::fill(
             "read.too-large",
             &[("mb", &mb)],
         )));
     }
-    Ok(text)
+    Ok(bytes)
 }
 
-/// Why a folder walk must not read the `.gitignore` or `.ignore` in `dir`, if it must not. The
-/// `ignore` crate reads them to the end with no check of what they are, so a link to
-/// `/dev/zero` takes memory until the run is killed and a FIFO hangs it. A file that cannot be
-/// looked at is no problem: the crate skips it too.
-fn unsafe_ignore_file(dir: &Path) -> Option<String> {
-    [".gitignore", ".ignore"].into_iter().find_map(|name| {
-        let path = dir.join(name);
-        let meta = std::fs::metadata(&path).ok()?;
-        let problem = if !meta.is_file() {
-            messages::text("read.not-regular").to_owned()
-        } else if meta.len() > MAX_CONFIG_BYTES {
-            messages::fill("read.too-large", &[("mb", &(MAX_CONFIG_BYTES >> 20))])
+/// The rules of one folder's ignore files, and of the folders above it that have any, applied
+/// as the `ignore` crate applies them by default.
+struct IgnoreRules {
+    up: Option<Arc<IgnoreRules>>,
+    /// A folder above the walk's own, whose rules match absolute paths.
+    above: bool,
+    /// The folder holds a `.git` or a `.jj`, so it is a repository's root.
+    repo: bool,
+    ignore: Gitignore,
+    git: Gitignore,
+    exclude: Gitignore,
+}
+
+impl IgnoreRules {
+    /// What the rules say of `path`, as walked; `absolute` gives it as an absolute path, for the
+    /// folders above the walk. `.ignore` wins over `.gitignore`, over `info/exclude`, over the
+    /// user's `global` file, and the nearest folder wins within each. The git files apply only in
+    /// a repository, and not across a nested repository's root.
+    fn matched<'a>(
+        &'a self,
+        path: &Path,
+        dir: bool,
+        absolute: impl Fn() -> PathBuf,
+        global: &'a Gitignore,
+    ) -> ignore::Match<&'a ignore::gitignore::Glob> {
+        let chain = || std::iter::successors(Some(self), |rules| rules.up.as_deref());
+        let in_repo = chain().any(|rules| rules.repo);
+        let (mut ignore, mut git, mut exclude) = (Match::None, Match::None, Match::None);
+        let mut past_repo = false;
+        let mut whole = None;
+        for rules in chain() {
+            let path = if rules.above {
+                whole.get_or_insert_with(&absolute).as_path()
+            } else {
+                path
+            };
+            if ignore.is_none() {
+                ignore = rules.ignore.matched(path, dir);
+            }
+            if in_repo && !past_repo {
+                if git.is_none() {
+                    git = rules.git.matched(path, dir);
+                }
+                if exclude.is_none() {
+                    exclude = rules.exclude.matched(path, dir);
+                }
+            }
+            past_repo |= rules.repo;
+        }
+        let global = if in_repo {
+            global.matched(path, dir)
         } else {
-            return None;
+            Match::None
         };
-        let error = format!("{}: {problem}", path.display());
-        Some(output::printable(&messages::fill(
-            "error.walk",
-            &[("error", &error)],
-        )))
-    })
+        ignore.or(git).or(exclude).or(global)
+    }
+}
+
+/// The ignore rules for `dir`, under those of the folders above it, `up`: `up` itself when
+/// `dir` adds none. Each ignore file is read as a config file is, so a link to `/dev/zero`
+/// or a FIFO stops the walk with an error instead of filling memory or hanging it. A file that
+/// is missing or cannot be opened adds no rules, as in git.
+fn folder_rules(
+    up: Option<&Arc<IgnoreRules>>,
+    dir: &Path,
+    above: bool,
+) -> Result<Option<Arc<IgnoreRules>>, String> {
+    let dot_git = std::fs::metadata(dir.join(".git")).ok();
+    let repo = dot_git.is_some() || dir.join(".jj").exists();
+    let ignore = ignore_rules(dir, Some(&dir.join(".ignore")))?;
+    let git = ignore_rules(dir, Some(&dir.join(".gitignore")))?;
+    let git_dir = match dot_git {
+        Some(meta) if meta.is_file() => common_dir(dir)?,
+        Some(_) => Some(dir.join(".git")),
+        None => None,
+    };
+    let exclude = ignore_rules(dir, git_dir.map(|d| d.join("info/exclude")).as_deref())?;
+    if !repo && ignore.is_empty() && git.is_empty() && exclude.is_empty() {
+        return Ok(up.cloned());
+    }
+    Ok(Some(Arc::new(IgnoreRules {
+        up: up.cloned(),
+        above,
+        repo,
+        ignore,
+        git,
+        exclude,
+    })))
+}
+
+/// The folder a worktree's `.git` file leads to, which holds its `info/exclude`, if it has one.
+fn common_dir(dir: &Path) -> Result<Option<PathBuf>, String> {
+    let first_line = |path: &Path| match read_small(path, MAX_CONFIG_BYTES) {
+        Ok(text) => Ok(text.lines().next().map(str::to_owned)),
+        Err(e) if e.kind() == io::ErrorKind::Other => Err(walk_error(path, &e)),
+        Err(_) => Ok(None),
+    };
+    let Some(git_dir) = first_line(&dir.join(".git"))?
+        .and_then(|line| line.strip_prefix("gitdir: ").map(|d| dir.join(d)))
+    else {
+        return Ok(None);
+    };
+    // A submodule's `.git` file leads to a folder with no `commondir`, and git reads no
+    // `info/exclude` for it.
+    let Some(common) = first_line(&git_dir.join("commondir"))? else {
+        return Ok(None);
+    };
+    Ok(Some(git_dir.join(common)))
+}
+
+/// The rules in the ignore file at `file`, matched relative to `dir`. As in git, a line that is
+/// not a valid pattern matches nothing, and reading stops at the first line that is not UTF-8.
+fn ignore_rules(dir: &Path, file: Option<&Path>) -> Result<Gitignore, String> {
+    let mut builder = GitignoreBuilder::new(dir);
+    if let Some(file) = file {
+        match read_small_bytes(file, MAX_CONFIG_BYTES) {
+            Ok(bytes) => {
+                let text = match std::str::from_utf8(&bytes) {
+                    Ok(text) => text,
+                    Err(e) => {
+                        let valid = &bytes[..e.valid_up_to()];
+                        let whole = valid
+                            .iter()
+                            .rposition(|&b| b == b'\n')
+                            .map_or(&[][..], |end| &valid[..end]);
+                        std::str::from_utf8(whole).unwrap_or_default()
+                    }
+                };
+                let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+                for line in text.lines() {
+                    let _ = builder.add_line(None, line);
+                }
+            }
+            Err(e) if e.kind() == io::ErrorKind::Other => return Err(walk_error(file, &e)),
+            Err(_) => {}
+        }
+    }
+    Ok(builder.build().unwrap_or_else(|_| Gitignore::empty()))
+}
+
+/// The walk's error for the file at `path`.
+fn walk_error(path: &Path, problem: &io::Error) -> String {
+    let error = format!("{}: {problem}", path.display());
+    output::printable(&messages::fill("error.walk", &[("error", &error)]))
+}
+
+/// Whether the walk skips `entry` as hidden: its name starts with a dot, or on Windows the
+/// system marks it hidden.
+fn hidden(entry: &ignore::DirEntry) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        // FILE_ATTRIBUTE_HIDDEN
+        if entry
+            .metadata()
+            .is_ok_and(|meta| meta.file_attributes() & 0x2 != 0)
+        {
+            return true;
+        }
+    }
+    entry.file_name().as_encoded_bytes().starts_with(b".")
 }
 
 fn print(mut out: impl Write, text: &str) -> Result<u8, String> {
@@ -1088,8 +1293,8 @@ mod tests {
 
     use super::{
         CHUNK_BYTES, MAX_CONFIG_BYTES, SCHEMA_BYTES, SPLIT_BYTES, STDIN, Schema, Settings, check,
-        chunk_len, parallel, read_small, schema_share, schema_shares, split, take_chunk,
-        unsafe_ignore_file,
+        chunk_len, folder_rules, parallel, read_small, schema_share, schema_shares, split,
+        take_chunk,
     };
     use crate::schema::select::Job;
     use std::sync::Arc;
@@ -1176,9 +1381,9 @@ mod tests {
                 .expect("a large file");
         };
         sized(MAX_CONFIG_BYTES);
-        assert_eq!(unsafe_ignore_file(&dir), None);
+        assert!(folder_rules(None, &dir, false).is_ok());
         sized(MAX_CONFIG_BYTES + 1);
-        assert!(unsafe_ignore_file(&dir).is_some_and(|e| e.ends_with("larger than 16 MB")));
+        assert!(folder_rules(None, &dir, false).is_err_and(|e| e.ends_with("larger than 16 MB")));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

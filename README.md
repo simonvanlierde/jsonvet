@@ -58,7 +58,8 @@ It checks files by name: `.json`, `.jsonc`, `.json5`, `.jsonl`, `.ndjson`, `.geo
 `.hujson`, `.jwcc`, `.code-workspace`, `.code-snippets`, `.webmanifest` and `.babelrc`.
 
 Options go in `args`, such as `args: [--strict, package.json]` to hold `package.json` to strict
-JSON. The hook installs a prebuilt binary from PyPI, so you need no Rust.
+JSON. The hook installs a prebuilt binary from PyPI, so you need no Rust. On Linux the wheel needs glibc
+2.28 or newer; older systems build from the source distribution, which needs Rust.
 
 ### GitHub Action
 
@@ -254,11 +255,12 @@ the full check and lint suite.
   [formatting](https://github.com/simonvanlierde/jsonvet/blob/main/docs/format.md),
   [editors](https://github.com/simonvanlierde/jsonvet/blob/main/docs/editors.md),
   [design](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md),
+  [architecture](https://github.com/simonvanlierde/jsonvet/blob/main/docs/architecture.md),
   [accessibility](https://github.com/simonvanlierde/jsonvet/blob/main/docs/accessibility.md) and
   [CHANGELOG](https://github.com/simonvanlierde/jsonvet/blob/main/CHANGELOG.md).
 - The same docs as web pages: <https://simonvanlierde.com/jsonvet/docs/>.
 - [CONTRIBUTING.md](https://github.com/simonvanlierde/jsonvet/blob/main/CONTRIBUTING.md),
-  [ROADMAP.md](https://github.com/simonvanlierde/jsonvet/blob/main/ROADMAP.md) and
+  [roadmap](https://github.com/simonvanlierde/jsonvet/blob/main/docs/roadmap.md) and
   [GOVERNANCE.md](https://github.com/simonvanlierde/jsonvet/blob/main/GOVERNANCE.md).
 
 Found a file jsonvet gets wrong? Please

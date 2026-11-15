@@ -3,14 +3,21 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { posix, resolve } from "node:path";
 import { after, test } from "node:test";
+import { decode } from "../../playground/share.mjs";
 import { anchorsOf, build, REPO, ROOT, slugger } from "./build.mjs";
+import { shown } from "./matrix.mjs";
 
 // The site's root, as deployed: playground/ with the pages in docs/.
 const site = mkdtempSync(resolve(tmpdir(), "docs-site-"));
 after(() => rmSync(site, { recursive: true, force: true }));
 const pages = build(resolve(site, "docs"), "abc123");
 const html = Object.fromEntries(pages.map((p) => [`docs/${p}`, readFileSync(resolve(site, "docs", p), "utf8")]));
-const ids = (text) => new Set([...text.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]));
+// Cached: the matrix page alone has thousands of links into its own ids.
+const idCache = new Map();
+const ids = (text) => {
+  if (!idCache.has(text)) idCache.set(text, new Set([...text.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1])));
+  return idCache.get(text);
+};
 const fileOf = (path) => (path.startsWith("docs/") ? resolve(site, path) : resolve(ROOT, "playground", path));
 
 test("anchors match GitHub's", () => {
@@ -32,8 +39,11 @@ test("every link between the pages, and every anchor, resolves", () => {
       const [ref, anchor] = href.replace(/\?v=abc123$/, "").split("#");
       let target = ref ? posix.normalize(posix.join(posix.dirname(path), ref)) : path;
       if (ref.endsWith("/") || ref === ".") target = posix.join(target, "index.html");
+      // A playground share link (`#dialect:data`) is read by the page's script, not an id.
+      const shared = target === "index.html" && /^[a-z0-9-]+:/.test(anchor);
       if (!existsSync(fileOf(target))) broken.push(`${path}: ${href}`);
-      else if (anchor && !ids(html[target] ?? "").has(anchor)) broken.push(`${path}: ${href} (no such anchor)`);
+      else if (anchor && !shared && !ids(html[target] ?? "").has(anchor))
+        broken.push(`${path}: ${href} (no such anchor)`);
     }
   }
   assert.deepEqual(broken, []);
@@ -145,4 +155,45 @@ test("the playground's links into the pages resolve", () => {
     else if (anchor && !ids(page).has(anchor)) broken.push(`${href} (no such anchor)`);
   }
   assert.deepEqual(broken, []);
+});
+
+test("the matrix page has a table per dialect, and details for every file and parser", () => {
+  const page = html["docs/matrix.html"];
+  const data = JSON.parse(readFileSync(resolve(ROOT, "docs/conformance.json"), "utf8"));
+  const css = readFileSync(resolve(ROOT, "playground/docs.css"), "utf8");
+  for (const d of data.dialects) {
+    // docs.css shows a dialect's table by its id, so a new dialect needs a rule there.
+    assert.ok(css.includes(`[value="${d.dialect}"]:checked) #dialect-${d.dialect}`), `docs.css: ${d.dialect}`);
+    for (const c of d.columns) assert.ok(ids(page).has(`parser/${c}`), c);
+    const table = page.slice(page.indexOf(`<section class="dialect" id="dialect-${d.dialect}"`)).split("</section>")[0];
+    const rows = (flag) =>
+      table.match(new RegExp(`<tr( class="[^"]*\\b${flag}\\b[^"]*")?><th scope="row">`, "g"))?.length ?? 0;
+    assert.equal(rows(""), d.files.length, d.dialect);
+    // Each filter's count is the number of rows that carry its class.
+    const counts = [...table.matchAll(/value="(\w+)"[^>]*> [^<]+<span class="count">\((\d+)\)/g)];
+    assert.equal(counts.length, 5);
+    for (const [, value, n] of counts) {
+      const flagged = table.match(new RegExp(`<tr class="[^"]*\\b${value}\\b`, "g"))?.length ?? 0;
+      assert.equal(value === "all" ? rows("") : flagged, Number(n), `${d.dialect} ${value}`);
+    }
+  }
+  for (const f of data.dialects.flatMap((d) => d.files)) {
+    const id = `file/${f.path.replace(/^tests\//, "").replace(/^conformance\//, "")}`;
+    assert.ok(ids(page).has(id), id);
+  }
+});
+
+test("a file's text names its invisible characters, and its share link opens the same text", async () => {
+  const bom = String.fromCharCode(0xfeff);
+  assert.equal(
+    shown(new TextEncoder().encode(`${bom}{"a":\r\n1}\r`)).html,
+    '<span class="ch">U+FEFF</span>{&quot;a&quot;:<span class="ch">CR</span>\n1}<span class="ch">CR</span>\n',
+  );
+  assert.equal(shown(new Uint8Array([0x7b, 0xff, 0x7d])), null);
+  const [, dialect, data] = html["docs/matrix.html"].match(
+    /<section class="detail" id="file\/corpus\/json5\/bom.json">[\s\S]*?href="\.\.\/#([a-z0-9-]+):([\w-]+)"/,
+  );
+  const text = readFileSync(resolve(ROOT, "tests/corpus/json5/bom.json"), "utf8");
+  assert.ok(text.startsWith(bom));
+  assert.deepEqual(await decode(`${dialect}:${data}`), { dialect: "json5", text });
 });

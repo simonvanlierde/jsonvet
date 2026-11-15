@@ -93,8 +93,8 @@ walk works as ripgrep's does:
   and git's global and `info/exclude` files name.
 - It skips what the `exclude` setting names, and everything under a folder it names.
 - It does not follow symlinks.
-- It stops with a usage error at a `.gitignore` or `.ignore` that is not a regular file or holds
-  more than 16 MB.
+- It stops with a usage error at a `.gitignore`, `.ignore` or `info/exclude` that is not a
+  regular file or holds more than 16 MB.
 - It lists each folder's files in sorted order.
 
 A file or folder you name is always checked, even when an ignore file or `exclude` names it. So
@@ -493,7 +493,8 @@ jsonvet --format json config.json5 | jq -r '.diagnostics[] | "\(.file):\(.line) 
 ```
 
 - `version` is the version of this layout, now `1`. A new field may come without a new version;
-  a field that changes meaning or goes away gets one. Ignore fields you do not know.
+  a field that changes meaning or goes away gets one. Ignore fields you do not know. To pin the
+  layout, stop when `version` is not the number you wrote your code for.
 - Optional `notes` holds runtime notices, such as a missing schema or a stale catalog cache.
   These do not change the exit status or count toward `--max-warnings`.
 - `diagnostics` holds one object per problem, in the order text output prints them. Each has:

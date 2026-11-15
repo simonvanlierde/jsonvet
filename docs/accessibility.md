@@ -34,6 +34,8 @@ axe-core at 390 px and 1440 px wide, in light and dark mode, and by hand with th
 
 The docs pages: axe-core at 400 px and 1440 px wide, in light and dark mode, with no
 violations (2026-11-11). Their build tests check landmarks, labels and unique ids on every page.
+The matrix page: axe-core at 400 px and 1440 px wide, in light and dark mode, with a file's and a
+parser's details open, with no violations (2026-11-15).
 
 ### Known gaps
 

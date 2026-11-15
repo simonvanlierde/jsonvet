@@ -81,7 +81,8 @@ the page: a share link keeps it in the URL fragment, which browsers do not send 
 - No runtime dependencies and no build step for the page: plain HTML, CSS and ES modules beside
   the wasm-bindgen output in `playground/pkg/`. The docs pages in `playground/docs/` are the one
   build step: `scripts/docs-site/build.mjs` renders `docs/*.md` with marked when the site is built,
-  so the Markdown stays the only source and the pages carry no script but `theme.js`.
+  so the Markdown stays the only source and the pages carry no script but `theme.js`. The
+  matrix page is built the same way from `docs/conformance.json`, with its filters in CSS.
 - Large input stays usable: above 5,000 rows the gutter and highlights turn off, above 200,000
   characters a check waits for a pause in typing, past either the other five dialects are not
   checked, and the list shows at most 200 problems.

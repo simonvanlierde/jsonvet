@@ -3836,6 +3836,75 @@ mod directories {
         );
     }
 
+    /// Ignore files apply as git applies them: the repository's own folders and those above the
+    /// walk, `info/exclude` of a repository and of a worktree's common folder, the user's global
+    /// file, and no `.gitignore` or `info/exclude` across a nested repository's root.
+    #[test]
+    fn ignore_files_apply_as_git_applies_them() {
+        let dir = workdir(&[
+            (".gitignore", "/pkg/gen/\n!.keep.json\n"),
+            (".git/info/exclude", "excluded.json\n"),
+            (".ignore", "ignored.json\n"),
+            (".user/git/ignore", "global.json\n"),
+            (".keep.json", DUP),
+            ("global.json", DUP),
+            ("pkg/gen/a.json", DUP),
+            ("pkg/excluded.json", DUP),
+            ("pkg/kept.json", DUP),
+            ("pkg/bad.json", DUP),
+            ("nested/.git/HEAD", ""),
+            ("nested/excluded.json", DUP),
+            ("nested/ignored.json", DUP),
+            ("gitdirs/wt/commondir", "../../common\n"),
+            ("common/info/exclude", "wt-excluded.json\n"),
+            ("wt/wt-excluded.json", DUP),
+            ("wt/kept.json", DUP),
+            ("modules/sub/HEAD", ""),
+            ("sub/kept.json", DUP),
+        ]);
+        let gitdir = dir.join("gitdirs/wt");
+        fs::write(
+            dir.join("wt/.git"),
+            format!("gitdir: {}\n", gitdir.display()),
+        )
+        .expect("write");
+        // Reading stops at a line that is not UTF-8, as the `ignore` crate's reader did.
+        fs::write(dir.join("pkg/.ignore"), b"bad.json\n\xff\nkept.json\n").expect("write");
+        // A submodule's git folder has no `commondir`, so it adds no `info/exclude`.
+        fs::write(dir.join("sub/.git"), "gitdir: ../modules/sub\n").expect("write");
+        let user = dir.join(".user");
+        let run = |cwd: &std::path::Path, arg: &str| {
+            let out = super::command(env!("CARGO_BIN_EXE_jsonvet"))
+                .arg(arg)
+                .current_dir(cwd)
+                .env("HOME", &user)
+                .env("XDG_CONFIG_HOME", &user)
+                .output()
+                .expect("run jsonvet");
+            (
+                out.status.code().expect("an exit code"),
+                String::from_utf8(out.stdout).expect("UTF-8 output"),
+            )
+        };
+        assert_eq!(
+            run(&dir, "."),
+            (
+                1,
+                [
+                    walked("./.keep.json"),
+                    walked("./nested/excluded.json"),
+                    walked("./pkg/kept.json"),
+                    walked("./sub/kept.json"),
+                    walked("./wt/kept.json"),
+                ]
+                .concat()
+            )
+        );
+        // The rules of the folders above the walk match as from those folders.
+        assert_eq!(run(&dir, "pkg"), (1, walked("pkg/kept.json")));
+        assert_eq!(run(&dir.join("pkg"), "."), (1, walked("./kept.json")));
+    }
+
     #[test]
     fn exclude_applies_to_walked_files_not_named_ones() {
         let dir = workdir(&[
@@ -3937,6 +4006,11 @@ mod file_reads {
     /// Run jsonvet in `dir` with `XDG_CONFIG_HOME` and `APPDATA` set to `user`, and kill it
     /// after 10 seconds; return its exit code, stdout and stderr.
     fn run(dir: &Path, user: &Path, args: &[&str]) -> (i32, String, String) {
+        run_for(dir, user, args, 10)
+    }
+
+    /// [`run`], killed after `secs` seconds.
+    fn run_for(dir: &Path, user: &Path, args: &[&str], secs: u64) -> (i32, String, String) {
         let mut child = command(env!("CARGO_BIN_EXE_jsonvet"))
             .args(args)
             .current_dir(dir)
@@ -3948,9 +4022,9 @@ mod file_reads {
             .expect("run jsonvet");
         let start = Instant::now();
         while child.try_wait().expect("wait").is_none() {
-            if start.elapsed() > Duration::from_secs(10) {
+            if start.elapsed() > Duration::from_secs(secs) {
                 let _ = child.kill();
-                panic!("jsonvet {args:?} still running after 10 seconds");
+                panic!("jsonvet {args:?} still running after {secs} seconds");
             }
             std::thread::sleep(Duration::from_millis(20));
         }
@@ -4066,6 +4140,62 @@ mod file_reads {
             err.ends_with("pyproject.toml: larger than 16 MB\n"),
             "{err}"
         );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A nested repository's `info/exclude`, and a worktree's through its `.git` file, are read
+    /// with the same checks as `.gitignore`: a FIFO there hung the walk and a link to
+    /// `/dev/zero` aborted it.
+    #[cfg(unix)]
+    #[test]
+    fn info_exclude_files_that_are_not_regular_files_are_not_read() {
+        let dir = workdir(&[
+            ("sub/x.json", DUP),
+            ("sub/.git/info/HEAD", ""),
+            ("wt/x.json", DUP),
+            ("gitdirs/wt/commondir", "../../common\n"),
+            ("common/info/HEAD", ""),
+        ]);
+        let user = dir.join("no-user");
+        fifo(&dir.join("sub/.git/info/exclude"));
+        let (code, _, err) = run_for(&dir, &user, &["."], 5);
+        assert_eq!(
+            (code, err.as_str()),
+            (
+                2,
+                "jsonvet: cannot walk: ./sub/.git/info/exclude: not a regular file\n"
+            )
+        );
+        fs::remove_file(dir.join("sub/.git/info/exclude")).expect("remove the FIFO");
+        std::os::unix::fs::symlink("/dev/zero", dir.join("sub/.git/info/exclude")).expect("link");
+        let (code, _, err) = run_for(&dir, &user, &["sub"], 5);
+        assert_eq!(
+            (code, err.as_str()),
+            (
+                2,
+                "jsonvet: cannot walk: sub/.git/info/exclude: not a regular file\n"
+            )
+        );
+        fs::remove_file(dir.join("sub/.git/info/exclude")).expect("remove the link");
+        let gitdir = dir.join("gitdirs/wt");
+        fs::write(
+            dir.join("wt/.git"),
+            format!("gitdir: {}\n", gitdir.display()),
+        )
+        .expect("write");
+        fifo(&dir.join("common/info/exclude"));
+        let (code, _, err) = run_for(&dir.join("wt"), &user, &["."], 5);
+        assert_eq!(code, 2);
+        assert!(
+            err.ends_with("common/info/exclude: not a regular file\n"),
+            "{err}"
+        );
+        fs::remove_file(dir.join("common/info/exclude")).expect("remove the FIFO");
+        fs::remove_file(dir.join("gitdirs/wt/commondir")).expect("remove commondir");
+        fifo(&dir.join("gitdirs/wt/commondir"));
+        let (code, _, err) = run_for(&dir.join("wt"), &user, &["."], 5);
+        assert_eq!(code, 2);
+        assert!(err.ends_with("wt/commondir: not a regular file\n"), "{err}");
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -4278,6 +4408,15 @@ fn json_output_matches_its_published_schema() {
             .collect();
         assert!(errors.is_empty(), "{errors:?}\n{out}");
     }
+    // A report with `notes`, from a `$schema` that is not there.
+    let (_, out, _) = jsonvet_stdin(
+        &dir,
+        &["--format", "json", "-"],
+        "{\"$schema\":\"missing.json\"}",
+    );
+    let json: serde_json::Value = serde_json::from_str(&out).expect("JSON output");
+    assert_eq!(json["notes"].as_array().map(Vec::len), Some(1), "{out}");
+    assert!(validator.is_valid(&json), "{out}");
     let (_, out, _) = jsonvet_stderr(&dir, &full);
     let mut json: serde_json::Value = serde_json::from_str(&out).expect("JSON output");
     json["diagnostics"][0]["severity"] = "fatal".into();

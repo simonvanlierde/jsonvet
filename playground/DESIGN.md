@@ -273,6 +273,23 @@ tables sit on the tint or between hairlines, and code blocks and wide tables scr
 No syntax colours: the One-Pen Rule holds here too. A skip link comes first, and the colophon keeps
 the theme toggle.
 
+#### Matrix page
+
+`docs/matrix.html`, built by `scripts/docs-site/matrix.mjs` from `docs/conformance.json`, which
+`conformance/report.py` writes next to `docs/conformance.md`. No script: the dialect and the filter
+are radio inputs set as segmented controls (the tint and the 2px ink bar), read by `:has()` in
+`docs.css`; a browser without `:has()` shows every table unfiltered. The filter's legend gives the
+counts and disables an empty choice. Rows are the files, grouped by folder under a faint mono
+heading, with the name in a sticky first column; the columns are the dialect's parser runs, their
+names turned upright. Cells are text marks (✓ ✗ ‼ A R) in ink, with the parser and verdict in words
+for screen readers and in a tooltip; a row where some parser disagrees is set in bold. No red: the
+pen marks corrections, and nothing here is one. A file name or a parser name links to `#file/<path>`
+or `#parser/<name>`, a section shown by `:target`: the file's text (invisible characters named in
+small boxed mono, the first 2,000 characters), its expected verdict and source per dialect, every
+run's verdict, the note on it, and a link that opens it in the playground. From 1100px the details
+sit beside the table and both scroll inside one window's height, so following a link keeps the
+table's place; below that they follow the table.
+
 ### Do's and Don'ts
 
 - Do keep the editor, gutter and mark layer on one font size and line height.

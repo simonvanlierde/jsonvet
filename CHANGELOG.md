@@ -13,13 +13,26 @@ version for a new option or output, the patch version for a fix.
 - `fill-numbers = true` in `[format]` or `per-file-format` puts as many numbers on each line as
   fit in an array of numbers only, as Prettier does. An array with a comment or a blank line in it
   keeps one number per line. Off by default ([fill-numbers](docs/format.md#fill-numbers)).
+- The GitHub release holds its attestations as `jsonvet.intoto.jsonl`, for
+  `gh attestation verify --bundle` without fetching them from GitHub. The binaries and the jsonvet
+  wheels also get an attestation of the SBOM, `jsonvet.cdx.intoto.jsonl`
+  ([verifying a release](SECURITY.md#verifying-a-release)).
+- The check-json5 package ships its licence file.
+- The docs are published as pages at <https://simonvanlierde.com/jsonvet/docs/>.
+- The social card is redesigned.
+
+### Fixed
+
+- `jsonvet --fix -` exits 2 when it cannot write to stderr, instead of aborting.
+- In the language server, `codeAction/resolve` returns the same edits as the list of quick fixes,
+  also for a fix with several edits, such as mixed line endings.
 
 ### Changed
 
 - The Linux glibc wheels are built for `manylinux_2_28`, not `manylinux2014`, so they need glibc
   2.28 or newer (Debian 10, Ubuntu 20.04, RHEL 8). RHEL 7, Amazon Linux 2 and Ubuntu 18.04 fall
   back to the source distribution, which needs Rust. The musllinux wheels are unchanged.
-- Checking is 4 to 8% faster on most files and a quarter faster on files of short numbers.
+- Checking executes 4 to 8% fewer instructions on most files and a quarter fewer on files of short numbers.
 - `--fix` takes about a quarter less memory on a large file: only `--unsafe-fixes` keeps where
   each object member is. `jsonvet fmt` no longer allocates for each array and object, and
   `--schema` on JSON Lines no longer allocates for each line.
@@ -34,6 +47,10 @@ version for a new option or output, the patch version for a fix.
   a temporary file a killed run leaves behind.
 - A folder walk checks a file whose name is not UTF-8, such as `c<0xff>.json`, by its extension.
   It skipped such a file and exited 0. `Dialect::for_path` now matches the name's bytes.
+- A folder walk no longer hangs on a FIFO at a nested repository's `.git/info/exclude`, or aborts
+  on a link there to `/dev/zero`: it stops with a usage error, as for `.gitignore`. The walk now
+  reads `.gitignore`, `.ignore` and `info/exclude` itself, with the type checked on the open file,
+  so a file swapped for a FIFO after the check cannot hang it either.
 
 ## [3.4.0] - 2026-11-11
 
