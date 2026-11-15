@@ -13,6 +13,14 @@ version for a new option or output, the patch version for a fix.
 - The docs pages have a search box, which finds a heading or text on any page and jumps to its
   section. Press `/` to focus it. It needs script; without it the pages work as before
   ([ADR 0018](docs/decisions/0018-docs-search.md)).
+- Every docs page has Open Graph and Twitter card tags, and the site has a 404 page.
+
+### Changed
+
+- The playground shows its heading, and opens the "Use this check" section by default on screens
+  860 px wide and up.
+- The conformance matrix page lists what each mark means as a list, and its details stay in view
+  beside the table.
 
 ## [3.5.0] - 2026-11-15
 

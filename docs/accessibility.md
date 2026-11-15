@@ -39,7 +39,10 @@ combobox with a listbox and a live region for the result count. Without script t
 and the pages work as before. axe-core at 400 px and 1440 px wide, in light and dark mode, with the
 results open, found no violations (2026-11-15).
 The matrix page: axe-core at 400 px and 1440 px wide, in light and dark mode, with a file's and a
-parser's details open, with no violations (2026-11-15).
+parser's details open, with no violations (2026-11-15). After the changes for 3.5.1, axe-core (WCAG
+2.0 to 2.2 A and AA, and best practice) again found no violation on the playground, a docs page,
+the docs contents, the matrix page with a file's and a parser's details open, and the 404 page, at
+400 px and 1440 px wide in light and dark mode (2026-11-15).
 
 ### Known gaps
 
