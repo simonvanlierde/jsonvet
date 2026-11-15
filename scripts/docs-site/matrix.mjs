@@ -186,7 +186,14 @@ export function matrixPage() {
     .join("\n");
   const body = `<h1 id="conformance-matrix">Conformance matrix</h1>
 <p>How ${shownParsers.length} parser runs treat the same files in five JSON dialects, run on ${data.date}. Pick a dialect and what to show, then a file or a parser for its details. <a href="conformance.html">Conformance</a> has the same results as text, with the duplicate-key table and every version.</p>
-<p class="key">✓ agrees with the expected verdict · ✗ disagrees · ‼ crashed or took longer than ${data.timeout}&nbsp;s · A accepted, R rejected, where the spec allows both · † the spec decides the expected verdict</p>
+<ul class="key" aria-label="Legend">
+<li><b>✓</b> agrees with the expected verdict</li>
+<li><b>✗</b> disagrees</li>
+<li><b>‼</b> crashed or took longer than ${data.timeout}&nbsp;s</li>
+<li><b>A</b> accepted, where the spec allows both</li>
+<li><b>R</b> rejected, where the spec allows both</li>
+<li><b>†</b> the spec decides the expected verdict</li>
+</ul>
 <div class="matrix">
 <fieldset class="dialects"><legend>Dialect</legend>
 ${choices}

@@ -286,9 +286,10 @@ for screen readers and in a tooltip; a row where some parser disagrees is set in
 pen marks corrections, and nothing here is one. A file name or a parser name links to `#file/<path>`
 or `#parser/<name>`, a section shown by `:target`: the file's text (invisible characters named in
 small boxed mono, the first 2,000 characters), its expected verdict and source per dialect, every
-run's verdict, the note on it, and a link that opens it in the playground. From 1100px the details
-sit beside the table and both scroll inside one window's height, so following a link keeps the
-table's place; below that they follow the table.
+run's verdict, the note on it, and a link that opens it in the playground. The legend above the
+table is a list with one boxed glyph per meaning. From 1100px the details sit beside the table and
+stay in view (sticky) as the page moves; the table scrolls inside one window's height, so its
+header stays in view, and neither passes its scroll on to the page. Below that they follow the table.
 
 ### Do's and Don'ts
 
