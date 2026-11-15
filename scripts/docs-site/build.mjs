@@ -228,14 +228,18 @@ ${
   <p class="slug-part"><span><a href="${up}">playground</a></span>${source}</p>
 </header>
 <div class="wrap docs${bare ? " bare" : ""}">
-${bare ? "" : `<nav aria-label="Docs">
+${
+  bare
+    ? ""
+    : `<nav aria-label="Docs">
 <search id="docs-search" class="find" hidden>
 <label for="docs-q">Search the docs</label>
 <input id="docs-q" type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="docs-results" autocomplete="off" spellcheck="false" placeholder="Press / to search">
 <p class="vh" role="status"></p>
 <ul id="docs-results" role="listbox" aria-label="Search results" hidden></ul>
 </search>
-<ul>${nav}</ul></nav>`}
+<ul>${nav}</ul></nav>`
+}
 <main id="content" class="prose">
 ${body}</main>
 </div>
