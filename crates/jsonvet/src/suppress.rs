@@ -435,7 +435,7 @@ fn line_end(bytes: &[u8], mut from: usize, json5: bool) -> usize {
 #[cfg(test)]
 mod tests {
     use super::{Targets, has_line_end, marked, next_line};
-    use crate::{Config, Dialect, Rule, Severity, check, fix};
+    use crate::{Config, Dialect, Rule, Severity, check, try_fix};
 
     /// Each problem as `line:column rule: message`.
     fn problems(text: &str, config: &Config) -> Vec<String> {
@@ -613,7 +613,7 @@ mod tests {
                 "3:7 mixed-line-endings: this line ending differs from the first one in the file",
             ]
         );
-        let fixed = fix(text, &Config::new(Dialect::Json5), false).expect("a fix");
+        let fixed = try_fix(text, &Config::new(Dialect::Json5), false, None).expect("a fix");
         assert_eq!(fixed.fixes[0].rule, Rule::MixedLineEndings);
     }
 
@@ -834,26 +834,26 @@ mod tests {
         // Dropping the first copy would move the suppression onto the second one's line.
         let text = "{\n// jsonvet-ignore invalid-number\n\"a\": 1e999,\n\"a\": 1e999\n}";
         let config = Config::new(Dialect::Json5);
-        assert!(fix(text, &config, true).is_none());
+        assert!(try_fix(text, &config, true, None).is_err());
         // Deleting a copy and the line break after it would join the line onto the comment's.
         let text = "{\"x\": 0, /* jsonvet-ignore invalid-number */ \"a\": 1,\n\"a\": 1e999\n}";
-        assert!(fix(text, &config, true).is_none());
+        assert!(try_fix(text, &config, true, None).is_err());
         // A copy after the only suppression's line is dropped too.
         let text = "{\n// jsonvet-ignore invalid-number\n\"b\": 1e999,\n\"a\": 1,\n\"a\": 2\n}";
-        assert!(fix(text, &config, true).is_some());
+        assert!(try_fix(text, &config, true, None).is_ok());
         // A copy away from any suppression's line is still dropped.
         let text = "{\"a\": 1,\n// jsonvet-ignore invalid-number\n\"b\": 1e999,\n\"a\": 2\n}";
-        let fixed = fix(text, &config, true).expect("a fix");
+        let fixed = try_fix(text, &config, true, None).expect("a fix");
         assert_eq!(fixed.fixes[0].rule, Rule::DuplicateKey);
     }
 
     #[test]
     fn a_fix_leaves_a_suppressed_duplicate() {
         let text = "{\"a\": 1,\n// jsonvet-ignore duplicate-key\n\"a\": 2}";
-        assert!(fix(text, &Config::new(Dialect::Json5), true).is_none());
+        assert!(try_fix(text, &Config::new(Dialect::Json5), true, None).is_err());
         // One copy suppressed keeps the whole group, and the other copy is still reported.
         let text = "{\"a\":1,\n// jsonvet-ignore duplicate-key\n\"a\":2,\n\"a\":3}";
-        assert!(fix(text, &Config::new(Dialect::Json5), true).is_none());
+        assert!(try_fix(text, &Config::new(Dialect::Json5), true, None).is_err());
         assert_eq!(
             problems(text, &Config::new(Dialect::Json5)),
             ["4:1 duplicate-key: duplicate key $.a"]

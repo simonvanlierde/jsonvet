@@ -620,7 +620,7 @@ fn code_actions(
     let Ok(config) = config_for(path, &client.roots) else {
         return json!([]);
     };
-    let Ok(all) = jsonvet::try_fix(text, &config, false) else {
+    let Ok(all) = jsonvet::try_fix(text, &config, false, None) else {
         return json!([]);
     };
     let target = (uri, document.version.as_ref().filter(|_| client.versioned));
@@ -712,7 +712,7 @@ fn resolve_action(
         );
     };
     let fixed = config_for(&path, &client.roots).and_then(|config| {
-        jsonvet::try_fix_at(
+        jsonvet::try_fix(
             &document.text,
             &config,
             false,
@@ -1157,7 +1157,7 @@ mod tests {
             let path = dir.join(name);
             let uri = uri(&path);
             let config = super::config_for(&path, std::slice::from_ref(&dir)).expect("config");
-            let expected = jsonvet::try_fix(text, &config, false).expect("fixes");
+            let expected = jsonvet::try_fix(text, &config, false, None).expect("fixes");
             for utf8 in [false, true] {
                 for versioned in [false, true] {
                     let client = super::Client {
@@ -1190,9 +1190,8 @@ mod tests {
                             &action["edit"]["changes"][&uri]
                         };
                         let edits = parse_edits_in(text, edits, utf8);
-                        let expected =
-                            jsonvet::try_fix_at(text, &config, false, Some(&[fix.offset]))
-                                .expect("one fix");
+                        let expected = jsonvet::try_fix(text, &config, false, Some(&[fix.offset]))
+                            .expect("one fix");
                         assert_eq!(
                             apply_owned(text, &edits),
                             expected.text,

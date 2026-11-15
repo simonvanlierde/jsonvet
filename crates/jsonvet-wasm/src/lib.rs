@@ -104,7 +104,7 @@ pub fn fix(text: &str, dialect: &str, unsafe_fixes: bool, only: &[u32]) -> Resul
     };
     // Indexes that name no character leave nothing to fix, rather than every fix.
     let only = (!only.is_empty()).then_some(bytes.as_slice());
-    let Ok(fixed) = jsonvet::try_fix_at(text, &config, unsafe_fixes, only) else {
+    let Ok(fixed) = jsonvet::try_fix(text, &config, unsafe_fixes, only) else {
         return Ok("null".to_owned());
     };
     let mut out = String::from(r#"{"text":"#);

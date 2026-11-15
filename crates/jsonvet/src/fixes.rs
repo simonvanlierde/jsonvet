@@ -55,51 +55,30 @@ pub struct Fixed {
 }
 
 /// Fix `text` for the problems `config` reports, in one pass of edits that do not overlap.
-/// Unsafe fixes are applied only with `unsafe_fixes`. `None` when there is nothing to fix, or
-/// when the text has a syntax error the fixes would not remove: such a text stays as it is.
+/// Unsafe fixes are applied only with `unsafe_fixes`. With `only` set, just the fixes whose
+/// [`Fix::offset`] is in it: how the editor and the playground apply the one fix a correction
+/// names.
 ///
-/// ```
-/// use jsonvet::{fix, Config, Dialect};
-///
-/// let config = Config::new(Dialect::Json);
-/// let fixed = fix("[1, 2,]", &config, false).unwrap();
-/// assert_eq!(fixed.text, "[1, 2]");
-/// ```
-///
-/// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
-#[doc(hidden)]
-pub fn fix(text: &str, config: &Config, unsafe_fixes: bool) -> Option<Fixed> {
-    try_fix(text, config, unsafe_fixes).ok()
-}
-
-/// [`fix`], but when nothing is fixed the `Err` holds the problems [`check`](crate::check) finds
-/// in `text`, so the caller need not check it again. That is `None` when the scan cannot tell
-/// them: it reads past a trailing comma that `check` stops at.
+/// `Err` when nothing is fixed: there is nothing to fix, or the text has a syntax error the fixes
+/// would not remove, and such a text stays as it is. The `Err` holds the problems
+/// [`check`](crate::check) finds in `text`, so the caller need not check it again. That is `None`
+/// when the scan cannot tell them: it reads past a trailing comma that `check` stops at.
 ///
 /// ```
 /// use jsonvet::{report, try_fix, Config, Dialect};
 ///
 /// let config = Config::new(Dialect::Json);
-/// let problems = try_fix("[1,, 2]", &config, false).unwrap_err().unwrap();
+/// let fixed = try_fix("[1, 2,]", &config, false, None).unwrap();
+/// assert_eq!(fixed.text, "[1, 2]");
+///
+/// let problems = try_fix("[1,, 2]", &config, false, None).unwrap_err().unwrap();
 /// assert_eq!(report("[1,, 2]", problems, &config).problems().len(), 1);
 /// ```
 ///
-/// Public for jsonvet-cli only and outside the semver contract: it can change in any release.
+/// Public for jsonvet-cli and jsonvet-wasm only and outside the semver contract: it can change in
+/// any release.
 #[doc(hidden)]
 pub fn try_fix(
-    text: &str,
-    config: &Config,
-    unsafe_fixes: bool,
-) -> Result<Fixed, Option<Vec<Problem>>> {
-    try_fix_at(text, config, unsafe_fixes, None)
-}
-
-/// [`try_fix`], but with `only` set, just the fixes whose [`Fix::offset`] is in it: how the
-/// playground applies the one fix a correction names.
-///
-/// Public for jsonvet-wasm only and outside the semver contract: it can change in any release.
-#[doc(hidden)]
-pub fn try_fix_at(
     text: &str,
     config: &Config,
     unsafe_fixes: bool,

@@ -36,6 +36,10 @@ version for a new option or output, the patch version for a fix.
 - `--fix` takes about a quarter less memory on a large file: only `--unsafe-fixes` keeps where
   each object member is. `jsonvet fmt` no longer allocates for each array and object, and
   `--schema` on JSON Lines no longer allocates for each line.
+- **Breaking** (library): `fix` and `try_fix_at` are gone. `try_fix` takes a fourth argument,
+  `only`: `None` applies every fix, `Some(offsets)` just the fixes at those offsets. For the old
+  `fix`, call `try_fix(text, &config, unsafe_fixes, None).ok()`. All three were hidden from the
+  docs and outside the semver contract, but crates.io users of 3.4.0 could call them.
 
 ### Fixed
 

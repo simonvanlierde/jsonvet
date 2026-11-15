@@ -1,6 +1,6 @@
 //! The `mixed-line-endings` rule: where it fires, what counts as a line ending, and its fix.
 
-use jsonvet::{Config, Dialect, FormatOptions, Rule, Severity, check, fix, format, try_fix_at};
+use jsonvet::{Config, Dialect, FormatOptions, Rule, Severity, check, format, try_fix};
 use proptest::prelude::*;
 
 const ALL: [Dialect; 6] = [
@@ -23,7 +23,9 @@ fn mixed(text: &str, dialect: Dialect) -> Vec<(usize, usize)> {
 }
 
 fn fixed(text: &str, dialect: Dialect) -> Option<String> {
-    fix(text, &Config::new(dialect), false).map(|f| f.text)
+    try_fix(text, &Config::new(dialect), false, None)
+        .ok()
+        .map(|f| f.text)
 }
 
 #[test]
@@ -219,7 +221,7 @@ fn the_rule_can_be_turned_off_or_raised() {
     let text = "[1,\n2,\r\n3]";
     let off = Config::new(Dialect::Json).rule(Rule::MixedLineEndings, Severity::Off);
     assert_eq!(check(text, &off).problems(), []);
-    assert!(fix(text, &off, false).is_none());
+    assert!(try_fix(text, &off, false, None).is_err());
     let error = Config::new(Dialect::Json).rule(Rule::MixedLineEndings, Severity::Error);
     assert_eq!(
         check(text, &error).problems()[0].severity(),
@@ -351,9 +353,9 @@ fn the_fix_works_with_the_other_fixes() {
 #[test]
 fn endings_inside_a_dropped_duplicate_member_are_not_edited_twice() {
     let text = "{\"a\": [\n1,\r\n2],\n\"a\": 3}\n";
-    let fixed = fix(text, &Config::new(Dialect::Json), true).unwrap();
+    let fixed = try_fix(text, &Config::new(Dialect::Json), true, None).unwrap();
     assert_eq!(fixed.text, "{\"a\": 3}\n");
-    let safe = fix(text, &Config::new(Dialect::Json), false).unwrap();
+    let safe = try_fix(text, &Config::new(Dialect::Json), false, None).unwrap();
     assert_eq!(safe.text, "{\"a\": [\n1,\n2],\n\"a\": 3}\n");
 }
 
@@ -363,17 +365,17 @@ fn the_fix_of_one_note_applies_alone() {
     let config = Config::new(Dialect::Jwcc);
     let comma = text.rfind(',').unwrap();
     let ending = text.find('\r').unwrap();
-    let only = try_fix_at(text, &config, false, Some(&[ending])).unwrap();
+    let only = try_fix(text, &config, false, Some(&[ending])).unwrap();
     assert_eq!(only.text, "[1,\n2,\n3,]");
     assert_eq!(only.fixes.len(), 1);
     assert_eq!(only.fixes[0].rule, Rule::MixedLineEndings);
     assert_eq!(only.fixes[0].offset, ending);
     assert!(only.fixes[0].safe);
     let json = Config::new(Dialect::Json);
-    let other = try_fix_at(text, &json, false, Some(&[comma])).unwrap();
+    let other = try_fix(text, &json, false, Some(&[comma])).unwrap();
     assert_eq!(other.text, "[1,\n2,\r\n3]");
     // An offset that names no fix changes nothing.
-    assert!(try_fix_at(text, &config, false, Some(&[0])).is_err());
+    assert!(try_fix(text, &config, false, Some(&[0])).is_err());
 }
 
 /// The first ending in `text`.
@@ -491,7 +493,7 @@ proptest! {
 #[test]
 fn the_final_newline_follows_the_first_ending_with_the_rule_off() {
     let config = Config::new(Dialect::JsonLines).rule(Rule::MixedLineEndings, Severity::Off);
-    let text = |text| fix(text, &config, false).map(|f| f.text);
+    let text = |text| try_fix(text, &config, false, None).ok().map(|f| f.text);
     assert_eq!(text("[1]\r\n[2]").as_deref(), Some("[1]\r\n[2]\r\n"));
     assert_eq!(text("[1]\n[2]").as_deref(), Some("[1]\n[2]\n"));
     // The endings are left alone.
@@ -632,13 +634,16 @@ fn adding_the_final_newline_does_not_create_a_mixed_ending() {
         ("1\r\n2\r", "1\r\n2\r\r\n"),
         ("1\r", "1\n"),
     ] {
-        let out = fix(text, &config, false).unwrap();
+        let out = try_fix(text, &config, false, None).unwrap();
         assert_eq!(out.text, want, "{text:?}");
         assert!(check(&out.text, &config).problems().is_empty(), "{text:?}");
-        assert!(fix(&out.text, &config, false).is_none(), "{text:?}");
+        assert!(
+            try_fix(&out.text, &config, false, None).is_err(),
+            "{text:?}"
+        );
     }
     let text = "1\n2\r\n3\r";
-    let only = try_fix_at(text, &config, false, Some(&[text.len()])).unwrap();
+    let only = try_fix(text, &config, false, Some(&[text.len()])).unwrap();
     assert_eq!(only.text, "1\n2\r\n3\n");
     assert_eq!(only.fixes.len(), 1);
 }
@@ -688,9 +693,9 @@ fn fmt_syntax_reports_keep_the_configured_line_ending_severity() {
 /// `text` fixed one note at a time, in document order, as the playground applies them.
 fn fixed_step_by_step(text: &str, config: &Config) -> String {
     let mut text = text.to_owned();
-    while let Ok(all) = try_fix_at(&text, config, true, None) {
+    while let Ok(all) = try_fix(&text, config, true, None) {
         // A listed fix that does not apply alone stops here, and the comparison fails.
-        let Ok(one) = try_fix_at(&text, config, true, Some(&[all.fixes[0].offset])) else {
+        let Ok(one) = try_fix(&text, config, true, Some(&[all.fixes[0].offset])) else {
             break;
         };
         text = one.text;
@@ -703,7 +708,7 @@ fn a_dropped_member_does_not_pick_the_line_ending() {
     // The first ending goes with the first "a", so the CRs that stay set the ending.
     let text = "{\"a\": 1,\r\n\"a\": 2,\"v\":\"x\"\r}\r";
     let config = Config::new(Dialect::Jsonc);
-    let full = fix(text, &config, true).unwrap().text;
+    let full = try_fix(text, &config, true, None).unwrap().text;
     assert_eq!(full, "{\"a\": 2,\"v\":\"x\"\r}\r");
     assert_eq!(fixed_step_by_step(text, &config), full);
 }
@@ -735,7 +740,7 @@ proptest! {
         text.push_str(last);
         text.push('}');
         let config = Config::new(dialect);
-        let full = fix(&text, &config, true).map_or_else(|| text.clone(), |f| f.text);
+        let full = try_fix(&text, &config, true, None).ok().map_or_else(|| text.clone(), |f| f.text);
         prop_assert_eq!(fixed_step_by_step(&text, &config), full, "{:?}", text);
     }
 }

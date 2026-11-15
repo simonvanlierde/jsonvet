@@ -723,7 +723,7 @@ fn fix_chunk(
             let text = text.as_ref().ok()?;
             let name = shown(file);
             let config = settings.config_for(&name.to_string_lossy());
-            let fixed = match jsonvet::try_fix(text, &config, unsafe_fixes) {
+            let fixed = match jsonvet::try_fix(text, &config, unsafe_fixes, None) {
                 Ok(fixed) => fixed,
                 Err(problems) => return Some(Err(problems)),
             };

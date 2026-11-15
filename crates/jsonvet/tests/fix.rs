@@ -1,7 +1,7 @@
-//! `jsonvet::fix`: what each fix does in each dialect, that fixing twice equals fixing once, and
+//! `jsonvet::try_fix`: what each fix does in each dialect, that fixing twice equals fixing once, and
 //! that strict JSON keeps its value.
 
-use jsonvet::{Config, Dialect, Fix, Rule, Severity, check, fix, report, try_fix, try_fix_at};
+use jsonvet::{Config, Dialect, Fix, Rule, Severity, check, report, try_fix};
 use proptest::prelude::*;
 
 #[test]
@@ -17,9 +17,9 @@ fn each_fix_exposes_the_same_edits_as_selecting_it_alone() {
     ] {
         let config = Config::new(dialect);
         for unsafe_fixes in [false, true] {
-            let fixed = try_fix(text, &config, unsafe_fixes).expect("fixes");
+            let fixed = try_fix(text, &config, unsafe_fixes, None).expect("fixes");
             for fix in fixed.fixes {
-                let expected = try_fix_at(text, &config, unsafe_fixes, Some(&[fix.offset]))
+                let expected = try_fix(text, &config, unsafe_fixes, Some(&[fix.offset]))
                     .expect("selected fix");
                 let mut actual = text.to_owned();
                 for (range, insert) in fix.edits.into_iter().rev() {
@@ -36,19 +36,19 @@ fn each_fix_exposes_the_same_edits_as_selecting_it_alone() {
 fn selected_fix_offsets_allow_any_order_and_repeated_values() {
     let text = "[[1,],[2,],[3,]]";
     let config = Config::new(Dialect::Json);
-    let all = try_fix(text, &config, false).expect("fixes");
+    let all = try_fix(text, &config, false, None).expect("fixes");
     let mut offsets: Vec<_> = all.fixes.iter().rev().map(|fix| fix.offset).collect();
     offsets.extend(offsets.clone());
     offsets.push(usize::MAX);
     assert_eq!(
-        try_fix_at(text, &config, false, Some(&offsets))
+        try_fix(text, &config, false, Some(&offsets))
             .expect("selected fixes")
             .text,
         all.text
     );
     let first = all.fixes[0].offset;
     assert_eq!(
-        try_fix_at(text, &config, false, Some(&[first, first, usize::MAX]))
+        try_fix(text, &config, false, Some(&[first, first, usize::MAX]))
             .expect("one fix")
             .fixes
             .len(),
@@ -57,11 +57,15 @@ fn selected_fix_offsets_allow_any_order_and_repeated_values() {
 }
 
 fn safe(text: &str, dialect: Dialect) -> Option<String> {
-    fix(text, &Config::new(dialect), false).map(|f| f.text)
+    try_fix(text, &Config::new(dialect), false, None)
+        .ok()
+        .map(|f| f.text)
 }
 
 fn all(text: &str, dialect: Dialect) -> Option<String> {
-    fix(text, &Config::new(dialect), true).map(|f| f.text)
+    try_fix(text, &Config::new(dialect), true, None)
+        .ok()
+        .map(|f| f.text)
 }
 
 #[test]
@@ -74,7 +78,8 @@ fn removes_a_byte_order_mark_where_the_rule_is_on() {
         assert_eq!(safe("\u{FEFF}[1]", dialect), None);
         let config = Config::new(dialect).rule(Rule::ByteOrderMark, Severity::Warning);
         assert_eq!(
-            fix("\u{FEFF}[1]", &config, false)
+            try_fix("\u{FEFF}[1]", &config, false, None)
+                .ok()
                 .map(|f| f.text)
                 .as_deref(),
             Some("[1]")
@@ -138,7 +143,7 @@ fn duplicate_keys_are_an_unsafe_fix() {
     let text = "{\"a\": 1, \"a\": 2}";
     assert_eq!(safe(text, Dialect::Json), None);
     assert_eq!(all(text, Dialect::Json).as_deref(), Some("{\"a\": 2}"));
-    let fixed = fix(text, &Config::new(Dialect::Json), true).expect("fixed");
+    let fixed = try_fix(text, &Config::new(Dialect::Json), true, None).expect("fixed");
     assert_eq!(fixed.fixes.len(), 1);
     assert_eq!(fixed.fixes[0].rule, Rule::DuplicateKey);
     assert!(!fixed.fixes[0].safe);
@@ -177,7 +182,7 @@ fn drops_duplicates_in_json5_and_in_each_json_lines_line() {
 #[test]
 fn applies_every_kind_in_one_pass() {
     let text = "\u{FEFF}{\"a\": [1,], \"a\": 2,}";
-    let fixed = fix(text, &Config::new(Dialect::Json), true).expect("fixed");
+    let fixed = try_fix(text, &Config::new(Dialect::Json), true, None).expect("fixed");
     assert_eq!(fixed.text, "{\"a\": 2}");
     // The first `a` holds a trailing comma too, but it goes whole, so its fix is skipped.
     assert_eq!(fixed.fixes.len(), 3);
@@ -195,8 +200,11 @@ fn leaves_a_text_with_another_syntax_error_alone() {
 #[test]
 fn a_rule_that_is_off_is_not_fixed() {
     let config = Config::new(Dialect::Json).rule(Rule::DuplicateKey, Severity::Off);
-    assert_eq!(fix("{\"a\": 1, \"a\": 2}", &config, true), None);
-    let fixed = fix("{\"a\": 1, \"a\": 2,}", &config, true).expect("the comma is fixed");
+    assert_eq!(
+        try_fix("{\"a\": 1, \"a\": 2}", &config, true, None).ok(),
+        None
+    );
+    let fixed = try_fix("{\"a\": 1, \"a\": 2,}", &config, true, None).expect("the comma is fixed");
     assert_eq!(fixed.text, "{\"a\": 1, \"a\": 2}");
 }
 
@@ -214,7 +222,7 @@ fn fixing_twice_equals_fixing_once() {
 
 #[test]
 fn the_fix_list_names_the_problems() {
-    let fixed = fix("\u{FEFF}[1,]", &Config::new(Dialect::Json), false).expect("fixed");
+    let fixed = try_fix("\u{FEFF}[1,]", &Config::new(Dialect::Json), false, None).expect("fixed");
     let rules: Vec<(Rule, usize)> = fixed
         .fixes
         .iter()
@@ -292,7 +300,7 @@ proptest! {
     ) {
         let text = tokens.concat();
         let config = Config::new(dialect);
-        if let Err(Some(problems)) = try_fix(&text, &config, unsafe_fixes) {
+        if let Err(Some(problems)) = try_fix(&text, &config, unsafe_fixes, None) {
             let again = report(&text, problems, &config);
             let plain = check(&text, &config);
             prop_assert_eq!(again.problems(), plain.problems());
@@ -310,10 +318,10 @@ proptest! {
         let bom = bom && dialect != Dialect::Jsonc;
         let text = format!("{}{text}\n", if bom { "\u{FEFF}" } else { "" });
         let config = Config::new(dialect);
-        let fixed = fix(&text, &config, true).map_or(text.clone(), |f| f.text);
+        let fixed = try_fix(&text, &config, true, None).ok().map_or(text.clone(), |f| f.text);
         prop_assert_eq!(serde_json::from_str::<serde_json::Value>(&fixed).ok(), Some(value));
         prop_assert!(check(&fixed, &config).problems().is_empty());
-        prop_assert_eq!(fix(&fixed, &config, true), None);
+        prop_assert_eq!(try_fix(&fixed, &config, true, None).ok(), None);
     }
 
     // Without the unsafe opt-in no member is dropped.
@@ -321,8 +329,8 @@ proptest! {
     fn safe_fixes_keep_every_member((text, _) in tree()) {
         let config = Config::new(Dialect::Json);
         let commas = text.contains(",]") || text.contains(",}");
-        prop_assert_eq!(fix(&text, &config, false).is_some(), commas);
-        if let Some(fixed) = fix(&text, &config, false) {
+        prop_assert_eq!(try_fix(&text, &config, false, None).is_ok(), commas);
+        if let Ok(fixed) = try_fix(&text, &config, false, None) {
             prop_assert!(fixed.fixes.iter().all(|f| f.safe));
             // Each fix drops one comma and nothing else.
             prop_assert_eq!(fixed.text.len() + fixed.fixes.len(), text.len());

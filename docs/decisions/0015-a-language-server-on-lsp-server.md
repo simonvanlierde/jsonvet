@@ -27,7 +27,7 @@ Server Protocol gets it.
 
 `jsonvet lsp` in every build, on lsp-server 0.10 alone. It resolves settings and schemas through
 the same code as a run (`check_file` in `crates/jsonvet-cli/src/lib.rs`, `format::setup`), and
-fixes through the library's `try_fix_at`, so the editor and the command agree. Range formatting
+fixes through the library's `try_fix`, so the editor and the command agree. Range formatting
 keeps only the edits of a full format that fall in the range, and only if formatting the result
 gives what formatting the file does.
 
