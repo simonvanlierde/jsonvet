@@ -28,9 +28,10 @@ Some checks need tools that `mise.toml` does not install:
 
 Run `just check` before you open a pull request. It runs CI's `lint` and `test` jobs on your OS:
 formatting, clippy, rustdoc, cargo deny, ruff, zizmor, the version check, the conformance page
-check, and the tests with doctests. The page check fails while `README.md` or
-`docs/conformance.md` has unstaged edits, so stage them first. zizmor runs its online audits only
-when `GH_TOKEN` is set, so without it `just lint` can pass where CI fails.
+check, and the tests with doctests. The page check fails while `README.md`,
+`docs/conformance.md` or `docs/conformance.json` has unstaged edits, so stage them first.
+zizmor runs its online audits only when `GH_TOKEN` is set, so without it `just lint` can pass
+where CI fails.
 
 `just check` leaves out these jobs in `ci.yml`:
 
@@ -59,7 +60,7 @@ Other workflows:
 - `pages.yml` builds and tests the playground on a pull request that touches it or `docs/`, and
   deploys it from main. It renders `docs/*.md` into the site's `docs/` pages with
   `scripts/docs-site` (`pnpm test` there checks every link and anchor between them). On a pull
-  request it also keeps screenshots of the page and two docs pages (`playground/screenshots.sh`:
+  request it also keeps screenshots of the page and three docs pages (`playground/screenshots.sh`:
   desktop and phone, light and dark) as the `playground-screenshots` artifact for 14 days, and a
   comment on the pull request links the newest one. `just playground [PORT]` does the same build and tests, and serves it at
   <http://127.0.0.1:8000>, or at the PORT you pass.
@@ -115,8 +116,8 @@ licence and has no RustSec advisory or unmaintained notice. Renovate bumps the p
   goes in `Dialect::ALL` (`crates/jsonvet/src/dialect.rs`) and the `--help` text. Add either to
   the README's table.
 - **Conformance matrix.** `just matrix` runs one set of inputs through 18 other parsers in docker
-  containers, then renders `docs/conformance.md`. Commit
-  `conformance/results/` and the rendered file. CI fails when the report is stale, or when
+  containers, then renders `docs/conformance.md` and `docs/conformance.json`. Commit
+  `conformance/results/` and the rendered files. CI fails when the report is stale, or when
   `conformance/results/versions.json` disagrees with the pinned parsers. After a pin change, run
   `just matrix-lock` first ([details](conformance/README.md)).
 - **Fuzzing.** `just fuzz check` (or `diff_serde_json`, `diff_json5`, `parse`, `fix`, `config`, `config_file`) runs a target
@@ -224,7 +225,7 @@ gh workflow run bench.yml --ref release/X.Y.Z
 gh run download <run-id> -n speed-table && git apply speed-table.patch
 git commit -s -m "docs: speed figures for X.Y" -- docs/design.md README.md
 just matrix                               # records the new version in the matrix
-git commit -s -m "docs: re-run the conformance matrix for X.Y.Z" -- docs/conformance.md README.md conformance/results
+git commit -s -m "docs: re-run the conformance matrix for X.Y.Z" -- docs/conformance.md docs/conformance.json README.md conformance/results
 uv run scripts/check-versions.py
 git push -u origin release/X.Y.Z          # then open the pull request
 gh pr checks                              # the `wheels / wheels (...)` rows must be green

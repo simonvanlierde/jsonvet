@@ -120,7 +120,7 @@ jobs:
       # a docs page.
       - name: Load the page in Chrome
         run: playground/browser-check.sh
-      # A pull request keeps screenshots of its page and two docs pages, desktop and phone in light
+      # A pull request keeps screenshots of its page and three docs pages, desktop and phone in light
       # and dark, as an artifact that the `screenshots` job links from the pull request, since Pages
       # cannot host a preview.
       - name: Take screenshots of the page

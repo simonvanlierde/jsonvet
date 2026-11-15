@@ -6,7 +6,9 @@ How 27 parser runs treat the same files in JSON5, JSONC, JWCC (HuJSON), JSON
 Lines and strict JSON: 18 other parsers, plus jsonvet in each dialect and the
 duplicate-key variants. Each dialect's table lists the parsers that claim that dialect.
 Run on 2026-11-10; a full run took 108 s. How it works and how to
-rerun it: [conformance/README.md](../conformance/README.md).
+rerun it: [conformance/README.md](../conformance/README.md). The
+[matrix page](https://simonvanlierde.com/jsonvet/docs/matrix.html) shows the same results
+with filters, and each file's text and verdicts in every dialect.
 
 Cells: ✓ the parser agrees with the expected verdict, ✗ it disagrees, ‼ it crashed or
 took longer than 10 s. Where the spec allows both verdicts (expected: either), the cell

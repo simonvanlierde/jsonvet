@@ -70,10 +70,10 @@ matrix:
 matrix-lock:
     uv run conformance/run.py --lock
 
-# ci.yml `lint`: the rendered page is up to date. Fails on uncommitted edits to those two files.
+# ci.yml `lint`: the rendered page is up to date. Fails on uncommitted edits to those files.
 matrix-check:
     uv run conformance/report.py
-    git diff --exit-code docs/conformance.md README.md
+    git diff --exit-code docs/conformance.md docs/conformance.json README.md
 
 # Fuzz one target for 20 minutes, as fuzz.yml does: check, diff_serde_json, diff_json5, parse, fix, config or config_file.
 fuzz TARGET:

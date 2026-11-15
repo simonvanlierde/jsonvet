@@ -1,7 +1,9 @@
 # /// script
 # requires-python = ">=3.11"
 # ///
-"""Render conformance/results/ into docs/conformance.md.
+"""Render conformance/results/ into docs/conformance.md and docs/conformance.json.
+
+docs/conformance.json holds the same tables as data, for the matrix page on the site.
 
 Usage: uv run conformance/report.py [--check]
 
@@ -24,6 +26,8 @@ ROOT = Path(__file__).resolve().parent.parent
 HERE = ROOT / "conformance"
 RESULTS = HERE / "results"
 OUT = ROOT / "docs/conformance.md"
+# The same tables as data, which scripts/docs-site/build.mjs renders as the matrix page.
+OUT_JSON = ROOT / "docs/conformance.json"
 README = ROOT / "README.md"
 SNAPSHOT = ROOT / "crates/jsonvet-cli/tests/snapshots/corpus__corpus.snap"
 CORPUS = "tests/corpus/"
@@ -209,21 +213,23 @@ def extras() -> dict[str, tuple[str, str]]:
     return out
 
 
-def expectation(path: str, dialect: str, snap: dict, extra: dict) -> tuple[str, str]:
-    """The expected verdict for a file in a dialect's table, and the spec note if any."""
+def expectation(path: str, dialect: str, snap: dict, extra: dict) -> tuple[str, str, str]:
+    """The expected verdict for a file in a dialect's table, the spec note if any, and its source."""
     if path.startswith(SUITE):
         ext = path.rsplit(".", 1)[1]
+        source = "the json5-tests file extension"
         if dialect == "json5":
-            return ("valid" if ext in {"json", "json5"} else "invalid"), ""
+            return ("valid" if ext in {"json", "json5"} else "invalid"), "", source
         if path in MISLABELED:
-            return "invalid", f"json5/json5-tests#4: named .json but {MISLABELED[path]}"
-        return ("valid" if ext == "json" else "invalid"), ""
+            why = f"json5/json5-tests#4: named .json but {MISLABELED[path]}"
+            return "invalid", why, "tests/json5-tests-mislabeled.tsv"
+        return ("valid" if ext == "json" else "invalid"), "", source
     if path.startswith(EXTRA):
-        return extra[path]
+        return (*extra[path], f"{EXTRA}{path.split('/')[2]}/expect.tsv")
     short = path.removeprefix(CORPUS)
     if short in SPEC:
-        return SPEC[short]
-    return ("valid" if snap[path][0] else "invalid"), ""
+        return (*SPEC[short], "the spec")
+    return ("valid" if snap[path][0] else "invalid"), "", "jsonvet's reviewed corpus snapshot"
 
 
 def cell(verdict: str, expected: str) -> str:
@@ -251,14 +257,40 @@ def grid(columns: list[str], rows: list[tuple[str, str, str]], verdicts: dict) -
     return lines
 
 
-def dialect_section(table: tuple[str, str, str, list[str]], data: tuple[dict, dict, dict, dict]) -> list[str]:
-    """One dialect's heading, summary, grid and notes."""
-    title, dialect, link, folders = table
-    verdicts, parsers, snap, extra = data
+def table_runs(table: tuple[str, str, str, list[str]], verdicts: dict, parsers: dict) -> tuple[list[str], list[str]]:
+    """A dialect table's columns (the parser runs that claim the dialect) and its files."""
+    _, dialect, _, folders = table
     columns = [p for p, info in parsers.items() if dialect in info["uses"]]
     files = [p for p in next(iter(verdicts.values())) if any(p.startswith(f) for f in folders)]
+    return columns, files
+
+
+def matrix_json(data: tuple[dict, dict, dict, dict], summary: dict) -> dict:
+    """The dialect tables as data: expected verdicts, their sources, and every run's verdict and mark."""
+    verdicts, parsers, snap, extra = data
+    dialects = []
+    for table in TABLES:
+        title, dialect, link, _ = table
+        columns, files = table_runs(table, verdicts, parsers)
+        rows = []
+        for path in sorted(files):
+            expected, why, source = expectation(path, dialect, snap, extra)
+            runs = {c: {"verdict": verdicts[c][path], "mark": cell(verdicts[c][path], expected)} for c in columns}
+            row = {"path": path, "expected": expected, "source": source, "why": why, "runs": runs}
+            if path in NOTES:
+                row["note"] = NOTES[path]
+            rows.append(row)
+        dialects.append({"title": title, "dialect": dialect, "spec": link, "columns": columns, "files": rows})
+    return {"date": summary["date"], "timeout": TIMEOUT, "parsers": parsers, "dialects": dialects}
+
+
+def dialect_section(table: tuple[str, str, str, list[str]], data: tuple[dict, dict, dict, dict]) -> list[str]:
+    """One dialect's heading, summary, grid and notes."""
+    title, dialect, link, _ = table
+    verdicts, parsers, snap, extra = data
+    columns, files = table_runs(table, verdicts, parsers)
     order = {"valid": 0, "invalid": 1, "either": 2}
-    rows = sorted(((p, *expectation(p, dialect, snap, extra)) for p in files), key=lambda r: (order[r[1]], r[0]))
+    rows = sorted(((p, *expectation(p, dialect, snap, extra)[:2]) for p in files), key=lambda r: (order[r[1]], r[0]))
     scored = [r for r in rows if r[1] != "either"]
     out = [f"## {title}", "", f"Spec: <{link}>. {len(rows)} files, {len(scored)} scored.", ""]
 
@@ -362,7 +394,9 @@ def main() -> None:
         f"Lines and strict JSON: {others_count(parsers)} other parsers, plus jsonvet in each dialect and the",
         "duplicate-key variants. Each dialect's table lists the parsers that claim that dialect.",
         f"Run on {summary['date']}; a full run took {summary['seconds']} s. How it works and how to",
-        "rerun it: [conformance/README.md](../conformance/README.md).",
+        "rerun it: [conformance/README.md](../conformance/README.md). The",
+        "[matrix page](https://simonvanlierde.com/jsonvet/docs/matrix.html) shows the same results",
+        "with filters, and each file's text and verdicts in every dialect.",
         "",
         "Cells: ✓ the parser agrees with the expected verdict, ✗ it disagrees, ‼ it crashed or",
         f"took longer than {TIMEOUT} s. Where the spec allows both verdicts (expected: either), the cell",
@@ -384,7 +418,8 @@ def main() -> None:
     images = ", ".join(f"`{image}`" for image in summary["images"].values())
     out += ["", f"Images: {images}. Runtimes: " + "; ".join(f"{k} {v}" for k, v in summary["runtimes"].items()) + "."]
     OUT.write_text("\n".join(out) + "\n")
-    print(f"wrote {OUT.relative_to(ROOT)}")
+    OUT_JSON.write_text(json.dumps(matrix_json(data, summary), indent=1, ensure_ascii=False) + "\n")
+    print(f"wrote {OUT.relative_to(ROOT)} and {OUT_JSON.relative_to(ROOT)}")
     sys.exit(check_readme_count(parsers))
 
 
