@@ -1,97 +1,28 @@
-/* The docs pages (scripts/docs-site/build.mjs), on the playground's paper and tokens in style.css:
-   a nav beside the text on a desk, above it on a phone. Prose in the serif, code in the mono. */
-.skip { position: absolute; left: 8px; top: -100px; z-index: 2; padding: 6px 10px; background: var(--paper); color: var(--ink); border: 1px solid var(--ink); }
-.skip:focus { top: 8px; }
-.slug a { color: inherit; }
-/* WCAG 2.2 target size (2.5.8), as the playground's own links have it. */
-.slug a { display: inline-block; min-height: 24px; line-height: 24px; }
-.docs { flex: 1; display: grid; grid-template-columns: 11rem minmax(0, 1fr); gap: 0 48px; padding-block: 18px 0; }
-.docs.bare { grid-template-columns: minmax(0, 1fr); }
-.docs nav ul { position: sticky; top: 18px; margin: 0; padding: 0; list-style: none; font: 13px/1.6 var(--mono); }
-.docs nav a { display: block; min-height: 24px; padding: 3px 0 3px 10px; color: var(--faint); text-decoration: none; }
-.docs nav a:hover { color: var(--ink); }
-/* The page in view gets the selected stage's ink bar, on its left edge here. */
-.docs nav [aria-current="page"], .docs nav .here { color: var(--ink); box-shadow: inset 2px 0 var(--ink); }
-
-.prose { min-width: 0; line-height: 1.55; }
-.prose > :not(.scroll, pre) { max-width: 68ch; }
-.prose h1 { margin: 0 0 14px; font-size: 1.875rem; font-weight: 400; line-height: 1.25; }
-.prose h2 { margin: 34px 0 10px; padding-top: 12px; border-top: 1px solid var(--rule); font-size: 1.375rem; font-weight: 600; line-height: 1.3; }
-.prose h3 { margin: 26px 0 8px; font-size: 1.125rem; font-weight: 600; }
-.prose h4 { margin: 20px 0 6px; font-size: 1rem; font-style: italic; font-weight: 400; }
-.prose h1, .prose h2, .prose h3 { text-wrap: balance; }
-.prose p, .prose li { text-wrap: pretty; }
-.prose h2, .prose h3, .prose h4 { scroll-margin-top: 12px; }
-.prose code { padding: 0 .2em; background: var(--tint); overflow-wrap: anywhere; }
-.prose pre { width: fit-content; min-width: min(46rem, 100%); max-width: 100%; margin: 12px 0; padding: 10px 12px; overflow-x: auto; font-size: 13.5px; line-height: 1.55; background: var(--tint); scrollbar-color: var(--rule-strong) transparent; }
-.prose pre code { padding: 0; background: none; font-size: inherit; overflow-wrap: normal; }
-.prose blockquote { margin: 12px 0; padding-left: 14px; border-left: 2px solid var(--rule-strong); color: var(--faint); font-style: italic; }
-.prose hr { border: 0; border-top: 1px dashed var(--rule-strong); }
-/* File paths and rule ids in a table cell stay on one line, in the mono at the CLI-string size. */
-.prose td > a:only-child, .prose td > code { font: 12.5px/1.6 var(--mono); }
-.prose td > code { padding: 0; background: none; }
-.prose li + li { margin-top: 2px; }
-.prose details { margin: 12px 0; }
-.prose summary { cursor: pointer; }
-.contents li { margin-top: 8px; }
-
+/* The conformance matrix page (matrix.mjs, in src/pages/docs/matrix.astro). The dialect and filter
+   choices are radio inputs read here with :has(), and a file's or parser's details are a section
+   shown by :target, so it needs no script. A browser without :has() shows every table and ignores
+   the filters. The page opts out of Starlight's Markdown styles (`not-content`) and sets its own,
+   on the tokens of jsonvet.css, and takes the room a wide table needs. */
+:root:root[data-theme], :root:root { --sl-content-width: 90rem; }
+.matrix { font-size: 1rem; line-height: 1.55; margin-top: 1.5rem; }
+.key { margin-top: 1rem; }
+.matrix a { color: inherit; text-decoration: underline; text-decoration-color: var(--rule-strong); text-underline-offset: .22em; text-decoration-thickness: 1px; }
+.matrix a:hover { text-decoration-color: currentColor; }
+.matrix :is(h2, h3) { font-weight: 600; }
+.matrix code { padding: 0 .2em; background: var(--tint); font-size: .875em; }
+.matrix pre { width: fit-content; min-width: min(46rem, 100%); max-width: 100%; margin: 12px 0; padding: 10px 12px; overflow-x: auto; font: 13.5px/1.55 var(--mono); background: var(--tint); scrollbar-color: var(--rule-strong) transparent; }
+.matrix pre code { padding: 0; background: none; font-size: inherit; }
+.matrix table { border-collapse: collapse; font-size: .9375rem; font-variant-numeric: tabular-nums; }
+.matrix :is(th, td) { padding: 4px 12px 4px 0; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule); }
+.matrix th { border-bottom-color: var(--rule-strong); font-weight: 600; white-space: nowrap; }
 /* A wide table scrolls inside its box, so the page never does. */
 .scroll { max-width: 100%; margin: 12px 0; overflow-x: auto; scrollbar-color: var(--rule-strong) transparent; }
-.prose table { border-collapse: collapse; font-size: .9375rem; font-variant-numeric: tabular-nums; }
-.prose th, .prose td { padding: 4px 12px 4px 0; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule); }
-.prose th { border-bottom-color: var(--rule-strong); font-weight: 600; white-space: nowrap; }
-.prose td code, .prose th code { white-space: nowrap; overflow-wrap: normal; }
-.prose th[align="center"], .prose td[align="center"] { text-align: center; }
-.prose th[align="right"], .prose td[align="right"] { text-align: right; }
-
-/* The page's own headings, nested under its nav item. */
-.docs nav ul ul { position: static; margin: 0 0 6px; font-size: 12.5px; }
-.docs nav ul ul a { padding-left: 22px; }
-
-/* Search (playground/search.mjs). The box is hidden until the script runs, so without script the
-   nav is as it was. The results overlay the page below the box. */
-.find { position: relative; margin-bottom: 10px; }
-.find label { display: block; padding: 0 0 3px 10px; color: var(--faint); font: 13px/1.6 var(--mono); }
-.find input { box-sizing: border-box; width: 100%; min-height: 44px; margin: 0; padding: 6px 10px; border: 1px solid var(--faint); border-radius: 0; background: var(--paper); color: var(--ink); font: 16px/1.4 var(--mono); }
-.find input:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
-.docs .find ul { display: block; position: absolute; z-index: 3; top: 100%; left: 0; width: min(26rem, 100%); max-height: 70vh; margin: 2px 0 0; padding: 0; overflow-y: auto; list-style: none; font: inherit; background: var(--paper); border: 1px solid var(--ink); }
-.find li + li { border-top: 1px solid var(--rule); }
-.find li { min-height: 44px; padding: 6px 10px; color: var(--ink); font: 14px/1.4 var(--mono); cursor: pointer; }
-.find li:hover { background: var(--tint); }
-.find li span { display: block; overflow-wrap: anywhere; }
-.find .where { color: var(--faint); font-size: 12.5px; }
-.find [aria-selected="true"] { background: var(--tint); box-shadow: inset 2px 0 var(--ink); }
-@media (min-width: 861px) {
-  /* The whole nav sticks, so the box stays in reach on a long page. */
-  .docs nav { position: sticky; top: 18px; align-self: start; }
-  .docs nav > ul { position: static; }
-  .docs .find ul { width: min(26rem, calc(100vw - 48px)); }
-}
-@media (forced-colors: active) {
-  .find [aria-selected="true"] { outline: 2px solid Highlight; }
-}
-
-@media (min-width: 861px) {
-  .prose td > a:only-child, .prose td > code { white-space: nowrap; }
-}
-@media (max-width: 860px) {
-  .docs nav ul ul { display: none; }
-  .docs { grid-template-columns: minmax(0, 1fr); }
-  .docs nav { margin-bottom: 18px; padding-bottom: 8px; border-bottom: 1px solid var(--rule); }
-  .docs nav ul { position: static; display: flex; flex-wrap: wrap; gap: 0 18px; }
-  .docs nav a { padding: 3px 0; }
-  .docs nav [aria-current="page"], .docs nav .here { box-shadow: inset 0 -2px var(--ink); }
-}
-@media (forced-colors: active) {
-  .prose pre { border: 1px solid CanvasText; }
-  .docs nav [aria-current="page"], .docs nav .here { text-decoration: underline; }
-  .matrix fieldset label:has(:checked) { outline: 2px solid Highlight; }
-}
+.matrix .skip-matrix { position: absolute; left: -10000px; }
+@media (forced-colors: active) { .matrix fieldset label:has(:checked) { outline: 2px solid Highlight; } }
 
 /* The conformance matrix page (scripts/docs-site/matrix.mjs). The dialect and filter choices are
    radio inputs read here with :has(), and a file's or parser's details are a section shown by
    :target. A browser without :has() shows every table and ignores the filters. */
-.prose > .matrix { max-width: none; }
 .key, .matrix .aside { color: var(--faint); font-size: .9375rem; }
 /* The legend: one chip per glyph, so each reads on its own. */
 .key { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 14px; padding: 0; list-style: none; }
@@ -171,3 +102,5 @@
   .details { margin-top: 0; padding: 0 0 0 20px; border-top: 0; border-left: 1px solid var(--rule); }
   .dialect h2 { margin-top: 0; }
 }
+/* Words for a screen reader, beside a mark. */
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

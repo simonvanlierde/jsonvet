@@ -1,25 +1,39 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { posix, resolve } from "node:path";
 import { after, test } from "node:test";
-import { prepare, search } from "../../playground/search.mjs";
 import { decode } from "../../playground/share.mjs";
-import { anchorsOf, build, REPO, ROOT, slugger } from "./build.mjs";
+import { policy, scriptHashes } from "./csp-hash.mjs";
+import { anchorsOf, NAV, pageOf, REPO, ROOT, slugger, sources } from "./lib.mjs";
 import { shown } from "./matrix.mjs";
 
-// The site's root, as deployed: playground/ with the pages in docs/.
-const site = mkdtempSync(resolve(tmpdir(), "docs-site-"));
+// The site as deployed, built into a folder of its own (DOCS_OUT), so a test never touches ../../site.
+// Inside node_modules, as Astro moves files into it and /tmp may be another device.
+const site = mkdtempSync(resolve(import.meta.dirname, "node_modules/.site-"));
 after(() => rmSync(site, { recursive: true, force: true }));
-const pages = build(resolve(site, "docs"), "abc123");
-const html = Object.fromEntries(pages.map((p) => [`docs/${p}`, readFileSync(resolve(site, "docs", p), "utf8")]));
+try {
+  execFileSync("astro", ["build"], { env: { ...process.env, DOCS_OUT: site }, encoding: "utf8", stdio: "pipe" });
+} catch (e) {
+  throw new Error(`astro build failed:\n${e.stdout}${e.stderr}`);
+}
+
+const BASE = "/jsonvet/";
+const walk = (dir) =>
+  readdirSync(dir, { recursive: true, withFileTypes: true })
+    .filter((f) => f.isFile())
+    .map((f) => posix.relative(dir, resolve(f.parentPath, f.name)));
+// Every Starlight page: the docs and the 404, not the playground's index.html.
+const pagePaths = walk(site).filter((p) => p.endsWith(".html") && (p.startsWith("docs/") || p === "404.html"));
+const html = Object.fromEntries(pagePaths.map((p) => [p, readFileSync(resolve(site, p), "utf8")]));
+const read = (path) => readFileSync(resolve(site, path), "utf8");
 // Cached: the matrix page alone has thousands of links into its own ids.
 const idCache = new Map();
 const ids = (text) => {
   if (!idCache.has(text)) idCache.set(text, new Set([...text.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1])));
   return idCache.get(text);
 };
-const fileOf = (path) => (path.startsWith("docs/") ? resolve(site, path) : resolve(ROOT, "playground", path));
+const descriptionOf = (page) => html[page].match(/<meta name="description" content="([^"]*)"/)[1];
 
 test("anchors match GitHub's", () => {
   const slug = slugger();
@@ -32,18 +46,33 @@ test("anchors match GitHub's", () => {
   assert.equal(slug("json-1"), "json-1-1");
 });
 
-test("every link between the pages, and every anchor, resolves", () => {
+test("every address of the old pages still serves a page, as a file", () => {
+  const expected = [...sources().map(pageOf), "matrix.html"].map((p) => `docs/${p}`);
+  assert.ok(expected.length >= 29);
+  for (const path of expected) {
+    // The decisions' README and the contents are the folders' index.
+    const file = path.endsWith("/") ? `${path}index.html` : path;
+    assert.ok(existsSync(resolve(site, file)), file);
+  }
+  for (const file of ["docs/index.html", "docs/decisions/index.html", "404.html", "index.html"])
+    assert.ok(existsSync(resolve(site, file)), file);
+});
+
+test("every link between the pages, every asset and every anchor resolves", () => {
   const broken = [];
   for (const [path, text] of Object.entries(html)) {
     for (const [, href] of text.matchAll(/\s(?:href|src)="([^"]+)"/g)) {
       if (/^[a-z]+:/i.test(href)) continue;
-      const [ref, anchor] = href.replace(/\?v=abc123$/, "").split("#");
-      let target = ref ? posix.normalize(posix.join(posix.dirname(path), ref)) : path;
-      if (ref.endsWith("/") || ref === ".") target = posix.join(target, "index.html");
+      const [ref, anchor] = href.split("#");
+      // A link is absolute under the base, or relative to the page (the matrix page's playground links).
+      const rooted = ref.startsWith(BASE) ? ref.slice(BASE.length) : posix.join(posix.dirname(path), ref);
+      const target = !ref ? path : rooted.endsWith("/") || rooted === "" ? `${rooted}index.html` : rooted;
+      const file = posix.normalize(target);
       // A playground share link (`#dialect:data`) is read by the page's script, not an id.
-      const shared = target === "index.html" && /^[a-z0-9-]+:/.test(anchor);
-      if (!existsSync(fileOf(target))) broken.push(`${path}: ${href}`);
-      else if (anchor && !shared && !ids(html[target] ?? "").has(anchor))
+      const shared = file === "index.html" && /^[a-z0-9-]+:/.test(anchor ?? "");
+      if (ref.startsWith("/") && !ref.startsWith(BASE)) broken.push(`${path}: ${href} (outside the base)`);
+      else if (!existsSync(resolve(site, file))) broken.push(`${path}: ${href}`);
+      else if (anchor && !shared && !ids(html[file] ?? read(file)).has(anchor))
         broken.push(`${path}: ${href} (no such anchor)`);
     }
   }
@@ -70,73 +99,20 @@ test("no link is left pointing at a Markdown file of the site", () => {
   }
 });
 
-test("each page keeps the CSP, a skip link and its landmarks, with no inline script or style", () => {
+test("each page has a skip link and its landmarks, and one h1", () => {
   for (const [path, text] of Object.entries(html)) {
-    assert.match(
-      text,
-      /<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self';/,
-      path,
-    );
-    assert.doesNotMatch(text, /'unsafe-inline'|<script(?![^>]*\ssrc=)[^>]*>|<style|\sstyle=/, path);
-    assert.match(text, /<a class="skip" href="#content">/, path);
-    for (const tag of ["<header", "<nav", '<main id="content"', "<footer"])
+    assert.match(text, /<a [^>]*href="#_top"/, `${path}: skip link`);
+    for (const tag of ["<header", "<main", ...(path === "404.html" ? [] : ["<nav"])])
       assert.ok(text.includes(tag), `${path} ${tag}`);
     assert.equal(text.match(/<h1[ >]/g)?.length, 1, `${path}: one h1`);
   }
 });
 
-test("search: the index covers every page and heading, each page loads the script, and nothing is inline", async () => {
-  const text = readFileSync(resolve(site, "docs/search-index.js"), "utf8");
-  assert.match(text, /^export default \[/);
-  const index = (await import(`data:text/javascript,${encodeURIComponent(text)}`)).default;
-  const byUrl = new Map(index.map(([url, , sections]) => [url, sections]));
-  for (const [path, page] of Object.entries(html)) {
-    const url = path.slice("docs/".length).replace(/(^|\/)index\.html$/, "$1");
-    // The matrix page's own headings have no ids, so only the ones with an id can be a target.
-    const headings = [...page.matchAll(/<h[1-4] id="([^"]+)"/g)].map((m) => m[1]);
-    if (url === "") {
-      assert.ok(!byUrl.has(url), "the contents page is not indexed");
-      continue;
-    }
-    assert.deepEqual(
-      (byUrl.get(url) ?? []).map(([id]) => id),
-      headings,
-      path,
-    );
-    assert.match(page, /<script type="module" src="(\.\.\/)*search\.mjs\?v=abc123"><\/script>/, path);
-    assert.match(page, /<search id="docs-search" class="find" hidden>/, path);
-  }
-  for (const [, , sections] of index)
-    for (const [id, heading, words] of sections) {
-      assert.ok(heading && id);
-      assert.doesNotMatch(words, /[<>&;]|\s\s|^\s|\s$/, id);
-      assert.equal(new Set(words.split(" ")).size, words ? words.split(" ").length : 1, `${id}: a word twice`);
-    }
-  // Body text is found through the index, as a reader would.
-  const found = search(prepare(index), "duplicate-key");
-  assert.deepEqual([found[0].url, found[0].id], ["usage.html", "duplicate-key"]);
-  // The index is a file of the site's own, so the CSP's `script-src 'self'` covers it with no
-  // connect-src, and the search script stays the only one besides theme.js.
-  for (const page of Object.values(html)) {
-    const scripts = [...page.matchAll(/<script[^>]*\ssrc="([^"]+)"/g)].map((m) =>
-      m[1].replace(/^(\.\.\/)*|\?.*$/g, ""),
-    );
-    assert.deepEqual(scripts, ["theme.js", "search.mjs"]);
-    assert.doesNotMatch(
-      page.match(/http-equiv="Content-Security-Policy" content="([^"]*)"/)[1],
-      /connect-src|wasm-unsafe-eval/,
-    );
-  }
-});
-
-test("tables and code scroll in a focusable, named box", () => {
+test("tables and code scroll in a focusable, named box, and the names are unique on each page", () => {
   const page = html["docs/conformance.html"];
-  const table = '<div class="scroll" tabindex="0" role="region" aria-label="Table[^"]*"><table>';
-  assert.equal(page.match(/<table>/g).length, page.match(new RegExp(table, "g")).length);
-  assert.match(html["docs/format.html"], /<pre tabindex="0" role="region" aria-label="Code(: [^"]*)?"><code/);
-});
-
-test("region labels are unique on each page", () => {
+  const box = '<div class="scroll" tabindex="0" role="region" aria-label="Table[^"]*"><table>';
+  assert.equal(page.match(/<table>/g).length, page.match(new RegExp(box, "g")).length);
+  assert.match(html["docs/format.html"], /<pre tabindex="0" role="region" aria-label="Code(: [^"]*)?">/);
   for (const [path, text] of Object.entries(html)) {
     const labels = [...text.matchAll(/role="region" aria-label="([^"]+)"/g)].map((m) => m[1]);
     assert.deepEqual(
@@ -145,21 +121,10 @@ test("region labels are unique on each page", () => {
       path,
     );
   }
-  assert.match(html["docs/conformance.html"], /aria-label="Table: /);
+  assert.match(page, /aria-label="Table: /);
 });
 
-test("a long page lists its sections in the nav, and they exist", () => {
-  const page = html["docs/usage.html"];
-  const nav = page.match(/<a href="usage.html" aria-current="page">Reference<\/a><ul>(.*?)<\/ul>/)[1];
-  const links = [...nav.matchAll(/<a href="#([^"]+)">/g)].map((m) => m[1]);
-  const h2s = [...page.matchAll(/<h2 id="([^"]+)"/g)].map((m) => m[1]);
-  assert.ok(links.length >= 3);
-  assert.deepEqual(links, h2s);
-  for (const id of links) assert.ok(ids(page).has(id), id);
-  assert.doesNotMatch(html["docs/index.html"], /aria-current="page">[^<]*<\/a><ul>/);
-});
-
-test("ids are unique on each page, the template's among them", () => {
+test("ids are unique on each page", () => {
   for (const [path, text] of Object.entries(html)) {
     const all = [...text.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
     assert.deepEqual(
@@ -170,16 +135,92 @@ test("ids are unique on each page, the template's among them", () => {
   }
 });
 
-test("a decision record's description is not its status line", () => {
-  const description = (page) => html[page].match(/<meta name="description" content="([^"]*)"/)[1];
-  for (const [path] of Object.entries(html).filter(([p]) => p.startsWith("docs/decisions/")))
-    assert.doesNotMatch(description(path), /^Status:/, path);
-  assert.match(description("docs/decisions/0002-no-unsafe-code.html"), /\s.*\s/);
+// What the policy is for: a page may carry inline script only if its hash is in the policy, and
+// nothing may come from another origin.
+const SOURCE = /^(?:'self'|'none'|'unsafe-inline'|'wasm-unsafe-eval'|data:|'sha256-[A-Za-z0-9+/]+=*')$/;
+const policyOf = (text) => text.match(/<meta http-equiv="Content-Security-Policy" content="([^"]*)"/)?.[1];
+/** The inline scripts of a page that its policy does not allow. */
+const unhashed = (text) => {
+  const allowed = new Set((policyOf(text)?.match(/script-src ([^;]*)/)?.[1] ?? "").split(" "));
+  return scriptHashes(text).filter((h) => !allowed.has(h));
+};
+
+test("the CSP check sees an inline script that is not hashed", () => {
+  const page = '<meta charset="utf-8"><script>one()</script><script type="module">two()</script>';
+  assert.equal(scriptHashes(page).length, 2);
+  assert.equal(scriptHashes('<script src="/a.js"></script><script type="application/json">{}</script>').length, 0);
+  const policed = `<meta http-equiv="Content-Security-Policy" content="${policy(page)}">${page}`;
+  assert.deepEqual(unhashed(policed), []);
+  assert.equal(unhashed(`${policed}<script>three()</script>`).length, 1);
+  assert.equal(unhashed(policed.replace("one()", "one( )")).length, 1);
 });
 
-test("no description ends in a colon", () => {
-  for (const path of Object.keys(html))
-    assert.doesNotMatch(html[path].match(/<meta name="description" content="([^"]*)"/)[1], /:$/, path);
+test("every inline script of a docs page is hashed in its CSP, and nothing comes from another origin", () => {
+  let inline = 0;
+  for (const [path, text] of Object.entries(html)) {
+    const csp = policyOf(text);
+    assert.ok(csp, `${path}: a policy`);
+    assert.match(csp, /^default-src 'none'; script-src 'self' 'wasm-unsafe-eval'/, path);
+    assert.deepEqual(unhashed(text), [], `${path}: an inline script is not in the policy`);
+    inline += scriptHashes(text).length;
+    // Every source is the site itself, a hash or one of the few keywords: no host, no `*`.
+    for (const directive of csp.split("; ")) {
+      const [name, ...sources] = directive.split(" ");
+      for (const s of sources) assert.match(s, SOURCE, `${path}: ${name} ${s}`);
+      if (name === "script-src") assert.ok(!sources.includes("'unsafe-inline'"), `${path}: script-src`);
+    }
+    assert.ok(csp.includes("connect-src 'self'") && csp.includes("base-uri 'none'"), path);
+    // The policy cannot hash an event handler attribute.
+    assert.doesNotMatch(text, /\son[a-z]+="/, `${path}: an event handler attribute`);
+    assert.doesNotMatch(text, /javascript:/, path);
+    // A resource is the site's own file: a script, stylesheet, image, frame or font by address.
+    for (const [tag] of text.matchAll(/<(?:script|link|img|iframe|source|video|audio|embed|object)\b[^>]*>/g)) {
+      for (const [, url] of tag.matchAll(/\s(?:src|href|srcset|data)="(https?:\/\/[^"]+)"/g)) {
+        // Only an address a reader can follow is allowed: the canonical and the sitemap are not loaded.
+        assert.ok(/rel="(?:canonical|sitemap)"/.test(tag), `${path}: loads ${url}`);
+      }
+    }
+  }
+  assert.ok(inline > 0);
+  for (const file of walk(site).filter((f) => f.endsWith(".css") && f !== "style.css" && !f.startsWith("pagefind")))
+    assert.doesNotMatch(read(file), /url\(\s*["']?(?:https?:)?\/\/|@import/, file);
+});
+
+test("the playground page keeps its strict CSP and its own files, with no inline script or style", () => {
+  const page = read("index.html");
+  assert.equal(page, readFileSync(resolve(ROOT, "playground/index.html"), "utf8"));
+  assert.equal(
+    policyOf(page),
+    "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'",
+  );
+  assert.doesNotMatch(page, /<script(?![^>]*\ssrc=)[^>]*>|<style|\sstyle=|unsafe-inline/);
+});
+
+test("without script the system's theme holds: no page says it is dark", () => {
+  for (const [path, text] of Object.entries(html))
+    assert.doesNotMatch(text.match(/<html[^>]*>/)[0], /data-theme/, path);
+  const css = walk(site)
+    .filter((f) => f.endsWith(".css"))
+    .map(read)
+    .join("");
+  assert.match(css, /prefers-color-scheme:\s*dark\)\s*{\s*:root:not\(\[data-theme\]\)/);
+});
+
+test("search: the index is built over the docs, and the matrix is left out", () => {
+  assert.ok(existsSync(resolve(site, "pagefind/pagefind.js")));
+  for (const [path, text] of Object.entries(html)) {
+    const indexed = text.includes("data-pagefind-body");
+    assert.equal(indexed, !["docs/matrix.html", "404.html"].includes(path), path);
+  }
+  assert.ok(existsSync(resolve(site, "index.html")) && !read("index.html").includes("data-pagefind-body"));
+});
+
+test("a decision record's description is not its status line, and none ends in a colon", () => {
+  for (const path of Object.keys(html).filter((p) => p.startsWith("docs/decisions/")))
+    assert.doesNotMatch(descriptionOf(path), /^Status:/, path);
+  assert.match(descriptionOf("docs/decisions/0002-no-unsafe-code.html"), /\s.*\s/);
+  for (const path of Object.keys(html).filter((p) => p !== "404.html"))
+    assert.doesNotMatch(descriptionOf(path), /:$/, path);
 });
 
 test("the playground's links into the pages resolve", () => {
@@ -195,7 +236,8 @@ test("the playground's links into the pages resolve", () => {
   assert.ok(links.length > 10);
   for (const href of links) {
     const [ref, anchor] = href.split("#");
-    const page = html[ref.endsWith("/") ? `${ref}index.html` : ref];
+    const file = ref.endsWith("/") ? `${ref}index.html` : ref;
+    const page = html[file];
     if (!page) broken.push(href);
     else if (anchor && !ids(page).has(anchor)) broken.push(`${href} (no such anchor)`);
   }
@@ -209,13 +251,25 @@ test("the CLI links each rule to a page the site publishes", () => {
   assert.ok(html[ref]);
 });
 
+test("the docs nav lists every page, in order", () => {
+  const nav =
+    html["docs/usage.html"].match(/<nav[^>]*aria-label="Main"[^>]*>[\s\S]*?<\/nav>/)?.[0] ?? html["docs/usage.html"];
+  const links = [...nav.matchAll(/href="\/jsonvet\/docs\/([^"#]*)"/g)].map((m) => m[1]);
+  const wanted = NAV.map(([src]) => pageOf(src).replace(/\/$/, "/index.html"));
+  assert.deepEqual(
+    wanted.filter((w) => links.includes(w)),
+    wanted,
+  );
+  assert.ok(html["docs/usage.html"].includes('aria-current="page"'));
+});
+
 test("the matrix page has a table per dialect, and details for every file and parser", () => {
   const page = html["docs/matrix.html"];
   const data = JSON.parse(readFileSync(resolve(ROOT, "docs/conformance.json"), "utf8"));
-  const css = readFileSync(resolve(ROOT, "playground/docs.css"), "utf8");
+  const css = readFileSync(resolve(import.meta.dirname, "src/styles/matrix.css"), "utf8");
   for (const d of data.dialects) {
-    // docs.css shows a dialect's table by its id, so a new dialect needs a rule there.
-    assert.ok(css.includes(`[value="${d.dialect}"]:checked) #dialect-${d.dialect}`), `docs.css: ${d.dialect}`);
+    // matrix.css shows a dialect's table by its id, so a new dialect needs a rule there.
+    assert.ok(css.includes(`[value="${d.dialect}"]:checked) #dialect-${d.dialect}`), `matrix.css: ${d.dialect}`);
     for (const c of d.columns) assert.ok(ids(page).has(`parser/${c}`), c);
     const table = page.slice(page.indexOf(`<section class="dialect" id="dialect-${d.dialect}"`)).split("</section>")[0];
     const rows = (flag) =>
@@ -254,7 +308,7 @@ test("each page has a canonical address and the social card's tags", () => {
   const card = readFileSync(resolve(ROOT, "playground/index.html"), "utf8").match(
     /property="og:image" content="([^"]+)"/,
   )[1];
-  for (const [path, text] of Object.entries(html)) {
+  for (const [path, text] of Object.entries(html).filter(([p]) => p !== "404.html")) {
     for (const tag of [
       'rel="canonical"',
       'property="og:title"',
@@ -264,13 +318,32 @@ test("each page has a canonical address and the social card's tags", () => {
     ])
       assert.ok(text.includes(tag), `${path} ${tag}`);
     assert.ok(text.includes(`property="og:image" content="${card}"`), `${path}: the playground's card`);
+    const canonical = text.match(/rel="canonical" href="([^"]+)"/)[1];
+    assert.equal(text.match(/property="og:url" content="([^"]+)"/)[1], canonical, path);
   }
+  // The folders' pages keep their old address, not the file that serves them.
+  assert.match(html["docs/index.html"], /rel="canonical" href="https:\/\/simonvanlierde.com\/jsonvet\/docs\/"/);
+  assert.match(html["docs/decisions/index.html"], /rel="canonical" href="[^"]*\/docs\/decisions\/"/);
+  assert.match(
+    html["docs/usage.html"],
+    /rel="canonical" href="https:\/\/simonvanlierde.com\/jsonvet\/docs\/usage.html"/,
+  );
+});
+
+test("the sitemap lists each page at its canonical address, and not the 404", () => {
+  const urls = [...read("sitemap-0.xml").matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+  const canonical = Object.entries(html)
+    .filter(([p]) => p !== "404.html")
+    .map(([, t]) => t.match(/rel="canonical" href="([^"]+)"/)[1]);
+  assert.deepEqual(urls.filter((u) => u !== "https://simonvanlierde.com/jsonvet/").sort(), canonical.sort());
+  assert.ok(urls.includes("https://simonvanlierde.com/jsonvet/"));
 });
 
 test("a 404 page sits at the site's root, styled by absolute paths and kept out of search", () => {
-  const text = readFileSync(resolve(site, "404.html"), "utf8");
-  assert.match(text, /<h1 id="page-not-found">/);
-  assert.match(text, /href="\/jsonvet\/style\.css/);
+  const text = html["404.html"];
+  assert.match(text, /<h1[^>]*>[^<]*404/i);
+  assert.match(text, /href="\/jsonvet\/_astro\/[^"]+\.css"/);
   assert.match(text, /name="robots" content="noindex"/);
-  assert.doesNotMatch(text, /rel="canonical"|<nav/);
+  assert.doesNotMatch(text, /rel="canonical"/);
+  assert.ok(statSync(resolve(site, "404.html")).size > 0);
 });

@@ -1,0 +1,19 @@
+---
+import StarlightPage from "@astrojs/starlight/components/StarlightPage.astro";
+import { Content } from "../../../../../../docs/decisions/README.md";
+import { describe, SITE } from "../../../../lib.mjs";
+
+// NOTE: see ../[index].astro.
+export const getStaticPaths = () => [{ params: { index: "index" } }];
+
+const { title, summary } = describe("docs/decisions/README.md");
+const address = `${SITE}docs/decisions/`;
+const head = [
+  { tag: "link" as const, attrs: { rel: "canonical", href: address } },
+  { tag: "meta" as const, attrs: { property: "og:url", content: address } },
+];
+---
+
+<StarlightPage frontmatter={{ title, description: summary, head }}>
+  <Content />
+</StarlightPage>

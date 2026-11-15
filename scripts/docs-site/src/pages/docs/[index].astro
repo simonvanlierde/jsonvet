@@ -1,0 +1,28 @@
+---
+import StarlightPage from "@astrojs/starlight/components/StarlightPage.astro";
+import { describe, MATRIX, NAV, pageOf, SITE } from "../../../lib.mjs";
+import { matrixPage } from "../../../matrix.mjs";
+
+// NOTE: a route named `index`, not an index page, keeps the file docs/index.html under
+// build.format "file", where an index page would become docs.html.
+export const getStaticPaths = () => [{ params: { index: "index" } }];
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const rows = NAV.map(([src, label]) => ({
+  label,
+  href: `${base}/docs/${pageOf(src)}`,
+  summary: src === MATRIX ? matrixPage().summary : describe(src).summary,
+}));
+// The address a reader has, not the file that serves it.
+const address = `${SITE}docs/`;
+const head = [
+  { tag: "link" as const, attrs: { rel: "canonical", href: address } },
+  { tag: "meta" as const, attrs: { property: "og:url", content: address } },
+];
+---
+
+<StarlightPage frontmatter={{ title: "jsonvet docs", description: "The jsonvet reference, design notes, conformance matrix and decision records.", tableOfContents: false, head }}>
+  <ul class="contents">
+    {rows.map((r) => <li><a href={r.href}>{r.label}</a>: {r.summary}</li>)}
+  </ul>
+</StarlightPage>

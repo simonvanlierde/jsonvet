@@ -120,9 +120,6 @@ venv.bak/
 # Rope project settings
 .ropeproject
 
-# mkdocs documentation
-/site
-
 # mypy
 .mypy_cache/
 .dmypy.json
@@ -153,7 +150,7 @@ mutants.out*/
 /playground/pkg/
 preview-out/
 
-# The docs pages, built by scripts/docs-site/build.mjs
-/playground/docs/
-/playground/404.html
+# The site (the playground with the docs pages), built by scripts/docs-site (Astro)
+/site/
+/scripts/docs-site/.astro/
 /scripts/docs-site/node_modules/

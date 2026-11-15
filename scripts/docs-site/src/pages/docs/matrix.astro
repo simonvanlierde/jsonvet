@@ -1,0 +1,11 @@
+---
+import StarlightPage from "@astrojs/starlight/components/StarlightPage.astro";
+import { matrixPage } from "../../../matrix.mjs";
+import "../../styles/matrix.css";
+
+const { title, summary, body } = matrixPage();
+---
+
+<StarlightPage frontmatter={{ title, description: summary, tableOfContents: false, pagefind: false }}>
+  <Fragment set:html={body} />
+</StarlightPage>

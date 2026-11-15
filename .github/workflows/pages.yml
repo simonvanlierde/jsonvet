@@ -1,7 +1,8 @@
 name: pages
 
 # The browser playground: crates/jsonvet-wasm built to WebAssembly, and playground/ around it,
-# with docs/ rendered into playground/docs/ by scripts/docs-site.
+# with docs/ built into the Starlight pages under docs/ by scripts/docs-site. The site is built
+# into site/: the Astro build copies playground/ into it as it is.
 # A pull request builds it; a push to main also deploys it to GitHub Pages. An open, ready pull
 # request also gets a preview Worker, which preview-retire.yml deletes again.
 on:
@@ -70,8 +71,8 @@ jobs:
       # The page's helpers: line and column mapping, which has to match jsonvet's, share links, the
       # proof layout and the made-up hosts file.
       - run: node --test playground/*.test.mjs
-      # The docs pages: lint, the link and anchor tests, then the pages, stamped with the commit as
-      # the playground's files are below.
+      # The docs pages: lint, then the tests, which build the pages into a folder of their own and
+      # check every link, anchor and inline script hash.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
@@ -81,9 +82,6 @@ jobs:
       - run: pnpm --dir scripts/docs-site install --frozen-lockfile
       - run: pnpm --dir scripts/docs-site run check
       - run: pnpm --dir scripts/docs-site test
-      - run: pnpm --dir scripts/docs-site run build
-        env:
-          COMMIT: ${{ github.sha }}
       - run: cargo build --locked -p jsonvet-wasm --target wasm32-unknown-unknown --profile wasm
       - run: >-
           wasm-bindgen --target web --no-typescript --out-dir playground/pkg
@@ -104,18 +102,22 @@ jobs:
       # keeps its CSP and has no inline script or style.
       - name: Smoke test the wasm
         run: node playground/smoke.mjs
+      # The site: the docs pages, with the playground (and its wasm, built above) copied in. The
+      # docs files carry a content hash in their names, so only the playground's need the commit.
+      - name: Build the site
+        run: pnpm --dir scripts/docs-site run build
       # The page loads main.mjs, theme.js, its styles and (through main.mjs) the wasm glue and the
       # wasm with the commit in the URL, so a cached file from the last deploy never meets a new one.
       - name: Stamp the commit on the page's files
         env:
           COMMIT: ${{ github.sha }}
         run: |
-          sed -E -i "s#(href|src)=\"((pkg/)?[a-z_]+\\.(mjs|js|css|wasm))\"#\\1=\"\\2?v=${COMMIT}\"#g" playground/index.html
-          grep -q "main.mjs?v=${COMMIT}" playground/index.html
-          grep -q "theme.js?v=${COMMIT}" playground/index.html
-          grep -q "style.css?v=${COMMIT}" playground/index.html
-          grep -q "jsonvet_wasm_bg.wasm?v=${COMMIT}" playground/index.html
-          ! grep -E '(href|src)="[^"]*\.(mjs|js|css|wasm)"' playground/index.html
+          sed -E -i "s#(href|src)=\"((pkg/)?[a-z_]+\\.(mjs|js|css|wasm))\"#\\1=\"\\2?v=${COMMIT}\"#g" site/index.html
+          grep -q "main.mjs?v=${COMMIT}" site/index.html
+          grep -q "theme.js?v=${COMMIT}" site/index.html
+          grep -q "style.css?v=${COMMIT}" site/index.html
+          grep -q "jsonvet_wasm_bg.wasm?v=${COMMIT}" site/index.html
+          ! grep -E '(href|src)="[^"]*\.(mjs|js|css|wasm)"' site/index.html
       # Chrome is on the runner: load the stamped page from a local server and read its status, then
       # a docs page.
       - name: Load the page in Chrome
@@ -135,7 +137,7 @@ jobs:
           retention-days: 14
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          path: playground
+          path: site
 
   # One comment on the pull request links the newest screenshots, edited in place on each push. A
   # pull request from a fork gets a read-only token, so it has no comment.
@@ -247,12 +249,14 @@ jobs:
           name: github-pages
           path: ${{ runner.temp }}/pages
 
-      # Search engines should index the production page, not the preview copies.
+      # Search engines should index the production page, not the preview copies. The docs pages link
+      # to each other under /jsonvet/, as on Pages, so the site goes there and the root redirects.
       - if: steps.gate.outputs.run == 'true'
         run: |
-          mkdir preview-out
-          tar -xf "$RUNNER_TEMP/pages/artifact.tar" -C preview-out
+          mkdir -p preview-out/jsonvet
+          tar -xf "$RUNNER_TEMP/pages/artifact.tar" -C preview-out/jsonvet
           printf '/*\n  X-Robots-Tag: noindex\n' > preview-out/_headers
+          printf '/ /jsonvet/ 302\n' > preview-out/_redirects
 
       - if: steps.gate.outputs.run == 'true'
         id: upload

@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 HERE = ROOT / "conformance"
 RESULTS = HERE / "results"
 OUT = ROOT / "docs/conformance.md"
-# The same tables as data, which scripts/docs-site/build.mjs renders as the matrix page.
+# The same tables as data, which scripts/docs-site/matrix.mjs renders as the matrix page.
 OUT_JSON = ROOT / "docs/conformance.json"
 README = ROOT / "README.md"
 SNAPSHOT = ROOT / "crates/jsonvet-cli/tests/snapshots/corpus__corpus.snap"

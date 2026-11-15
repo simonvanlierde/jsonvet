@@ -1,0 +1,94 @@
+/* The playground's galley proof on Starlight's variables (playground/DESIGN.md has the system, and
+   playground/style.css the source of the tokens): warm paper, near-black ink, one proofreader's
+   red, Charter for the prose and the system mono for code. Light is the default; the dark values
+   follow the system and the theme button. */
+:root {
+  --paper: #fbfaf5; --ink: #1a1916; --faint: #6b675e; --dim: #77736a; --pen: #c0251b;
+  --rule: #dcd8cc; --rule-strong: #b7b2a4; --tint: #f2efe5; --select: #f1d6c6;
+  --serif: Charter, "Bitstream Charter", "Sitka Text", Cambria, "Iowan Old Style", Georgia, serif;
+  --mono: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, "Liberation Mono", monospace;
+}
+:root[data-theme="dark"] {
+  --paper: #1b1915; --ink: #ebe5d6; --faint: #a8a191; --dim: #8b8475; --pen: #ff8a73;
+  --rule: #3a362d; --rule-strong: #575146; --tint: #26231d; --select: #5a3427;
+}
+/* Starlight starts in dark and marks the page light or dark in a script. Without that script the
+   system's setting holds: the light tokens above, unless the system is dark. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --paper: #1b1915; --ink: #ebe5d6; --faint: #a8a191; --dim: #8b8475; --pen: #ff8a73;
+    --rule: #3a362d; --rule-strong: #575146; --tint: #26231d; --select: #5a3427;
+  }
+}
+:root, :root[data-theme] {
+  --sl-font: var(--serif);
+  --sl-font-mono: var(--mono);
+  --sl-color-white: var(--ink);
+  --sl-color-gray-1: var(--ink);
+  --sl-color-gray-2: var(--ink);
+  --sl-color-gray-3: var(--faint);
+  --sl-color-gray-4: var(--dim);
+  --sl-color-gray-5: var(--rule-strong);
+  --sl-color-gray-6: var(--tint);
+  --sl-color-gray-7: var(--tint);
+  --sl-color-black: var(--paper);
+  --sl-color-bg: var(--paper);
+  --sl-color-bg-nav: var(--paper);
+  --sl-color-bg-sidebar: var(--paper);
+  --sl-color-bg-inline-code: var(--tint);
+  --sl-color-text: var(--ink);
+  --sl-color-text-accent: var(--ink);
+  --sl-color-text-invert: var(--paper);
+  --sl-color-hairline: var(--rule);
+  --sl-color-hairline-light: var(--rule);
+  --sl-color-hairline-shade: var(--rule);
+  --sl-color-accent-low: var(--tint);
+  --sl-color-accent: var(--pen);
+  --sl-color-accent-high: var(--ink);
+  --sl-color-bg-accent: var(--ink);
+  --sl-text-body: 1rem;
+  --sl-line-height: 1.55;
+  --sl-content-width: 46rem;
+  color-scheme: light;
+}
+:root[data-theme="dark"] { color-scheme: dark; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme]) { color-scheme: dark; } }
+::selection { background: var(--select); color: var(--ink); }
+body { background: var(--paper); }
+
+/* Headings as the playground sets them: a light h1, a ruled h2. */
+.sl-markdown-content h1, h1#_top { font-weight: 400; }
+.sl-markdown-content :is(h2, h3, h4) { font-weight: 600; }
+.sl-markdown-content h4 { font-style: italic; font-weight: 400; }
+.sl-markdown-content h2 { border-top: 1px solid var(--rule); padding-top: .75rem; }
+.sl-markdown-content :not(a, strong, em, del, span, input, code, br) + :is(h2) { margin-top: 2.1rem; }
+.sl-markdown-content :is(h2, h3, h4) { text-wrap: balance; }
+.sl-markdown-content :is(p, li) { text-wrap: pretty; }
+.sl-markdown-content a { text-decoration-color: var(--rule-strong); text-underline-offset: .22em; text-decoration-thickness: 1px; }
+.sl-markdown-content a:hover { text-decoration-color: currentColor; }
+.sl-markdown-content blockquote { border-inline-start: 2px solid var(--rule-strong); color: var(--faint); font-style: italic; }
+.sl-markdown-content :not(pre) > code { overflow-wrap: anywhere; }
+.sl-markdown-content td > a:only-child, .sl-markdown-content td > code { font: 12.5px/1.6 var(--mono); }
+.sl-markdown-content td > code { padding: 0; background: none; }
+.sl-markdown-content table { font-variant-numeric: tabular-nums; }
+.sl-markdown-content :is(th, td) { vertical-align: top; }
+.sl-markdown-content :is(th, td) code { white-space: nowrap; }
+@media (min-width: 50rem) { .sl-markdown-content td > a:only-child, .sl-markdown-content td > code { white-space: nowrap; } }
+.contents li { margin-top: .5rem; }
+
+/* The sidebar: small mono, the page in view with the selected stage's ink bar. */
+.sidebar-content a { font: 13px/1.6 var(--mono); border-radius: 0; }
+.sidebar-content a[aria-current="page"] { background: none; color: var(--ink); box-shadow: inset 2px 0 var(--ink); }
+.site-title { font: 700 13px/1.6 var(--mono); }
+.colophon { margin: 1.5rem 0 0; color: var(--faint); font: 13px/1.6 var(--mono); }
+.colophon a { display: inline-block; min-height: 24px; line-height: 24px; color: inherit; }
+
+/* Code without Expressive Code: the tint, scrolling on its own, in the mono. A wide table scrolls in
+   its own box (markdown.mjs), so the page never does. */
+.sl-markdown-content pre { width: fit-content; min-width: min(46rem, 100%); max-width: 100%; margin: 1rem 0; padding: .65rem .75rem; overflow-x: auto; font: 13.5px/1.55 var(--mono); background: var(--tint); border: 0; border-radius: 0; scrollbar-color: var(--rule-strong) transparent; }
+.sl-markdown-content pre code { padding: 0; background: none; font: inherit; }
+.scroll { max-width: 100%; margin: 1rem 0; overflow-x: auto; scrollbar-color: var(--rule-strong) transparent; }
+/* Starlight makes a table scroll itself, with no way to focus it: the box scrolls instead. */
+.scroll table { display: table; margin: 0; }
+.sl-markdown-content :is(th, td) { padding: .25rem .75rem .25rem 0; }
+@media (forced-colors: active) { .sl-markdown-content pre { border: 1px solid CanvasText; } }

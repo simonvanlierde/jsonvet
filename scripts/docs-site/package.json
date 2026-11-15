@@ -3,13 +3,19 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node build.mjs",
+    "build": "astro build",
+    "dev": "astro dev",
     "check": "biome check",
     "test": "node --test"
   },
-  "devDependencies": {
-    "@biomejs/biome": "2.6.4",
+  "dependencies": {
+    "@astrojs/markdown-satteri": "0.4.7",
+    "@astrojs/starlight": "0.42.8",
+    "astro": "7.4.5",
     "marked": "18.1.2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.4"
   },
   "packageManager": "pnpm@12.17.0"
 }

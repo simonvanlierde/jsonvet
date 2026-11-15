@@ -169,10 +169,10 @@ compare REF DIR=(target / "profile-files"): profiling-build
 threads DIR=(target / "profile-files") CPUS="0,0-1,0-3,0-7": profiling-build
     hyperfine --shell=bash --warmup 3 -L cpus {{ CPUS }} 'taskset -c {cpus} {{ target }}/profiling/jsonvet {{ DIR }}/s[0-9]*.json'
 
-# Build the playground as pages.yml does, then serve it at http://127.0.0.1:8000. Needs the
+# Build the playground as pages.yml does, then serve it at http://127.0.0.1:8000/jsonvet/. Needs the
 # wasm32 target and wasm-bindgen-cli at the version in Cargo.lock; the deploy also runs wasm-opt.
-# Runs the page's tests and smoke test before serving, and builds the docs pages into
-# playground/docs, as pages.yml does.
+# Runs the page's tests and smoke test, then builds the site (the playground with the docs pages)
+# into site/ and serves it at /jsonvet/, as pages.yml does.
 playground PORT="8000":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -185,9 +185,14 @@ playground PORT="8000":
     pnpm --dir scripts/docs-site install --frozen-lockfile
     pnpm --dir scripts/docs-site run check
     pnpm --dir scripts/docs-site test
-    pnpm --dir scripts/docs-site run build
     cargo build --locked -p jsonvet-wasm --target wasm32-unknown-unknown --profile wasm
     wasm-bindgen --target web --no-typescript --out-dir playground/pkg \
         {{ target }}/wasm32-unknown-unknown/wasm/jsonvet_wasm.wasm
     node playground/smoke.mjs
-    python3 -m http.server {{ PORT }} --bind 127.0.0.1 --directory playground
+    pnpm --dir scripts/docs-site run build
+    # The pages' links are absolute under /jsonvet/, as on Pages.
+    root=$(mktemp -d)
+    trap 'rm -r "$root"' EXIT
+    ln -s "$PWD/site" "$root/jsonvet"
+    echo "http://127.0.0.1:{{ PORT }}/jsonvet/"
+    python3 -m http.server {{ PORT }} --bind 127.0.0.1 --directory "$root"

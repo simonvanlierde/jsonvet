@@ -1,12 +1,12 @@
 // The conformance matrix page: docs/conformance.json (written by conformance/report.py) as one
 // table per dialect, with filters and a detail panel for each file and parser. No script: the
-// dialect and filter choices are radio inputs that docs.css reads with :has(), and each detail is
+// dialect and filter choices are radio inputs that src/styles/matrix.css reads with :has(), and each detail is
 // a section shown by :target, so every file and parser has its own link (#file/..., #parser/...).
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { deflateRawSync } from "node:zlib";
 import { Marked } from "marked";
-import { esc, REPO, ROOT, submodules } from "./build.mjs";
+import { DOCS, esc, REPO, ROOT, submodules } from "./lib.mjs";
 
 // A file's text is shown up to this many characters; the playground link carries all of it.
 const MAX_CHARS = 2000;
@@ -142,7 +142,7 @@ ${f.note ? `<p class="why">${inline(f.note)}</p>` : ""}`;
   });
   return `<section class="detail" id="${esc(fileId(path))}">
 <h2>${esc(short(path))}</h2>
-<p class="back"><a href="#conformance-matrix">Back to the matrix</a></p>
+<p class="back"><a href="#matrix">Back to the matrix</a></p>
 <p class="meta"><span>${bytes.length.toLocaleString("en")} bytes</span><span><a href="${fileUrl(path)}">on GitHub</a></span></p>
 ${shownText}
 ${dialects.join("\n")}
@@ -166,7 +166,7 @@ ${list}`;
     });
   return `<section class="detail" id="parser/${name}">
 <h2>${name}</h2>
-<p class="back"><a href="#conformance-matrix">Back to the matrix</a></p>
+<p class="back"><a href="#matrix">Back to the matrix</a></p>
 <p class="meta"><span>${esc(info.language)}</span>${info.package ? `<span>${esc(info.package)}</span>` : ""}<span>${esc(info.version)}</span></p>
 ${parts.join("\n")}
 </section>`;
@@ -184,9 +184,9 @@ export function matrixPage() {
         `<label><input type="radio" name="dialect" value="${d.dialect}"${i ? "" : " checked"}> ${esc(d.title)} <span class="count">(${d.files.length})</span></label>`,
     )
     .join("\n");
-  const body = `<h1 id="conformance-matrix">Conformance matrix</h1>
-<p>How ${shownParsers.length} parser runs treat the same files in five JSON dialects, run on ${data.date}. Pick a dialect and what to show, then a file or a parser for its details. <a href="conformance.html">Conformance</a> has the same results as text, with the duplicate-key table and every version.</p>
-<ul class="key" aria-label="Legend">
+  // The page's h1 is Starlight's title.
+  const body = `<p>How ${shownParsers.length} parser runs treat the same files in five JSON dialects, run on ${data.date}. Pick a dialect and what to show, then a file or a parser for its details. <a href="${DOCS}conformance.html">Conformance</a> has the same results as text, with the duplicate-key table and every version.</p>
+<ul class="key not-content" aria-label="Legend">
 <li><b>✓</b> agrees with the expected verdict</li>
 <li><b>✗</b> disagrees</li>
 <li><b>‼</b> crashed or took longer than ${data.timeout}&nbsp;s</li>
@@ -194,7 +194,7 @@ export function matrixPage() {
 <li><b>R</b> rejected, where the spec allows both</li>
 <li><b>†</b> the spec decides the expected verdict</li>
 </ul>
-<div class="matrix">
+<div class="matrix not-content" id="matrix">
 <fieldset class="dialects"><legend>Dialect</legend>
 ${choices}
 </fieldset>
