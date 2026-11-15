@@ -13,6 +13,10 @@ on:
         description: PR numbers to retire, separated by spaces. Leave empty to run the daily sweep.
         required: false
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
