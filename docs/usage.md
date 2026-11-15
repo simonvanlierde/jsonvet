@@ -491,7 +491,8 @@ jsonvet --format json config.json5 | jq -r '.diagnostics[] | "\(.file):\(.line) 
 ```
 
 - `version` is the version of this layout, now `1`. A new field may come without a new version;
-  a field that changes meaning or goes away gets one. Ignore fields you do not know.
+  a field that changes meaning or goes away gets one. Ignore fields you do not know. To pin the
+  layout, stop when `version` is not the number you wrote your code for.
 - Optional `notes` holds runtime notices, such as a missing schema or a stale catalog cache.
   These do not change the exit status or count toward `--max-warnings`.
 - `diagnostics` holds one object per problem, in the order text output prints them. Each has:

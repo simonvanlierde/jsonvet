@@ -4278,6 +4278,15 @@ fn json_output_matches_its_published_schema() {
             .collect();
         assert!(errors.is_empty(), "{errors:?}\n{out}");
     }
+    // A report with `notes`, from a `$schema` that is not there.
+    let (_, out, _) = jsonvet_stdin(
+        &dir,
+        &["--format", "json", "-"],
+        "{\"$schema\":\"missing.json\"}",
+    );
+    let json: serde_json::Value = serde_json::from_str(&out).expect("JSON output");
+    assert_eq!(json["notes"].as_array().map(Vec::len), Some(1), "{out}");
+    assert!(validator.is_valid(&json), "{out}");
     let (_, out, _) = jsonvet_stderr(&dir, &full);
     let mut json: serde_json::Value = serde_json::from_str(&out).expect("JSON output");
     json["diagnostics"][0]["severity"] = "fatal".into();
