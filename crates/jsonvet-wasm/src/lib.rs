@@ -127,6 +127,10 @@ pub fn fix(text: &str, dialect: &str, unsafe_fixes: bool, only: &[u32]) -> Resul
     Ok(out)
 }
 
+/// The nesting `format` accepts: it recurses once per level, and a wasm module has a 1 MiB stack,
+/// where an overflow is a trap, not an error. Matches `serde_json`'s recursion limit.
+const FORMAT_MAX_DEPTH: usize = 128;
+
 /// Format `text` as `jsonvet fmt` does. `indent` is the spaces for one level, 0 for a tab; `width`
 /// the most columns a container may take on one line; `normalize_json5` applies to JSON5 only;
 /// `fill_numbers` fills number arrays.
@@ -134,7 +138,7 @@ pub fn fix(text: &str, dialect: &str, unsafe_fixes: bool, only: &[u32]) -> Resul
 /// # Errors
 ///
 /// The reason nothing was formatted: an unknown dialect, a syntax error (as `line:column message`),
-/// a text whose output would be too large, or a layout that would change a suppression's targets.
+/// a text nested deeper than 128 levels, a text whose output would be too large, or a layout that would change a suppression's targets.
 #[wasm_bindgen]
 pub fn format(
     text: &str,
@@ -145,7 +149,8 @@ pub fn format(
     normalize_json5: bool,
     fill_numbers: bool,
 ) -> Result<String, String> {
-    let config = Config::new(dialect.parse::<Dialect>().map_err(|e| e.to_string())?);
+    let config = Config::new(dialect.parse::<Dialect>().map_err(|e| e.to_string())?)
+        .max_depth(FORMAT_MAX_DEPTH);
     let options = FormatOptions {
         indent: if indent == 0 {
             Indent::Tab
@@ -441,6 +446,24 @@ mod tests {
             format(text, "jsonc", 2, 80, true, false, false).unwrap_err(),
             "not formatted: formatting would change which problems an inline suppression hides"
         );
+    }
+
+    #[test]
+    fn format_refuses_deep_nesting_on_a_small_stack() {
+        // A wasm module has a 1 MiB stack, and an overflow there is a trap, not an error.
+        let run = |text: String| {
+            std::thread::Builder::new()
+                .stack_size(1 << 20)
+                .spawn(move || format(&text, "json", 2, 80, true, false, false))
+                .map_or_else(
+                    |e| Err(e.to_string()),
+                    |h| h.join().unwrap_or_else(|_| Err("panicked".to_owned())),
+                )
+        };
+        let deep = run(format!("{}{}", "[".repeat(5000), "]".repeat(5000)));
+        assert!(deep.unwrap_err().contains("nest"));
+        let limit = super::FORMAT_MAX_DEPTH;
+        assert!(run(format!("{}{}", "[".repeat(limit), "]".repeat(limit))).is_ok());
     }
 
     #[test]

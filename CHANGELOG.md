@@ -23,6 +23,8 @@ version for a new option or output, the patch version for a fix.
 
 ### Fixed
 
+- In the playground, formatting a text nested more than 128 levels deep gives an error instead of
+  a stack overflow that traps the page's WebAssembly module.
 - `jsonvet --fix -` exits 2 when it cannot write to stderr, instead of aborting.
 - In the language server, `codeAction/resolve` returns the same edits as the list of quick fixes,
   also for a fix with several edits, such as mixed line endings.
