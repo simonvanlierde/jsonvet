@@ -58,7 +58,8 @@ It checks files by name: `.json`, `.jsonc`, `.json5`, `.jsonl`, `.ndjson`, `.geo
 `.hujson`, `.jwcc`, `.code-workspace`, `.code-snippets`, `.webmanifest` and `.babelrc`.
 
 Options go in `args`, such as `args: [--strict, package.json]` to hold `package.json` to strict
-JSON. The hook installs a prebuilt binary from PyPI, so you need no Rust.
+JSON. The hook installs a prebuilt binary from PyPI, so you need no Rust. On Linux the wheel needs glibc
+2.28 or newer; older systems build from the source distribution, which needs Rust.
 
 ### GitHub Action
 

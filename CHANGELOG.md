@@ -13,13 +13,21 @@ version for a new option or output, the patch version for a fix.
 - `fill-numbers = true` in `[format]` or `per-file-format` puts as many numbers on each line as
   fit in an array of numbers only, as Prettier does. An array with a comment or a blank line in it
   keeps one number per line. Off by default ([fill-numbers](docs/format.md#fill-numbers)).
+- The docs are published as pages at <https://simonvanlierde.com/jsonvet/docs/>.
+- The social card is redesigned.
+
+### Fixed
+
+- `jsonvet --fix -` exits 2 when it cannot write to stderr, instead of aborting.
+- In the language server, `codeAction/resolve` returns the same edits as the list of quick fixes,
+  also for a fix with several edits, such as mixed line endings.
 
 ### Changed
 
 - The Linux glibc wheels are built for `manylinux_2_28`, not `manylinux2014`, so they need glibc
   2.28 or newer (Debian 10, Ubuntu 20.04, RHEL 8). RHEL 7, Amazon Linux 2 and Ubuntu 18.04 fall
   back to the source distribution, which needs Rust. The musllinux wheels are unchanged.
-- Checking is 4 to 8% faster on most files and a quarter faster on files of short numbers.
+- Checking runs 4 to 8% fewer instructions on most files and a quarter fewer on files of short numbers.
 - `--fix` takes about a quarter less memory on a large file: only `--unsafe-fixes` keeps where
   each object member is. `jsonvet fmt` no longer allocates for each array and object, and
   `--schema` on JSON Lines no longer allocates for each line.
