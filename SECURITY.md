@@ -84,7 +84,8 @@ repository's `release.yml`, for that tag. Releases up to 3.0.0 have no attestati
 file, use the [GitHub CLI](https://cli.github.com/):
 
 ```bash
-gh attestation verify jsonvet-x86_64-unknown-linux-gnu.tar.gz --repo simonvanlierde/jsonvet
+gh attestation verify jsonvet-x86_64-unknown-linux-gnu.tar.gz --repo simonvanlierde/jsonvet \
+  --signer-workflow simonvanlierde/jsonvet/.github/workflows/release.yml
 ```
 
 The same works on a wheel downloaded from PyPI (`pip download jsonvet --no-deps`). PyPI also
