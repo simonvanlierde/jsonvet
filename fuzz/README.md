@@ -10,6 +10,7 @@ asserts is in the doc comment at the top of its file in `fuzz_targets/`.
 | `config_file` | bytes as a `jsonvet.toml` or `pyproject.toml` | the config loader: `rules`, `per-file-rules`, `per-file-format`, `dialects`, `schemas`, `format`, error text on one line |
 | `parse` | text | events against `check` and serde_json |
 | `fix` | text | `fix` is idempotent and leaves no handled problem |
+| `format` | text | `format` output has no syntax error and formatting it again changes nothing |
 | `diff_serde_json`, `diff_json5` | text | verdicts against serde_json and the json5 crate |
 
 `config` is separate from `check` so `check` keeps taking raw text, which is what the seeded corpus
@@ -20,7 +21,7 @@ holds.
 Line coverage of `crates/jsonvet/src` from replaying the corpora of all targets, measured
 2026-11-06. Each target started from the seed corpus `fuzz.yml` builds (json5-tests, `tests/corpus`,
 `conformance/extra`) and ran 300 s (`config` alone on four cores, the others together on the same
-four). `format.rs` has no target and is left out.
+four).
 
 | File | Before `config` | With `config` |
 |---|---|---|
