@@ -254,11 +254,12 @@ the full check and lint suite.
   [formatting](https://github.com/simonvanlierde/jsonvet/blob/main/docs/format.md),
   [editors](https://github.com/simonvanlierde/jsonvet/blob/main/docs/editors.md),
   [design](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md),
+  [architecture](https://github.com/simonvanlierde/jsonvet/blob/main/docs/architecture.md),
   [accessibility](https://github.com/simonvanlierde/jsonvet/blob/main/docs/accessibility.md) and
   [CHANGELOG](https://github.com/simonvanlierde/jsonvet/blob/main/CHANGELOG.md).
 - The same docs as web pages: <https://simonvanlierde.com/jsonvet/docs/>.
 - [CONTRIBUTING.md](https://github.com/simonvanlierde/jsonvet/blob/main/CONTRIBUTING.md),
-  [ROADMAP.md](https://github.com/simonvanlierde/jsonvet/blob/main/ROADMAP.md) and
+  [roadmap](https://github.com/simonvanlierde/jsonvet/blob/main/docs/roadmap.md) and
   [GOVERNANCE.md](https://github.com/simonvanlierde/jsonvet/blob/main/GOVERNANCE.md).
 
 Found a file jsonvet gets wrong? Please

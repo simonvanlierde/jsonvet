@@ -237,57 +237,7 @@ the walk checks those two in each folder before it enters it.
 
 ## Architecture
 
-```text
-crates/jsonvet/        library: the parser, rules and positions. Depends on hashbrown, memchr and
-                       unicode-properties.
-crates/jsonvet-cli/    binaries jsonvet and check-json5: arguments, config, output, --schema
-                       (jsonschema, serde_json) and the language server, `jsonvet lsp`
-                       (lsp-server). Built into the PyPI wheels by maturin.
-crates/jsonvet-wasm/   the library as WebAssembly for the playground: `check`, `fix`, `format` and `version`
-editors/vscode/        the VS Code extension: a thin client for `jsonvet lsp`, in TypeScript
-playground/            the browser playground: a static page around the wasm. Deployed by pages.yml.
-compat/check-json5/    the check-json5 package on PyPI: depends on jsonvet, nothing else
-setup.py               placeholder that pre-commit installs: pins the jsonvet wheel
-action.yml             the GitHub Action: installs the jsonvet wheel from PyPI and runs it
-fuzz/  tests/  scripts/
-```
-
-### The library interface
-
-The public API is `check`, `Config`, `Dialect`, `UnknownDialect`, `Rule`, `Severity`, `UnknownRule`,
-`Location`, `Report`, `Problem`, `Related` and `RelatedKind` ([docs.rs](https://docs.rs/jsonvet)).
-Each type is `#[non_exhaustive]` or has private fields, so a new variant or field is not a breaking
-change. The `#[doc(hidden)]` items are public for jsonvet-cli only, and can change in any release:
-`parse`, `parse_with`, `parse_lines`, `join_lines`, `line_parts`, `Lines`, `Event`, `EventKind`,
-`json_path`, `PathStep`, `key_text`, `did_you_mean`, `closest`, `MESSAGES`, `fill`,
-`Problem::message_with`, `is_hidden`, `fix`, `Fix`, `Fixed`, `try_fix`, `try_fix_at`, `report`,
-`format`, `FormatError`, `FormatOptions` and `Indent`.
-
-`format` is the formatter behind `jsonvet fmt`. It checks the text first and returns the report if
-there is a syntax error. Then it reads its own token stream, so the check path is unchanged: it
-attaches each comment to the token it sits next to, and lays the tree out from the tree alone, so
-a second run changes nothing. The tree is flat vectors of 16-byte records with 32-bit offsets into
-the text, a first pass counts the output so it is built once at its size, and a file whose output
-would pass 16 times its size is refused. It recurses once per nesting level, which `max_depth`
-bounds.
-
-The text is `&str`, so every offset falls on a character boundary. `check` never panics and has no
-error mode: the problems in the file are its output. A `Report` is `Send` but not `Sync`, because
-`location` caches line starts inside it.
-
-The parser keeps an explicit stack of frames, not recursion, so the depth limit is a setting and
-not the call stack's size. Past 32 keys, an object's keys go through a hash index keyed with std's
-SipHash from the OS, so a crafted file cannot make the check quadratic
-([0003](decisions/0003-siphash-for-duplicate-keys.md)). There is no `unsafe` code, so the worst a
-crafted file can do is a panic ([0002](decisions/0002-no-unsafe-code.md)).
-
-### Python packaging
-
-pre-commit installs a `language: python` hook with `pip install .`. The root `setup.py` is a
-placeholder that depends on the exact released `jsonvet` wheel, so a hook install downloads a
-binary and never compiles Rust ([0008](decisions/0008-binary-wheels-behind-a-placeholder.md)).
-maturin builds the wheels with `bindings = "bin"`, for Linux (glibc 2.28 or newer, and musl),
-macOS and Windows, each on x86-64 and arm64.
+What each crate and folder does, and how a check runs through them, is in [architecture.md](architecture.md).
 
 ## Testing
 

@@ -48,7 +48,7 @@ jobs:
       - run: cargo doc --workspace --no-deps --locked
         env:
           RUSTDOCFLAGS: -D warnings
-      - run: cargo deny check --hide-inclusion-graph
+      - run: cargo deny check --hide-inclusion-graph advisories bans licenses sources
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           version: ${{ env.PINNED_UV }}

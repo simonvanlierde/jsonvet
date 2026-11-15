@@ -20,10 +20,12 @@ const NAV = [
   ["docs/format.md", "Formatting"],
   ["docs/editors.md", "Editors"],
   ["docs/design.md", "Design"],
+  ["docs/architecture.md", "Architecture"],
   ["docs/conformance.md", "Conformance"],
   ["docs/accessibility.md", "Accessibility"],
   ["docs/assurance-case.md", "Assurance case"],
   ["docs/decisions/README.md", "Decisions"],
+  ["docs/roadmap.md", "Roadmap"],
 ];
 
 /** The page a doc becomes, relative to the output folder: usage.html, decisions/index.html. */

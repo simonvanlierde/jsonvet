@@ -6,7 +6,7 @@ can change the repository and the packages.
 
 ## How decisions are made
 
-- The maintainer decides what goes in and what goes on the [roadmap](ROADMAP.md), reviews and
+- The maintainer decides what goes in and what goes on the [roadmap](docs/roadmap.md), reviews and
   merges every pull request, triages issues, tags releases, and handles security reports as
   [SECURITY.md](SECURITY.md) says.
 - Anyone can propose a change in an issue or a pull request, as
