@@ -46,8 +46,15 @@ export default defineConfig({
       ],
       // Expressive Code adds an inline script and a `style` attribute to every token.
       expressiveCode: false,
-      customCss: ["./src/styles/jsonvet.css"],
-      components: { Footer: "./src/components/Footer.astro" },
+      // The header bar and footer line are the playground's (chrome.css, header.html, footer.html); the
+      // theme is its theme.js, so one choice serves both. Starlight's theme picker goes.
+      customCss: ["../../playground/chrome.css", "./src/styles/jsonvet.css"],
+      components: {
+        Header: "./src/components/Header.astro",
+        Footer: "./src/components/Footer.astro",
+        ThemeProvider: "./src/components/ThemeProvider.astro",
+        MobileMenuFooter: "./src/components/MobileMenuFooter.astro",
+      },
       head: [
         meta({ property: "og:image", content: cardUrl }),
         meta({ property: "og:image:width", content: "1200" }),
@@ -56,7 +63,7 @@ export default defineConfig({
         meta({ name: "twitter:card", content: "summary_large_image" }),
         { tag: "script", content: slash },
         // The search needs script; without it the button would do nothing.
-        { tag: "noscript", content: "<style>site-search{display:none}</style>" },
+        { tag: "noscript", content: "<style>site-search,.theme{display:none}</style>" },
       ],
     }),
     cspHash(),

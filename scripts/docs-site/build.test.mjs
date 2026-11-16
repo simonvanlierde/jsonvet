@@ -225,9 +225,9 @@ test("a decision record's description is not its status line, and none ends in a
 
 test("the playground's links into the pages resolve", () => {
   const broken = [];
-  const links = [...readFileSync(resolve(ROOT, "playground/index.html"), "utf8").matchAll(/href="(docs\/[^"]*)"/g)].map(
-    (m) => m[1],
-  );
+  const links = [
+    ...readFileSync(resolve(ROOT, "playground/index.html"), "utf8").matchAll(/href="\/jsonvet\/(docs\/[^"]*)"/g),
+  ].map((m) => m[1]);
   // main.mjs links each problem's rule to docs/usage.html#<rule>. The ids are the rules' in
   // rule.rs, and the CLI's own two.
   const rules = readFileSync(resolve(ROOT, "crates/jsonvet/src/rule.rs"), "utf8").matchAll(/Rule::\w+ => "([a-z-]+)"/g);
@@ -346,4 +346,34 @@ test("a 404 page sits at the site's root, styled by absolute paths and kept out 
   assert.match(text, /name="robots" content="noindex"/);
   assert.doesNotMatch(text, /rel="canonical"/);
   assert.ok(statSync(resolve(site, "404.html")).size > 0);
+});
+
+// The header bar and the footer line are written once (playground/header.html, footer.html), and the
+// playground's static page and every docs page carry them as they are.
+const fragment = (name) => readFileSync(resolve(ROOT, "playground", name), "utf8").trim();
+const header = fragment("header.html");
+const footer = fragment("footer.html");
+const [headerBefore, headerAfter] = header.split("<!--search-->");
+
+test("the playground and the docs pages share one header bar and one footer line", () => {
+  const playground = read("index.html");
+  assert.ok(playground.includes(`<div class="bar">${headerBefore}${headerAfter}</div>`), "index.html: header.html");
+  assert.ok(
+    playground.includes(`<footer class="wrap colophon">`) && playground.includes(footer),
+    "index.html: footer.html",
+  );
+  for (const [path, text] of Object.entries(html)) {
+    const bar = text.match(/<div class="bar">([\s\S]*?)<\/header>/)?.[1] ?? "";
+    assert.ok(bar.startsWith(headerBefore), `${path}: the bar starts with header.html`);
+    assert.ok(bar.includes(headerAfter), `${path}: the bar ends with header.html`);
+    assert.ok(text.includes(`<div class="colophon">${footer}</div>`), `${path}: footer.html`);
+  }
+});
+
+test("the docs pages take their theme from the playground's theme.js, under its one key", () => {
+  assert.match(read("theme.js"), /getItem\("theme"\)/);
+  for (const [path, text] of Object.entries(html)) {
+    assert.match(text, /<script src="\/jsonvet\/theme\.js"/, path);
+    assert.doesNotMatch(text, /getItem\(['"`]starlight-theme/, path);
+  }
 });

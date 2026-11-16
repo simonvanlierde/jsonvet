@@ -1,0 +1,12 @@
+---
+// The playground's header (playground/header.html), with the search where its marker is.
+import Search from "virtual:starlight/components/Search";
+import { chrome } from "../../lib.mjs";
+const [before, after] = chrome("header.html").split("<!--search-->");
+---
+
+<div class="bar">
+  <Fragment set:html={before} />
+  <Search />
+  <Fragment set:html={after} />
+</div>

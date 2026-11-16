@@ -21,10 +21,10 @@ if ! grep -q 'id="status"[^>]*><b>1 correction\.</b>' <<<"$dom"; then
     echo "the playground did not load: status is '$(grep -o 'id="status".\{0,80\}' <<<"$dom")'" >&2
     exit 1
 fi
-# Starlight's inline script sets the theme on <html>, and its search script enables the search
-# button, so this also shows the page's CSP let them run.
+# theme.js paints the header's theme button, and the search script enables the search button, so
+# this also shows the page's CSP let them run.
 dom=$(dump docs/usage.html)
-if ! grep -q '<h1 id="_top"' <<<"$dom" || ! grep -q '<html[^>]* data-theme="' <<<"$dom" \
+if ! grep -q '<h1 id="_top"' <<<"$dom" || ! grep -q 'id="theme"[^>]* data-theme="' <<<"$dom" \
     || grep -q '<button data-open-modal disabled' <<<"$dom"; then
     echo "docs/usage.html did not load, or its theme or search script did not run" >&2
     exit 1

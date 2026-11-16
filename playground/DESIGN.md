@@ -98,7 +98,7 @@ components:
 Product context is in [PRODUCT.md](PRODUCT.md). The tokens above are the light theme; the
 `dark-` entries replace their light namesakes under `prefers-color-scheme: dark` (or
 `data-theme="dark"`), in [style.css](style.css), which is the source of truth. A sun or moon in
-the colophon sets `data-theme` and [theme.js](theme.js) keeps the choice; with none kept, the
+the header sets `data-theme` and [theme.js](theme.js) keeps the choice; with none kept, the
 system's setting holds.
 
 ### Overview
@@ -267,11 +267,11 @@ licence" and "Simon van Lierde · source on GitHub · docs · speed figures".
 site's `docs/` pages, with the tokens of this stylesheet mapped onto Starlight's variables in
 `src/styles/jsonvet.css`: Charter for the prose, the mono for the sidebar and code, warm paper, ink
 for the page in view (the stage's ink bar on its left in the sidebar) and the pen for focus only.
-The header carries the site name, the search and the theme choice; the sidebar lists the pages and
+The header is the playground's own bar (`header.html`, `chrome.css`): the site name, the docs link, the search and the theme choice; the sidebar lists the pages and
 the right column the page's sections. The text is prose in the serif; code and tables sit on the
 tint or between hairlines, and code blocks and wide tables scroll inside their own focusable, named
 boxes. No syntax colours: the One-Pen Rule holds here too. A skip link comes first, and the footer
-keeps the colophon line. Without script the system's theme holds and the sidebar opens from the menu
+is the playground's colophon line (`footer.html`), the same markup on both. Without script the system's theme holds and the sidebar opens from the menu
 button.
 
 #### Matrix page

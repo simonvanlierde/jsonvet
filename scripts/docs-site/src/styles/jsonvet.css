@@ -48,7 +48,6 @@
   --sl-color-bg-accent: var(--ink);
   --sl-text-body: 1rem;
   --sl-line-height: 1.55;
-  --sl-content-width: 46rem;
   color-scheme: light;
 }
 :root[data-theme="dark"] { color-scheme: dark; }
@@ -79,9 +78,13 @@ body { background: var(--paper); }
 /* The sidebar: small mono, the page in view with the selected stage's ink bar. */
 .sidebar-content a { font: 13px/1.6 var(--mono); border-radius: 0; }
 .sidebar-content a[aria-current="page"] { background: none; color: var(--ink); box-shadow: inset 2px 0 var(--ink); }
-.site-title { font: 700 13px/1.6 var(--mono); }
-.colophon { margin: 1.5rem 0 0; color: var(--faint); font: 13px/1.6 var(--mono); }
-.colophon a { display: inline-block; min-height: 24px; line-height: 24px; color: inherit; }
+
+/* The header is the shared .bar (chrome.css) in place of Starlight's padded, ruled one. */
+:root { --sl-nav-height: 3.5rem; --sl-nav-pad-x: clamp(16px, 4vw, 48px); }
+.page > header { padding: 0; border-bottom: 0; }
+.bar { height: 100%; }
+@media (max-width: 49.99rem) { .bar { padding-inline-end: calc(var(--sl-nav-pad-x) + var(--sl-menu-button-size) + .5rem); } }
+.colophon { margin-top: 1.5rem; padding-top: 0; border-top: 0; }
 
 /* Code without Expressive Code: the tint, scrolling on its own, in the mono. A wide table scrolls in
    its own box (markdown.mjs), so the page never does. */

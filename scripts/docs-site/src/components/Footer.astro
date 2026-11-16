@@ -1,11 +1,7 @@
 ---
 import Default from "@astrojs/starlight/components/Footer.astro";
-import { REPO } from "../../lib.mjs";
+import { chrome } from "../../lib.mjs";
 ---
 
 <Default {...Astro.props}><slot /></Default>
-<p class="colophon">
-  These pages are built from the Markdown in <a href={`${REPO}/tree/main/docs`}>docs/</a>. They load only this
-  site's own files, and keep only your theme choice in your browser. Written by{" "}
-  <a href="https://github.com/simonvanlierde">Simon van Lierde</a> · <a href={`${REPO}#credits-and-license`}>MIT or Apache-2.0 licence</a>.
-</p>
+<div class="colophon" set:html={chrome("footer.html")} />

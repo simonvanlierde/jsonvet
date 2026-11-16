@@ -133,3 +133,6 @@ export function describe(src) {
     summary: first ? text(first).split(/(?<=[.!?])\s+(?=[A-Z])/)[0] : "",
   };
 }
+
+/** A fragment of the header or footer that the playground's page and the docs pages share. */
+export const chrome = (name) => readFileSync(resolve(ROOT, "playground", name), "utf8").trim();

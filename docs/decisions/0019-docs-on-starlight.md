@@ -74,8 +74,9 @@ tag, because Astro's own hashing is not reliable for Starlight's pages (withastr
 Worse than A, and accepted: five times the build time and a 66 KB docs page against 29 KB. The
 search ranks a reader's `duplicate-key` below the decision record that names it, where the matcher
 of 0018 put the reference section first. Focus goes to the page, not the search button, when the
-search closes. A reader's theme choice is Starlight's (`starlight-theme`) and not shared with the
-playground's (`theme`). The 404 page and the matrix are not searchable (the matrix is excluded on
+search closes. The header bar and footer line are the playground's (`playground/header.html`,
+`footer.html`, `chrome.css`), and the theme is its `theme.js`, so one choice (`theme`) serves both;
+Starlight's own picker and its inline theme script are replaced. The 404 page and the matrix are not searchable (the matrix is excluded on
 purpose: 800 KB of table).
 
 Better: the nav, mobile menu, table of contents, previous and next links, search with snippets and
