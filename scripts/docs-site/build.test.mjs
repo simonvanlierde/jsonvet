@@ -174,7 +174,7 @@ test("every inline script of a docs page is hashed in its CSP, and nothing comes
     assert.doesNotMatch(text, /\son[a-z]+="/, `${path}: an event handler attribute`);
     assert.doesNotMatch(text, /javascript:/, path);
     // A resource is the site's own file: a script, stylesheet, image, frame or font by address.
-    for (const [tag] of text.matchAll(/<(?:script|link|img|iframe|source|video|audio|embed|object)\b[^>]*>/g)) {
+    for (const [tag] of text.matchAll(/<(?:script|link|img|iframe|source|video|audio|embed|object)\b[^>]*>/gi)) {
       for (const [, url] of tag.matchAll(/\s(?:src|href|srcset|data)="(https?:\/\/[^"]+)"/g)) {
         // Only an address a reader can follow is allowed: the canonical and the sitemap are not loaded.
         assert.ok(/rel="(?:canonical|sitemap)"/.test(tag), `${path}: loads ${url}`);
@@ -336,7 +336,7 @@ test("the sitemap lists each page at its canonical address, and not the 404", ()
     .filter(([p]) => p !== "404.html")
     .map(([, t]) => t.match(/rel="canonical" href="([^"]+)"/)[1]);
   assert.deepEqual(urls.filter((u) => u !== "https://simonvanlierde.com/jsonvet/").sort(), canonical.sort());
-  assert.ok(urls.includes("https://simonvanlierde.com/jsonvet/"));
+  assert.equal(urls.filter((u) => u === "https://simonvanlierde.com/jsonvet/").length, 1);
 });
 
 test("a 404 page sits at the site's root, styled by absolute paths and kept out of search", () => {
