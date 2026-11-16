@@ -293,8 +293,7 @@ fn fetch(url: &str, max: u64) -> Result<String, Failed> {
         return response
             .body_mut()
             .with_config()
-            // ureq rejects a body at its read limit; resource checks the inclusive cap.
-            .limit(max + 1)
+            .limit(max)
             .read_to_string()
             .map_err(|error| failed(&error));
     }
