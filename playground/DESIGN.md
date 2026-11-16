@@ -187,8 +187,8 @@ is hidden for a long text, which only the chosen dialect checks.
 
 A radio group of six buttons (`role="radio"`), one tab stop, arrow keys and Home/End to move and
 choose. Each shows its name and, in red mono, its error and warning counts with a square or a
-triangle and the first problem's position; a tick when clean; "not checked" for a long text. The
-selected stage has the tint and a 2px ink bar at its foot. An italic hint under the row says what
+triangle; a tick when clean; "not checked" for a long text. The
+selected stage has the tint and a 2px ink bar at its foot. Each shows its counts in words ("1 error", "2 warnings", "✓ no problems") and, below them, "first at 2:3", or "stops at 2:3" where a syntax error ended the check. A plain line above the row says which dialect common files are (tsconfig and VS Code settings are JSONC, package.json is JSON); an italic hint under it says what
 the dialect adds and which files the CLI checks in it.
 
 #### Actions
@@ -233,8 +233,8 @@ Each correction is a list item: a button with the CLI's message in italic red (J
 whose accessible name is its position, severity, message and related place, and a mono meta line
 with the position, "warning" when it is one, the rule id linked to its section in docs/usage.md,
 "first at 6:5" and, for a correction with a fix, an underlined "apply" in ink (not pen: the pen
-marks the correction, not the cure). A fix that is not safe reads "unsafe fix" until the
-"drop duplicate keys" option is on. A related place gets its own short note ("first copy 6:5"), hidden from screen
+marks the correction, not the cure). A fix that is not safe reads "changes data: allow in Fix options" until the
+"drop duplicate keys" option is on. A byte order mark's note adds a line on why only some dialects flag it. A related place gets its own short note ("key first set here 6:5"), hidden from screen
 readers. A thin red leader runs from the end of the row to the note, with an arrowhead at the
 text; a stacked note's leader bends at the margin's edge. Hovering or focusing a correction tints
 its rows and darkens its leader. In the list form, each note carries the number shown in the
@@ -242,12 +242,18 @@ gutter.
 
 #### Verdict
 
-One line: the count in bold red ("1 correction.", "2 corrections, 1 warning.", "1 warning.", or
-"No corrections." in ink), then what the CLI would exit with, as a live region; the first
-problem's `rule · line:col` on the right in mono. Italic asides follow: where checking stopped
-after a syntax error, why the marks are off for a big text, and the drop and F8 hint.
+One line, in bold and then plain: whether the text parses, then what the hook and CLI do. "Does not
+parse as JSON5." (a syntax error), "Parses as JSON5, but a rule found 1 error." (red, with the
+rule's own note in the margin), "Parses as JSON5, with 1 warning.", or "✓ Valid JSON5." in ink. A
+second, hidden live region repeats it a second after the last change and is emptied the moment the
+verdict changes, so the page text never holds two verdicts. Italic asides follow: where checking
+stopped after a syntax error, a byte order mark that the dialect does not flag, and why the marks
+are off for a big text. The paste-and-F8 line sits above the proof, and a line under the heading
+says the page is the successor of check-json5, with a link that opens the hook.
 
 #### Use this check
+
+The fold's title is "Use this check in your project".
 
 A `details` fold, open by default from 860px and closed below, with a tab list (pre-commit or prek hook, GitHub Action,
 command line), arrow keys between tabs. Each panel holds a focusable, scrolling `pre` on the tint

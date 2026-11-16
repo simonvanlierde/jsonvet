@@ -19,6 +19,12 @@ version for a new option or output, the patch version for a fix.
 
 - The playground shows its heading, and opens the "Use this check" section by default on screens
   860 px wide and up.
+- The playground's words are plainer. The verdict says whether the text parses or a rule found a
+  problem, and what the hook and CLI do; each dialect shows its counts in words and where
+  checking stops; a byte order mark's note says why only some dialects flag it. A line under the
+  heading says it replaces check-json5 and links to the hook snippet, one line names the dialect
+  of `tsconfig.json` and `package.json`, and the sample's empty state asks for your file. The
+  verdict's position on the right and the second paste hint are gone.
 - The conformance matrix page lists what each mark means as a list, and its details stay in view
   beside the table.
 

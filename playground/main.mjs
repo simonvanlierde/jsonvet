@@ -773,6 +773,14 @@ tabs[0].parentElement.addEventListener("keydown", (e) => {
   showTab(tabs[(to + tabs.length) % tabs.length], true);
 });
 
+// "Show the hook" opens the fold on the hook tab and moves there, also where it starts closed.
+$("to-hook").addEventListener("click", (e) => {
+  e.preventDefault();
+  document.querySelector(".use").open = true;
+  showTab(tabs[0], true);
+  tabs[0].scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+});
+
 async function open(hash) {
   const shared = hash ? await decode(hash) : null;
   if (!shared || !hints[shared.dialect]) return false;

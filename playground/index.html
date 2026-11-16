@@ -54,7 +54,9 @@
 </header>
 <main class="wrap">
   <h1>Check JSON, JSONC and JSON5 in your browser</h1>
+  <p class="aside lede">Formerly check-json5: same verdicts on JSON5 files. In your hook, change <code>id: check-json5</code> to <code>id: jsonvet</code>. <a href="#use" id="to-hook">Show the hook</a></p>
   <div class="stages-row">
+    <p class="guide">Unsure? <code>tsconfig.json</code> and VS Code settings are JSONC, <code>package.json</code> is JSON; JSON5 accepts the most.</p>
     <span id="dialect-label" class="vh">Dialect</span>
     <div id="dialects" class="stages" role="radiogroup" aria-labelledby="dialect-label" aria-describedby="dialect-hint">
       <button type="button" role="radio" aria-checked="false" tabindex="-1" data-dialect="json"><span class="name">JSON</span><span class="v"></span></button>
@@ -109,7 +111,7 @@
       <div class="gutter" id="gutter" aria-hidden="true"></div>
       <div class="text">
         <div class="layer" id="layer" aria-hidden="true"></div>
-        <textarea id="input" wrap="off" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Text to check" aria-describedby="keys">{
+        <textarea id="input" wrap="off" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Text to check" placeholder="Paste your JSON, JSONC or JSON5 here" aria-describedby="keys">{
   // Settings for the staging server.
   "name": "staging",
   "server": {
