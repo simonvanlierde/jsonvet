@@ -27,10 +27,13 @@ a promise, and none of it has a date. Released work is in [CHANGELOG.md](../CHAN
 
 ## Ideas, not planned yet
 
-A Python API, JSONPath (RFC 9535) queries, proofs of the pure parser helpers, and more speed work
-at the scanner, which needs a new profile that shows a larger share than the attempts in
-[#211](https://github.com/simonvanlierde/jsonvet/issues/211), closed in November 2026. They are in
-[#212](https://github.com/simonvanlierde/jsonvet/issues/212).
+A PyO3 Python API ([#287](https://github.com/simonvanlierde/jsonvet/issues/287)), RFC 9535
+normalized paths in output ([#288](https://github.com/simonvanlierde/jsonvet/issues/288)),
+`jsonc.org` modeline support ([#289](https://github.com/simonvanlierde/jsonvet/issues/289)), more
+output formats ([#290](https://github.com/simonvanlierde/jsonvet/issues/290)), Kani proofs of the
+pure parser helpers ([#291](https://github.com/simonvanlierde/jsonvet/issues/291)), and more speed
+work at the scanner, which needs a new profile that shows a larger share than the attempts in
+[#211](https://github.com/simonvanlierde/jsonvet/issues/211), closed in November 2026.
 
 ## Not planned
 
