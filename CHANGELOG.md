@@ -8,6 +8,8 @@ version for a new option or output, the patch version for a fix.
 
 ## [Unreleased]
 
+## [3.5.1] - 2026-11-16
+
 ### Added
 
 - The docs pages have a search dialog, which finds a heading or text on any page and jumps to its
@@ -853,7 +855,8 @@ hook's output, or imports `pre_commit_hooks.check_json5`, needs a change (see Ch
 
 - Renamed from `pre-commit-check-json5` to `check-json5`.
 
-[Unreleased]: https://github.com/simonvanlierde/jsonvet/compare/v3.5.0...HEAD
+[Unreleased]: https://github.com/simonvanlierde/jsonvet/compare/v3.5.1...HEAD
+[3.5.1]: https://github.com/simonvanlierde/jsonvet/compare/v3.5.0...v3.5.1
 [3.5.0]: https://github.com/simonvanlierde/jsonvet/compare/v3.4.0...v3.5.0
 [3.4.0]: https://github.com/simonvanlierde/jsonvet/compare/v3.3.1...v3.4.0
 [3.3.1]: https://github.com/simonvanlierde/jsonvet/compare/v3.3.0...v3.3.1
