@@ -20,9 +20,6 @@
 .matrix .skip-matrix { position: absolute; left: -10000px; }
 @media (forced-colors: active) { .matrix fieldset label:has(:checked) { outline: 2px solid Highlight; } }
 
-/* The conformance matrix page (scripts/docs-site/matrix.mjs). The dialect and filter choices are
-   radio inputs read here with :has(), and a file's or parser's details are a section shown by
-   :target. A browser without :has() shows every table and ignores the filters. */
 .key, .matrix .aside { color: var(--faint); font-size: .9375rem; }
 /* The legend: one chip per glyph, so each reads on its own. */
 .key { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 14px; padding: 0; list-style: none; }
