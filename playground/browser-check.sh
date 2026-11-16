@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Serves site/ and loads it in headless Chrome, as the Pages site does, then checks the verdict line
-# says the sample text needs one correction, and that a docs page loads and runs its scripts under
+# says the sample text parses but a rule flags it, and that a docs page loads and runs its scripts under
 # its CSP. Run from the repository root, after wasm-bindgen wrote playground/pkg and
 # scripts/docs-site wrote site/. CHROME names another Chrome binary.
 set -euo pipefail
@@ -17,7 +17,7 @@ dump() {
         --dump-dom "http://127.0.0.1:$port/jsonvet/$1" 2>/dev/null
 }
 dom=$(dump "${1:-}")
-if ! grep -q 'id="status"[^>]*><b>1 correction\.</b>' <<<"$dom"; then
+if ! grep -q 'id="status"[^>]*><b>Parses as JSON5, but a rule found 1 error\.</b>' <<<"$dom"; then
     echo "the playground did not load: status is '$(grep -o 'id="status".\{0,80\}' <<<"$dom")'" >&2
     exit 1
 fi

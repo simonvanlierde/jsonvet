@@ -73,8 +73,9 @@ main > h1 { margin: 16px 0 0; font-size: 1.25rem; font-weight: 600; line-height:
 .stages button[aria-checked="true"] { color: var(--ink); background: var(--tint); box-shadow: inset 0 -2px var(--ink); }
 .stages button:focus-visible { outline-offset: -3px; }
 .name { font-size: 1rem; line-height: 1.3; white-space: nowrap; }
-.v { display: flex; gap: 7px; min-height: 1.3em; font: 12.5px/1.4 var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--pen); }
+.v { display: flex; flex-wrap: wrap; gap: 0 9px; min-height: 1.3em; font: 12.5px/1.4 var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--pen); }
 .v .ok, .v .none { color: var(--faint); }
+.v .none { flex-basis: 100%; }
 /* Severity as a printed shape, so it does not hang on colour: a square for an error, a triangle for
    a warning. */
 .shape::before { content: ""; display: inline-block; width: .55em; height: .55em; margin-right: .3em; background: currentColor; }
@@ -203,11 +204,11 @@ textarea, textarea:focus-visible { padding: 8px 8px 8px 6px; border: 0; resize: 
 #status b { color: var(--pen); font-weight: 700; }
 #status.ok b { color: var(--ink); }
 #status code { font-size: .82em; }
-.first { margin: 0; font: 13px/1.6 var(--mono); color: var(--faint); }
 .aside { margin: 6px 0 0; max-width: 46rem; color: var(--faint); font-size: 1rem; font-style: italic; }
 .aside code, .aside kbd { font-style: normal; }
 kbd { padding: 0 4px; font-size: .8em; border: 1px solid var(--rule-strong); border-bottom-width: 2px; }
-#keys { margin-top: 10px; }
+#keys { margin: 14px 0 0; }
+.note .why { margin: 0; font: normal 12.5px/1.45 var(--mono); color: var(--faint); }
 
 /* Use this check: closed until asked for. */
 .use { margin-top: 22px; }

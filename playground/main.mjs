@@ -12,8 +12,8 @@ const margin = $("margin");
 const sheet = $("sheet");
 const paths = $("paths");
 const list = $("problems");
-const first = $("first");
 const stopped = $("stopped");
+const bomNote = $("bom");
 const bigNote = $("big");
 const hint = $("dialect-hint");
 const stages = $("dialects");
@@ -31,12 +31,12 @@ const nameOf = (d) => radio(d).querySelector(".name").textContent;
 // What each dialect adds to JSON, and which files the CLI checks in it (README, "Dialects").
 // Backticks mark CLI strings, shown in mono.
 const hints = {
-  json: "Plain JSON: no comments, no trailing commas. The CLI uses it only when asked, with `--dialect` or `--strict`.",
-  "i-json": "Plain JSON with stricter content: every number fits a double, every string is valid Unicode. The CLI uses it only when asked, with `--dialect`.",
-  jsonc: "JSON with `//` and `/* */` comments. The CLI checks `.jsonc`, `.code-workspace` and `.code-snippets` files as JSONC.",
-  jwcc: "JSON with comments and trailing commas, also called HuJSON. The CLI checks `.hujson` and `.jwcc` files as JWCC.",
-  json5: "Comments, trailing commas, single quotes, unquoted keys and more. The CLI checks `.json`, `.json5` and any extension with no other dialect as JSON5.",
-  jsonl: "One JSON value per line. The CLI checks `.jsonl` and `.ndjson` files as JSON Lines.",
+  json: "No comments and no trailing commas. The CLI checks this way only when asked, with `--dialect` or `--strict`.",
+  "i-json": "JSON with stricter content: every number fits a double and every string is valid Unicode. The CLI checks this way only when asked, with `--dialect`.",
+  jsonc: "JSON with `//` and `/* */` comments. The CLI checks `.jsonc`, `.code-workspace` and `.code-snippets` files this way.",
+  jwcc: "JSON with comments and trailing commas, also called HuJSON. The CLI checks `.hujson` and `.jwcc` files this way.",
+  json5: "Comments, trailing commas, single quotes, unquoted keys and more. The CLI checks `.json`, `.json5` and any file with no other dialect this way.",
+  jsonl: "One JSON value per line. The CLI checks `.jsonl` and `.ndjson` files this way.",
 };
 // The files each dialect already checks, for the note under the snippets.
 const already = {
@@ -45,7 +45,10 @@ const already = {
   jsonl: "`.jsonl` and `.ndjson` files are JSON Lines already",
 };
 // How a related place reads in a problem's entry, as the CLI writes it after the message.
-const near = { "first copy": "first at", "opened here": "opened at", "starts here": "started at" };
+const near = { "first copy": "key first set at", "opened here": "opened at", "starts here": "started at" };
+// The same places in the margin, where the CLI's "first copy" would read as a term of art.
+const placeLabel = { "first copy": "key first set here" };
+const BOM_WHY = "RFC 8259 says JSON text must not start with a byte order mark. JSONC, JWCC and JSON5 readers accept one, so those dialects do not flag it.";
 const DOCS = "docs/usage.html#";
 const SAMPLE = input.value;
 const SAMPLE_NAME = "staging.json";
@@ -157,14 +160,17 @@ function mark(d, problems) {
   }
   const count = tally(problems);
   const parts = [];
-  if (count.errors) parts.push(el("span", "error shape", count.errors));
-  if (count.warnings) parts.push(el("span", "warning shape", count.warnings));
-  if (!parts.length) parts.push(el("span", "ok", "✓"));
-  // Where the first problem is, so dialects that fail on different things look different.
-  const at = problems[0] && `${problems[0].line}:${problems[0].column}`;
+  if (count.errors) parts.push(el("span", "error shape", plural(count.errors, "error")));
+  if (count.warnings) parts.push(el("span", "warning shape", plural(count.warnings, "warning")));
+  if (!parts.length) parts.push(el("span", "ok", "✓ no problems"));
+  // Where checking stops at a syntax error, else where the first problem is, so dialects that
+  // fail on different things look different.
+  const syntax = problems.find((p) => p.rule === "syntax");
+  const first = syntax ?? problems[0];
+  const at = first && `${syntax ? "stops at" : "first at"} ${first.line}:${first.column}`;
   if (at) parts.push(el("span", "none", at));
   v.replaceChildren(...parts);
-  r.setAttribute("aria-label", [nameOf(d), summary(count).toLowerCase(), at && `first at ${at}`].filter(Boolean).join(", "));
+  r.setAttribute("aria-label", [nameOf(d), summary(count).toLowerCase(), at].filter(Boolean).join(", "));
 }
 
 // Sets each row in `element`. `cols`, when given, maps a row to the offsets in it that a problem
@@ -219,6 +225,8 @@ function setStatus(strong, rest) {
   status.dataset.said = html;
   status.replaceChildren(el("b", "", strong));
   if (rest) status.append(" ", rich(document.createDocumentFragment(), rest));
+  // Empty at once, so a screen reader and the page text never hold the last verdict beside the new one.
+  said.textContent = "";
   clearTimeout(sayTimer);
   sayTimer = setTimeout(() => (said.textContent = status.textContent), 1000);
 }
@@ -286,12 +294,13 @@ function note(p, n, problems) {
       apply.addEventListener("click", () => act("fix", own.map((f) => f.index)));
       slot.append(apply);
     } else {
-      slot.append(el("span", "unsafe", "unsafe fix"));
-      slot.title = "Turn on \u201cDrop duplicate keys\u201d in the Fix options to apply it";
+      slot.append(el("span", "unsafe", "changes data: allow in Fix options"));
+      slot.title = "Dropping a key changes the data, so it is off by default. Turn on \u201cDrop duplicate keys\u201d in the Fix options (the CLI flag is --unsafe-fixes).";
     }
     meta.append(slot);
   }
   item.append(button, meta);
+  if (p.rule === "byte-order-mark") item.append(el("p", "why", BOM_WHY));
   item.dataset.row = p.row;
   return item;
 }
@@ -299,7 +308,7 @@ function note(p, n, problems) {
 // The related place a problem names, such as a duplicate key's first copy, as a note of its own in
 // the margin. Screen readers get it in the problem's name instead.
 function relNote(r) {
-  const item = el("div", "note rel", r.message);
+  const item = el("div", "note rel", placeLabel[r.message] ?? r.message);
   item.setAttribute("aria-hidden", "true");
   item.append(el("span", "meta", `${r.line}:${r.column}`));
   item.dataset.row = r.row;
@@ -374,24 +383,31 @@ function run() {
   saveSoon();
 }
 
-// The verdict line under the proof, worded for the CLI's exit code: 1 when a file has an error;
-// warnings fail a run only past --max-warnings.
+// The verdict line under the proof. It says first whether the text parses, since a rule can flag
+// text that does (a duplicate key is valid JSON syntax), then what the hook and CLI do: they exit 1
+// when a file has an error, and on warnings only past --max-warnings.
 function verdict(problems) {
   const count = tally(problems);
-  if (count.errors) {
-    const strong = [plural(count.errors, "correction"), count.warnings && plural(count.warnings, "warning")].filter(Boolean).join(", ");
-    setStatus(`${strong}.`, "The CLI would exit 1 on this file.");
+  const name = nameOf(dialect);
+  const syntax = problems.find((p) => p.rule === "syntax");
+  const counts = [count.errors && plural(count.errors, "error"), count.warnings && plural(count.warnings, "warning")].filter(Boolean).join(", ");
+  if (syntax) {
+    setStatus(`Does not parse as ${name}.`, "The hook and CLI fail (exit 1).");
+  } else if (count.errors) {
+    setStatus(`Parses as ${name}, but a rule found ${counts}.`, "The hook and CLI fail (exit 1).");
   } else if (count.warnings) {
-    setStatus(`${plural(count.warnings, "warning")}.`, "The CLI would exit 0, or 1 past `--max-warnings`.");
+    setStatus(`Parses as ${name}, with ${plural(count.warnings, "warning")}.`, "The hook and CLI pass (exit 0), unless run with `--max-warnings`.");
   } else {
-    setStatus("No corrections.", "The CLI would exit 0 on this file.");
+    setStatus(`\u2713 Valid ${name}.`, "The hook and CLI pass (exit 0).");
   }
   status.className = count.errors ? "bad" : count.warnings ? "warn" : "ok";
-  first.textContent = problems[0] ? `${problems[0].rule} · ${problems[0].line}:${problems[0].column}` : "";
   // A syntax error is always the last problem: checking stops there.
-  const syntax = problems.find((p) => p.rule === "syntax");
   stopped.hidden = !syntax;
   if (syntax) stopped.textContent = `Checking stopped at the syntax error on line ${syntax.line}. Fix it to see the rest.`;
+  // A byte order mark only some dialects flag: say so where nothing else does.
+  const bom = input.value.startsWith("\uFEFF") && !problems.some((p) => p.rule === "byte-order-mark");
+  bomNote.hidden = !bom;
+  if (bom) bomNote.textContent = `The text starts with a byte order mark. JSON and I-JSON flag it, as RFC 8259 says JSON text must not start with one. ${name} does not.`;
   bigNote.hidden = !big && input.value.length <= BIG;
   if (!bigNote.hidden) {
     bigNote.textContent = big

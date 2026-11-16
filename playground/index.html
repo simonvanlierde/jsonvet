@@ -103,6 +103,7 @@
       </div>
     </div>
   </div>
+  <p id="keys" class="aside">Paste your file here, or drop it on the text. <kbd>F8</kbd> and <kbd>Shift</kbd>+<kbd>F8</kbd> move to the next and previous problem.</p>
   <div class="proof" id="proof">
     <div class="editor" id="editor">
       <div class="gutter" id="gutter" aria-hidden="true"></div>
@@ -132,14 +133,13 @@
   <div class="verdict">
     <p id="status">Loading…</p>
     <p id="said" class="vh" role="status"></p>
-    <p id="first" class="first"></p>
   </div>
   <p id="acted" class="aside" hidden></p>
   <p id="stopped" class="aside" hidden></p>
   <p id="big" class="aside" hidden></p>
-  <p id="keys" class="aside">Edit the text, paste your own or drop a file on it. <kbd>F8</kbd> and <kbd>Shift</kbd>+<kbd>F8</kbd> in the text move to the next and previous problem.</p>
-  <details class="use">
-    <summary>Use this check</summary>
+  <p id="bom" class="aside" hidden></p>
+  <details class="use" id="use">
+    <summary>Use this check in your project</summary>
     <div class="tabs" role="tablist" aria-label="Where to run the check">
       <button type="button" role="tab" id="tab-hook" aria-selected="true" aria-controls="panel-hook">pre-commit or prek hook</button>
       <button type="button" role="tab" id="tab-action" aria-selected="false" aria-controls="panel-action" tabindex="-1">GitHub Action</button>
