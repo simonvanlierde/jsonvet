@@ -52,10 +52,10 @@ toml = { version = "1.1.8", default-features = false, features = ["parse", "serd
 ignore = "0.4.33"
 annotate-snippets = "0.12.17"
 memchr = "2.8.3"
-ureq = { version = "3.5.1", default-features = false, features = ["rustls"] }
+ureq = { version = "3.5.2", default-features = false, features = ["rustls"] }
 
 # O_NONBLOCK, so opening a FIFO does not wait for a writer. getrandom already builds it.
-[target.'cfg(unix)'.dependencies]
+[target."cfg(unix)".dependencies]
 libc = "0.2.191"
 
 # Instruction counts under valgrind, not a libtest harness: benches/schema.rs.
@@ -79,7 +79,7 @@ insta = "1.49.0"
 peak_alloc = "0.3.0"
 proptest = "1.12.0"
 # In-memory HTTP responses test redirects without DNS or sockets; normal builds omit this feature.
-ureq = { version = "3.5.1", default-features = false, features = ["_test"] }
+ureq = { version = "3.5.2", default-features = false, features = ["_test"] }
 
 [lints]
 workspace = true
