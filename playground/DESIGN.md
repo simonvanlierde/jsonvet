@@ -176,11 +176,12 @@ rule and the margin's grid. The only inset strokes are the selected stage's and 
 
 #### Slug
 
-`jsonvet · proof of staging.json · set in JSON5 · 11 lines · copy link` on the left; `checked in
-0.08 ms · all six in 0.4 ms · try a 2.7 MB file · back to the sample · docs` on the right. The
-proof's name is the sample's, a dropped file's, "hosts.json" with a note that it was made in the
-page, "a shared text" or "your text". "copy link" and the two links on the right are buttons styled
-as underlined text, and "docs" is a link in the same style. The all-six timing dims while the other dialects wait for a pause in typing, and
+`staging.json, checked as JSON5 · 11 lines · version 3.5.0 · copy link` on the left; `checked in
+0.08 ms (how measured) · all six dialects in 0.4 ms · try a 2.7 MB file · back to the sample` on the
+right, under the header bar (the name and the docs link). The proof's name is the sample's, a
+dropped file's, "hosts.json" with a note that it was made in the page, "a shared text" or "your
+text", which the sample becomes at the first edit. "copy link" and the two buttons on the right are
+styled as underlined text, and "(how measured)" is a link in the same style. The all-six timing dims while the other dialects wait for a pause in typing, and
 is hidden for a long text, which only the chosen dialect checks.
 
 #### Proof stages
