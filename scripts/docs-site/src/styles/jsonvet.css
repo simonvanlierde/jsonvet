@@ -81,6 +81,8 @@ body { background: var(--paper); }
 
 /* The header is the shared .bar (chrome.css) in place of Starlight's padded, ruled one. */
 :root { --sl-nav-height: 3.5rem; --sl-nav-pad-x: clamp(16px, 4vw, 48px); }
+/* Starlight sets both sidebars to 18.75rem; the page names are short, so the reading column gets the room. */
+:root { --sl-sidebar-width: 14rem; --sl-content-width: 50rem; }
 .page > header { padding: 0; border-bottom: 0; }
 .bar { height: 100%; }
 @media (max-width: 49.99rem) { .bar { padding-inline-end: calc(var(--sl-nav-pad-x) + var(--sl-menu-button-size) + .5rem); } }
