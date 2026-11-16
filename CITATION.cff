@@ -14,9 +14,9 @@ identifiers:
   - type: doi
     value: "10.5281/zenodo.23461825"
     description: "All versions of jsonvet"
-license:
-  - MIT
-  - Apache-2.0
+# One id: Zenodo rejects a list or an OR expression here ("Citation metadata load failed").
+# The repository is MIT OR Apache-2.0; see LICENSE-MIT and LICENSE-APACHE.
+license: Apache-2.0
 keywords:
   - "json"
   - "json5"

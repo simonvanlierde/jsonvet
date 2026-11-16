@@ -64,6 +64,8 @@ jobs:
       - run: uv run scripts/check-versions.py
       # Zenodo reads CITATION.cff on each release and refuses a file the schema rejects.
       - run: uvx cffconvert@2.0.0 --validate -i CITATION.cff
+      # The schema allows a licence list, but Zenodo takes one id (3.4.0 and 3.5.0 failed with a list).
+      - run: uvx cffconvert@2.0.0 -f zenodo -i CITATION.cff | jq -e '.license.id | type == "string"'
       # The conformance page is rendered from conformance/results/; the parser runs stay local.
       - run: uv run conformance/report.py && git diff --exit-code docs/conformance.md docs/conformance.json README.md
       # A parser or image bump must come with a matrix re-run, so the results say what ran.

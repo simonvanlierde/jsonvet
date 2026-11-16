@@ -1,0 +1,3 @@
+# CITATION.cff names one licence because Zenodo takes one id; Cargo.toml and codemeta.json
+# carry the repository's real `MIT OR Apache-2.0`, so the licence cannot be compared.
+ignore = ["license-mismatch"]

@@ -35,6 +35,12 @@ version for a new option or output, the patch version for a fix.
 - The conformance matrix page lists what each mark means as a list, and its details stay in view
   beside the table.
 
+### Fixed
+
+- `CITATION.cff` names one licence, `Apache-2.0`, so Zenodo can read it again. A list or an `OR`
+  expression made it fail with "Citation metadata load failed", so 3.4.0 and 3.5.0 have no DOI
+  record. The repository stays `MIT OR Apache-2.0`.
+
 ## [3.5.0] - 2026-11-15
 
 ### Added
