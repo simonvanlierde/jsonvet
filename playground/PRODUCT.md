@@ -119,8 +119,9 @@ the page: a share link keeps it in the URL fragment, which browsers do not send 
 The page's own words are plain: a margin item is a problem, a repeated key's first place is "key first set here",
 and a fix that drops data says "changes data". "Correction" and "proof" stay as the look's metaphor, not as UI text.
 Above the dialects, one line says the tool is the successor of check-json5 and what to change in a hook
-(`id: check-json5` to `id: jsonvet`), with a link that opens the hook snippet; one line says which dialect
-`tsconfig.json`, VS Code settings and `package.json` are.
+(`id: check-json5` to `id: jsonvet`), with a link that opens the hook snippet. The hint under the
+dialects names the common files that are JSON (`package.json`) and JSONC (`tsconfig.json`), so no line of its own is needed.
+Help text is one sentence and about one line wide at 1440 px; a concept is explained once.
 
 ## Product Principles
 

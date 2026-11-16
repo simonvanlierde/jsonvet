@@ -40,9 +40,8 @@
 </header>
 <main class="wrap">
   <h1>Check JSON, JSONC and JSON5 in your browser</h1>
-  <p class="aside lede">Formerly check-json5: same verdicts on JSON5 files. In your hook, change <code>id: check-json5</code> to <code>id: jsonvet</code>. <a href="#use" id="to-hook">Show the hook</a></p>
+  <p class="aside lede">Formerly check-json5: in your hook, change <code>id: check-json5</code> to <code>id: jsonvet</code>. <a href="#use" id="to-hook">Show the hook</a></p>
   <div class="stages-row">
-    <p class="guide">Unsure? <code>tsconfig.json</code> and VS Code settings are JSONC, <code>package.json</code> is JSON; JSON5 accepts the most.</p>
     <span id="dialect-label" class="vh">Dialect</span>
     <div id="dialects" class="stages" role="radiogroup" aria-labelledby="dialect-label" aria-describedby="dialect-hint">
       <button type="button" role="radio" aria-checked="false" tabindex="-1" data-dialect="json"><span class="name">JSON</span><span class="v"></span></button>
@@ -52,10 +51,7 @@
       <button type="button" role="radio" aria-checked="true" tabindex="0" data-dialect="json5"><span class="name">JSON5</span><span class="v"></span></button>
       <button type="button" role="radio" aria-checked="false" tabindex="-1" data-dialect="jsonl"><span class="name">JSON Lines</span><span class="v"></span></button>
     </div>
-    <div class="hint-row">
-      <p id="dialect-hint" class="hint"></p>
-      <p id="took-all" class="speed" hidden>All six dialects: <em id="t6"></em></p>
-    </div>
+    <p id="dialect-hint" class="hint"></p>
   </div>
   <div class="editor-head">
     <div class="tools" role="group" aria-label="Fix and format the text">
@@ -103,7 +99,7 @@
     <span id="share-status" class="vh" role="status"></span>
   </div>
   <div class="keys-row">
-    <p id="keys" class="aside">Paste your file here, or drop it on the text. <kbd>F8</kbd> and <kbd>Shift</kbd>+<kbd>F8</kbd> move to the next and previous problem.</p>
+    <p id="keys" class="aside">Paste or drop a file on the text. <kbd>F8</kbd> and <kbd>Shift</kbd>+<kbd>F8</kbd> jump between problems.</p>
     <p class="samples">Samples: <span id="back-wrap" hidden><button type="button" id="back" class="link">staging.json</button></span> <span id="try-wrap"><button type="button" id="try" class="link" disabled>hosts.json (2.7 MB)</button></span></p>
   </div>
   <div class="proof" id="proof">
@@ -169,7 +165,7 @@
         <button type="button" class="copy conf-copy" data-copy="cli" aria-label="Copy" title="Copy" aria-describedby="tab-cli"><svg class="i-copy" viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M10.5 3.5v-1a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1"/></svg><svg class="i-done" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg></button>
       </div>
     </div>
-    <p id="ci-note" class="aside"></p>
+    <p id="ci-note" class="aside" hidden></p>
   </details>
 </main>
 <footer class="wrap colophon"><p class="quiet">Your text is checked in your browser and never sent anywhere.</p><p class="slug-part"><span>jsonvet</span><span><a href="https://github.com/simonvanlierde">Simon van Lierde</a></span><span><a href="https://github.com/simonvanlierde/jsonvet#credits-and-license">MIT or Apache-2.0</a></span><span><a href="https://github.com/simonvanlierde/jsonvet">source</a></span><span><a href="/jsonvet/docs/accessibility.html">accessibility</a></span></p></footer>

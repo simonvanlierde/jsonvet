@@ -28,27 +28,28 @@ const radios = [...stages.querySelectorAll('[role="radio"]')];
 const radio = (d) => radios.find((r) => r.dataset.dialect === d);
 const nameOf = (d) => radio(d).querySelector(".name").textContent;
 
-// What each dialect adds to JSON, and which files the CLI checks in it (README, "Dialects").
+// What each dialect adds to JSON, a file that is one, and which files the CLI checks in it (README,
+// "Dialects"), on one line each.
 // Backticks mark CLI strings, shown in mono.
 const hints = {
-  json: "No comments and no trailing commas. The CLI checks this way only when asked, with `--dialect` or `--strict`.",
-  "i-json": "JSON with stricter content: every number fits a double and every string is valid Unicode. The CLI checks this way only when asked, with `--dialect`.",
-  jsonc: "JSON with `//` and `/* */` comments. The CLI checks `.jsonc`, `.code-workspace` and `.code-snippets` files this way.",
+  json: "No comments and no trailing commas, as in `package.json`. The CLI uses it only with `--dialect` or `--strict`.",
+  "i-json": "JSON whose numbers fit a double and whose strings are valid Unicode. The CLI uses it only with `--dialect`.",
+  jsonc: "JSON with comments, as in `tsconfig.json` and VS Code settings. The CLI checks `.jsonc` files this way.",
   jwcc: "JSON with comments and trailing commas, also called HuJSON. The CLI checks `.hujson` and `.jwcc` files this way.",
-  json5: "Comments, trailing commas, single quotes, unquoted keys and more. The CLI checks `.json`, `.json5` and any file with no other dialect this way.",
+  json5: "Comments, trailing commas, single quotes, unquoted keys and more. The CLI checks `.json` files this way.",
   jsonl: "One JSON value per line. The CLI checks `.jsonl` and `.ndjson` files this way.",
 };
-// The files each dialect already checks, for the note under the snippets.
+// The note under the snippets, for the dialects some files already have.
 const already = {
-  jsonc: "`.jsonc` files are JSONC already",
-  jwcc: "`.hujson` and `.jwcc` files are JWCC already",
-  jsonl: "`.jsonl` and `.ndjson` files are JSON Lines already",
+  jsonc: "`.jsonc` files are JSONC already.",
+  jwcc: "`.hujson` and `.jwcc` files are JWCC already.",
+  jsonl: "`.jsonl` and `.ndjson` files are JSON Lines already.",
 };
 // How a related place reads in a problem's entry, as the CLI writes it after the message.
 const near = { "first copy": "key first set at", "opened here": "opened at", "starts here": "started at" };
 // The same places in the margin, where the CLI's "first copy" would read as a term of art.
 const placeLabel = { "first copy": "key first set here" };
-const BOM_WHY = "RFC 8259 says JSON text must not start with a byte order mark. JSONC, JWCC and JSON5 readers accept one, so those dialects do not flag it.";
+const BOM_WHY = "RFC 8259 forbids a byte order mark in JSON; JSONC, JWCC and JSON5 readers accept one.";
 const DOCS = "docs/usage.html#";
 const SAMPLE = input.value;
 const SAMPLE_NAME = "staging.json";
@@ -392,49 +393,43 @@ function verdict(problems) {
   const syntax = problems.find((p) => p.rule === "syntax");
   const counts = [count.errors && plural(count.errors, "error"), count.warnings && plural(count.warnings, "warning")].filter(Boolean).join(", ");
   if (syntax) {
-    setStatus(`Does not parse as ${name}.`, "The hook and CLI fail (exit 1).");
+    setStatus(`Does not parse as ${name}.`, "The hook and CLI fail.");
   } else if (count.errors) {
-    setStatus(`Parses as ${name}, but a rule found ${counts}.`, "The hook and CLI fail (exit 1).");
+    setStatus(`Parses as ${name}, but a rule found ${counts}.`, "The hook and CLI fail.");
   } else if (count.warnings) {
-    setStatus(`Parses as ${name}, with ${plural(count.warnings, "warning")}.`, "The hook and CLI pass (exit 0), unless run with `--max-warnings`.");
+    setStatus(`Parses as ${name}, with ${plural(count.warnings, "warning")}.`, "The hook and CLI pass, unless run with `--max-warnings`.");
   } else {
-    setStatus(`\u2713 Valid ${name}.`, "The hook and CLI pass (exit 0).");
+    setStatus(`\u2713 Valid ${name}.`, "The hook and CLI pass.");
   }
   status.className = count.errors ? "bad" : count.warnings ? "warn" : "ok";
   // A syntax error is always the last problem: checking stops there.
   stopped.hidden = !syntax;
-  if (syntax) stopped.textContent = `Checking stopped at the syntax error on line ${syntax.line}. Fix it to see the rest.`;
+  if (syntax) stopped.textContent = `Checking stopped at the syntax error on line ${syntax.line}, so later problems are not shown.`;
   // A byte order mark only some dialects flag: say so where nothing else does.
   const bom = input.value.startsWith("\uFEFF") && !problems.some((p) => p.rule === "byte-order-mark");
   bomNote.hidden = !bom;
-  if (bom) bomNote.textContent = `The text starts with a byte order mark. JSON and I-JSON flag it, as RFC 8259 says JSON text must not start with one. ${name} does not.`;
+  if (bom) bomNote.textContent = `The text starts with a byte order mark, which JSON and I-JSON flag and ${name} does not.`;
   bigNote.hidden = !big && input.value.length <= BIG;
   if (!bigNote.hidden) {
     bigNote.textContent = big
-      ? `The marks are off above ${MAX_ROWS.toLocaleString("en")} lines, and the other dialects are checked only for shorter texts: the problems are listed under the proof.`
+      ? `Above ${MAX_ROWS.toLocaleString("en")} lines the marks are off, and only this dialect is checked.`
       : "The other dialects are checked only for shorter texts.";
   }
 }
 
 // Checks the text in all six dialects after a pause in typing, or at once on the first check; not
-// at all for a big text. The six are timed together.
+// at all for a big text.
 let othersTimer;
 let firstCheck = true;
 function others(text, long) {
   clearTimeout(othersTimer);
   const rest = radios.map((r) => r.dataset.dialect).filter((d) => d !== dialect);
-  $("took-all").classList.add("stale");
   if (long) {
     for (const d of rest) mark(d, null);
-    $("took-all").hidden = true;
     return;
   }
   const all = () => {
-    const t0 = performance.now();
     const results = radios.map((r) => check(text, r.dataset.dialect));
-    $("t6").textContent = formatMs(performance.now() - t0, resolution);
-    $("took-all").hidden = false;
-    $("took-all").classList.remove("stale");
     radios.forEach((r, i) => r.dataset.dialect !== dialect && mark(r.dataset.dialect, JSON.parse(results[i])));
   };
   if (firstCheck) all();
@@ -524,17 +519,15 @@ function ci() {
   const file = /^[\w.-]+\.json$/.test(source) ? source : "config.json";
   const out = snippets({ version: jsonvetVersion, glob, file });
   for (const id of ["hook", "action", "cli"]) $(id).textContent = out[id];
-  const name = nameOf(dialect);
-  const note = glob
-    ? `\`--dialect ${glob}\` checks every \`.json\` file as ${name}${already[dialect] ? `; ${already[dialect]}` : ""}.`
-    : "All three check `.json` files as JSON5 by default, as here.";
+  const note = glob ? (already[dialect] ?? "") : "";
+  $("ci-note").hidden = !note;
   setRich($("ci-note"), note);
 }
 
 // The caption above the editor: what the text is.
 function caption() {
   $("name").textContent = source;
-  $("made").textContent = generated ? `, ${(input.value.length / 1e6).toFixed(1)} MB of made-up hosts built in this page` : "";
+  $("made").textContent = generated ? `, ${(input.value.length / 1e6).toFixed(1)} MB, made up in this page` : "";
   $("try-wrap").hidden = generated;
   $("back-wrap").hidden = input.value === SAMPLE;
   if (jsonvetVersion) ci();

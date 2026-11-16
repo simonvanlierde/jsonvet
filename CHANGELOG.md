@@ -29,7 +29,9 @@ version for a new option or output, the patch version for a fix.
   text" sit above the editor, the timing sits beside the verdict, and the 2.7 MB file is one of
   two sample buttons. The footer says only that the text is checked in your browser and never
   sent, and the version is in the footer line. Short lines of prose stay on one line on a wide
-  screen.
+  screen. The separate line about which dialect common files are is gone, folded into the dialect
+  hints, and so are the six-dialect timing and the hook note for JSON5; the notes and verdict
+  lines are shorter.
 - The conformance matrix page lists what each mark means as a list, and its details stay in view
   beside the table.
 

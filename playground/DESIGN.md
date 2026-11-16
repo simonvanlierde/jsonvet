@@ -185,18 +185,16 @@ announce it. Under the keys line, "Samples:" offers the two other texts as text 
 `staging.json` (once the text has changed) and `hosts.json (2.7 MB)`.
 
 The timing is part of the verdict row, at its right: "Checked in 0.08 ms (how measured)", and
-after an action "fixed in 0.2 ms" or "formatted in 1.1 ms". "All six dialects: 0.4 ms" sits at
-the right of the dialect hint, where the stages are. It dims while the other dialects wait for a
-pause in typing, and is hidden for a long text, which only the chosen dialect checks. The
-version is in the footer line, with the name.
+after an action "fixed in 0.2 ms" or "formatted in 1.1 ms". The version is in the footer line,
+with the name.
 
 #### Proof stages
 
 A radio group of six buttons (`role="radio"`), one tab stop, arrow keys and Home/End to move and
 choose. Each shows its name and, in red mono, its error and warning counts with a square or a
 triangle; a tick when clean; "not checked" for a long text. The
-selected stage has the tint and a 2px ink bar at its foot. Each shows its counts in words ("1 error", "2 warnings", "✓ no problems") and, below them, "first at 2:3", or "stops at 2:3" where a syntax error ended the check. A plain line above the row says which dialect common files are (tsconfig and VS Code settings are JSONC, package.json is JSON); an italic hint under it says what
-the dialect adds and which files the CLI checks in it.
+selected stage has the tint and a 2px ink bar at its foot. Each shows its counts in words ("1 error", "2 warnings", "✓ no problems") and, below them, "first at 2:3", or "stops at 2:3" where a syntax error ended the check. One italic hint under the row, one sentence of about 100 characters, says what the
+dialect adds, names a common file that is one where there is one (`package.json`, `tsconfig.json`) and says which files the CLI checks in it.
 
 #### Actions
 
