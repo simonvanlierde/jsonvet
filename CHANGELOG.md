@@ -25,6 +25,11 @@ version for a new option or output, the patch version for a fix.
   heading says it replaces check-json5 and links to the hook snippet, one line names the dialect
   of `tsconfig.json` and `package.json`, and the sample's empty state asks for your file. The
   verdict's position on the right and the second paste hint are gone.
+- The playground opens with its heading. The file's name, its line count and "Copy link to this
+  text" sit above the editor, the timing sits beside the verdict, and the 2.7 MB file is one of
+  two sample buttons. The footer says only that the text is checked in your browser and never
+  sent, and the version is in the footer line. Short lines of prose stay on one line on a wide
+  screen.
 - The conformance matrix page lists what each mark means as a list, and its details stay in view
   beside the table.
 
