@@ -105,7 +105,7 @@ let dialect = "json5";
 let current = [];
 // Whether the text or dialect changed since the page loaded, so the address bar should hold them.
 let edited = false;
-// What the proof is of, for the slug line and the command-line snippet.
+// What the text is, for the caption above the editor and the command-line snippet.
 let source = SAMPLE_NAME;
 let generated = false;
 let big = false;
@@ -531,10 +531,10 @@ function ci() {
   setRich($("ci-note"), note);
 }
 
-function slug() {
+// The caption above the editor: what the text is.
+function caption() {
   $("name").textContent = source;
   $("made").textContent = generated ? `, ${(input.value.length / 1e6).toFixed(1)} MB of made-up hosts built in this page` : "";
-  $("set").textContent = nameOf(dialect);
   $("try-wrap").hidden = generated;
   $("back-wrap").hidden = input.value === SAMPLE;
   if (jsonvetVersion) ci();
@@ -550,7 +550,7 @@ function select(d, focus) {
   }
   setRich(hint, hints[d]);
   for (const o of mounted) o.render();
-  slug();
+  caption();
   schedule();
 }
 
@@ -577,26 +577,26 @@ function load(text, name, isGenerated) {
   source = name;
   generated = isGenerated;
   edited = !(text === SAMPLE && dialect === "json5");
-  slug();
+  caption();
   if (!edited) history.replaceState(null, "", location.pathname + location.search);
   run();
 }
 
 input.addEventListener("input", () => {
   edited = true;
-  if (source === SAMPLE_NAME) source = "your text";
+  if (source === SAMPLE_NAME) source = "Your text";
   if (generated || !input.value) {
     generated = false;
-    source = input.value ? source : "your text";
+    source = input.value ? source : "Your text";
   }
   acted.hidden = true;
-  slug();
+  caption();
   schedule();
 });
 // Text pasted over all of the proof is a new text, not the sample or the file any more.
 input.addEventListener("paste", () => {
   if (input.selectionStart === 0 && input.selectionEnd === input.value.length) {
-    source = "your text";
+    source = "Your text";
     generated = false;
   }
 });
@@ -627,7 +627,7 @@ function replaceText(text) {
   sync();
 }
 
-// What an action did, on the slug line (with its time), under the proof, and for screen readers.
+// What an action did, with its time beside the verdict, under the proof, and for screen readers.
 function report(verb, ms, message) {
   $("act-verb").textContent = verb;
   $("t-act").textContent = formatMs(ms, resolution);
@@ -693,11 +693,11 @@ addEventListener("resize", () => {
 });
 
 tryBig.addEventListener("click", () => {
-  tryBig.textContent = "building the file…";
+  tryBig.textContent = "building hosts.json…";
   // A frame first, so the button can say so before the page is busy.
   requestAnimationFrame(() => setTimeout(() => {
     load(hosts(), "hosts.json", true);
-    tryBig.textContent = "try a 2.7 MB file";
+    tryBig.textContent = "hosts.json (2.7 MB)";
     shareStatus.textContent = `Loaded a made-up 2.7 MB hosts.json. ${status.textContent}`;
   }));
 });
@@ -728,12 +728,12 @@ share.addEventListener("click", async () => {
   try {
     if (edited && !(await save())) throw new RangeError("too long");
     await navigator.clipboard.writeText(location.href);
-    share.textContent = "link copied";
-    setTimeout(() => (share.textContent = "copy link"), 1500);
+    share.textContent = "Link copied";
+    setTimeout(() => (share.textContent = "Copy link to this text"), 1500);
   } catch (e) {
     said = e instanceof RangeError ? "The text is too long for a link." : "Could not copy: copy the address bar instead.";
-    share.textContent = e instanceof RangeError ? "too long for a link" : "copy failed";
-    setTimeout(() => (share.textContent = "copy link"), 2500);
+    share.textContent = e instanceof RangeError ? "Too long for a link" : "Copy failed";
+    setTimeout(() => (share.textContent = "Copy link to this text"), 2500);
   }
   shareStatus.textContent = said;
 });
@@ -786,7 +786,7 @@ async function open(hash) {
   const shared = hash ? await decode(hash) : null;
   if (!shared || !hints[shared.dialect]) return false;
   input.value = shared.text;
-  source = shared.text === SAMPLE ? SAMPLE_NAME : "a shared text";
+  source = shared.text === SAMPLE ? SAMPLE_NAME : "Shared text";
   generated = false;
   edited = true;
   select(shared.dialect);
@@ -875,7 +875,8 @@ try {
   runFix = wasm.fix;
   runFormat = wasm.format;
   jsonvetVersion = wasm.version();
-  $("version").textContent = ` ${jsonvetVersion}`;
+  // The footer line is shared with the docs pages, which have no checker: the playground adds its version.
+  document.querySelector(".colophon .slug-part span").textContent += ` ${jsonvetVersion}`;
   resolution = clockStep();
   loaded = true;
   share.disabled = tryBig.disabled = fixButton.disabled = formatButton.disabled = false;

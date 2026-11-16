@@ -37,22 +37,6 @@
 <body>
 <header>
 <div class="bar"><a class="brand" href="/jsonvet/">jsonvet</a><nav aria-label="Site"><a href="/jsonvet/docs/">docs</a></nav><div class="bar-end"><button type="button" id="theme" class="theme" aria-label="Switch theme" title="Switch theme"><svg class="i-sun" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.06 1.06M11.54 11.54l1.06 1.06M3.4 12.6l1.06-1.06M11.54 4.46l1.06-1.06"/></svg><svg class="i-moon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 9.6A5.5 5.5 0 0 1 6.4 2.5a5.5 5.5 0 1 0 7.1 7.1z"/></svg></button></div></div>
-<div class="wrap slug">
-  <p class="slug-part">
-    <span><span id="name">staging.json</span><span id="made"></span>, checked as <span id="set">JSON5</span></span>
-    <span id="lines">11 lines</span>
-    <span>version<span id="version"></span></span>
-    <span><button type="button" id="share" class="link" disabled>copy link</button></span>
-  </p>
-  <p class="slug-part speed">
-    <span id="took" hidden>checked in <em id="t1"></em> <a class="link" href="/jsonvet/docs/design.html#speed">(how measured)</a></span>
-    <span id="took-all" hidden>all six dialects in <em id="t6"></em></span>
-    <span id="took-act" hidden><span id="act-verb"></span> in <em id="t-act"></em></span>
-    <span id="try-wrap"><button type="button" id="try" class="link" disabled>try a 2.7 MB file</button></span>
-    <span id="back-wrap" hidden><button type="button" id="back" class="link">back to the sample</button></span>
-  </p>
-  <span id="share-status" class="vh" role="status"></span>
-</div>
 </header>
 <main class="wrap">
   <h1>Check JSON, JSONC and JSON5 in your browser</h1>
@@ -68,46 +52,60 @@
       <button type="button" role="radio" aria-checked="true" tabindex="0" data-dialect="json5"><span class="name">JSON5</span><span class="v"></span></button>
       <button type="button" role="radio" aria-checked="false" tabindex="-1" data-dialect="jsonl"><span class="name">JSON Lines</span><span class="v"></span></button>
     </div>
-    <p id="dialect-hint" class="hint"></p>
+    <div class="hint-row">
+      <p id="dialect-hint" class="hint"></p>
+      <p id="took-all" class="speed" hidden>All six dialects: <em id="t6"></em></p>
+    </div>
   </div>
-  <div class="tools" role="group" aria-label="Fix and format the text">
-    <div class="tool">
-      <div class="split">
-        <button type="button" id="fix" class="act" aria-disabled="true" aria-describedby="fix-help" disabled>Fix</button>
-        <button type="button" id="fix-opts" class="act opts" popovertarget="fix-pop" aria-label="Fix options" disabled><span class="n"></span><span aria-hidden="true">▾</span></button>
+  <div class="editor-head">
+    <div class="tools" role="group" aria-label="Fix and format the text">
+      <div class="tool">
+        <div class="split">
+          <button type="button" id="fix" class="act" aria-disabled="true" aria-describedby="fix-help" disabled>Fix</button>
+          <button type="button" id="fix-opts" class="act opts" popovertarget="fix-pop" aria-label="Fix options" disabled><span class="n"></span><span aria-hidden="true">▾</span></button>
+        </div>
+        <div id="fix-pop" class="pop" popover role="group" aria-labelledby="fix-pop-h">
+          <h2 id="fix-pop-h">Fix options</h2>
+          <div class="rows"></div>
+          <div class="conf">
+            <p class="conf-h">Same setting as <span class="conf-where">command-line flags</span></p>
+            <div class="conf-code">
+            <pre class="conf-text" tabindex="0"></pre>
+            <button type="button" class="conf-copy" aria-label="Copy" title="Copy"><svg class="i-copy" viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M10.5 3.5v-1a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1"/></svg><svg class="i-done" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg></button>
+            </div>
+          </div>
+        </div>
+        <span id="fix-help" class="vh">Applies the safe fixes to the text. Duplicate keys are dropped only when set in the options. Undo with Ctrl+Z.</span>
       </div>
-      <div id="fix-pop" class="pop" popover role="group" aria-labelledby="fix-pop-h">
-        <h2 id="fix-pop-h">Fix options</h2>
-        <div class="rows"></div>
-        <div class="conf">
-          <p class="conf-h">Same setting as <span class="conf-where">command-line flags</span></p>
-          <div class="conf-code">
-          <pre class="conf-text" tabindex="0"></pre>
-          <button type="button" class="conf-copy" aria-label="Copy" title="Copy"><svg class="i-copy" viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M10.5 3.5v-1a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1"/></svg><svg class="i-done" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg></button>
+      <div class="tool">
+        <div class="split">
+          <button type="button" id="format" class="act" disabled>Format</button>
+          <button type="button" id="format-opts" class="act opts" popovertarget="format-pop" aria-label="Format options" disabled><span class="n"></span><span aria-hidden="true">▾</span></button>
+        </div>
+        <div id="format-pop" class="pop" popover role="group" aria-labelledby="format-pop-h">
+          <h2 id="format-pop-h">Format options</h2>
+          <div class="rows"></div>
+          <div class="conf">
+            <p class="conf-h">Same setting in <span class="conf-where"><code>jsonvet.toml</code></span></p>
+            <div class="conf-code">
+            <pre class="conf-text" tabindex="0"></pre>
+            <button type="button" class="conf-copy" aria-label="Copy" title="Copy"><svg class="i-copy" viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M10.5 3.5v-1a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1"/></svg><svg class="i-done" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg></button>
+            </div>
           </div>
         </div>
       </div>
-      <span id="fix-help" class="vh">Applies the safe fixes to the text. Duplicate keys are dropped only when set in the options. Undo with Ctrl+Z.</span>
     </div>
-    <div class="tool">
-      <div class="split">
-        <button type="button" id="format" class="act" disabled>Format</button>
-        <button type="button" id="format-opts" class="act opts" popovertarget="format-pop" aria-label="Format options" disabled><span class="n"></span><span aria-hidden="true">▾</span></button>
-      </div>
-      <div id="format-pop" class="pop" popover role="group" aria-labelledby="format-pop-h">
-        <h2 id="format-pop-h">Format options</h2>
-        <div class="rows"></div>
-        <div class="conf">
-          <p class="conf-h">Same setting in <span class="conf-where"><code>jsonvet.toml</code></span></p>
-          <div class="conf-code">
-          <pre class="conf-text" tabindex="0"></pre>
-          <button type="button" class="conf-copy" aria-label="Copy" title="Copy"><svg class="i-copy" viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M10.5 3.5v-1a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1"/></svg><svg class="i-done" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg></button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <p class="caption slug-part">
+      <span><span id="name">staging.json</span><span id="made"></span></span>
+      <span id="lines">11 lines</span>
+      <span><button type="button" id="share" class="link" aria-describedby="share-note" disabled>Copy link to this text</button> <span id="share-note" class="note-faint">(the link contains your text)</span></span>
+    </p>
+    <span id="share-status" class="vh" role="status"></span>
   </div>
-  <p id="keys" class="aside">Paste your file here, or drop it on the text. <kbd>F8</kbd> and <kbd>Shift</kbd>+<kbd>F8</kbd> move to the next and previous problem.</p>
+  <div class="keys-row">
+    <p id="keys" class="aside">Paste your file here, or drop it on the text. <kbd>F8</kbd> and <kbd>Shift</kbd>+<kbd>F8</kbd> move to the next and previous problem.</p>
+    <p class="samples">Samples: <span id="back-wrap" hidden><button type="button" id="back" class="link">staging.json</button></span> <span id="try-wrap"><button type="button" id="try" class="link" disabled>hosts.json (2.7 MB)</button></span></p>
+  </div>
   <div class="proof" id="proof">
     <div class="editor" id="editor">
       <div class="gutter" id="gutter" aria-hidden="true"></div>
@@ -137,6 +135,10 @@
   <div class="verdict">
     <p id="status">Loading…</p>
     <p id="said" class="vh" role="status"></p>
+    <p class="slug-part speed">
+      <span id="took" hidden>Checked in <em id="t1"></em> (<a class="link" href="/jsonvet/docs/design.html#speed">how measured</a>)</span>
+      <span id="took-act" hidden><span id="act-verb"></span> in <em id="t-act"></em></span>
+    </p>
   </div>
   <p id="acted" class="aside" hidden></p>
   <p id="stopped" class="aside" hidden></p>

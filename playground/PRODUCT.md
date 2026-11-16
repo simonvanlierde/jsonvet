@@ -52,9 +52,10 @@ settings as real config (a `jsonvet.toml` `[format]` table, or the `--fix` flags
 teaches how to set them in a repository. Both change the editor text so Ctrl+Z undoes them,
 check again, update the share link and show the time they took.
 
-The slug line on top times each check in the visitor's own browser, and "try a 2.7 MB file"
+The verdict row times each check in the visitor's own browser, and the "hosts.json (2.7 MB)" sample
 builds a large made-up file in the page and checks it, so the speed shows rather than being
-claimed.
+claimed. A caption above the editor says what the text is (its name and line count) and offers
+"Copy link to this text".
 
 A visit succeeds when the visitor sees the verdict jsonvet would give their text, understands
 each problem well enough to fix it, and knows how to run the same check in their repository.
@@ -112,7 +113,7 @@ the page: a share link keeps it in the URL fragment, which browsers do not send 
 - The sample text in `index.html`: a config with a comment, a trailing comma and a `port` key
   repeated inside `server`, so it fails as JSON, and each dialect gives a different verdict.
 - The social card `playground/og.png`: the name, one duplicate key struck and circled, and the address, rendered from `docs/og-card.html`.
-- The speed figures in docs/design.md#speed, linked from the timing line as "how measured".
+- The speed figures in docs/design.md#speed, linked from the timing as "how measured".
 - No testimonials, user counts or quotes exist; none may be invented.
 
 The page's own words are plain: a margin item is a problem, a repeated key's first place is "key first set here",

@@ -117,7 +117,7 @@ real config, how long it took in the visitor's browser, and how to start.
 Warm paper, near-black ink, and one proofreader's red. Nothing else is coloured.
 
 - **Paper**: the whole page. **Ink**: text and the selected stage's bar.
-- **Faint** (5.4:1 on paper): the slug, hints, notes under the verdict, meta lines.
+- **Faint** (5.4:1 on paper): the caption, hints, notes under the verdict, meta lines.
   **Dim**: line numbers and the middle dots between slug parts.
 - **Pen** (6:1 on paper): proofreader's marks, margin notes, leader lines, the
   timings, the correction count and the numbers in the gutter. Never a fill, never decoration.
@@ -156,8 +156,7 @@ Timings, positions and counts use tabular figures.
 ### Layout
 
 - A centred column up to 1240px, side padding `clamp(16px, 4vw, 48px)`.
-- The slug line runs across the top, its two halves at either end over a dashed rule. They wrap
-  to two lines on a phone.
+- The h1 and the check-json5 line come first, under the header bar's dashed rule.
 - The stages are one bordered row, each stage at least 7.5rem wide; three by two under 800px.
 - From 860px the proof is two columns: the text, 80 characters of the editor's font wide (`80ch` plus the gutter and padding, so it follows the font) and a margin of at least 18.5rem on the faint grid. The
   editor grows with the text (at least 8 rows, at most 70% of the window, then it scrolls inside)
@@ -169,20 +168,27 @@ Timings, positions and counts use tabular figures.
 
 ### Elevation & Depth
 
-Flat paper. No shadows, no rounded corners. Parts are told apart by hairlines, the dashed slug
+Flat paper. No shadows, no rounded corners. Parts are told apart by hairlines, the dashed header
 rule and the margin's grid. The only inset strokes are the selected stage's and tab's 2px ink bar.
 
 ### Components
 
-#### Slug
+#### Caption and timing
 
-`staging.json, checked as JSON5 · 11 lines · version 3.5.0 · copy link` on the left; `checked in
-0.08 ms (how measured) · all six dialects in 0.4 ms · try a 2.7 MB file · back to the sample` on the
-right, under the header bar (the name and the docs link). The proof's name is the sample's, a
-dropped file's, "hosts.json" with a note that it was made in the page, "a shared text" or "your
-text", which the sample becomes at the first edit. "copy link" and the two buttons on the right are
-styled as underlined text, and "(how measured)" is a link in the same style. The all-six timing dims while the other dialects wait for a pause in typing, and
-is hidden for a long text, which only the chosen dialect checks.
+The page opens with the one-line h1 and the check-json5 line; the file meta comes after the
+controls it belongs to. Above the editor, at the right of the Fix and Format row, a caption in
+small mono: the text's name, `staging.json` for the sample, a dropped file's name, `hosts.json`
+with a note that it was made in the page, "Shared text" or "Your text" (which the sample becomes
+at the first edit); its line count; and "Copy link to this text", an underlined text button, with
+"(the link contains your text)" beside it. The caption is not a live region, so typing does not
+announce it. Under the keys line, "Samples:" offers the two other texts as text buttons:
+`staging.json` (once the text has changed) and `hosts.json (2.7 MB)`.
+
+The timing is part of the verdict row, at its right: "Checked in 0.08 ms (how measured)", and
+after an action "fixed in 0.2 ms" or "formatted in 1.1 ms". "All six dialects: 0.4 ms" sits at
+the right of the dialect hint, where the stages are. It dims while the other dialects wait for a
+pause in typing, and is hidden for a long text, which only the chosen dialect checks. The
+version is in the footer line, with the name.
 
 #### Proof stages
 
@@ -212,7 +218,7 @@ Esc closes it and returns focus to the button. The settings come from one table 
 
 Fix stays focusable at zero and says why when used. The result is an italic aside under the proof
 ("Fixed 2 problems: ... Ctrl+Z undoes it.", "Already formatted.", or the syntax error that stopped
-Format), and the slug line gains "fixed in 0.2 ms" or "formatted in 1.1 ms". The two groups wrap.
+Format), and the timing beside the verdict gains "fixed in 0.2 ms" or "formatted in 1.1 ms". The two groups wrap.
 
 #### Proof
 
