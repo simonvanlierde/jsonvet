@@ -43,7 +43,9 @@ export function policy(html) {
 export function withPolicy(html) {
   const tag = `<meta http-equiv="Content-Security-Policy" content="${policy(html)}"/>`;
   const clean = html.replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/, "");
-  return clean.replace(/(<meta charset="utf-8"\s*\/?>)/, `$1${tag}`);
+  const out = clean.replace(/(<meta charset="utf-8"\s*\/?>)/i, `$1${tag}`);
+  if (out === clean) throw new Error("no charset meta to put the content security policy after");
+  return out;
 }
 
 const htmlFiles = (dir) =>
@@ -54,9 +56,11 @@ const htmlFiles = (dir) =>
 /** Applies the policy to each Starlight page under `dir`, and writes the sitemap from their canonical links. */
 export function finish(dir, site) {
   const urls = [site];
+  let pages = 0;
   for (const file of htmlFiles(dir)) {
     const html = readFileSync(file, "utf8");
     if (!html.includes('<meta name="generator" content="Starlight')) continue;
+    pages++;
     let page = withPolicy(html).replace(/(<html[^>]*?) data-theme="dark"/, "$1");
     if (file === resolve(dir, "404.html")) {
       // GitHub Pages serves it for any address with no page, so it has no address of its own.
@@ -69,6 +73,7 @@ export function finish(dir, site) {
     }
     writeFileSync(file, page);
   }
+  if (!pages) throw new Error(`no Starlight page under ${dir}, so no page got its content security policy`);
   const sitemap = [...new Set(urls)].sort().map((u) => `<url><loc>${u}</loc></url>`);
   writeFileSync(
     resolve(dir, "sitemap-0.xml"),

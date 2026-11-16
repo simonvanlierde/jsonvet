@@ -12,6 +12,7 @@
 
   addEventListener("DOMContentLoaded", () => {
     const button = document.getElementById("theme");
+    if (!button) return;
     const paper = getComputedStyle(root);
     const paint = () => {
       const theme = current();

@@ -109,7 +109,10 @@ export function rewrite(href, src, pages, subs) {
   let target = posix.normalize(posix.join(posix.dirname(src), decodeURI(path)));
   if (target.endsWith("/")) target = target.slice(0, -1);
   const full = resolve(ROOT, target);
-  if (!existsSync(full)) throw new Error(`${src}: the link ${href} names ${target}, which does not exist`);
+  if (!existsSync(full))
+    throw new Error(
+      `${src}: the link ${href} names ${target}, which does not exist${target.startsWith("tests/") ? " (run git submodule update --init)" : ""}`,
+    );
   const dir = statSync(full).isDirectory();
   if (dir && pages.has(`${target}/README.md`)) target = `${target}/README.md`;
   if (pages.has(target)) {

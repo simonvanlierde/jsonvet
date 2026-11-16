@@ -15,6 +15,7 @@ after(() => rmSync(site, { recursive: true, force: true }));
 try {
   execFileSync("astro", ["build"], { env: { ...process.env, DOCS_OUT: site }, encoding: "utf8", stdio: "pipe" });
 } catch (e) {
+  rmSync(site, { recursive: true, force: true });
   throw new Error(`astro build failed:\n${e.stdout}${e.stderr}`);
 }
 

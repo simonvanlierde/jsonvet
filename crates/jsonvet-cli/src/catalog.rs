@@ -253,6 +253,8 @@ fn failed(error: &ureq::Error) -> Failed {
     match error {
         Error::Timeout(_) | Error::HostNotFound | Error::ConnectionFailed => Failed::network(error),
         Error::Io(io) if io.kind() != std::io::ErrorKind::InvalidData => Failed::network(error),
+        // The reader stops at the limit and fails there; `resource` also checks what any fetcher returns.
+        Error::BodyExceedsLimit(_) => Failed::other(messages::text("catalog.too-large")),
         _ => Failed::other(error),
     }
 }
@@ -801,6 +803,10 @@ mod tests {
         ] {
             assert!(!failed(&error).network, "{error}");
         }
+        assert_eq!(
+            failed(&Error::BodyExceedsLimit(1)).message,
+            messages::text("catalog.too-large")
+        );
     }
 
     #[test]

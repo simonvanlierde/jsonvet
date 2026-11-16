@@ -10,13 +10,16 @@ version for a new option or output, the patch version for a fix.
 
 ### Added
 
-- The docs pages have a search box, which finds a heading or text on any page and jumps to its
-  section. Press `/` to focus it. It needs script; without it the pages work as before
-  ([ADR 0018](docs/decisions/0018-docs-search.md)).
+- The docs pages have a search dialog, which finds a heading or text on any page and jumps to its
+  section. Press `/` to open it. It needs script; without it the pages work as before
+  ([ADR 0019](docs/decisions/0019-docs-on-starlight.md)).
 - Every docs page has Open Graph and Twitter card tags, and the site has a 404 page.
 
 ### Changed
 
+- The docs site is built with Starlight and Pagefind, with a sitemap, and the docs pages run under
+  a content security policy that lists the hash of each inline script. The playground keeps its
+  stricter policy ([ADR 0019](docs/decisions/0019-docs-on-starlight.md)).
 - The playground shows its heading, and opens the "Use this check" section by default on screens
   860 px wide and up.
 - The playground's words are plainer. The verdict says whether the text parses or a rule found a
@@ -37,6 +40,8 @@ version for a new option or output, the patch version for a fix.
 
 ### Fixed
 
+- The schema catalog accepts a response of exactly the size limit, where it refused one a byte
+  under it, and a response over the limit still reports `catalog.too-large`.
 - `CITATION.cff` names one licence, `Apache-2.0`, so Zenodo can read it again. A list or an `OR`
   expression made it fail with "Citation metadata load failed", so 3.4.0 and 3.5.0 have no DOI
   record. The repository stays `MIT OR Apache-2.0`.
