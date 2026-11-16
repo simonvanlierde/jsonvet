@@ -24,7 +24,7 @@ WebAssembly in the browser:
 - Screen reader announcements use semantic roles (`role="radio"`, `role="tablist"`)
   and an `aria-live` verdict region that says whether the text parses and how many problems a rule found. It is emptied when the verdict changes and filled again a second later, so a screen reader never reads the old verdict beside the new one.
 - F8 and Shift+F8 jump to the next and previous problem.
-- Colour schemes follow the system's light or dark mode, and a button in the footer
+- Colour schemes follow the system's light or dark mode, and a button in the header
   switches between them. Both use high-contrast ink, and problem counts and severity indicators accompany colour markings, and each dialect's count is written out ("1 error", "stops at 2:3"), not shown as bare numbers.
 
 ### Tested with

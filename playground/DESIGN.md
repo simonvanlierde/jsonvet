@@ -271,8 +271,10 @@ workflow step, `jsonvet fmt` on the command line), each under a `#` comment line
 
 #### Colophon
 
-The privacy and JSON Schema sentence in small italic, then two mono lines: "jsonvet <version> · MIT or Apache-2.0
-licence" and "Simon van Lierde · source on GitHub · docs · speed figures".
+One short italic sentence on the playground only: the text is checked in the browser and never
+sent. It is not in `footer.html`, which the docs pages share. Then the shared mono line: "jsonvet
+<version> · Simon van Lierde · MIT or Apache-2.0 · source · accessibility", the version added by
+the playground's script. The fact that a link carries the text sits beside "Copy link to this text".
 
 #### Docs pages
 
