@@ -9,9 +9,10 @@ a promise, and none of it has a date. Released work is in [CHANGELOG.md](../CHAN
 
 ## Planned
 
-1. **A redesign of the site.** The playground, the docs pages and the conformance matrix page get one
-   design source and one pass over hierarchy, type, colour and the first screen of each, with the
-   accessibility checks rerun afterwards. Small fixes and the docs search come first, in 3.5.x.
+1. **A redesign of the site.** The playground and the docs pages now share one header, footer and
+   theme, and the docs are built with Starlight ([0019](decisions/0019-docs-on-starlight.md)). The
+   redesign is one pass over hierarchy, type, colour and the first screen of each surface, with the
+   accessibility checks rerun afterwards.
 2. **More ways to install.** A Homebrew tap
    ([#209](https://github.com/simonvanlierde/jsonvet/issues/209)), then conda-forge, winget,
    nixpkgs, AUR and mise ([#210](https://github.com/simonvanlierde/jsonvet/issues/210)). Each
