@@ -167,11 +167,74 @@ pub fn check_config_text(path: &Path, text: &str) -> Result<(), String> {
 /// `Err`, which `run` turns into exit status 2. Public only for `benches/codspeed.rs`, which
 /// measures `--schema` in-process; not part of the crate's API.
 #[doc(hidden)]
+pub fn run_with(
+    args: impl IntoIterator<Item = OsString>,
+    annotate: bool,
+    terminal: Terminal,
+    out: impl Write,
+) -> Result<u8, String> {
+    let args: Vec<OsString> = args.into_iter().collect();
+    // `jsonvet fmt` and `lsp` take no `--format`, so their usage errors stay text.
+    let json = !args.first().is_some_and(|a| a == "fmt" || a == "lsp")
+        && args
+            .iter()
+            .zip(args.iter().skip(1).map(Some).chain([None]))
+            .any(|(arg, next)| {
+                arg == "--format=json" || (arg == "--format" && next.is_some_and(|n| n == "json"))
+            });
+    if !json {
+        return run_checked(args, annotate, terminal, out);
+    }
+    // A JSON reader gets English, and a document it can parse, from the first byte.
+    messages::english_only(true);
+    let mut out = Tracked {
+        inner: out,
+        wrote: false,
+    };
+    match run_checked(args, annotate, terminal, &mut out) {
+        // NOTE: after output has started, the document is cut off: a second one would not parse.
+        Err(message) if !out.wrote => {
+            let (message, help) = match message.strip_suffix(USAGE_HELP) {
+                Some(message) => (message.trim_end(), "Run `jsonvet --help` for usage."),
+                None => (
+                    message.as_str(),
+                    "Fix the file or option the message names, then run again.",
+                ),
+            };
+            out.write_all(json::failure(message, help).as_bytes())
+                .and_then(|()| out.flush())
+                .map_err(|e| messages::fill("error.write", &[("error", &e)]))?;
+            Ok(2)
+        }
+        result => result,
+    }
+}
+
+/// What `error.usage` adds after the error itself.
+const USAGE_HELP: &str = "Run `jsonvet --help` for usage.";
+
+/// A writer that notes whether anything went through it.
+struct Tracked<W> {
+    inner: W,
+    wrote: bool,
+}
+
+impl<W: Write> Write for Tracked<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.wrote |= !buf.is_empty();
+        self.inner.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
+
 #[allow(
     clippy::too_many_lines,
     reason = "the checking pipeline keeps its stages in execution order"
 )]
-pub fn run_with(
+fn run_checked(
     args: impl IntoIterator<Item = OsString>,
     annotate: bool,
     terminal: Terminal,

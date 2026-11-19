@@ -159,7 +159,9 @@ the [issue tracker](https://github.com/simonvanlierde/jsonvet/issues), and exits
 yet written is lost, and the verdict for the files checked so far is not given.
 
 On exit 2 or 101 the run may stop part way, so a SARIF or JSON document on standard output may be cut
-off. Do not upload it.
+off. Do not upload it. With `--format json`, a usage error or a bad `--schema` that stops the run
+before any file is checked prints a complete [JSON document](#json) with `errors` instead of a message
+on standard error; an error later in the run still goes to standard error.
 
 jsonvet reads regular files, and follows a symlink to one. A device, FIFO or socket prints
 `error: not a regular file`. When the output pipe closes early, as in `jsonvet … | head -1`,
@@ -486,15 +488,19 @@ jsonvet --format json config.json5 | jq -r '.diagnostics[] | "\(.file):\(.line) 
 ```
 
 ```json
-{"version":1,"diagnostics":[
+{"schema_version":1,"diagnostics":[
 {"file":"dup.json","rule":"duplicate-key","url":"https://simonvanlierde.com/jsonvet/docs/usage.html#duplicate-key","severity":"error","message":"duplicate key $.a (first at 2:3)","line":3,"column":3,"offset":14,"related":[{"message":"first copy","line":2,"column":3,"offset":4}]},
 {"file":"gone.json","rule":"unreadable","url":"https://simonvanlierde.com/jsonvet/docs/usage.html#unreadable","severity":"error","message":"no such file","line":null,"column":null,"offset":null,"related":[]}
 ]}
 ```
 
-- `version` is the version of this layout, now `1`. A new field may come without a new version;
-  a field that changes meaning or goes away gets one. Ignore fields you do not know. To pin the
-  layout, stop when `version` is not the number you wrote your code for.
+- `schema_version` is the version of this layout, now `1`. A new field may come without a new
+  version; a field that changes meaning or goes away gets one. Ignore fields you do not know. To
+  pin the layout, stop when `schema_version` is not the number you wrote your code for.
+- `errors` is there only when the run stopped on a usage error, such as an unknown option, or on
+  a schema that cannot be read or used, before it checked a file. `diagnostics` is then empty,
+  the exit status is 2, and each entry has a `message` and a `help` for the next step, as in
+  `{"schema_version":1,"diagnostics":[],"errors":[{"message":"...","help":"..."}]}`.
 - Optional `notes` holds runtime notices, such as a missing schema or a stale catalog cache.
   These do not change the exit status or count toward `--max-warnings`.
 - `diagnostics` holds one object per problem, in the order text output prints them. Each has:

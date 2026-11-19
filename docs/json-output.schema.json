@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/simonvanlierde/jsonvet/blob/main/docs/json-output.schema.json",
   "title": "jsonvet --format json",
-  "description": "The document jsonvet prints for --format json. Fields not listed here may come in a later release without a new version: ignore them.",
+  "description": "The document jsonvet prints for --format json. Fields not listed here may come in a later release without a new schema_version: ignore them.",
   "type": "object",
-  "required": ["version", "diagnostics"],
+  "required": ["schema_version", "diagnostics"],
   "properties": {
-    "version": {
+    "schema_version": {
       "description": "The version of this layout.",
       "const": 1
     },
@@ -14,6 +14,18 @@
       "description": "One object per problem, in the order text output prints them.",
       "type": "array",
       "items": { "$ref": "#/$defs/diagnostic" }
+    },
+    "errors": {
+      "description": "Present when the run stopped on a usage error or a bad schema, before it checked any file: diagnostics is then empty and the exit status is 2.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["message", "help"],
+        "properties": {
+          "message": { "type": "string" },
+          "help": { "description": "What to do next.", "type": "string" }
+        }
+      }
     },
     "notes": {
       "description": "Runtime notices, such as a missing local schema or a stale catalog cache. These do not change the exit status.",

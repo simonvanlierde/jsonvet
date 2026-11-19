@@ -87,7 +87,12 @@ type, the safe fixes, and formatting. It takes settings as a check does. docs/ed
 repository shows how to set up an editor.
 
 Exit status: 0 when no file has an error, 1 when one does, 2 for a usage error, such as a
-schema that cannot be read or used. With --fix, the problems left decide.";
+schema that cannot be read or used. With --fix, the problems left decide.
+
+Examples:
+  jsonvet .                                  Check every JSON file under the current folder.
+  jsonvet --fix --format json config.json    Fix what is safe, then report the rest as JSON.
+  jsonvet --schema app.schema.json app.json  Check app.json against a JSON Schema.";
 
 /// Where settings come from besides the command line.
 #[derive(Debug, PartialEq, Eq)]

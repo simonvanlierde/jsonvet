@@ -1,4 +1,4 @@
-//! `--format json`: one JSON document, `{"version":1,"diagnostics":[...]}`, written as the
+//! `--format json`: one JSON document, `{"schema_version":1,"diagnostics":[...]}`, written as the
 //! problems come rather than held until the end, with each diagnostic on a line of its own.
 //! docs/usage.md describes the schema. The JSON is written by hand, with SARIF's escaping.
 
@@ -14,7 +14,17 @@ pub(crate) const VERSION: u32 = 1;
 
 /// What comes before the first diagnostic.
 pub(crate) fn start() -> String {
-    format!("{{\"version\":{VERSION},\"diagnostics\":[\n")
+    format!("{{\"schema_version\":{VERSION},\"diagnostics\":[\n")
+}
+
+/// The document for a run that stopped on a usage error or a bad schema, before any diagnostic.
+/// `help` says what to do next.
+pub(crate) fn failure(message: &str, help: &str) -> String {
+    format!(
+        "{{\"schema_version\":{VERSION},\"diagnostics\":[],\"errors\":[{{\"message\":{},\"help\":{}}}]}}\n",
+        string(message),
+        string(help),
+    )
 }
 
 /// One diagnostic, as a JSON object. `at` is the position and its byte offset, `None` for a
