@@ -16,7 +16,7 @@
       "items": { "$ref": "#/$defs/diagnostic" }
     },
     "errors": {
-      "description": "Present when the run stopped on a usage error or a bad schema, before it checked any file: diagnostics is then empty and the exit status is 2.",
+      "description": "Present when the run stopped on a usage error or a bad schema, before any diagnostic was printed: diagnostics is then empty and the exit status is 2.",
       "type": "array",
       "items": {
         "type": "object",

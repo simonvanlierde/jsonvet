@@ -4466,10 +4466,89 @@ fn json_usage_and_schema_errors_are_documents() {
         );
         assert!(validator.is_valid(&json), "{out}");
     }
-    // Text output keeps its message on standard error.
-    let (code, out, err) = jsonvet_stderr(&dir, &["--frmat"]);
+    // The usage help is in `help`, not in `message`.
+    let (_, out, _) = jsonvet_stderr(&dir, &["--format", "json", "--frmat"]);
+    assert!(!out.contains("for usage.\",\"help"), "{out}");
+    // Text and SARIF keep the message on standard error, with nothing on standard output; so
+    // does the last `--format` that is not json.
+    for args in [
+        &["--frmat"][..],
+        &["--format", "sarif", "--frmat"],
+        &["--format=json", "--format=text", "--frmat"],
+    ] {
+        let (code, out, err) = jsonvet_stderr(&dir, args);
+        assert_eq!((code, out.as_str()), (2, ""), "{args:?}");
+        assert!(err.contains("jsonvet: "), "{args:?}: {err}");
+    }
+    // With `--fix` on standard input, standard output is the fixed text's: the document goes to
+    // standard error.
+    let (code, out, err) = jsonvet_stdin(
+        &dir,
+        &["--fix", "--format", "json", "--schema", "gone.json", "-"],
+        "{}",
+    );
     assert_eq!((code, out.as_str()), (2, ""));
-    assert!(err.contains("unknown option"), "{err}");
+    let json: serde_json::Value = serde_json::from_str(&err).expect("JSON on standard error");
+    assert!(validator.is_valid(&json), "{err}");
+    assert_eq!(json["errors"].as_array().map(Vec::len), Some(1), "{err}");
+    // `--fix` on files, or standard input without `--fix`, leaves standard output to the document.
+    for args in [
+        &[
+            "--fix",
+            "--format",
+            "json",
+            "--schema",
+            "gone.json",
+            "a.json",
+        ][..],
+        &["--format", "json", "--schema", "gone.json", "-"],
+    ] {
+        let (code, out, err) = jsonvet_stdin(&dir, args, "{}");
+        assert_eq!((code, err.as_str()), (2, ""), "{args:?}");
+        assert!(
+            serde_json::from_str::<serde_json::Value>(&out).is_ok(),
+            "{out}"
+        );
+    }
+    // A name for standard input without a `-` still reads it.
+    let (code, out, err) = jsonvet_stdin(
+        &dir,
+        &[
+            "--fix",
+            "--format=json",
+            "--schema=gone.json",
+            "--stdin-filename=a.json",
+        ],
+        "{}",
+    );
+    assert_eq!((code, out.as_str()), (2, ""));
+    assert!(
+        serde_json::from_str::<serde_json::Value>(&err).is_ok(),
+        "{err}"
+    );
+}
+
+/// A JSON error document that cannot be written is a failed write (exit 2 and a message), not a
+/// silent success.
+#[cfg(target_os = "linux")] // macOS has no /dev/full
+#[test]
+fn a_json_error_that_cannot_be_written_is_a_failed_write() {
+    let dir = workdir(&[("a.json", "{}")]);
+    for args in [
+        &["--format", "json", "--frmat"][..],
+        &["--format", "json", "--schema", "gone.json", "a.json"],
+    ] {
+        let full = fs::File::create("/dev/full").expect("open /dev/full");
+        let out = command(env!("CARGO_BIN_EXE_jsonvet"))
+            .args(args)
+            .current_dir(&dir)
+            .stdout(full)
+            .output()
+            .expect("run jsonvet");
+        assert_eq!(out.status.code(), Some(2), "{args:?}");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(stderr.contains("cannot write output"), "{args:?}: {stderr}");
+    }
 }
 
 /// `--help` ends with example commands.

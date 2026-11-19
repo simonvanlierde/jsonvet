@@ -160,8 +160,10 @@ yet written is lost, and the verdict for the files checked so far is not given.
 
 On exit 2 or 101 the run may stop part way, so a SARIF or JSON document on standard output may be cut
 off. Do not upload it. With `--format json`, a usage error or a bad `--schema` that stops the run
-before any file is checked prints a complete [JSON document](#json) with `errors` instead of a message
-on standard error; an error later in the run still goes to standard error.
+before any diagnostic is printed gives a complete [JSON document](#json) with `errors`, in English,
+instead of a message on standard error: on standard output, or on standard error when `--fix`
+reads standard input, where standard output holds the fixed text. An error after the first
+diagnostic still goes to standard error as text.
 
 jsonvet reads regular files, and follows a symlink to one. A device, FIFO or socket prints
 `error: not a regular file`. When the output pipe closes early, as in `jsonvet … | head -1`,
@@ -498,7 +500,7 @@ jsonvet --format json config.json5 | jq -r '.diagnostics[] | "\(.file):\(.line) 
   version; a field that changes meaning or goes away gets one. Ignore fields you do not know. To
   pin the layout, stop when `schema_version` is not the number you wrote your code for.
 - `errors` is there only when the run stopped on a usage error, such as an unknown option, or on
-  a schema that cannot be read or used, before it checked a file. `diagnostics` is then empty,
+  a schema that cannot be read or used, before any diagnostic was printed. `diagnostics` is then empty,
   the exit status is 2, and each entry has a `message` and a `help` for the next step, as in
   `{"schema_version":1,"diagnostics":[],"errors":[{"message":"...","help":"..."}]}`.
 - Optional `notes` holds runtime notices, such as a missing schema or a stale catalog cache.

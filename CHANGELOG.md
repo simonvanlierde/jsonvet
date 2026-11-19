@@ -11,8 +11,9 @@ version for a new option or output, the patch version for a fix.
 ### Changed
 
 - **Breaking, JSON report:** `--format json` names the layout's version `schema_version`, not
-  `version`, as the other command line tools do. Read `schema_version` in scripts that checked
-  `version`; [docs/json-output.schema.json](docs/json-output.schema.json) is updated.
+  `version`, as the other command line tools do. This makes the next release 4.0.0. To upgrade,
+  read `schema_version` where a script read `version`;
+  [docs/json-output.schema.json](docs/json-output.schema.json) is updated.
 
 ### Added
 

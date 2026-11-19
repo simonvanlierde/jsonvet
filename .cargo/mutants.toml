@@ -72,9 +72,9 @@ exclude_re = [
   # Memory only: whether a `--schema` chunk is cut by file sizes, which prints the same.
   "lib.rs:.* replace match guard !shares.is_empty\\(\\) with false in take_chunk",
   "lib.rs:.* delete ! in take_chunk",
-  "lib.rs:.* replace - with (\\+|/) in run_with",
+  "lib.rs:.* replace - with (\\+|/) in run_checked",
   # Speed only: how many threads a split JSON Lines file uses, which gives the same report.
-  "lib.rs:.* replace / with (%|\\*) in run_with",
+  "lib.rs:.* replace / with (%|\\*) in run_checked",
   # A related mark at the problem's own byte starts the excerpt at the same offset either way.
   "frame.rs:\\d+:39: replace < with <= in render",
   # Extra places only for keys whose errors never look a place up: only the keywords in QUOTED

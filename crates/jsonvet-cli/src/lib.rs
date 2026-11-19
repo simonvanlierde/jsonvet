@@ -164,8 +164,10 @@ pub fn check_config_text(path: &Path, text: &str) -> Result<(), String> {
 
 /// The command, with its inputs passed in: 0 when no file has an error, 1 when one does.
 /// On a terminal, text output ends with a count of the problems. A usage error comes back as
-/// `Err`, which `run` turns into exit status 2. Public only for `benches/codspeed.rs`, which
-/// measures `--schema` in-process; not part of the crate's API.
+/// `Err`, which `run` turns into exit status 2 and a message on standard error; under
+/// `--format json` it is a JSON document on standard output (standard error with `--fix` on
+/// standard input) and `Ok(2)`, unless output has already started. Public only for
+/// `benches/codspeed.rs`, which measures `--schema` in-process; not part of the crate's API.
 #[doc(hidden)]
 pub fn run_with(
     args: impl IntoIterator<Item = OsString>,
@@ -175,18 +177,16 @@ pub fn run_with(
 ) -> Result<u8, String> {
     let args: Vec<OsString> = args.into_iter().collect();
     // `jsonvet fmt` and `lsp` take no `--format`, so their usage errors stay text.
-    let json = !args.first().is_some_and(|a| a == "fmt" || a == "lsp")
-        && args
-            .iter()
-            .zip(args.iter().skip(1).map(Some).chain([None]))
-            .any(|(arg, next)| {
-                arg == "--format=json" || (arg == "--format" && next.is_some_and(|n| n == "json"))
-            });
-    if !json {
+    if args.first().is_some_and(|a| a == "fmt" || a == "lsp") || !wants_json(&args) {
         return run_checked(args, annotate, terminal, out);
     }
     // A JSON reader gets English, and a document it can parse, from the first byte.
     messages::english_only(true);
+    // With `--fix` on standard input, standard output holds the fixed text.
+    let stdin_fix = args.iter().any(|a| a == "--fix")
+        && args
+            .iter()
+            .any(|a| a == "-" || a.to_string_lossy().starts_with("--stdin-filename"));
     let mut out = Tracked {
         inner: out,
         wrote: false,
@@ -194,24 +194,47 @@ pub fn run_with(
     match run_checked(args, annotate, terminal, &mut out) {
         // NOTE: after output has started, the document is cut off: a second one would not parse.
         Err(message) if !out.wrote => {
-            let (message, help) = match message.strip_suffix(USAGE_HELP) {
-                Some(message) => (message.trim_end(), "Run `jsonvet --help` for usage."),
+            let usage_help = messages::text("error.usage")
+                .rsplit("\n\n")
+                .next()
+                .unwrap_or_default();
+            let (message, help) = match message.strip_suffix(usage_help) {
+                Some(message) => (message.trim_end(), usage_help),
                 None => (
                     message.as_str(),
                     "Fix the file or option the message names, then run again.",
                 ),
             };
-            out.write_all(json::failure(message, help).as_bytes())
-                .and_then(|()| out.flush())
-                .map_err(|e| messages::fill("error.write", &[("error", &e)]))?;
+            let document = json::failure(message, help);
+            let sent = if stdin_fix {
+                io::stderr().write_all(document.as_bytes())
+            } else {
+                out.write_all(document.as_bytes())
+                    .and_then(|()| out.flush())
+            };
+            sent.map_err(|e| messages::fill("error.write", &[("error", &e)]))?;
             Ok(2)
         }
         result => result,
     }
 }
 
-/// What `error.usage` adds after the error itself.
-const USAGE_HELP: &str = "Run `jsonvet --help` for usage.";
+/// Whether the arguments ask for `--format json`: the last `--format` before any `--` wins, as
+/// the parser has it.
+fn wants_json(args: &[OsString]) -> bool {
+    let mut json = false;
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        if arg == "--" {
+            break;
+        } else if arg == "--format" {
+            json = args.next().is_some_and(|v| v == "json");
+        } else if let Some(value) = arg.to_str().and_then(|a| a.strip_prefix("--format=")) {
+            json = value == "json";
+        }
+    }
+    json
+}
 
 /// A writer that notes whether anything went through it.
 struct Tracked<W> {
@@ -1360,7 +1383,74 @@ mod tests {
         take_chunk,
     };
     use crate::schema::select::Job;
+    use std::io::Write as _;
     use std::sync::Arc;
+
+    /// A writer that records what reaches it and fails on the single write of `]`, which closes
+    /// a JSON report.
+    #[derive(Default)]
+    struct Probe {
+        written: Vec<u8>,
+        flushed: bool,
+    }
+
+    impl std::io::Write for Probe {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            if buf == b"]" {
+                return Err(std::io::Error::other("closed"));
+            }
+            self.written.extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            self.flushed = true;
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn tracked_notes_a_write_and_passes_a_flush_on() {
+        let mut out = super::Tracked {
+            inner: Probe::default(),
+            wrote: false,
+        };
+        out.write_all(b"").expect("empty write");
+        assert!(!out.wrote);
+        out.write_all(b"x").expect("write");
+        assert!(out.wrote);
+        out.flush().expect("flush");
+        assert!(out.inner.flushed);
+    }
+
+    #[test]
+    fn the_last_format_before_a_double_dash_decides() {
+        let json =
+            |args: &[&str]| super::wants_json(&args.iter().map(Into::into).collect::<Vec<_>>());
+        assert!(json(&["--format", "json"]));
+        assert!(json(&["--format=json", "a.json"]));
+        assert!(!json(&["--format", "json", "--format=text"]));
+        assert!(json(&["--format=text", "--format", "json"]));
+        assert!(!json(&["--", "--format=json"]));
+        assert!(!json(&["a.json"]));
+    }
+
+    /// A failure after the first diagnostic leaves the cut-off report alone: no `errors`.
+    #[test]
+    fn an_error_after_output_has_started_adds_no_document() {
+        let dir = std::env::temp_dir().join(format!("jsonvet-cutoff-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a temporary directory");
+        let file = dir.join("bad.json");
+        std::fs::write(&file, "[1,").expect("write");
+        let mut probe = Probe::default();
+        let args = ["--format".into(), "json".into(), file.into_os_string()];
+        let result = super::run_with(args, false, super::Terminal::default(), &mut probe);
+        std::fs::remove_dir_all(&dir).expect("clean up");
+        let written = String::from_utf8(probe.written).expect("UTF-8");
+        assert!(result.is_err(), "{result:?}");
+        assert!(written.contains("\"syntax\""), "{written}");
+        assert!(!written.contains("errors"), "{written}");
+    }
 
     /// The type is checked on the opened file, and opening a FIFO with no writer returns at
     /// once, so a path swapped for one between a check and the open cannot hang the run.
