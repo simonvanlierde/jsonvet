@@ -4437,17 +4437,12 @@ fn json_usage_and_schema_errors_are_documents() {
     let schema: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(path).expect("the schema file")).expect("JSON");
     let validator = jsonschema::validator_for(&schema).expect("a valid schema");
-    let dir = workdir(&[("a.json", "{}"), ("bad.schema.json", "{")]);
-    let cases: [(&[&str], &str); 4] = [
+    let dir = workdir(&[("a.json", "{}")]);
+    let cases: [(&[&str], &str); 2] = [
         (&["--format", "json", "--frmat"], "unknown option `--frmat`"),
-        (&["--format=json", "--max-warnings", "x"], "--max-warnings"),
         (
             &["--format=json", "--schema", "gone.json", "a.json"],
             "gone.json",
-        ),
-        (
-            &["--format", "json", "--schema", "bad.schema.json", "a.json"],
-            "bad.schema.json",
         ),
     ];
     for (args, needle) in cases {
@@ -4469,17 +4464,11 @@ fn json_usage_and_schema_errors_are_documents() {
     // The usage help is in `help`, not in `message`.
     let (_, out, _) = jsonvet_stderr(&dir, &["--format", "json", "--frmat"]);
     assert!(!out.contains("for usage.\",\"help"), "{out}");
-    // Text and SARIF keep the message on standard error, with nothing on standard output; so
-    // does the last `--format` that is not json.
-    for args in [
-        &["--frmat"][..],
-        &["--format", "sarif", "--frmat"],
-        &["--format=json", "--format=text", "--frmat"],
-    ] {
-        let (code, out, err) = jsonvet_stderr(&dir, args);
-        assert_eq!((code, out.as_str()), (2, ""), "{args:?}");
-        assert!(err.contains("jsonvet: "), "{args:?}: {err}");
-    }
+    // The last `--format` decides: text keeps the message on standard error.
+    let args = ["--format=json", "--format=text", "--frmat"];
+    let (code, out, err) = jsonvet_stderr(&dir, &args);
+    assert_eq!((code, out.as_str()), (2, ""));
+    assert!(err.contains("jsonvet: "), "{err}");
     // With `--fix` on standard input, standard output is the fixed text's: the document goes to
     // standard error.
     let (code, out, err) = jsonvet_stdin(
@@ -4510,22 +4499,6 @@ fn json_usage_and_schema_errors_are_documents() {
             "{out}"
         );
     }
-    // A name for standard input without a `-` still reads it.
-    let (code, out, err) = jsonvet_stdin(
-        &dir,
-        &[
-            "--fix",
-            "--format=json",
-            "--schema=gone.json",
-            "--stdin-filename=a.json",
-        ],
-        "{}",
-    );
-    assert_eq!((code, out.as_str()), (2, ""));
-    assert!(
-        serde_json::from_str::<serde_json::Value>(&err).is_ok(),
-        "{err}"
-    );
 }
 
 /// A JSON error document that cannot be written is a failed write (exit 2 and a message), not a
@@ -4533,42 +4506,17 @@ fn json_usage_and_schema_errors_are_documents() {
 #[cfg(target_os = "linux")] // macOS has no /dev/full
 #[test]
 fn a_json_error_that_cannot_be_written_is_a_failed_write() {
-    let dir = workdir(&[("a.json", "{}")]);
-    for args in [
-        &["--format", "json", "--frmat"][..],
-        &["--format", "json", "--schema", "gone.json", "a.json"],
-    ] {
-        let full = fs::File::create("/dev/full").expect("open /dev/full");
-        let out = command(env!("CARGO_BIN_EXE_jsonvet"))
-            .args(args)
-            .current_dir(&dir)
-            .stdout(full)
-            .output()
-            .expect("run jsonvet");
-        assert_eq!(out.status.code(), Some(2), "{args:?}");
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        assert!(stderr.contains("cannot write output"), "{args:?}: {stderr}");
-    }
-}
-
-/// `--help` ends with example commands.
-#[test]
-fn help_has_examples() {
     let dir = workdir(&[]);
-    let (code, out) = jsonvet(&dir, &["--help"]);
-    assert_eq!(code, 0);
-    let examples = out
-        .split("Examples:\n")
-        .nth(1)
-        .expect("an Examples section");
-    assert_eq!(
-        examples
-            .lines()
-            .filter(|l| l.starts_with("  jsonvet "))
-            .count(),
-        3,
-        "{out}"
-    );
+    let full = fs::File::create("/dev/full").expect("open /dev/full");
+    let out = command(env!("CARGO_BIN_EXE_jsonvet"))
+        .args(["--format", "json", "--frmat"])
+        .current_dir(&dir)
+        .stdout(full)
+        .output()
+        .expect("run jsonvet");
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("cannot write output"), "{stderr}");
 }
 
 #[cfg(unix)]

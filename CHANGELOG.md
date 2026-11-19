@@ -17,9 +17,8 @@ version for a new option or output, the patch version for a fix.
 
 ### Added
 
-- With `--format json`, a usage error or a `--schema` that cannot be read or used prints
-  `{"schema_version":1,"diagnostics":[],"errors":[{"message":...,"help":...}]}` on standard output,
-  instead of a message on standard error. The exit status stays 2
+- With `--format json`, a usage error or a `--schema` that cannot be read or used prints a JSON
+  document with `errors` instead of a message on standard error. The exit status stays 2
   ([JSON](docs/usage.md#json)).
 - `--help` ends with three example commands.
 

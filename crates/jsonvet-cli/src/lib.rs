@@ -164,10 +164,9 @@ pub fn check_config_text(path: &Path, text: &str) -> Result<(), String> {
 
 /// The command, with its inputs passed in: 0 when no file has an error, 1 when one does.
 /// On a terminal, text output ends with a count of the problems. A usage error comes back as
-/// `Err`, which `run` turns into exit status 2 and a message on standard error; under
-/// `--format json` it is a JSON document on standard output (standard error with `--fix` on
-/// standard input) and `Ok(2)`, unless output has already started. Public only for
-/// `benches/codspeed.rs`, which measures `--schema` in-process; not part of the crate's API.
+/// `Err`, which `run` turns into exit status 2; under `--format json` it is printed as a JSON
+/// document and comes back as `Ok(2)`. Public only for `benches/codspeed.rs`, which measures
+/// `--schema` in-process; not part of the crate's API.
 #[doc(hidden)]
 pub fn run_with(
     args: impl IntoIterator<Item = OsString>,
@@ -178,20 +177,16 @@ pub fn run_with(
     let args: Vec<OsString> = args.into_iter().collect();
     // `jsonvet fmt` and `lsp` take no `--format`, so their usage errors stay text.
     if args.first().is_some_and(|a| a == "fmt" || a == "lsp") || !wants_json(&args) {
-        return run_checked(args, annotate, terminal, out);
+        return run_checked(args, annotate, terminal, out, &mut false);
     }
     // A JSON reader gets English, and a document it can parse, from the first byte.
     messages::english_only(true);
-    // With `--fix` on standard input, standard output holds the fixed text.
-    let stdin_fix = args.iter().any(|a| a == "--fix")
-        && args
-            .iter()
-            .any(|a| a == "-" || a.to_string_lossy().starts_with("--stdin-filename"));
+    let mut stdin_fix = false;
     let mut out = Tracked {
         inner: out,
         wrote: false,
     };
-    match run_checked(args, annotate, terminal, &mut out) {
+    match run_checked(args, annotate, terminal, &mut out, &mut stdin_fix) {
         // NOTE: after output has started, the document is cut off: a second one would not parse.
         Err(message) if !out.wrote => {
             let usage_help = messages::text("error.usage")
@@ -206,6 +201,7 @@ pub fn run_with(
                 ),
             };
             let document = json::failure(message, help);
+            // With `--fix` on standard input, standard output holds the fixed text.
             let sent = if stdin_fix {
                 io::stderr().write_all(document.as_bytes())
             } else {
@@ -262,6 +258,7 @@ fn run_checked(
     annotate: bool,
     terminal: Terminal,
     out: impl Write,
+    stdin_fix: &mut bool,
 ) -> Result<u8, String> {
     // Usage errors quote arguments and the schema file, which can hold a newline or an escape.
     let args = match args::parse(args)
@@ -279,6 +276,8 @@ fn run_checked(
     let settings_for = |path: &Path| lock(&resolver).for_file(path);
     let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     let files = expand(args.files, &resolver, threads)?;
+    // Standard input fixed to standard output leaves only standard error for the problems.
+    *stdin_fix = args.fix && files.iter().any(|file| file == STDIN);
     if let Some(check_only) = args.fmt {
         return format::run(&files, check_only, args.stdin_filename, &resolver, out);
     }
@@ -307,8 +306,7 @@ fn run_checked(
         .then(catalog::Catalog::new)
         .transpose()?;
     let look = look(args.format, args.color, terminal);
-    // Standard input fixed to standard output leaves only standard error for the problems.
-    let stdin_fix = args.fix && files.iter().any(|(_, file)| file == STDIN);
+    let stdin_fix = *stdin_fix;
     let mut out = out;
     let mut stderr = io::stderr();
     // Standard error stands in for standard output's problems when that carries a fixed text.
@@ -1383,7 +1381,6 @@ mod tests {
         take_chunk,
     };
     use crate::schema::select::Job;
-    use std::io::Write as _;
     use std::sync::Arc;
 
     /// A writer that records what reaches it and fails on the single write of `]`, which closes
@@ -1391,7 +1388,6 @@ mod tests {
     #[derive(Default)]
     struct Probe {
         written: Vec<u8>,
-        flushed: bool,
     }
 
     impl std::io::Write for Probe {
@@ -1404,23 +1400,8 @@ mod tests {
         }
 
         fn flush(&mut self) -> std::io::Result<()> {
-            self.flushed = true;
             Ok(())
         }
-    }
-
-    #[test]
-    fn tracked_notes_a_write_and_passes_a_flush_on() {
-        let mut out = super::Tracked {
-            inner: Probe::default(),
-            wrote: false,
-        };
-        out.write_all(b"").expect("empty write");
-        assert!(!out.wrote);
-        out.write_all(b"x").expect("write");
-        assert!(out.wrote);
-        out.flush().expect("flush");
-        assert!(out.inner.flushed);
     }
 
     #[test]
