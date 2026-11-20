@@ -16,7 +16,7 @@ The pre-commit hook is `jsonvet-format`:
 
 ```yaml
 - repo: https://github.com/simonvanlierde/jsonvet
-  rev: v3.5.1
+  rev: v4.0.0
   hooks:
     - id: jsonvet-format
 ```

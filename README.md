@@ -20,8 +20,8 @@ package.json:2:14: error[syntax] missing `,`
 events.jsonl:12:1: error[syntax] blank line; JSON Lines needs a value on every line
 ```
 
-It replaces check-json5, a Python hook, and is up to **1,965 times faster** than check-json5 1.4.1
-on JSON5 files, and 6-39x on JSON and JSONC ([figures](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#speed)).
+It replaces check-json5, a Python hook, and is up to **1,886 times faster** than check-json5 1.4.1
+on JSON5 files, and 6-38x on JSON and JSONC ([figures](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#speed)).
 
 **Try it in your browser:** the [playground](https://simonvanlierde.com/jsonvet/) checks, fixes
 and formats the text you paste. Nothing to install, and the text stays on your machine.
@@ -44,7 +44,7 @@ Add this to `.pre-commit-config.yaml` (for [pre-commit](https://pre-commit.com) 
 
 ```yaml
 - repo: https://github.com/simonvanlierde/jsonvet
-  rev: v3.5.1
+  rev: v4.0.0
   hooks:
     - id: jsonvet
     - id: jsonvet-format

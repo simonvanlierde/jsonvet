@@ -444,7 +444,7 @@ fn related_offsets_say_what_they_point_at() {
     );
     assert_eq!(related(Dialect::Json, "[1 2]"), None);
     let report = check(r#"{"x": 0, "a": 1, "a": 2}"#, &Config::new(Dialect::Json));
-    #[expect(deprecated, reason = "kept working until 4.0")]
+    #[expect(deprecated, reason = "exercise the deprecated compatibility accessor")]
     let offset = report.problems()[0].related_offset();
     assert_eq!(offset, Some(9));
 }
