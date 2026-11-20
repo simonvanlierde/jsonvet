@@ -220,7 +220,7 @@ schema paths and the limits are in the
 ## Coming from check-json5
 
 Bump `rev` to the newest tag. The `check-json5` hook id, the `check-json5` command and `--strict`
-keep working through 3.x.
+keep working in 4.0.
 
 jsonvet gives the same pass or fail as 1.4.1, apart from a few
 [edge cases](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#known-differences-from-14).

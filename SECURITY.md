@@ -73,7 +73,7 @@ Out of scope:
 
 ## Supported versions
 
-Fixes go into the newest release only, currently 3.x. The `check-json5` package installs the
+Fixes go into the newest release only. The `check-json5` package installs the
 same code.
 
 ## Verifying a release

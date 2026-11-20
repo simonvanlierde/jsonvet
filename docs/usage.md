@@ -644,7 +644,7 @@ exists is in [design.md](design.md#--schema).
 
 ## Coming from check-json5
 
-The `check-json5` package on PyPI keeps working through 3.x: it installs jsonvet. Besides the
+The `check-json5` package on PyPI keeps working in 4.0: it installs jsonvet. Besides the
 dialect change in the README, the output line, syntax-error wording, positions after a lone CR or
 U+2028, the hook's `.jsonl` and `.ndjson` files and the Python module changed
 ([full list](design.md#the-contract-with-14)).

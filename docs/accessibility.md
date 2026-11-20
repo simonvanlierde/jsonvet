@@ -11,7 +11,8 @@ terminal without colour, and in scripts and CI logs:
   variable is set or when you pass `--color never`.
 - When its output is not a terminal, such as a pipe, a file or a CI log, it prints
   plain lines, with no spinners, progress bars or cursor movement.
-- It writes errors to standard error, and an error about a file names the place as
+- Text output writes errors to standard error; [JSON output](usage.md#json) follows its report stream.
+  An error about a file names the place as
   `file:line:col`, so an editor or a screen reader can jump to it.
 
 ## Web playground

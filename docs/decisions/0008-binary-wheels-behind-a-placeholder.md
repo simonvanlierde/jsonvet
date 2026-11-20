@@ -17,13 +17,13 @@ to install without a Rust toolchain and keep those URLs. Python also cost 13.3 m
 ## Decision
 
 Wheels for eight targets behind the placeholder. `check-json5` stays on PyPI as an empty shim,
-with its hook id, command and `--strict`, through 3.x; 4.0 drops them together.
+with its hook id, command and `--strict`, in 4.0. A future major release will drop them together.
 
 ## Consequences
 
 A hook install downloads a binary and compiles nothing. A release sets the version by hand in
 `setup.py` and the shim, and the release archives hold the binary from each wheel, so PyPI and
-GitHub ship the same bytes. The shim costs about 120 lines until 4.0.
+GitHub ship the same bytes. The shim costs about 120 lines until compatibility is removed.
 
 ## Confirmation
 

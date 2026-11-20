@@ -4429,6 +4429,48 @@ fn json_output_matches_its_published_schema() {
     assert!(!validator.is_valid(&json));
 }
 
+#[test]
+fn json_error_format_ignores_option_values_and_existing_files() {
+    let dir = workdir(&[("--format=json", "{}"), ("--format=text", "{}")]);
+    for args in [
+        &[
+            "--format",
+            "json",
+            "--stdin-filename",
+            "--format=text",
+            "--frmat",
+        ][..],
+        &["--format", "json", "--format=text", "--frmat"],
+    ] {
+        let (code, out, err) = jsonvet_stderr(&dir, args);
+        assert_eq!(code, 2);
+        assert_eq!(err, "", "{args:?}: {err}");
+        let json: serde_json::Value = serde_json::from_str(&out).expect("JSON error");
+        assert_eq!(json["errors"].as_array().map(Vec::len), Some(1));
+    }
+    for args in [
+        &["--stdin-filename", "--format=json", "--frmat"][..],
+        &["--format=json", "--frmat"],
+    ] {
+        let (code, out, err) = jsonvet_stderr(&dir, args);
+        assert_eq!((code, out.as_str()), (2, ""), "{args:?}");
+        assert!(err.contains("unknown option"), "{args:?}: {err}");
+    }
+}
+
+#[test]
+fn json_config_errors_leave_fixed_stdin_stdout_empty() {
+    let dir = workdir(&[]);
+    for stdin in [&["-"][..], &["--stdin-filename", "input.json"]] {
+        let mut args = vec!["--fix", "--format", "json", "--config", "gone.toml"];
+        args.extend_from_slice(stdin);
+        let (code, out, err) = jsonvet_stdin(&dir, &args, "{}");
+        assert_eq!((code, out.as_str()), (2, ""), "{args:?}: {out}{err}");
+        let json: serde_json::Value = serde_json::from_str(&err).expect("JSON error on stderr");
+        assert_eq!(json["errors"].as_array().map(Vec::len), Some(1));
+    }
+}
+
 /// With `--format json`, a usage error or a bad schema is a JSON document with `errors` on
 /// standard output, still with exit 2, and the published schema accepts it.
 #[test]

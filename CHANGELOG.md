@@ -22,6 +22,14 @@ version for a new option or output, the patch version for a fix.
   ([JSON](docs/usage.md#json)).
 - `--help` ends with three example commands.
 
+### Fixed
+
+- JSON usage errors respect option values and file names that look like `--format` options.
+- With `--fix` on standard input, configuration errors leave standard output for fixed text.
+  A failure after diagnostics start no longer appends a second JSON document on standard error.
+
+The `check-json5` command, package and hook id, and `--strict`, remain supported in 4.0.
+
 ## [3.5.1] - 2026-11-16
 
 ### Added

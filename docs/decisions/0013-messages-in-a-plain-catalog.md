@@ -37,7 +37,7 @@ jsonvet picks one from `LC_ALL`, then `LC_MESSAGES`, then `LANG`: `pt_BR.UTF-8` 
 A run with `--format json` or `--format sarif` keeps every message in its document English, so
 the documents tools read never change with the machine's locale. A usage error found before the
 format is known, on standard error, can still be translated. With `--format json`, a usage error
-is an English `errors` document on standard output instead. Rule ids, severities, JSONPaths and
+is an English [`errors` document](../usage.md#json) instead. Rule ids, severities, JSONPaths and
 exit codes are never translated.
 
 ## Consequences
