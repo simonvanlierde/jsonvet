@@ -1,5 +1,6 @@
 //! The jsonvet command line, shared by the `jsonvet` and `check-json5` binaries.
 
+use std::cell::Cell;
 use std::ffi::{OsStr, OsString};
 use std::io::{self, BufWriter, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
@@ -175,20 +176,21 @@ pub fn run_with(
     out: impl Write,
 ) -> Result<u8, String> {
     let args: Vec<OsString> = args.into_iter().collect();
+    let wrote = Cell::new(false);
     // `jsonvet fmt` and `lsp` take no `--format`, so their usage errors stay text.
-    if args.first().is_some_and(|a| a == "fmt" || a == "lsp") || !wants_json(&args) {
-        return run_checked(args, annotate, terminal, out, &mut false);
+    if args.first().is_some_and(|a| a == "fmt" || a == "lsp") || !args::wants_json(&args) {
+        return run_checked(args, annotate, terminal, out, &mut false, &wrote);
     }
     // A JSON reader gets English, and a document it can parse, from the first byte.
     messages::english_only(true);
     let mut stdin_fix = false;
     let mut out = Tracked {
         inner: out,
-        wrote: false,
+        wrote: &wrote,
     };
-    match run_checked(args, annotate, terminal, &mut out, &mut stdin_fix) {
+    match run_checked(args, annotate, terminal, &mut out, &mut stdin_fix, &wrote) {
         // NOTE: after output has started, the document is cut off: a second one would not parse.
-        Err(message) if !out.wrote => {
+        Err(message) if !wrote.get() => {
             let usage_help = messages::text("error.usage")
                 .rsplit("\n\n")
                 .next()
@@ -215,32 +217,15 @@ pub fn run_with(
     }
 }
 
-/// Whether the arguments ask for `--format json`: the last `--format` before any `--` wins, as
-/// the parser has it.
-fn wants_json(args: &[OsString]) -> bool {
-    let mut json = false;
-    let mut args = args.iter();
-    while let Some(arg) = args.next() {
-        if arg == "--" {
-            break;
-        } else if arg == "--format" {
-            json = args.next().is_some_and(|v| v == "json");
-        } else if let Some(value) = arg.to_str().and_then(|a| a.strip_prefix("--format=")) {
-            json = value == "json";
-        }
-    }
-    json
-}
-
 /// A writer that notes whether anything went through it.
-struct Tracked<W> {
+struct Tracked<'a, W> {
     inner: W,
-    wrote: bool,
+    wrote: &'a Cell<bool>,
 }
 
-impl<W: Write> Write for Tracked<W> {
+impl<W: Write> Write for Tracked<'_, W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.wrote |= !buf.is_empty();
+        self.wrote.set(self.wrote.get() || !buf.is_empty());
         self.inner.write(buf)
     }
 
@@ -259,6 +244,7 @@ fn run_checked(
     terminal: Terminal,
     out: impl Write,
     stdin_fix: &mut bool,
+    wrote: &Cell<bool>,
 ) -> Result<u8, String> {
     // Usage errors quote arguments and the schema file, which can hold a newline or an escape.
     let args = match args::parse(args)
@@ -272,12 +258,13 @@ fn run_checked(
         Command::Check(args) => *args,
     };
     messages::english_only(args.format != Format::Text);
+    // Standard input fixed to standard output leaves only standard error for the problems,
+    // including failures while loading configuration or expanding directories.
+    *stdin_fix = args.fix && args.files.iter().any(|file| file == STDIN);
     let resolver = Arc::new(Mutex::new(Resolver::new(&args.config, args.settings)?));
     let settings_for = |path: &Path| lock(&resolver).for_file(path);
     let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     let files = expand(args.files, &resolver, threads)?;
-    // Standard input fixed to standard output leaves only standard error for the problems.
-    *stdin_fix = args.fix && files.iter().any(|file| file == STDIN);
     if let Some(check_only) = args.fmt {
         return format::run(&files, check_only, args.stdin_filename, &resolver, out);
     }
@@ -308,7 +295,10 @@ fn run_checked(
     let look = look(args.format, args.color, terminal);
     let stdin_fix = *stdin_fix;
     let mut out = out;
-    let mut stderr = io::stderr();
+    let mut stderr = Tracked {
+        inner: io::stderr(),
+        wrote,
+    };
     // Standard error stands in for standard output's problems when that carries a fixed text.
     let sink: &mut dyn Write = if stdin_fix { &mut stderr } else { &mut out };
     let mut printer = Printer::new(sink, args.format, annotate, look, stdin_fix);
@@ -1406,8 +1396,9 @@ mod tests {
 
     #[test]
     fn the_last_format_before_a_double_dash_decides() {
-        let json =
-            |args: &[&str]| super::wants_json(&args.iter().map(Into::into).collect::<Vec<_>>());
+        let json = |args: &[&str]| {
+            super::args::wants_json(&args.iter().map(Into::into).collect::<Vec<_>>())
+        };
         assert!(json(&["--format", "json"]));
         assert!(json(&["--format=json", "a.json"]));
         assert!(!json(&["--format", "json", "--format=text"]));
@@ -1420,7 +1411,7 @@ mod tests {
     #[test]
     fn an_error_after_output_has_started_adds_no_document() {
         let dir = std::env::temp_dir().join(format!("jsonvet-cutoff-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("a temporary directory");
+        std::fs::create_dir(&dir).expect("an exclusive temporary directory");
         let file = dir.join("bad.json");
         std::fs::write(&file, "[1,").expect("write");
         let mut probe = Probe::default();

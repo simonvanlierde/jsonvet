@@ -174,6 +174,34 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
     check(args)
 }
 
+/// Find the last output format even when another argument is invalid, using the parser's
+/// tokenization and file-name rules so an option's value cannot become another option.
+pub(crate) fn wants_json(args: &[OsString]) -> bool {
+    let mut parser = lexopt::Parser::from_args(args.iter().cloned());
+    parser.set_short_equals(false);
+    let mut json = false;
+    loop {
+        if raw_file(&mut parser).is_some() {
+            continue;
+        }
+        match parser.next() {
+            Ok(Some(Long("format"))) => {
+                json = parser.value().is_ok_and(|value| value == "json");
+            }
+            Ok(Some(Long(
+                "dialect" | "strict" | "error" | "warn" | "ignore" | "max-warnings" | "color"
+                | "config" | "explain" | "schema" | "stdin-filename",
+            ))) => {
+                let _ = parser.value();
+            }
+            Ok(Some(_)) => {
+                let _ = parser.optional_value();
+            }
+            Ok(None) | Err(_) => return json,
+        }
+    }
+}
+
 /// A check or `jsonvet fmt`, or what an option asks for instead.
 fn check(args: impl IntoIterator<Item = OsString>) -> Result<Command, String> {
     // `fmt` as the first argument is the subcommand; anywhere else it is a file.

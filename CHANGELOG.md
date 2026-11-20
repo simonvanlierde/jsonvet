@@ -4,16 +4,23 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Bump the minor
-version for a new option or output, the patch version for a fix.
+version for a new option or output, the patch version for a fix, and the major version for a
+breaking public contract.
 
 ## [Unreleased]
+
+## [4.0.0] - 2026-11-20
+
+Update scripts that read `--format json`: read `schema_version` instead of `version`.
+The `check-json5` command, package and hook id, and `--strict`, remain supported in 4.0.
 
 ### Changed
 
 - **Breaking, JSON report:** `--format json` names the layout's version `schema_version`, not
-  `version`, as the other command line tools do. This makes the next release 4.0.0. To upgrade,
-  read `schema_version` where a script read `version`;
-  [docs/json-output.schema.json](docs/json-output.schema.json) is updated.
+  `version` ([JSON schema](docs/json-output.schema.json)).
+- Compared with 3.5.1, file-check medians range from 8% faster to 0.7% slower; the 10,000-file walk
+  changes by +0.1%. Startup changes from 1.17 to 1.20 ms (+2.6%). These are 40-run medians on a
+  shared Linux host, not a speed guarantee.
 
 ### Added
 
@@ -21,6 +28,12 @@ version for a new option or output, the patch version for a fix.
   document with `errors` instead of a message on standard error. The exit status stays 2
   ([JSON](docs/usage.md#json)).
 - `--help` ends with three example commands.
+
+### Fixed
+
+- JSON usage errors respect option values and file names that look like `--format` options.
+- With `--fix` on standard input, configuration errors leave standard output for fixed text.
+  A failure after diagnostics start no longer appends a second JSON document on standard error.
 
 ## [3.5.1] - 2026-11-16
 
@@ -866,7 +879,8 @@ hook's output, or imports `pre_commit_hooks.check_json5`, needs a change (see Ch
 
 - Renamed from `pre-commit-check-json5` to `check-json5`.
 
-[Unreleased]: https://github.com/simonvanlierde/jsonvet/compare/v3.5.1...HEAD
+[Unreleased]: https://github.com/simonvanlierde/jsonvet/compare/v4.0.0...HEAD
+[4.0.0]: https://github.com/simonvanlierde/jsonvet/compare/v3.5.1...v4.0.0
 [3.5.1]: https://github.com/simonvanlierde/jsonvet/compare/v3.5.0...v3.5.1
 [3.5.0]: https://github.com/simonvanlierde/jsonvet/compare/v3.4.0...v3.5.0
 [3.4.0]: https://github.com/simonvanlierde/jsonvet/compare/v3.3.1...v3.4.0
