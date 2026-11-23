@@ -4471,6 +4471,68 @@ fn json_config_errors_leave_fixed_stdin_stdout_empty() {
     }
 }
 
+#[test]
+fn json_argument_errors_leave_fixed_stdin_stdout_empty() {
+    let dir = workdir(&[
+        ("-existing", "{}"),
+        ("--exists", "{}"),
+        ("--no-config", "{}"),
+    ]);
+    for args in [
+        &["--fix", "--format", "json", "-", "--unknown"][..],
+        &["--unknown", "--fix", "--format", "json", "-"],
+        &[
+            "--fix",
+            "--format",
+            "json",
+            "--stdin-filename",
+            "input.json",
+            "--unknown",
+        ],
+        &["--unknown", "--fix", "--format", "json", "--", "-"],
+        &[
+            "--fix",
+            "--format=json",
+            "--stdin-filename",
+            "-",
+            "--no-config",
+            "--unknown",
+        ],
+    ] {
+        let (code, out, err) = jsonvet_stdin(&dir, args, "{}");
+        assert_eq!((code, out.as_str()), (2, ""), "{args:?}: {out}{err}");
+        let json: serde_json::Value = serde_json::from_str(&err).expect("JSON error on stderr");
+        assert_eq!(json["errors"].as_array().map(Vec::len), Some(1));
+    }
+    for args in [
+        &["--fix", "--format", "json", "--config", "-", "--unknown"][..],
+        &[
+            "--fix",
+            "--format",
+            "json",
+            "--stdin-filename",
+            "-",
+            "--exists",
+            "--unknown",
+        ],
+        &[
+            "--fix",
+            "--format",
+            "json",
+            "--stdin-filename",
+            "-",
+            "-existing",
+            "--unknown",
+        ],
+        &["--unknown", "--format", "json", "--", "--fix", "-"],
+    ] {
+        let (code, out, err) = jsonvet_stdin(&dir, args, "{}");
+        assert_eq!((code, err.as_str()), (2, ""), "{args:?}: {out}{err}");
+        let json: serde_json::Value = serde_json::from_str(&out).expect("JSON error on stdout");
+        assert_eq!(json["errors"].as_array().map(Vec::len), Some(1));
+    }
+}
+
 /// With `--format json`, a usage error or a bad schema is a JSON document with `errors` on
 /// standard output, still with exit 2, and the published schema accepts it.
 #[test]

@@ -178,12 +178,16 @@ pub fn run_with(
     let args: Vec<OsString> = args.into_iter().collect();
     let wrote = Cell::new(false);
     // `jsonvet fmt` and `lsp` take no `--format`, so their usage errors stay text.
-    if args.first().is_some_and(|a| a == "fmt" || a == "lsp") || !args::wants_json(&args) {
+    if args.first().is_some_and(|a| a == "fmt" || a == "lsp") {
+        return run_checked(args, annotate, terminal, out, &mut false, &wrote);
+    }
+    let error_output = args::error_output(&args);
+    if error_output == args::ErrorOutput::Text {
         return run_checked(args, annotate, terminal, out, &mut false, &wrote);
     }
     // A JSON reader gets English, and a document it can parse, from the first byte.
     messages::english_only(true);
-    let mut stdin_fix = false;
+    let mut stdin_fix = error_output == args::ErrorOutput::JsonStderr;
     let mut out = Tracked {
         inner: out,
         wrote: &wrote,
@@ -1397,7 +1401,8 @@ mod tests {
     #[test]
     fn the_last_format_before_a_double_dash_decides() {
         let json = |args: &[&str]| {
-            super::args::wants_json(&args.iter().map(Into::into).collect::<Vec<_>>())
+            super::args::error_output(&args.iter().map(Into::into).collect::<Vec<_>>())
+                != super::args::ErrorOutput::Text
         };
         assert!(json(&["--format", "json"]));
         assert!(json(&["--format=json", "a.json"]));

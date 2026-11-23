@@ -174,31 +174,58 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
     check(args)
 }
 
-/// Find the last output format even when another argument is invalid, using the parser's
-/// tokenization and file-name rules so an option's value cannot become another option.
-pub(crate) fn wants_json(args: &[OsString]) -> bool {
+/// Where argument errors go, even if parsing stops before all options are read.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ErrorOutput {
+    Text,
+    JsonStdout,
+    JsonStderr,
+}
+
+/// Scan with the same tokenizer and file-name rules as `check`. The parser still
+/// validates every argument and decides where output goes once parsing succeeds.
+pub(crate) fn error_output(args: &[OsString]) -> ErrorOutput {
     let mut parser = lexopt::Parser::from_args(args.iter().cloned());
     parser.set_short_equals(false);
-    let mut json = false;
+    let (mut json, mut fix, mut stdin, mut named_stdin, mut has_file) =
+        (false, false, false, false, false);
     loop {
         if raw_file(&mut parser).is_some() {
+            has_file = true;
             continue;
         }
         match parser.next() {
             Ok(Some(Long("format"))) => {
                 json = parser.value().is_ok_and(|value| value == "json");
             }
+            Ok(Some(Long("fix"))) => fix = true,
+            Ok(Some(Long("unsafe-fixes" | "no-config" | "list-rules" | "schema-catalog"))) => {
+                let _ = parser.optional_value();
+            }
+            Ok(Some(Long("stdin-filename"))) => named_stdin |= parser.value().is_ok(),
             Ok(Some(Long(
                 "dialect" | "strict" | "error" | "warn" | "ignore" | "max-warnings" | "color"
-                | "config" | "explain" | "schema" | "stdin-filename",
+                | "config" | "explain" | "schema",
             ))) => {
                 let _ = parser.value();
             }
-            Ok(Some(_)) => {
-                let _ = parser.optional_value();
+            Ok(Some(Value(file))) => {
+                stdin |= file == STDIN;
+                has_file = true;
             }
-            Ok(None) | Err(_) => return json,
+            Ok(Some(option)) => {
+                let (file, separator) = option_file(option);
+                has_file |= exists(with_option_rest(&mut parser, file, separator));
+            }
+            Ok(None) | Err(_) => break,
         }
+    }
+    if !json {
+        ErrorOutput::Text
+    } else if fix && (stdin || named_stdin && !has_file) {
+        ErrorOutput::JsonStderr
+    } else {
+        ErrorOutput::JsonStdout
     }
 }
 
@@ -272,25 +299,14 @@ fn check(args: impl IntoIterator<Item = OsString>) -> Result<Command, String> {
             }
             // pre-commit puts file names after the options with no `--`, so an existing file
             // named like `-x.json`, `-h.json` or `--y.json` is a file, not an option.
-            arg => {
-                let (mut file, separator) = match arg {
-                    Short(c) => (OsString::from(format!("-{c}")), ""),
-                    Long(name) => (OsString::from(format!("--{name}")), "="),
-                    Value(file) => {
-                        files.push(file);
-                        continue;
-                    }
-                };
-                let rest = rest(&mut parser);
-                if rest.is_empty() {
-                    match file.to_str() {
-                        Some("-h" | "--help") => return Ok(Command::Help),
-                        Some("-V" | "--version") => return Ok(Command::Version),
-                        _ => {}
-                    }
-                } else {
-                    file.push(separator);
-                    file.push(rest);
+            Value(file) => files.push(file),
+            option => {
+                let (file, separator) = option_file(option);
+                let file = with_option_rest(&mut parser, file, separator);
+                match file.to_str() {
+                    Some("-h" | "--help") => return Ok(Command::Help),
+                    Some("-V" | "--version") => return Ok(Command::Version),
+                    _ => {}
                 }
                 files.push(on_disk(file)?);
             }
@@ -404,10 +420,21 @@ fn value(parser: &mut lexopt::Parser) -> Result<String, String> {
         .map_err(|v| messages::fill("error.not-utf8", &[("value", &v.to_string_lossy())]))
 }
 
-/// The rest of the current argument after an unknown option: the remaining letters of
-/// `-dash.json`, or the value of `--name=value`.
-fn rest(parser: &mut lexopt::Parser) -> OsString {
-    parser.optional_value().unwrap_or_default()
+/// Restore the original spelling of an option that might be a file name.
+fn option_file(option: lexopt::Arg<'_>) -> (OsString, &'static str) {
+    match option {
+        Short(c) => (OsString::from(format!("-{c}")), ""),
+        Long(name) => (OsString::from(format!("--{name}")), "="),
+        Value(file) => (file, ""),
+    }
+}
+
+fn with_option_rest(parser: &mut lexopt::Parser, mut file: OsString, separator: &str) -> OsString {
+    if let Some(rest) = parser.optional_value().filter(|rest| !rest.is_empty()) {
+        file.push(separator);
+        file.push(rest);
+    }
+    file
 }
 
 #[cfg(test)]
