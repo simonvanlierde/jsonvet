@@ -23,7 +23,7 @@ exclude_re = [
   "parse.rs:\\d+:38: replace \\* with (/|\\+) in Keys<'a>::first_or_insert",
   # Speed only: scanning the kept text again when no duplicate was dropped finds the same line
   # endings, since no other fix touches one.
-  "fixes.rs:\\d+:24: replace && with \\|\\| in try_fix_at",
+  "fixes.rs:\\d+:24: replace && with \\|\\| in try_fix$",
   # Speed only: which column-count branch runs.
   "report.rs:\\d+:26: replace - with \\+ in Report<'a>::location",
   # With `decode` off, the extra value goes to an event sink that is absent, or to a key path
@@ -125,13 +125,11 @@ exclude_re = [
   # way it moved; and the indent character is one byte, so dividing by its length changes nothing.
   "format.rs:\\d+:64: replace > with >= in Writer<'_>::comment$",
   "format.rs:\\d+:34: replace \\* with / in Writer<'_>::comment$",
-  # The index of the document's first event is kept but never read.
-  "schema/fold.rs:60:19: replace \\+= with \\*= in Fold<'e>::event$",
   # Speed only: the hash only sorts the items into buckets, which `equal` then compares, and
   # items that are equal hash alike however it is made.
   "schema/nodes.rs:.* in hash$",
   "schema/nodes.rs:.* replace hash with \\(\\)$",
-  "schema/nodes.rs:407:.* in <impl Array<'a, Own> for Elems<'a>>::is_unique$",
+  "schema/nodes.rs:\\d+:24: replace <= with > in <impl Array<'a, Own> for Elems<'a>>::is_unique$",
   # Only a temporary name taken already, by the same process id and counter, counts the tries.
   # Any other error gives up after eight tries instead of one, with the same message.
   "write.rs:\\d+:(64|73|86): .* in temp_beside$",

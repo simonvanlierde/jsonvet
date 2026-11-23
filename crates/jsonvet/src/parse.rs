@@ -1515,7 +1515,7 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
     #[inline(never)]
     fn not_literal(&mut self, word: &'static str, instead: &'static str) -> Result<(), Fail> {
         let start = self.pos;
-        for &expected in &word.as_bytes()[1..word.len() - 1] {
+        for expected in word.trim_matches('`').bytes() {
             if self.peek() != Some(expected) {
                 // A different word, such as `None` for `NaN`, shows whole; a cut-off `nul` or
                 // `nul]` still says which literal it started.

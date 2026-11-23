@@ -2005,6 +2005,17 @@ mod tests {
     }
 
     #[test]
+    fn a_nearby_position_counts_only_the_gap_from_its_cached_position() {
+        let text = "é😀a".repeat(10_000);
+        let lines = Lines::new(&text, false);
+        let before = 7 * 9_000;
+        assert_eq!(lines.position(before)["character"], 4 * 9_000);
+        let counted = lines.counted.get();
+        assert_eq!(lines.position(before + 7)["character"], 4 * 9_001);
+        assert_eq!(lines.counted.get() - counted, 7);
+    }
+
+    #[test]
     fn positions_on_short_lines_do_not_count_unrelated_earlier_lines() {
         let tail = "a😀é";
         let text = format!("{}\n{tail}", "é".repeat(524_288));
