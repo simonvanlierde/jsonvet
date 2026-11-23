@@ -196,9 +196,15 @@ pub(crate) fn error_output(args: &[OsString]) -> ErrorOutput {
         }
         match parser.next() {
             Ok(Some(Long("format"))) => {
-                json = parser.value().is_ok_and(|value| value == "json");
+                // A malformed value leaves the last valid format in effect.
+                let Ok(value) = parser.value() else { continue };
+                match value.to_str() {
+                    Some("json") => json = true,
+                    Some("text" | "sarif") => json = false,
+                    _ => {}
+                }
             }
-            Ok(Some(Long("fix"))) => fix = true,
+            Ok(Some(Long("fix"))) => fix |= parser.optional_value().is_none(),
             Ok(Some(Long("unsafe-fixes" | "no-config" | "list-rules" | "schema-catalog"))) => {
                 let _ = parser.optional_value();
             }

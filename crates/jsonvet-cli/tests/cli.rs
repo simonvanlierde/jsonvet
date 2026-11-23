@@ -4490,6 +4490,8 @@ fn json_argument_errors_leave_fixed_stdin_stdout_empty() {
             "--unknown",
         ],
         &["--unknown", "--fix", "--format", "json", "--", "-"],
+        &["--fix=typo", "--fix", "--format=json", "-"],
+        &["--fix", "--format=json", "--format=bogus", "-"],
         &[
             "--fix",
             "--format=json",
@@ -4525,11 +4527,19 @@ fn json_argument_errors_leave_fixed_stdin_stdout_empty() {
             "--unknown",
         ],
         &["--unknown", "--format", "json", "--", "--fix", "-"],
+        &["--fix=typo", "--format=json", "-"],
+        &["--format=json", "--fix=typo", "-"],
     ] {
         let (code, out, err) = jsonvet_stdin(&dir, args, "{}");
         assert_eq!((code, err.as_str()), (2, ""), "{args:?}: {out}{err}");
         let json: serde_json::Value = serde_json::from_str(&out).expect("JSON error on stdout");
         assert_eq!(json["errors"].as_array().map(Vec::len), Some(1));
+    }
+    for format in ["--format=text", "--format=sarif"] {
+        let args = ["--unknown", "--format=json", format];
+        let (code, out, err) = jsonvet_stderr(&dir, &args);
+        assert_eq!((code, out.as_str()), (2, ""), "{args:?}: {out}{err}");
+        assert!(err.contains("unknown option"), "{args:?}: {err}");
     }
 }
 
