@@ -5,6 +5,7 @@ import { LanguageClient, type ServerOptions } from "vscode-languageclient/node";
 import { afterAnswer, languageIdOf, shouldAskAboutBuiltIn, withoutBuiltIn } from "./diagnostics.ts";
 
 let client: LanguageClient | undefined;
+let restarting: Promise<void> | undefined;
 
 export async function activate(context: ExtensionContext): Promise<void> {
   const command = workspace.getConfiguration("jsonvet").get<string>("path") || "jsonvet";
@@ -16,10 +17,13 @@ export async function activate(context: ExtensionContext): Promise<void> {
     scheme: "file",
     language,
   }));
-  client = new LanguageClient("jsonvet", "jsonvet", server, {
+  let started = false;
+  let settingsChanged = false;
+  const active = new LanguageClient("jsonvet", "jsonvet", server, {
     // No `synchronize`: the server registers its own watchers for the settings files.
     documentSelector,
     initializationOptions: () => {
+      settingsChanged = false;
       const maxProblems = workspace.getConfiguration("jsonvet").get<number>("maxProblems", 0);
       return { maxProblems: Number.isSafeInteger(maxProblems) && maxProblems > 0 ? maxProblems : 0 };
     },
@@ -30,21 +34,44 @@ export async function activate(context: ExtensionContext): Promise<void> {
       },
     },
   });
-  await client.start();
-  // Restart to read the server's limit at initialization and publish fresh diagnostics for the filter.
+  client = active;
+  const refreshSettings = () => {
+    if (!started || restarting || !settingsChanged || client !== active) {
+      return;
+    }
+    restarting = (async () => {
+      try {
+        // Each initialization picks up changes that arrived before its options were sent.
+        while (settingsChanged && client === active) {
+          await active.restart();
+        }
+      } catch (error) {
+        active.error("Could not restart jsonvet", error);
+      } finally {
+        restarting = undefined;
+      }
+    })();
+  };
   context.subscriptions.push(
     workspace.onDidChangeConfiguration((change) => {
       if (change.affectsConfiguration("json.validate.enable") || change.affectsConfiguration("jsonvet.maxProblems")) {
-        void client?.restart();
+        settingsChanged = true;
+        refreshSettings();
       }
     }),
   );
+  await active.start();
+  started = true;
+  refreshSettings();
   // Not awaited: the question waits for an answer, and activation should not.
   void askAboutBuiltInValidation(context);
 }
 
-export function deactivate(): Promise<void> | undefined {
-  return client?.stop();
+export async function deactivate(): Promise<void> {
+  const active = client;
+  client = undefined;
+  await restarting;
+  await active?.stop();
 }
 
 // While VS Code's own JSON validation is on, jsonvet leaves syntax errors and duplicate keys in

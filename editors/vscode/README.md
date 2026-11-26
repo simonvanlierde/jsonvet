@@ -74,6 +74,8 @@ To apply every safe fix when you save:
 - `jsonvet.maxProblems`: the most diagnostics jsonvet sends per file, before the extension filters
   them. Use a positive whole number, such as `1000`, if a file with many findings slows the
   editor. The default `0` sends all diagnostics. Changing this setting restarts the server.
+  This setting requires a server with diagnostic-limit support. Use a `jsonvet` binary from the
+  same release as the extension.
 
 The extension does not run in Restricted Mode: a `jsonvet` found on `PATH` could be one that the
 folder you opened holds.
