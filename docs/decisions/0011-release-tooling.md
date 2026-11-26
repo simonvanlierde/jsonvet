@@ -31,8 +31,7 @@ maintainer tags the squash commit by hand and moves `v3` by hand.
 ## Consequences
 
 A release needs cargo-release installed, and a pre-release still needs the Python pins edited by
-hand in PEP 440 form. When a future major release drops the check-json5 compatibility, two
-replacements go away; the decision stands.
+hand in PEP 440 form. Version 4.0 removes the two replacements for the check-json5 package.
 
 ## Confirmation
 

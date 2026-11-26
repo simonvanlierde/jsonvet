@@ -1,4 +1,4 @@
-# The PyPI package: maturin puts the jsonvet and check-json5 binaries into a platform wheel.
+# Maturin puts the jsonvet binary into a platform wheel.
 [build-system]
 requires = ["maturin>=1.9,<2"]
 build-backend = "maturin"

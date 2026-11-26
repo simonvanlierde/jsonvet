@@ -1,4 +1,4 @@
-//! The jsonvet command line, shared by the `jsonvet` and `check-json5` binaries.
+//! The jsonvet command line.
 
 use std::cell::Cell;
 use std::ffi::{OsStr, OsString};

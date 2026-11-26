@@ -13,7 +13,9 @@ breaking public contract.
 
 Update scripts that read `--format json` to check `schema_version == 2`. See the
 [JSON migration example](docs/usage.md#json) for scripts that read both layouts.
-The `check-json5` command, package and hook id, and `--strict`, remain supported in 4.0.
+Replace the `check-json5` package, command and hook ID with `jsonvet`. Replace
+`--strict GLOB` with `--dialect json:GLOB` and `--strict '!GLOB'` with
+`--dialect auto:GLOB`. See [the migration guide](docs/usage.md#coming-from-check-json5).
 
 ### Changed
 
@@ -22,6 +24,11 @@ The `check-json5` command, package and hook id, and `--strict`, remain supported
 - Compared with 3.5.1, file-check medians range from 8% faster to 0.7% slower; the 10,000-file walk
   changes by +0.1%. Startup changes from 1.17 to 1.20 ms (+2.6%). These are 40-run medians on a
   shared Linux host, not a speed guarantee.
+
+### Removed
+
+- **Breaking.** The `check-json5` command, hook ID and `--strict` option are gone.
+  New releases go to PyPI as `jsonvet` ([migration](docs/usage.md#coming-from-check-json5)).
 
 ### Added
 

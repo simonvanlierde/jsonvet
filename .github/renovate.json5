@@ -82,9 +82,8 @@
       minimumReleaseAge: null,
     },
     {
-      // uv in CI and mise.toml, and uv_build, which builds check-json5: one pull request, so the
-      // backend stays at the version of the uv that runs it.
-      matchPackageNames: ["uv", "astral-sh/uv", "uv_build", "uv-build"],
+      // Keep the uv versions in CI and mise.toml together.
+      matchPackageNames: ["uv", "astral-sh/uv"],
       groupName: "uv",
     },
     {
@@ -126,13 +125,6 @@
       // The Go driver's minimum Go; the image tag decides which Go builds it.
       matchManagers: ["gomod"],
       matchDepNames: ["go"],
-      enabled: false,
-    },
-    {
-      // The check-json5 package pins jsonvet's own version, which the release sets. Its build
-      // backend, uv_build, is bumped in the uv group.
-      matchFileNames: ["compat/**"],
-      matchPackageNames: ["jsonvet"],
       enabled: false,
     },
     {

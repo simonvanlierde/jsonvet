@@ -9,8 +9,6 @@ The details behind the [README](../README.md). Why things work this way is in
 ```text
 --dialect DIALECT[:GLOB]   check files matching GLOB (every file, without one) as DIALECT,
                            or as `auto`, the extension's default; the last match wins
---strict GLOB              the same as --dialect json:GLOB, kept from check-json5;
-                           --strict '!GLOB' means --dialect auto:GLOB
 --error RULE, --warn RULE, --ignore RULE
 --max-warnings N
 --fix                      fix what has a safe fix, in place, then report what is left
@@ -411,7 +409,7 @@ All inputs are optional:
 | Input     | What it does                                                                                |
 | --------- | ------------------------------------------------------------------------------------------- |
 | `files`   | paths or globs to check, separated by spaces; by default every tracked file the hook checks |
-| `args`    | extra options, separated by spaces, such as `--strict package.json`                         |
+| `args`    | extra options, separated by spaces, such as `--dialect json:package.json`                         |
 | `sarif`   | also write a SARIF file to this path, besides the usual log and annotations                 |
 | `version` | the jsonvet version to install: `X.Y.Z` (also with a suffix such as `rc1` or `.post1`), `X.*`, `X.Y.*` or `latest` |
 | `verify`  | `true` (the default) checks the wheel's attestation before installing it; `false` skips that |
@@ -651,7 +649,14 @@ exists is in [design.md](design.md#--schema).
 
 ## Coming from check-json5
 
-The `check-json5` package on PyPI keeps working in 4.0: it installs jsonvet. Besides the
-dialect change in the README, the output line, syntax-error wording, positions after a lone CR or
-U+2028, the hook's `.jsonl` and `.ndjson` files and the Python module changed
-([full list](design.md#the-contract-with-14)).
+Install and run `jsonvet` in 4.0. Existing `check-json5` releases stay on PyPI.
+
+- In pre-commit or prek, use `repo: https://github.com/simonvanlierde/jsonvet` and
+  `rev: v4.0.0`. Change `id: check-json5` to `id: jsonvet`.
+- Replace `--strict GLOB` with `--dialect json:GLOB`. For example, use
+  `args: [--dialect, 'json:package.json']` in a hook.
+- Replace `--strict '!GLOB'` with `--dialect 'auto:GLOB'`. For example, use
+  `args: [--dialect, 'auto:fixtures/*.json']` to restore automatic detection for those files.
+
+See [the contract with 1.4](design.md#the-contract-with-14) for differences in diagnostics and
+file detection.

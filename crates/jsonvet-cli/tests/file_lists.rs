@@ -53,11 +53,16 @@ fn hook_pattern(pattern: &str) -> BTreeSet<String> {
 #[test]
 fn the_hooks_check_the_default_files() {
     let hooks = repo_file(".pre-commit-hooks.yaml");
+    let ids: Vec<&str> = hooks
+        .lines()
+        .filter_map(|line| line.strip_prefix("- id: "))
+        .collect();
+    assert_eq!(ids, ["jsonvet", "jsonvet-format"]);
     let patterns: Vec<&str> = hooks
         .lines()
         .filter_map(|line| line.trim().strip_prefix("files: "))
         .collect();
-    assert_eq!(patterns.len(), 3, "one pattern per hook");
+    assert_eq!(patterns.len(), ids.len(), "one pattern per hook");
     for pattern in patterns {
         assert_eq!(hook_pattern(pattern), defaults(), "{pattern}");
     }

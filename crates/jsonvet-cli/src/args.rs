@@ -29,7 +29,6 @@ Options:
                                 ndjson and json-lines (jsonl). Repeatable; the last match wins.
                                 Files with any other extension are checked as json5;
                                 extensions match in lower case only.
-      --strict GLOB             Same as --dialect json:GLOB; --strict '!GLOB' means auto:GLOB.
       --error RULE              Report RULE as an error. Repeatable, as are the next two.
       --warn RULE               Report RULE as a warning.
       --ignore RULE             Do not check RULE.
@@ -210,8 +209,8 @@ pub(crate) fn error_output(args: &[OsString]) -> ErrorOutput {
             }
             Ok(Some(Long("stdin-filename"))) => named_stdin |= parser.value().is_ok(),
             Ok(Some(Long(
-                "dialect" | "strict" | "error" | "warn" | "ignore" | "max-warnings" | "color"
-                | "config" | "explain" | "schema",
+                "dialect" | "error" | "warn" | "ignore" | "max-warnings" | "color" | "config"
+                | "explain" | "schema",
             ))) => {
                 let _ = parser.value();
             }
@@ -268,13 +267,6 @@ fn check(args: impl IntoIterator<Item = OsString>) -> Result<Command, String> {
             Long("dialect") => settings
                 .dialects
                 .push(DialectPattern::parse(&value(&mut parser)?)?),
-            Long("strict") => {
-                let glob = value(&mut parser)?;
-                settings.dialects.push(match glob.strip_prefix('!') {
-                    Some(glob) => DialectPattern::parse(&format!("auto:{glob}"))?,
-                    None => DialectPattern::parse(&format!("json:{glob}"))?,
-                });
-            }
             Long(severity @ ("error" | "warn" | "ignore")) => {
                 let severity = parse_severity(severity)?;
                 let rule = (parse_rule(&value(&mut parser)?)?, severity);
@@ -591,6 +583,6 @@ mod tests {
         );
         assert!(parse(["--error", "nope"].iter().map(Into::into)).is_err());
         assert!(parse(["--dialect", "yaml"].iter().map(Into::into)).is_err());
-        assert!(parse(["--strict"].iter().map(Into::into)).is_err());
+        assert!(parse(["--dialect"].iter().map(Into::into)).is_err());
     }
 }

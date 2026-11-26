@@ -205,10 +205,9 @@ A release changes the version in these places, in one commit on a branch:
 1. `version` in the root `Cargo.toml`, and `Cargo.lock` with it
 2. the `=x.y.z` pin on `jsonvet` in `crates/jsonvet-cli/Cargo.toml`
 3. the pin in `setup.py`
-4. `version` and the `jsonvet==` pin in `compat/check-json5/pyproject.toml`
-5. `version` in `editors/vscode/package.json`
-6. `rev: vX.Y.Z` in the hook examples in `README.md`, `docs/usage.md` and `docs/format.md`
-7. in `CHANGELOG.md`, the Unreleased entries moved under a new `## [X.Y.Z] - date` heading, and
+4. `version` in `editors/vscode/package.json`
+5. `rev: vX.Y.Z` in the hook examples in `README.md`, `docs/usage.md` and `docs/format.md`
+6. in `CHANGELOG.md`, the Unreleased entries moved under a new `## [X.Y.Z] - date` heading, and
    the compare links at the bottom
 
 [cargo-release](https://github.com/crate-ci/cargo-release) makes all of them. It only bumps and
@@ -246,7 +245,7 @@ finishes, download the assets from the draft. Check the archive checksums and ve
 provenance and SBOM attestations against the release tag
 ([verification commands](SECURITY.md#verifying-a-release)).
 
-Then approve the `pypi` environment twice (the wheels, then `check-json5`) and `crates-io` once.
+Then approve the `pypi` and `crates-io` environments.
 If a publish job fails, use "Re-run failed jobs", never "Re-run all jobs". A full re-run builds the
 wheels again, so PyPI and the GitHub release could hold different builds.
 
@@ -264,8 +263,7 @@ wheels on it. Look at its `wheels / wheels (...)` checks before you tag. They ca
 checks, because the workflow only runs for some paths.
 
 A pre-release has a `-` in its tag (`v3.1.0-rc.1`). cargo-release bumps only the crates for one.
-Edit the other places by hand, with the PEP 440 form (`3.2.0rc1`) in `setup.py` and the
-compatibility package.
+Edit the other places by hand. Use the PEP 440 form (`4.1.0rc1`) in `setup.py`.
 
 Once the release is published, run `just major`. It creates or updates the alias that
 `uses: simonvanlierde/jsonvet@v4` follows. After 4.0.0, it creates `v4` at that release.

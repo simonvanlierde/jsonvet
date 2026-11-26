@@ -21,9 +21,6 @@ a promise, and none of it has a date. Released work is in [CHANGELOG.md](../CHAN
    channels exist.
 4. **Where the parsers disagree.** A write-up of the conformance matrix, published after the
    disagreements found so far have been reported to the parsers' maintainers.
-5. **Drop the check-json5 compatibility in a future major release.** The `check-json5` binary and
-   package, `--strict` and the old hook id go away together. The 4.0 release keeps them
-   ([#208](https://github.com/simonvanlierde/jsonvet/issues/208)).
 
 ## Ideas, not planned yet
 

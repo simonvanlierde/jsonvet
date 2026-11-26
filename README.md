@@ -57,7 +57,7 @@ Add this to `.pre-commit-config.yaml` (for [pre-commit](https://pre-commit.com) 
 It checks files by name: `.json`, `.jsonc`, `.json5`, `.jsonl`, `.ndjson`, `.geojson`, `.jsonld`,
 `.hujson`, `.jwcc`, `.code-workspace`, `.code-snippets`, `.webmanifest` and `.babelrc`.
 
-Options go in `args`, such as `args: [--strict, package.json]` to hold `package.json` to strict
+Options go in `args`, such as `args: [--dialect, 'json:package.json']` to hold `package.json` to strict
 JSON. The hook installs a prebuilt binary from PyPI, so you need no Rust. On Linux the wheel needs glibc
 2.28 or newer; older systems build from the source distribution, which needs Rust.
 
@@ -123,7 +123,7 @@ The API is on [docs.rs](https://docs.rs/jsonvet).
 
 | Dialect  | Adds to JSON                                                                 | Default for                                                          |
 | -------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `json`   | nothing ([RFC 8259](https://www.rfc-editor.org/rfc/rfc8259))                  | none; choose it with `--dialect` or `--strict`                       |
+| `json`   | nothing ([RFC 8259](https://www.rfc-editor.org/rfc/rfc8259))                  | none; choose it with `--dialect json`                       |
 | `i-json` | stricter content ([RFC 7493](https://www.rfc-editor.org/rfc/rfc7493))         | none                                                                 |
 | `jsonc`  | `//` and `/* */` comments                                                    | `.jsonc`, `.code-workspace`, `.code-snippets`                        |
 | `jwcc`   | comments and trailing commas ([HuJSON](https://github.com/tailscale/hujson)) | `.hujson`, `.jwcc`                                                   |
@@ -219,8 +219,9 @@ schema paths and the limits are in the
 
 ## Coming from check-json5
 
-Bump `rev` to the newest tag. The `check-json5` hook id, the `check-json5` command and `--strict`
-keep working in 4.0.
+Use the `jsonvet` package, command and hook ID in 4.0. See the
+[migration guide](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#coming-from-check-json5)
+for hook and flag changes.
 
 jsonvet gives the same pass or fail as 1.4.1, apart from a few
 [edge cases](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#known-differences-from-14).

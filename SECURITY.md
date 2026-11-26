@@ -73,8 +73,7 @@ Out of scope:
 
 ## Supported versions
 
-Fixes go into the newest release only. The `check-json5` package installs the
-same code.
+Fixes go into the newest jsonvet release.
 
 ## Verifying a release
 

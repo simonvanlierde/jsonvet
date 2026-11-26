@@ -1,21 +1,17 @@
 # /// script
 # requires-python = ">=3.11"
 # ///
-"""Pack the binaries from each release wheel into an archive for the GitHub release.
+"""Pack each release wheel's binary into an archive for the GitHub release.
 
 Usage: uv run scripts/release-archives.py WHEEL_DIR OUT_DIR
 
 The wheels already hold the binary (maturin bindings = "bin"), so the archives ship the same bytes
 that PyPI does. Each archive is named jsonvet-<Rust target>.tar.gz, or .zip on Windows, and holds
-every `[[bin]]` of crates/jsonvet-cli (with `.exe` on Windows) and the two license files at its root. The names
-are what `[package.metadata.binstall]` there expects, and cargo-binstall refuses an archive that
-lacks one of the crate's binaries. It fails unless every target below gets exactly one archive
-holding all of them.
+the binary and both license files at its root. The archive and binary names match
+`[package.metadata.binstall]` in crates/jsonvet-cli/Cargo.toml.
 """
 
 import io
-import json
-import subprocess
 import sys
 import tarfile
 import zipfile
@@ -47,51 +43,31 @@ def target_of(wheel: Path) -> str:
     raise ValueError(msg)
 
 
-def bin_names() -> list[str]:
-    """The CLI crate's binaries, which every archive must hold.
-
-    Asked of cargo, since `check-json5` is found in src/bin/ and has no `[[bin]]` entry of its own.
-    """
-    metadata = json.loads(
-        subprocess.run(
-            ["cargo", "metadata", "--no-deps", "--format-version", "1"],  # noqa: S607
-            cwd=ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout
-    )
-    package = next(p for p in metadata["packages"] if p["name"] == "jsonvet-cli")
-    return sorted(t["name"] for t in package["targets"] if "bin" in t["kind"])
-
-
-def binaries_of(wheel: Path, names: list[str]) -> list[tuple[str, bytes]]:
-    """Each binary's file name and bytes, from the wheel's scripts folder, in the order of `names`."""
-    found: dict[str, tuple[str, bytes]] = {}
+def binary_of(wheel: Path, name: str) -> bytes:
+    """Read the binary from the wheel's scripts folder."""
     with zipfile.ZipFile(wheel) as whl:
         for entry in whl.namelist():
-            parts = entry.split("/")
-            if len(parts) == 3 and parts[0].endswith(".data") and parts[1] == "scripts":  # noqa: PLR2004
-                found[parts[2].removesuffix(".exe")] = (parts[2], whl.read(entry))
-    missing = [name for name in names if name not in found]
-    if missing:
-        msg = f"{wheel.name}: no {', '.join(missing)} in its scripts folder"
-        raise ValueError(msg)
-    return [found[name] for name in names]
+            root, _, path = entry.partition("/")
+            if root.endswith(".data") and path == f"scripts/{name}":
+                return whl.read(entry)
+    msg = f"{wheel.name}: no {name} in its scripts folder"
+    raise ValueError(msg)
 
 
-def pack(out: Path, target: str, binaries: list[tuple[str, bytes]], licenses: dict[str, bytes]) -> Path:
+def pack(out: Path, target: str, wheel: Path, licenses: dict[str, bytes]) -> Path:
     """Write the archive for one target and return its path."""
-    if target.endswith("windows-msvc"):
+    windows = target.endswith("windows-msvc")
+    name = "jsonvet.exe" if windows else "jsonvet"
+    binary = binary_of(wheel, name)
+    if windows:
         path = out / f"jsonvet-{target}.zip"
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
-            for name, data in binaries:
-                archive.writestr(name, data)
+            archive.writestr(name, binary)
             for name, data in licenses.items():
                 archive.writestr(name, data)
         return path
     path = out / f"jsonvet-{target}.tar.gz"
-    files = [(name, data, 0o755) for name, data in binaries] + [(n, d, 0o644) for n, d in licenses.items()]
+    files = [(name, binary, 0o755), *((n, d, 0o644) for n, d in licenses.items())]
     with tarfile.open(path, "w:gz") as archive:
         for name, content, mode in files:
             info = tarfile.TarInfo(name)
@@ -106,7 +82,6 @@ def main() -> int:
     wheel_dir, out = Path(sys.argv[1]), Path(sys.argv[2])
     out.mkdir(parents=True, exist_ok=True)
     licenses = {n: (ROOT / n).read_bytes() for n in ("LICENSE-MIT", "LICENSE-APACHE")}
-    names = bin_names()
     done: dict[str, str] = {}
     for wheel in sorted(wheel_dir.rglob("jsonvet-*.whl")):
         target = target_of(wheel)
@@ -114,7 +89,7 @@ def main() -> int:
             print(f"{wheel.name} and {done[target]} are both for {target}")
             return 1
         done[target] = wheel.name
-        print(pack(out, target, binaries_of(wheel, names), licenses))
+        print(pack(out, target, wheel, licenses))
     missing = {target for _, _, target in TARGETS} - done.keys()
     if missing:
         print(f"no wheel for {', '.join(sorted(missing))}")

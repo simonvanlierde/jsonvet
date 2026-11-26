@@ -16,8 +16,9 @@ to install without a Rust toolchain and keep those URLs. Python also cost 13.3 m
 
 ## Decision
 
-Wheels for eight targets behind the placeholder. `check-json5` stays on PyPI as an empty shim,
-with its hook id, command and `--strict`, in 4.0. A future major release will drop them together.
+Wheels for eight targets behind the placeholder. Releases 2.x and 3.x also published an empty
+`check-json5` shim and provided its hook ID, command and `--strict`. Version 4.0 retires these
+([migration guide](../usage.md#coming-from-check-json5)).
 
 ## Consequences
 

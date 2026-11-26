@@ -32,7 +32,7 @@ const nameOf = (d) => radio(d).querySelector(".name").textContent;
 // "Dialects"), on one line each.
 // Backticks mark CLI strings, shown in mono.
 const hints = {
-  json: "No comments and no trailing commas, as in `package.json`. The CLI uses it only with `--dialect` or `--strict`.",
+  json: "No comments and no trailing commas, as in `package.json`. The CLI uses it only with `--dialect json`.",
   "i-json": "JSON whose numbers fit a double and whose strings are valid Unicode. The CLI uses it only with `--dialect`.",
   jsonc: "JSON with comments, as in `tsconfig.json` and VS Code settings. The CLI checks `.jsonc` files this way.",
   jwcc: "JSON with comments and trailing commas, also called HuJSON. The CLI checks `.hujson` and `.jwcc` files this way.",

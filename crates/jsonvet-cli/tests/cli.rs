@@ -346,8 +346,8 @@ fn help_into_a_closed_pipe_succeeds() {
 }
 
 #[test]
-fn help_version_and_the_check_json5_name() {
-    let dir = workdir(&[("dup.json", "{\"a\":1,\"a\":2}"), ("sub.json", "{}")]);
+fn help_and_version() {
+    let dir = workdir(&[]);
     let run = |args: &[&str]| jsonvet(&dir, args);
     let version = format!("jsonvet {}\n", env!("CARGO_PKG_VERSION"));
     assert_eq!(run(&["-V"]), (0, version.clone()));
@@ -356,19 +356,13 @@ fn help_version_and_the_check_json5_name() {
         let (code, out) = run(&[flag]);
         assert_eq!(code, 0);
         assert!(out.starts_with("Check JSON, I-JSON,"), "{flag}");
+        assert!(!out.contains("--strict"), "{flag}");
         // The help names every place a schema can come from.
         assert!(
             out.contains("schemas setting") && out.contains("local $schema"),
             "{flag}"
         );
     }
-    let out = command(env!("CARGO_BIN_EXE_check-json5"))
-        .arg("dup.json")
-        .current_dir(&dir)
-        .output()
-        .expect("run check-json5");
-    assert_eq!(out.status.code(), Some(1));
-    assert_eq!(String::from_utf8_lossy(&out.stdout), run(&["dup.json"]).1);
     fs::create_dir(dir.join("folder.json")).expect("create a folder");
     assert_eq!(
         run(&["folder.json"]),
@@ -417,7 +411,7 @@ fn only_regular_files_are_read() {
 }
 
 #[test]
-fn strict_globs_keep_their_1x_meaning() {
+fn dialect_globs_can_restore_automatic_detection() {
     let dir = workdir(&[
         ("package.json", "{// c\n}"),
         ("a/package.json", "{// c\n}"),
@@ -427,12 +421,12 @@ fn strict_globs_keep_their_1x_meaning() {
     let (code, out) = jsonvet(
         &dir,
         &[
-            "--strict",
-            "*.json",
-            "--strict",
-            "!tsconfig*.json",
-            "--strict",
-            "!.vscode/*",
+            "--dialect",
+            "json:*.json",
+            "--dialect",
+            "auto:tsconfig*.json",
+            "--dialect",
+            "auto:.vscode/*",
             "package.json",
             "a/package.json",
             "tsconfig.json",
@@ -452,12 +446,16 @@ fn strict_globs_keep_their_1x_meaning() {
 fn an_unknown_option_is_a_usage_error_unless_it_is_a_file() {
     let dir = workdir(&[("bad.json", "[1,"), ("--x.json", "[1,")]);
     let run = |args: &[&str]| jsonvet_stderr(&dir, args);
-    let (code, out, err) = run(&["--strcit", "*.json", "bad.json"]);
+    let (code, out, err) = run(&["--strict", "*.json", "bad.json"]);
     assert_eq!((code, out.as_str()), (2, ""));
     assert!(
-        err.starts_with("jsonvet: unknown option `--strcit`\n"),
+        err.starts_with("jsonvet: unknown option `--strict`\n"),
         "{err}"
     );
+    let (code, out, err) = run(&["--strict", "--format", "json"]);
+    assert_eq!((code, err.as_str()), (2, ""));
+    let report: serde_json::Value = serde_json::from_str(&out).expect("JSON usage error");
+    assert_eq!(report["errors"][0]["message"], "unknown option `--strict`");
     let found = "--x.json:1:4: error[syntax] unclosed `[`: expected a value, found the end of the file (opened at 1:1)\n";
     assert_eq!(run(&["--x.json"]), (1, found.to_owned(), String::new()));
     assert_eq!(

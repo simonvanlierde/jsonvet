@@ -44,9 +44,8 @@ jobs:
         with:
           version: ${{ env.PINNED_UV }}
           enable-cache: false
-      - run: uv build --out-dir compat-dist compat/check-json5
       - shell: bash
-        run: uv run scripts/smoke.py dist/*.whl compat-dist/*.whl
+        run: uv run scripts/smoke.py dist/*.whl
 
   # The musllinux x86-64 wheel in Alpine, whose libc it is built for. Plain pip and sh: the image
   # has no uv, and the wheel has no dependencies.
