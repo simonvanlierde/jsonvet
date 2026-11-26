@@ -484,21 +484,23 @@ jobs:
 
 `--format gitlab` writes a [GitLab Code Quality report](https://docs.gitlab.com/ci/testing/code_quality/#code-quality-report-format).
 If your CI job already has jsonvet installed, add this job to `.gitlab-ci.yml`.
+The hidden directory keeps the report out of the file walk.
 
 ```yaml
 jsonvet:
   script:
     - |
+      mkdir -p .jsonvet-report
       jsonvet_status=0
-      jsonvet --format gitlab . > gl-code-quality-report.json || jsonvet_status=$?
+      jsonvet --format gitlab . > .jsonvet-report/gl-code-quality-report.json || jsonvet_status=$?
       if [ "$jsonvet_status" -gt 1 ]; then
-        rm gl-code-quality-report.json
+        rm .jsonvet-report/gl-code-quality-report.json
       fi
       exit "$jsonvet_status"
   artifacts:
     when: always
     reports:
-      codequality: gl-code-quality-report.json
+      codequality: .jsonvet-report/gl-code-quality-report.json
 ```
 
 The report is a JSON array. Errors have severity `major` and warnings have severity `minor`.
