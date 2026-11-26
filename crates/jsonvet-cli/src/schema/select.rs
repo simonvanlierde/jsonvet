@@ -23,7 +23,7 @@ use crate::{check, messages, output};
 pub(crate) fn with_schema(((settings, schema), _): &Job, name: &OsStr, text: &str) -> bool {
     schema.is_some()
         || may_name_a_path(text)
-            && settings.config_for(&name.to_string_lossy()).dialect() != Dialect::JsonLines
+            && settings.config_for(&name.to_string_lossy(), text).dialect() != Dialect::JsonLines
 }
 
 /// A file to check, with its settings and the schema it is checked against, if any.
@@ -245,7 +245,7 @@ struct OwnSchema {
 
 /// Whether a document declares a local schema, which takes precedence over the catalog.
 pub(crate) fn names_local_schema(name: &str, text: &str, settings: &Settings) -> bool {
-    let config = settings.config_for(name);
+    let config = settings.config_for(name, text);
     if config.dialect() == Dialect::JsonLines || !may_name_a_path(text) {
         return false;
     }
@@ -334,7 +334,7 @@ pub(crate) fn check_own_schema<'t>(
     load: &impl Fn(&Path, bool) -> Loaded,
     parts: usize,
 ) -> (Report<'t>, Vec<(usize, String, bool)>) {
-    let config = settings.config_for(name);
+    let config = settings.config_for(name, text);
     // With the file's own depth limit, so a file with no usable `$schema` gets the report a
     // plain check gives, without a second parse.
     let mut own = OwnSchema::default();

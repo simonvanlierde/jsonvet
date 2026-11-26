@@ -598,9 +598,11 @@ fn resolver(path: &Path, roots: &[PathBuf]) -> Result<Resolver, String> {
 }
 
 /// The checking config for the file at `path`, as a run picks it.
-fn config_for(path: &Path, roots: &[PathBuf]) -> Result<Config, String> {
+fn config_for(path: &Path, text: &str, roots: &[PathBuf]) -> Result<Config, String> {
     let mut resolver = resolver(path, roots)?;
-    Ok(resolver.for_file(path)?.config_for(&path.to_string_lossy()))
+    Ok(resolver
+        .for_file(path)?
+        .config_for(&path.to_string_lossy(), text))
 }
 
 /// A quick fix for each safe fix with a problem in `range`, and one action for them all.
@@ -617,7 +619,7 @@ fn code_actions(
         return json!([]);
     }
     let text = lines.text;
-    let Ok(config) = config_for(path, &client.roots) else {
+    let Ok(config) = config_for(path, text, &client.roots) else {
         return json!([]);
     };
     let Ok(all) = jsonvet::try_fix(text, &config, false, None) else {
@@ -711,7 +713,7 @@ fn resolve_action(
             "the document changed or was closed".to_owned(),
         );
     };
-    let fixed = config_for(&path, &client.roots).and_then(|config| {
+    let fixed = config_for(&path, &document.text, &client.roots).and_then(|config| {
         jsonvet::try_fix(
             &document.text,
             &config,
@@ -776,17 +778,19 @@ fn formatting(
         Ok(resolver) => Mutex::new(resolver),
         Err(_) => return Value::Null,
     };
-    let Ok((config, options)) = format::setup(path, &resolver, &editorconfig::Cache::default())
+    let Ok((config, options)) =
+        format::setup(path, text, &resolver, &editorconfig::Cache::default())
     else {
         return Value::Null;
     };
-    let Ok(formatted) = jsonvet::format(text, &config, &options) else {
+    let Ok(formatted) = jsonvet::format_file(path, text, &config, &options) else {
         return Value::Null;
     };
     let mut edits = edits(text, &formatted);
     if let Some(range) = range {
         let same = |edits: &[(Range<usize>, &str)]| {
-            jsonvet::format(&apply(text, edits), &config, &options).is_ok_and(|f| f == formatted)
+            jsonvet::format_file(path, &apply(text, edits), &config, &options)
+                .is_ok_and(|f| f == formatted)
         };
         edits = within(text, edits, &range, same);
     }
@@ -1156,7 +1160,8 @@ mod tests {
         ] {
             let path = dir.join(name);
             let uri = uri(&path);
-            let config = super::config_for(&path, std::slice::from_ref(&dir)).expect("config");
+            let config =
+                super::config_for(&path, text, std::slice::from_ref(&dir)).expect("config");
             let expected = jsonvet::try_fix(text, &config, false, None).expect("fixes");
             for utf8 in [false, true] {
                 for versioned in [false, true] {
@@ -1382,6 +1387,37 @@ mod tests {
         client.notify(
             "textDocument/didClose",
             json!({ "textDocument": { "uri": file } }),
+        );
+        assert_eq!(client.diagnostics()["diagnostics"], json!([]));
+        client.stop();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn an_unsaved_jsonc_modeline_applies_to_diagnostics_fixes_and_formatting() {
+        let dir = folder("jsonc-modeline");
+        let file = uri(&dir.join("a.json"));
+        let (mut client, _) = Client::start(&json!({}));
+        let text = "// -*- jsonc -*-\n[1,]";
+        let published = client.open(&file, text);
+        assert_eq!(published["diagnostics"][0]["code"], "syntax");
+        let actions = client.request(
+            "textDocument/codeAction",
+            json!({ "textDocument": { "uri": file }, "range": range((1, 2), (1, 3)),
+                "context": { "only": ["quickfix"] } }),
+        );
+        assert_eq!(actions.as_array().map(Vec::len), Some(1));
+        assert_eq!(
+            client.request(
+                "textDocument/formatting",
+                json!({ "textDocument": { "uri": file }, "options": {} }),
+            ),
+            Value::Null
+        );
+        client.notify(
+            "textDocument/didChange",
+            json!({ "textDocument": { "uri": file, "version": 2 },
+                "contentChanges": [{ "text": "[1,]" }] }),
         );
         assert_eq!(client.diagnostics()["diagnostics"], json!([]));
         client.stop();

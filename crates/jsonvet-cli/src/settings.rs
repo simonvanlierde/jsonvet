@@ -21,7 +21,7 @@ use crate::output::printable;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DialectPattern {
     pub(crate) files: Option<Glob>,
-    /// `None` means `auto`: the default for the file's extension.
+    /// `None` means `auto`: choose from the file name and modeline.
     pub(crate) dialect: Option<Dialect>,
     /// The absolute directory of the config file the pattern comes from, normalized, which
     /// `files` is relative to. `None` for the command line, whose patterns match the path as
@@ -234,8 +234,8 @@ impl Settings {
     }
 
     /// The checking config for one file: the last matching dialect pattern wins.
-    pub(crate) fn config_for(&self, path: &str) -> Config {
-        let auto = || Dialect::for_path(Path::new(path)).unwrap_or(Dialect::Json5);
+    pub(crate) fn config_for(&self, path: &str, text: &str) -> Config {
+        let auto = || Dialect::for_path_and_text(Path::new(path), text).unwrap_or(Dialect::Json5);
         let mut located = Located::new(path);
         let dialect = self
             .dialects

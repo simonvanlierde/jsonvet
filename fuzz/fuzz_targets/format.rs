@@ -2,7 +2,9 @@
 //! syntax errors, and a second pass that changes nothing.
 #![no_main]
 
-use jsonvet::{Config, Dialect, FormatOptions, Indent, Rule, check, format};
+use std::path::Path;
+
+use jsonvet::{Config, Dialect, FormatOptions, Indent, Rule, check, format, format_file};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|text: &str| {
@@ -33,6 +35,22 @@ fuzz_target!(|text: &str| {
             if let Ok(again) = format(&out, &config, options) {
                 assert_eq!(again, out, "{dialect:?}: {text:?} -> {out:?}");
             }
+        }
+    }
+    let path = Path::new("input.json");
+    let dialect = Dialect::for_path_and_text(path, text).expect("a .json dialect");
+    let config = Config::new(dialect).max_depth(128);
+    if let Ok(out) = format_file(path, text, &config, &option_sets[0]) {
+        assert_eq!(Dialect::for_path_and_text(path, &out), Some(dialect));
+        assert!(
+            check(&out, &config)
+                .problems()
+                .iter()
+                .all(|p| p.rule() != Rule::Syntax),
+            "{dialect:?}: {text:?} -> {out:?} has a syntax error"
+        );
+        if let Ok(again) = format_file(path, &out, &config, &option_sets[0]) {
+            assert_eq!(again, out, "{dialect:?}: {text:?} -> {out:?}");
         }
     }
 });

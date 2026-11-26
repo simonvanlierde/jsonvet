@@ -139,6 +139,34 @@ pub fn format<'a>(
     config: &Config,
     options: &FormatOptions,
 ) -> Result<String, FormatError<'a>> {
+    format_inner(text, config, options, false)
+}
+
+/// Format a named file and preserve whether its first line declares JSONC.
+#[doc(hidden)]
+#[allow(
+    clippy::result_large_err,
+    reason = "the error is the report the caller prints, and it is returned once per file"
+)]
+pub fn format_file<'a>(
+    path: &std::path::Path,
+    text: &'a str,
+    config: &Config,
+    options: &FormatOptions,
+) -> Result<String, FormatError<'a>> {
+    format_inner(text, config, options, crate::dialect::is_json_path(path))
+}
+
+#[allow(
+    clippy::result_large_err,
+    reason = "the error is the report the caller prints, and it is returned once per file"
+)]
+fn format_inner<'a>(
+    text: &'a str,
+    config: &Config,
+    options: &FormatOptions,
+    preserve_modeline: bool,
+) -> Result<String, FormatError<'a>> {
     if text.len() > MAX_TEXT {
         return Err(FormatError::InputTooLarge);
     }
@@ -165,7 +193,7 @@ pub fn format<'a>(
     };
     let limit = (text.len() as u64 * 16).max(64 << 20);
     // A writer that only counts, or one that keeps `capacity` bytes of output before it spills.
-    let writer = |counting: bool, capacity: usize, pad: bool| {
+    let writer = |counting: bool, capacity: usize, pad: bool, keep_blank: bool| {
         let mut w = Writer {
             out: String::with_capacity(capacity),
             total: 0,
@@ -180,12 +208,15 @@ pub fn format<'a>(
         w.put(bom);
         // A byte order mark takes no column.
         w.col = 0;
+        if keep_blank {
+            w.newline();
+        }
         w
     };
     if dialect == Dialect::JsonLines {
         // Each record is worked out and written on its own, so the output is built as it goes.
         let capacity = (text.len() + text.len() / 4).min(usize::try_from(limit).unwrap_or(0));
-        let mut w = writer(false, capacity, false);
+        let mut w = writer(false, capacity, false, false);
         let mut parser = Parser::new(body, Dialect::Json, false, eol);
         for line in body.split('\n') {
             let line = line.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}');
@@ -204,11 +235,17 @@ pub fn format<'a>(
     parser.pad = options.bracket_spacing;
     parser.reserve();
     let doc = parser.document();
+    // Dropping the leading blank line could turn an ordinary comment into a dialect directive.
+    let keep_blank = preserve_modeline
+        && doc.leading.first().is_some_and(|&comment| {
+            crate::dialect::has_jsonc_modeline(parser.t.comment(comment))
+                && !crate::dialect::has_jsonc_modeline(text)
+        });
     // Freed before the output is built, so the two do not add up at the peak.
     parser.open = Vec::new();
     // The first pass only measures, so the output is built once, at its size, and never when it
     // would be huge.
-    let mut counted = writer(true, 0, options.bracket_spacing);
+    let mut counted = writer(true, 0, options.bracket_spacing, keep_blank);
     counted.document(&parser.t, &doc);
     if counted.total > limit {
         return counted.finish();
@@ -217,6 +254,7 @@ pub fn format<'a>(
         false,
         usize::try_from(counted.total).unwrap_or(0),
         options.bracket_spacing,
+        keep_blank,
     );
     w.document(&parser.t, &doc);
     let out = w.finish()?;

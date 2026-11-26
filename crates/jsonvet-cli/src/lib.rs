@@ -806,7 +806,7 @@ fn fix_chunk(
         |(((settings, _), file), (text, _))| {
             let text = text.as_ref().ok()?;
             let name = shown(file);
-            let config = settings.config_for(&name.to_string_lossy());
+            let config = settings.config_for(&name.to_string_lossy(), text);
             let fixed = match jsonvet::try_fix(text, &config, unsafe_fixes, None) {
                 Ok(fixed) => fixed,
                 Err(problems) => return Some(Err(problems)),
@@ -948,7 +948,7 @@ fn check<'t>(
     parts: usize,
     known: Option<&[Problem]>,
 ) -> (Report<'t>, Vec<(usize, String, bool)>) {
-    let config = settings.config_for(name);
+    let config = settings.config_for(name, text);
     let ranges = split(text, config.dialect(), parts);
     if ranges.len() > 1 {
         // Each line is a document of its own, and the error cap counts per document, so each
