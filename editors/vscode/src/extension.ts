@@ -19,6 +19,10 @@ export async function activate(context: ExtensionContext): Promise<void> {
   client = new LanguageClient("jsonvet", "jsonvet", server, {
     // No `synchronize`: the server registers its own watchers for the settings files.
     documentSelector,
+    initializationOptions: () => {
+      const maxProblems = workspace.getConfiguration("jsonvet").get<number>("maxProblems", 0);
+      return { maxProblems: Number.isSafeInteger(maxProblems) && maxProblems > 0 ? maxProblems : 0 };
+    },
     middleware: {
       handleDiagnostics(uri, diagnostics, next) {
         const builtIn = workspace.getConfiguration("json", uri).get<boolean>("validate.enable", true);
@@ -27,10 +31,10 @@ export async function activate(context: ExtensionContext): Promise<void> {
     },
   });
   await client.start();
-  // The filter applies as diagnostics arrive, so the server sends them again after a change.
+  // Restart to read the server's limit at initialization and publish fresh diagnostics for the filter.
   context.subscriptions.push(
     workspace.onDidChangeConfiguration((change) => {
-      if (change.affectsConfiguration("json.validate.enable")) {
+      if (change.affectsConfiguration("json.validate.enable") || change.affectsConfiguration("jsonvet.maxProblems")) {
         void client?.restart();
       }
     }),

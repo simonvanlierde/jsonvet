@@ -75,6 +75,14 @@
           "default": "",
           "scope": "machine",
           "markdownDescription": "The `jsonvet` program to run, such as `/usr/local/bin/jsonvet`. Empty: `jsonvet` on `PATH`. Takes effect after a reload."
+        },
+        "jsonvet.maxProblems": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "scope": "window",
+          "markdownDescription": "Maximum number of jsonvet diagnostics sent per file before VS Code filters them. Set to `0` for no limit. Changing this setting restarts the language server."
         }
       }
     }

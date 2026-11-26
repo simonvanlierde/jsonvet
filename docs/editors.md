@@ -41,6 +41,11 @@ files themselves.
 The server checks the whole file on each change without waiting for typing to stop. Changes that
 arrive while a check runs are checked once, at the latest text.
 
+To limit how many diagnostics arrive per file, send a positive integer `maxProblems` in the
+`initialize` request's `initializationOptions`. The server sends syntax and rule findings first,
+then schema findings, stopping at the limit. A missing or invalid value, or `0`, sends all
+diagnostics. Checking and quick fixes still use the whole file.
+
 ## VS Code
 
 The extension in [editors/vscode](../editors/vscode/README.md) is a thin client for `jsonvet lsp`.
