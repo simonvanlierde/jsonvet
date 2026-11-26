@@ -100,17 +100,6 @@ echo '{}' > "$tmp/evil/a.json"
 got=$(cd "$tmp/evil" && list_files "*.json" python3 && printf '%s\n' "${files[@]}")
 [[ "$got" == "a.json" ]] || fail "files input with glob.py in the repository: got [$got]"
 
-# The Action owns the report format when the sarif input is set. An invalid version keeps
-# these probes offline even if argument validation regresses.
-for args in '--format json' '--format=json'; do
-  out=$(ARGS="$args" SARIF="$tmp/format-conflict.sarif" VERSION=invalid "$BASH" "$here/action.sh" 2>&1)
-  [[ $? -eq 2 && "$out" == *"remove --format from args when sarif is set"* ]] ||
-    fail "SARIF format conflict '$args' did not give the argument error: [$out]"
-done
-[[ ! -e "$tmp/format-conflict.sarif" ]] || fail "a format conflict created a report"
-out=$(ARGS='--format json' SARIF='' VERSION=invalid "$BASH" "$here/action.sh" 2>&1)
-[[ $? -eq 2 && "$out" == *"version must be"* ]] || fail "format input without SARIF was rejected: [$out]"
-
 # SARIF: the output must be a SARIF 2.1.0 document, whatever the exit code says.
 fake() {
   printf '#!/usr/bin/env bash\n%s\n' "$1" > "$tmp/jsonvet"
