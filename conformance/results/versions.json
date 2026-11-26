@@ -1,5 +1,5 @@
 {
-  "date": "2026-11-15",
+  "date": "2026-11-26",
   "seconds": 33,
   "images": {
     "node": "node:26-slim@sha256:e556a144463cc8dc53afe8de6d2fa0db5c132fd39ffa232c17641bd40df2bf11",
@@ -130,7 +130,7 @@
     "go-tidwall-jsonc": {
       "language": "go",
       "package": "github.com/tidwall/jsonc",
-      "version": "v0.3.3",
+      "version": "v0.3.4",
       "uses": [
         "jsonc"
       ]
