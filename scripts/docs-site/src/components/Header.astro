@@ -28,8 +28,14 @@ const [before, after] = chrome("header.html").split("<!--search-->");
     button.setAttribute("aria-keyshortcuts", `${button.getAttribute("aria-keyshortcuts")} /`);
 
     document.addEventListener("keydown", (event) => {
-      if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey || dialog.open ||
-          button.disabled || (event.target instanceof Element && event.target.closest("input,textarea,select,[contenteditable]"))) return;
+      if (dialog.open || button.disabled) return;
+      if (event.key === "k" && (event.ctrlKey || event.metaKey)) {
+        // Starlight's window listener opens the dialog and the browser records focus.
+        if (document.activeElement === document.body) button.focus();
+        return;
+      }
+      if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey ||
+          (event.target instanceof Element && event.target.closest("input,textarea,select,[contenteditable]"))) return;
       event.preventDefault();
       if (document.activeElement === document.body) button.focus();
       button.click();

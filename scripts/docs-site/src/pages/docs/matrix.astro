@@ -27,18 +27,42 @@ const { title, summary, body } = matrixPage();
     }
   }
 
-  let source: HTMLAnchorElement | undefined;
-  document.querySelector("#matrix")?.addEventListener("click", (event) => {
+  type Opener = { dialect: string; filter: string; hash: string };
+  const matrix = document.querySelector("#matrix");
+  matrix?.addEventListener("click", (event) => {
     if (!(event instanceof MouseEvent) || event.button !== 0 || event.altKey || event.ctrlKey ||
         event.metaKey || event.shiftKey || !(event.target instanceof Element)) return;
     const link = event.target.closest<HTMLAnchorElement>("a[href^='#']");
     if (!link) return;
-    if (link.closest(".tables")) source = link;
-    if (!link.closest(".back") || !source?.getClientRects().length) return;
-    const returnTo = source;
-    window.addEventListener("hashchange", () => {
-      returnTo.focus({ preventScroll: true });
-      returnTo.scrollIntoView({ block: "nearest", inline: "nearest" });
-    }, { once: true });
+    const section = link.closest(".dialect");
+    let opener: Opener | undefined = history.state?.matrixOpener;
+    if (section) {
+      opener = {
+        dialect: section.id.slice("dialect-".length),
+        filter: section.querySelector<HTMLInputElement>(".filter input:checked")?.value ?? "all",
+        hash: link.hash,
+      };
+    }
+    if (!opener) return;
+    const { dialect, filter, hash } = opener;
+    const afterNavigation = () => {
+      if (location.hash !== link.hash) return;
+      if (link.closest(".back")) {
+        const table = document.getElementById(`dialect-${dialect}`);
+        const returnTo = [...(table?.querySelectorAll<HTMLAnchorElement>("table a") ?? [])]
+          .find((anchor) => anchor.hash === hash);
+        const dialectRadio = matrix.querySelector<HTMLInputElement>(`[name="dialect"][value="${CSS.escape(dialect)}"]`);
+        const filterRadio = table?.querySelector<HTMLInputElement>(`.filter [value="${CSS.escape(filter)}"]`);
+        if (dialectRadio) dialectRadio.checked = true;
+        if (filterRadio) filterRadio.checked = true;
+        returnTo?.focus({ preventScroll: true });
+        returnTo?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      } else if (section || link.closest(".detail")) {
+        // Attach the opener to this fragment's history entry so Back can restore it.
+        history.replaceState({ ...history.state, matrixOpener: opener }, "");
+      }
+    };
+    if (location.hash === link.hash) afterNavigation();
+    else window.addEventListener("hashchange", afterNavigation, { once: true });
   });
 </script>
