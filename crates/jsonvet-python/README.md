@@ -11,8 +11,9 @@ for problem in check(text, dialect="json5"):
     print(problem.line, problem.column, problem.severity, problem.rule, problem.message)
 ```
 
-`check(text, *, dialect="json")` takes a Python string and returns a list of read-only
-`Diagnostic` objects in document order. An empty list means the check found no problems. The list
+`check(text, *, dialect="json")` takes a Python string that can be encoded as UTF-8. It returns a
+list of read-only `Diagnostic` objects in document order. A string with a lone surrogate raises
+`UnicodeEncodeError`. An empty list means the check found no problems. The list
 can contain warnings. Check for `problem.severity == "error"` to decide if the input fails.
 Checking stops at the first syntax error and keeps earlier findings.
 

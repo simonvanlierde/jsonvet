@@ -38,3 +38,10 @@ def test_unknown_dialect_raises_value_error() -> None:
     """An invalid option is distinct from a finding in the document."""
     with pytest.raises(ValueError, match="yaml"):
         check("{}", dialect="yaml")
+
+
+def test_lone_surrogate_in_python_text_raises_unicode_encode_error() -> None:
+    """The Python string itself must be encodable as UTF-8."""
+    with pytest.raises(UnicodeEncodeError):
+        check('"' + chr(0xD800) + '"')
+    assert check(r'"\ud800"') == []

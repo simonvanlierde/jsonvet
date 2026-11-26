@@ -1,4 +1,8 @@
+from typing import Never, final
+
+@final
 class Diagnostic:
+    def __new__(cls, _not_constructible: Never, /) -> Diagnostic: ...
     @property
     def severity(self) -> str: ...
     @property
