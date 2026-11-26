@@ -24,7 +24,7 @@ inputs:
   sarif:
     description: >-
       Also write a SARIF file to this path, for github/codeql-action/upload-sarif. The log and the
-      annotations stay as they are.
+      annotations stay as they are. Leave `--format` out of `args` when setting this input.
     required: false
     default: ""
   version:

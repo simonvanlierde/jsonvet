@@ -184,6 +184,22 @@ except (OSError, ValueError, AttributeError):
 # The inputs come from the environment, in capitals.
 # shellcheck disable=SC2153
 main() {
+  set -f
+  # shellcheck disable=SC2206
+  local args=($ARGS)
+  set +f
+  if [[ -n "$SARIF" ]]; then
+    local arg
+    for arg in "${args[@]}"; do
+      case "$arg" in
+        --format | --format=*)
+          error "remove --format from args when sarif is set"
+          return 2
+          ;;
+      esac
+    done
+  fi
+
   local spec
   spec=$(resolve_spec "$VERSION" "$ACTION_REF" "$GITHUB_ACTION_PATH/Cargo.toml") || exit 2
 
@@ -206,10 +222,6 @@ main() {
   "$bin/python" -I -m pip install -q --disable-pip-version-check --no-deps --no-index "${found[0]}" || exit 2
   "$bin/jsonvet" --version
 
-  set -f
-  # shellcheck disable=SC2206
-  local args=($ARGS)
-  set +f
   list_files "$FILES" "$bin/python" || exit 2
   if [[ ${#files[@]} -eq 0 ]]; then
     echo "::warning title=jsonvet action::found no JSON files to check" >&2

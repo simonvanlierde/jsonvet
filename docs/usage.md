@@ -424,6 +424,9 @@ characters, so with thousands of JSON files on a Windows runner, narrow `files`.
 Do not pass `--fix` in `args`. The fixes stay on the runner and are not committed. The step can
 pass, and its log and the SARIF file report the files after fixing.
 
+When you set `sarif`, leave `--format` out of `args`. The Action uses text for the log and
+writes SARIF to the path you supply.
+
 By default the Action installs the release that matches its own tag: `@v3` gets the newest 3.x on
 PyPI, and `@v3.0.0` gets 3.0.0. Pinned to a commit or a branch, it installs the release named in
 that commit's `Cargo.toml`, not the code in it. Before it installs the wheel, it checks that the
