@@ -19,9 +19,6 @@ const alt = readFileSync(resolve(playground, "index.html"), "utf8").match(/og:im
 const cardUrl = `${SITE}og.png?v=${createHash("sha256").update(card).digest("hex").slice(0, 8)}`;
 const meta = (attrs) => ({ tag: "meta", attrs });
 
-// The old pages opened the search with "/", as GitHub does; Starlight's own key is Ctrl+K.
-const slash = `addEventListener("keydown",e=>{if(e.key!=="/"||e.ctrlKey||e.metaKey||e.altKey||e.target.closest("input,textarea,select,[contenteditable]"))return;e.preventDefault();document.querySelector("button[data-open-modal]")?.click()})`;
-
 export default defineConfig({
   site: "https://simonvanlierde.com",
   base: "/jsonvet",
@@ -61,9 +58,8 @@ export default defineConfig({
         meta({ property: "og:image:height", content: "630" }),
         meta({ property: "og:image:alt", content: alt }),
         meta({ name: "twitter:card", content: "summary_large_image" }),
-        { tag: "script", content: slash },
         // The search needs script; without it the button would do nothing.
-        { tag: "noscript", content: "<style>site-search,.theme{display:none}</style>" },
+        { tag: "noscript", content: "<style>.docs-search,.theme{display:none}</style>" },
       ],
     }),
     cspHash(),

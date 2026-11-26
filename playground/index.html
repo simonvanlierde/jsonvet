@@ -53,7 +53,7 @@
     </div>
     <p id="dialect-hint" class="hint"></p>
   </div>
-  <div class="editor-head">
+  <div class="editor-head" id="editor-head">
     <div class="tools" role="group" aria-label="Fix and format the text">
       <div class="tool">
         <div class="split">
@@ -94,7 +94,7 @@
     <p class="caption slug-part">
       <span><span id="name">staging.json</span><span id="made"></span></span>
       <span id="lines">11 lines</span>
-      <span><button type="button" id="share" class="link" aria-describedby="share-note" disabled>Copy link to this text</button> <span id="share-note" class="note-faint">(the link contains your text)</span></span>
+      <span><button type="button" id="share" class="link" aria-describedby="share-note" disabled>Copy share link</button> <span id="share-note" class="note-faint">(includes your text)</span></span>
     </p>
     <span id="share-status" class="vh" role="status"></span>
   </div>
@@ -128,7 +128,7 @@
     </div>
     <svg class="leaders" aria-hidden="true" focusable="false"><defs><marker id="arrow" viewBox="0 0 8 6" refX="1" refY="3" markerWidth="8" markerHeight="6" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,3L8,0V6Z"/></marker></defs><g id="paths"></g></svg>
   </div>
-  <div class="verdict">
+  <div class="verdict" id="verdict">
     <p id="status">Loading…</p>
     <p id="said" class="vh" role="status"></p>
     <p class="slug-part speed">

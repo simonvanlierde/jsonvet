@@ -3,6 +3,7 @@ const input = $("input");
 const editor = $("editor");
 const proof = $("proof");
 const status = $("status");
+const verdictLine = $("verdict");
 // The verdict for screen readers, a second after it last changed, so typing is not interrupted.
 const said = $("said");
 let sayTimer;
@@ -18,6 +19,7 @@ const bigNote = $("big");
 const hint = $("dialect-hint");
 const stages = $("dialects");
 const share = $("share");
+const shareLabel = share.textContent;
 const shareStatus = $("share-status");
 const tryBig = $("try");
 const back = $("back");
@@ -71,6 +73,14 @@ const MAX_LINK = 50_000;
 const MAX_FILE = 10 << 20;
 const none = new Uint32Array(0);
 const wide = matchMedia("(min-width: 860px)");
+function placeVerdict() {
+  const focused = document.activeElement;
+  if (wide.matches) proof.after(verdictLine);
+  else $("editor-head").before(verdictLine);
+  if (verdictLine.contains(focused)) focused.focus({ preventScroll: true });
+}
+placeVerdict();
+wide.addEventListener("change", placeVerdict);
 // The "Use this check" fold starts open on a wide screen, where it costs no first-screen room.
 document.querySelector(".use").open = wide.matches;
 
@@ -267,8 +277,8 @@ function note(p, n, problems) {
   const relText = related && `${near[related.message] ?? related.message} ${related.line}:${related.column}`;
   const num = el("span", "n", n);
   num.setAttribute("aria-hidden", "true");
-  button.append(num, rich(el("span", "msg"), p.message, p.path));
-  button.setAttribute("aria-label", [`${p.line}:${p.column}`, p.severity, p.message.replaceAll("`", ""), relText].filter(Boolean).join(", "));
+  button.append(rich(el("span", "msg"), p.message, p.path));
+  button.setAttribute("aria-label", [p.message.replaceAll("`", ""), `${p.line}:${p.column}`, p.severity, relText].filter(Boolean).join(", "));
   const rows = related ? [p.row, related.row] : [p.row];
   button.addEventListener("click", () => goTo(p));
   button.addEventListener("pointerenter", () => light(rows, item, true));
@@ -300,7 +310,7 @@ function note(p, n, problems) {
     }
     meta.append(slot);
   }
-  item.append(button, meta);
+  item.append(num, button, meta);
   if (p.rule === "byte-order-mark") item.append(el("p", "why", BOM_WHY));
   item.dataset.row = p.row;
   return item;
@@ -384,9 +394,8 @@ function run() {
   saveSoon();
 }
 
-// The verdict line under the proof. It says first whether the text parses, since a rule can flag
-// text that does (a duplicate key is valid JSON syntax), then what the hook and CLI do: they exit 1
-// when a file has an error, and on warnings only past --max-warnings.
+// A rule can flag text that parses. The hook and CLI exit 1 on errors or when warnings exceed
+// --max-warnings.
 function verdict(problems) {
   const count = tally(problems);
   const name = nameOf(dialect);
@@ -722,11 +731,11 @@ share.addEventListener("click", async () => {
     if (edited && !(await save())) throw new RangeError("too long");
     await navigator.clipboard.writeText(location.href);
     share.textContent = "Link copied";
-    setTimeout(() => (share.textContent = "Copy link to this text"), 1500);
+    setTimeout(() => (share.textContent = shareLabel), 1500);
   } catch (e) {
     said = e instanceof RangeError ? "The text is too long for a link." : "Could not copy: copy the address bar instead.";
     share.textContent = e instanceof RangeError ? "Too long for a link" : "Copy failed";
-    setTimeout(() => (share.textContent = "Copy link to this text"), 2500);
+    setTimeout(() => (share.textContent = shareLabel), 2500);
   }
   shareStatus.textContent = said;
 });

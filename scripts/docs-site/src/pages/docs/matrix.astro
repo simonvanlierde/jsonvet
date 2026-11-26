@@ -9,3 +9,36 @@ const { title, summary, body } = matrixPage();
 <StarlightPage frontmatter={{ title, description: summary, tableOfContents: false, pagefind: false }}>
   <Fragment set:html={body} />
 </StarlightPage>
+
+<script>
+  // A horizontal scroll container would stop the header sticking to the page.
+  const fit = new ResizeObserver((entries) => {
+    for (const { target } of entries) {
+      const scroll = target.closest(".scroll");
+      const table = scroll?.querySelector("table");
+      if (table && scroll) scroll.toggleAttribute("data-fits", scroll.clientWidth >= table.offsetWidth);
+    }
+  });
+  for (const scroll of document.querySelectorAll(".matrix .scroll")) {
+    const table = scroll.querySelector("table");
+    if (table) {
+      fit.observe(scroll);
+      fit.observe(table);
+    }
+  }
+
+  let source: HTMLAnchorElement | undefined;
+  document.querySelector("#matrix")?.addEventListener("click", (event) => {
+    if (!(event instanceof MouseEvent) || event.button !== 0 || event.altKey || event.ctrlKey ||
+        event.metaKey || event.shiftKey || !(event.target instanceof Element)) return;
+    const link = event.target.closest<HTMLAnchorElement>("a[href^='#']");
+    if (!link) return;
+    if (link.closest(".tables")) source = link;
+    if (!link.closest(".back") || !source?.getClientRects().length) return;
+    const returnTo = source;
+    window.addEventListener("hashchange", () => {
+      returnTo.focus({ preventScroll: true });
+      returnTo.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }, { once: true });
+  });
+</script>
