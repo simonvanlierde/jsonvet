@@ -158,13 +158,13 @@ verify_wheel() {
 }
 
 # Writes the SARIF file. Arguments: the jsonvet binary, the Python, the SARIF path, then the
-# jsonvet arguments. Exit 1 means problems found, but jsonvet before 3.0.0 has no `--format` and
-# takes it for a file name, and a path that cannot be written also gives 1, so check what landed.
+# jsonvet arguments with the SARIF format selected. Exit 1 means problems found, but older jsonvet
+# treats `--format` as a file name. Check the document as well as the exit status.
 write_sarif() {
   local jsonvet="$1" python="$2" sarif="$3"
   shift 3
   local status=0
-  "$jsonvet" --format sarif "$@" > "$sarif" || status=$?
+  "$jsonvet" "$@" > "$sarif" || status=$?
   if [[ $status -gt 1 ]] || ! "$python" -I -c '
 import json, sys
 try:
@@ -217,13 +217,13 @@ main() {
   # NOTE: one command line for all files; Windows caps it at 32,767 characters, so a
   # repository with thousands of files needs batching there.
 
-  # A failing check must not end the script before the SARIF run; the step still exits with the
-  # text run's status.
+  # The first run controls the log and the step's exit status. It can report findings before
+  # the report run writes them to a file.
   local status=0
   "$bin/jsonvet" "${args[@]}" -- "${files[@]}" || status=$?
   if [[ -n "$SARIF" ]]; then
-    # A second run, so the log and the annotations come from the text format.
-    write_sarif "$bin/jsonvet" "$bin/python" "$SARIF" "${args[@]}" -- "${files[@]}" || exit 2
+    # The last --format wins. Keep the file separator after the report options.
+    write_sarif "$bin/jsonvet" "$bin/python" "$SARIF" "${args[@]}" --format sarif -- "${files[@]}" || exit 2
   fi
   exit "$status"
 }
