@@ -64,7 +64,7 @@ JSON. The hook installs a prebuilt binary from PyPI, so you need no Rust. On Lin
 ### GitHub Action
 
 ```yaml
-- uses: simonvanlierde/jsonvet@v3
+- uses: simonvanlierde/jsonvet@v4
 ```
 
 The step fails when a file has an error, and each problem shows up as an annotation on the pull

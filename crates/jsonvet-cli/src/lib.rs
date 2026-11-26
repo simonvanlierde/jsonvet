@@ -387,7 +387,7 @@ fn run_checked(
 }
 
 /// A file's report and its schema errors.
-type Checked<'t> = (Report<'t>, Vec<(usize, String, bool)>);
+type Checked<'t> = (Report<'t>, Vec<schema::Diagnostic>);
 
 /// Print what checking the files of `chunk` found, in order: the problems of each, or why it
 /// could not be read.
@@ -941,7 +941,7 @@ fn check<'t>(
     schema: Option<&Schema>,
     parts: usize,
     known: Option<&[Problem]>,
-) -> (Report<'t>, Vec<(usize, String, bool)>) {
+) -> Checked<'t> {
     let config = settings.config_for(name);
     let ranges = split(text, config.dialect(), parts);
     if ranges.len() > 1 {
@@ -1043,7 +1043,7 @@ fn look(format: Format, color: Option<bool>, terminal: Terminal) -> Look {
 fn print_file(
     file: &OsStr,
     report: &Report<'_>,
-    schema_errors: &[(usize, String, bool)],
+    schema_errors: &[schema::Diagnostic],
     printer: &mut Printer<impl Write>,
     counts: &mut Counts,
 ) -> io::Result<()> {
@@ -1056,9 +1056,9 @@ fn print_file(
         }
         printer.problem(file, report, problem)?;
     }
-    for (offset, message, summary) in schema_errors {
-        counts.errors += usize::from(!summary);
-        printer.schema_error(file, report, *offset, message, *summary)?;
+    for finding in schema_errors {
+        counts.errors += usize::from(!finding.summary);
+        printer.schema_error(file, report, finding)?;
     }
     counts.files += usize::from(counts.errors + counts.warnings > before);
     Ok(())
@@ -1575,7 +1575,9 @@ mod tests {
         let (_, errors) = check("x.jsonl", &texts[0], &settings, Some(&schema), 8, None);
         // 570 strings, 100 and a summary for each wide line, and one for each line not checked.
         assert_eq!(errors.len(), 570 + 4 * 101 + 8);
-        let unchecked = errors.iter().filter(|(_, m, _)| m.contains("not checked"));
+        let unchecked = errors
+            .iter()
+            .filter(|finding| finding.message.contains("not checked"));
         assert_eq!(unchecked.count(), 8);
     }
 
@@ -1777,6 +1779,64 @@ mod tests {
             assert!(!out.contains("XX"), "{out}");
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn schema_json_reports_normalized_paths_when_they_name_a_value() {
+        let dir = std::env::temp_dir().join(format!("jsonvet-paths-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a temp dir");
+        let schema = dir.join("schema.json");
+        let data = dir.join("input.jsonl");
+        std::fs::write(
+            &schema,
+            r#"{"required":["missing"],"properties":{"0":{"items":{"additionalProperties":false}}}}"#,
+        )
+        .expect("write schema");
+        let long = "x".repeat(256);
+        std::fs::write(
+            &data,
+            format!(
+                "{{\"0\":[{{\"a'\\\\\\\"\\u000B\\n\\u00e9\":1,\"{long}\":2}}]}}\n{{\"0\":[{{\"repeated\":3,\"repeated\":4}}]}}\n{{\"0\":[{{\"\\ud800\":5}}]}}\n{{\"0\":[{{\"\\ufffd\":6}}]}}\n"
+            ),
+        )
+        .expect("write data");
+        let args = [
+            "--no-config".into(),
+            "--format=json".into(),
+            "--schema".into(),
+            schema.into(),
+            data.into(),
+        ];
+        let mut out = Vec::new();
+        let result = super::run_with(args, false, super::Terminal::default(), &mut out);
+        std::fs::remove_dir_all(&dir).expect("clean up");
+        assert_eq!(result, Ok(1));
+        let report: serde_json::Value = serde_json::from_slice(&out).expect("a JSON report");
+        let diagnostics = report["diagnostics"].as_array().expect("diagnostics");
+        let paths: Vec<_> = diagnostics
+            .iter()
+            .map(|finding| (finding["line"].as_u64(), finding["path"].as_str()))
+            .collect();
+        assert_eq!(
+            paths,
+            [
+                (Some(2), None), // Duplicate-key diagnostic.
+                (Some(1), Some("$")),
+                (Some(1), Some(r#"$['0'][0]['a\'\\"\u000b\né']"#)),
+                (Some(1), None), // Too long.
+                (Some(2), Some("$")),
+                (Some(2), None), // Duplicate member.
+                (Some(3), Some("$")),
+                (Some(3), None), // Lone surrogate.
+                (Some(4), Some("$")),
+                (Some(4), Some("$['0'][0]['�']")),
+            ]
+        );
+        assert!(
+            diagnostics[2]["message"]
+                .as_str()
+                .is_some_and(|message| message.contains(r#"$["0"][0]"#))
+        );
     }
 
     /// A JSON Lines file and a `--schema` error get the same code frames on a terminal as any

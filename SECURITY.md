@@ -85,8 +85,11 @@ file, use the [GitHub CLI](https://cli.github.com/):
 
 ```bash
 gh attestation verify jsonvet-x86_64-unknown-linux-gnu.tar.gz --repo simonvanlierde/jsonvet \
-  --signer-workflow simonvanlierde/jsonvet/.github/workflows/release.yml
+  --signer-workflow simonvanlierde/jsonvet/.github/workflows/release.yml \
+  --source-ref refs/tags/v4.0.0
 ```
+
+Use the tag of the release you downloaded.
 
 The same works on a wheel downloaded from PyPI (`pip download jsonvet --no-deps`). The release
 also holds the attestations as `jsonvet.intoto.jsonl`, so `--bundle jsonvet.intoto.jsonl` checks a

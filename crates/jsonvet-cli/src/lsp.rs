@@ -563,15 +563,15 @@ fn diagnostics(
         }
         diagnostics.push(diagnostic);
     }
-    for (offset, message, summary) in schema_errors {
-        let (start, end) = frame::one_char(&report, offset);
+    for finding in schema_errors {
+        let (start, end) = frame::one_char(&report, finding.offset);
         let mut diagnostic = json!({
             "range": lines.span(start..end),
-            "severity": if summary { 3 } else { 1 },
+            "severity": if finding.summary { 3 } else { 1 },
             "source": "jsonvet",
-            "message": message,
+            "message": finding.message,
         });
-        if !summary {
+        if !finding.summary {
             diagnostic["code"] = json!(sarif::SCHEMA);
             diagnostic["codeDescription"] = json!({ "href": rules::help_uri(sarif::SCHEMA) });
         }

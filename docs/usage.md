@@ -424,8 +424,8 @@ characters, so with thousands of JSON files on a Windows runner, narrow `files`.
 Do not pass `--fix` in `args`. The fixes stay on the runner and are not committed. The step can
 pass, and its log and the SARIF file report the files after fixing.
 
-By default the Action installs the release that matches its own tag: `@v3` gets the newest 3.x on
-PyPI, and `@v3.0.0` gets 3.0.0. Pinned to a commit or a branch, it installs the release named in
+By default the Action installs the release that matches its own tag. `@v4` gets the newest 4.x on
+PyPI, and `@v4.0.0` gets 4.0.0. Pinned to a commit or a branch, it installs the release named in
 that commit's `Cargo.toml`, not the code in it. Before it installs the wheel, it checks that the
 wheel came from jsonvet's `release.yml` ([how](../SECURITY.md#verifying-a-release)). On a runner
 without `gh`, or for a release before 3.1.0, it installs the wheel unchecked, with a notice. Set
@@ -467,7 +467,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: simonvanlierde/jsonvet@v3
+      - uses: simonvanlierde/jsonvet@v4
         with:
           sarif: jsonvet.sarif
       # Upload when jsonvet found problems too: that is when the step fails.
@@ -486,15 +486,18 @@ jsonvet --format json config.json5 | jq -r '.diagnostics[] | "\(.file):\(.line) 
 ```
 
 ```json
-{"schema_version":1,"diagnostics":[
+{"schema_version":2,"diagnostics":[
 {"file":"dup.json","rule":"duplicate-key","url":"https://simonvanlierde.com/jsonvet/docs/usage.html#duplicate-key","severity":"error","message":"duplicate key $.a (first at 2:3)","line":3,"column":3,"offset":14,"related":[{"message":"first copy","line":2,"column":3,"offset":4}]},
 {"file":"gone.json","rule":"unreadable","url":"https://simonvanlierde.com/jsonvet/docs/usage.html#unreadable","severity":"error","message":"no such file","line":null,"column":null,"offset":null,"related":[]}
 ]}
 ```
 
-- `schema_version` is the version of this layout, now `1`. A new field may come without a new
+- `schema_version` is the version of this layout, now `2`. A new field may come without a new
   version; a field that changes meaning or goes away gets one. Ignore fields you do not know. To
   pin the layout, stop when `schema_version` is not the number you wrote your code for.
+- A script upgrading from 3.5.1 changes its version check from `.version == 1` to
+  `.schema_version == 2`. A script that reads both layouts can use this `jq` filter:
+  `(.schema_version == 2) or (.schema_version == null and .version == 1)`.
 - `errors` is there only when the run stopped on a usage error, such as an unknown option, or on
   a schema that cannot be read or used, before any diagnostic was printed. It is a complete
   document, in English, instead of a message on standard error: on standard output, or on
@@ -512,11 +515,15 @@ jsonvet --format json config.json5 | jq -r '.diagnostics[] | "\(.file):\(.line) 
   | `url`      | a link to the rule's section in this page, the same as SARIF's `helpUri`          |
   | `severity` | `error` or `warning`                                                              |
   | `message`  | the message as text output prints it in English, with its `(first at 2:3)` part   |
+  | `path`     | optional [RFC 9535 normalized JSONPath](https://www.rfc-editor.org/rfc/rfc9535.html#section-2.7) for a schema diagnostic, such as `$['items'][0]` |
   | `line`     | the line, from 1; `null` for a file jsonvet could not read                        |
   | `column`   | the column, from 1, in code points as in text output; `null` with no line         |
   | `offset`   | the byte offset in the file, from 0; `null` with no line                          |
   | `related`  | other places the problem names, each with `message`, `line`, `column` and `offset`: a duplicate key's first copy (`first copy`), the bracket an unclosed value opened at (`opened here`), or where an unterminated comment or string starts (`starts here`). Often empty |
 
+- A schema path starts at `$`. For JSON Lines, use `line` to choose the record before applying
+  `path`. A missing required property points to its containing object. The field requires a
+  validation finding with a unique path of at most 256 UTF-8 bytes.
 - [json-output.schema.json](json-output.schema.json) is a JSON Schema for the document. A test
   checks real output against it.
 - Strings are escaped as in SARIF, so a JSON reader gets the name and message back unchanged.

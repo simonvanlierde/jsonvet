@@ -1,4 +1,4 @@
-//! `--format json`: one JSON document, `{"schema_version":1,"diagnostics":[...]}`, written as the
+//! `--format json`: one JSON document, `{"schema_version":2,"diagnostics":[...]}`, written as the
 //! problems come rather than held until the end, with each diagnostic on a line of its own.
 //! docs/usage.md describes the schema. The JSON is written by hand, with SARIF's escaping.
 
@@ -10,7 +10,7 @@ use crate::output::{level, string};
 
 /// The schema's version. A new field leaves it alone; a field that changes meaning or goes away
 /// raises it.
-pub(crate) const VERSION: u32 = 1;
+pub(crate) const VERSION: u32 = 2;
 
 /// What comes before the first diagnostic.
 pub(crate) fn start() -> String {
@@ -37,6 +37,7 @@ pub(crate) fn diagnostic(
     message: &str,
     at: Option<(Location, usize)>,
     related: Option<(Location, usize, &str)>,
+    path: Option<&str>,
 ) -> String {
     let related = related.map_or_else(String::new, |(first, offset, text)| {
         format!(
@@ -45,8 +46,9 @@ pub(crate) fn diagnostic(
             position(Some((first, offset)))
         )
     });
+    let path = path.map_or_else(String::new, |path| format!(r#","path":{}"#, string(path)));
     format!(
-        r#"{{"file":{},"rule":{},"url":{},"severity":"{}","message":{},{},"related":[{related}]}}"#,
+        r#"{{"file":{},"rule":{},"url":{},"severity":"{}","message":{},{},"related":[{related}]{path}}}"#,
         string(&file.to_string_lossy()),
         string(rule),
         string(&crate::rules::help_uri(rule)),

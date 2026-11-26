@@ -88,7 +88,7 @@ mutants:
 
 # CI cannot move a tag past workflow changes (CONTRIBUTING.md), so this runs by hand. A draft
 # or pre-release stops it.
-# Once the release is published: point `v3`, which `uses: ...@v3` follows, at the newest vX.Y.Z.
+# Once the release is published, point its major tag at the newest vX.Y.Z.
 major:
     #!/usr/bin/env bash
     set -euo pipefail

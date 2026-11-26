@@ -1123,11 +1123,11 @@ fn json_holds_every_problem_and_keeps_the_exit_codes() {
     // JSON replaces the workflow annotations, even in GitHub Actions, and adds no summary.
     let (code, out, err) = run_jsonvet(&dir, &args, true);
     assert_eq!((code, err.as_str()), (1, ""));
-    let expected = r#"{"schema_version":1,"diagnostics":[
+    let expected = r#"{"schema_version":2,"diagnostics":[
 {"file":"bad.json","rule":"syntax","url":"https://simonvanlierde.com/jsonvet/docs/usage.html#syntax","severity":"error","message":"unclosed `[`: expected a value, found the end of the file (opened at 1:1)","line":1,"column":4,"offset":3,"related":[{"message":"opened here","line":1,"column":1,"offset":0}]},
 {"file":"dup.json","rule":"duplicate-key","url":"https://simonvanlierde.com/jsonvet/docs/usage.html#duplicate-key","severity":"error","message":"duplicate key $.a (first at 2:3)","line":3,"column":3,"offset":14,"related":[{"message":"first copy","line":2,"column":3,"offset":4}]},
 {"file":"bom.json","rule":"byte-order-mark","url":"https://simonvanlierde.com/jsonvet/docs/usage.html#byte-order-mark","severity":"warning","message":"byte order mark at the start of the file","line":1,"column":1,"offset":0,"related":[]},
-{"file":"arr.json","rule":"schema","url":"https://simonvanlierde.com/jsonvet/docs/usage.html#schema","severity":"error","message":"[] is not of type \"object\" (at $)","line":1,"column":1,"offset":0,"related":[]},
+{"file":"arr.json","rule":"schema","url":"https://simonvanlierde.com/jsonvet/docs/usage.html#schema","severity":"error","message":"[] is not of type \"object\" (at $)","line":1,"column":1,"offset":0,"related":[],"path":"$"},
 {"file":"gone.json","rule":"unreadable","url":"https://simonvanlierde.com/jsonvet/docs/usage.html#unreadable","severity":"error","message":"no such file","line":null,"column":null,"offset":null,"related":[]}
 ]}
 "#;
@@ -1151,7 +1151,7 @@ fn json_holds_every_problem_and_keeps_the_exit_codes() {
             jsonvet_stderr(&dir, args),
             (
                 0,
-                "{\"schema_version\":1,\"diagnostics\":[\n]}\n".to_owned(),
+                "{\"schema_version\":2,\"diagnostics\":[\n]}\n".to_owned(),
                 String::new()
             )
         );
@@ -1169,7 +1169,7 @@ fn json_strings_stay_valid_whatever_the_names_hold() {
     let (code, out, _) = jsonvet_stdin(&dir, &args, &format!("{{\"{key}\":1,\"{key}\":2}}"));
     assert_eq!(code, 1);
     assert!(out.starts_with(
-        "{\"schema_version\":1,\"diagnostics\":[\n{\"file\":\"q\\\"b\\\\s\\u000a::error::\\u001b[2J\\u202e##\\u005bx.json\""
+        "{\"schema_version\":2,\"diagnostics\":[\n{\"file\":\"q\\\"b\\\\s\\u000a::error::\\u001b[2J\\u202e##\\u005bx.json\""
     ), "{out}");
     assert!(
         out.lines()
@@ -4564,7 +4564,7 @@ fn json_usage_and_schema_errors_are_documents() {
         assert_eq!(code, 2, "{args:?}: {out}{err}");
         assert_eq!(err, "", "{args:?}");
         let json: serde_json::Value = serde_json::from_str(&out).expect("JSON output");
-        assert_eq!(json["schema_version"], 1);
+        assert_eq!(json["schema_version"], 2);
         assert_eq!(json["diagnostics"], serde_json::json!([]));
         let message = json["errors"][0]["message"].as_str().expect("a message");
         assert!(message.contains(needle), "{args:?}: {out}");

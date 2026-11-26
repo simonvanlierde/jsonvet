@@ -170,11 +170,11 @@ impl Quiet {
         let mut targets = Vec::new();
         quoted(schema, &mut Vec::new(), None, &mut targets);
         let places = tree
-            .place(&targets)
+            .place(&targets, false)
             .into_iter()
             .zip(targets)
-            .map(|((offset, _), (path, _))| {
-                let at = report.location(offset);
+            .map(|(spot, (path, _))| {
+                let at = report.location(spot.offset);
                 let mut pointer = String::new();
                 for segment in path {
                     pointer.push('/');
@@ -563,6 +563,15 @@ fn unexpected(value: Nd<'_>, error: &ValidationError<'_>) -> Option<Vec<String>>
     }
 }
 
+/// A schema finding, or the summary of findings beyond the per-document cap.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct Diagnostic {
+    pub(crate) offset: usize,
+    pub(crate) message: String,
+    pub(crate) summary: bool,
+    pub(crate) path: Option<String>,
+}
+
 /// A file's documents checked as their events come in.
 struct Checking<'s, 'e> {
     schema: &'s Schema,
@@ -570,7 +579,7 @@ struct Checking<'s, 'e> {
     /// What each document with something to report has to report, in order: its errors, placed
     /// at their values, then a summary if it has more than [`MAX_ERRORS`], or why it is not
     /// checked.
-    errors: Vec<(usize, String, bool)>,
+    errors: Vec<Diagnostic>,
 }
 
 impl<'e> Checking<'_, 'e> {
@@ -587,39 +596,46 @@ impl<'e> Checking<'_, 'e> {
     /// Check one complete document.
     fn document(&mut self, document: &fold::Document<'e>) {
         if let Some((offset, reason)) = document.unchecked {
-            self.errors.push((
+            self.errors.push(Diagnostic {
                 offset,
-                messages::fill("schema.unchecked", &[("reason", &reason)]),
-                false,
-            ));
+                message: messages::fill("schema.unchecked", &[("reason", &reason)]),
+                summary: false,
+                path: None,
+            });
             return;
         }
         let found = self.schema.collect(&document.tree);
         if found.kept.is_empty() {
             return;
         }
-        let spots = place_found(&document.tree, &found.kept);
-        let mut placed: Vec<(usize, String, bool)> = found
+        let spots = place_found(&document.tree, &found.kept, true);
+        let mut placed: Vec<_> = found
             .kept
             .into_iter()
             .zip(spots)
-            .map(|(found, (offset, at))| {
+            .map(|(found, spot)| {
                 let message = messages::fill(
                     "schema.found-at",
-                    &[("message", &found.message), ("at", &at)],
+                    &[("message", &found.message), ("at", &spot.message_path)],
                 );
-                (offset, cut(message), false)
+                Diagnostic {
+                    offset: spot.offset,
+                    message: cut(message),
+                    summary: false,
+                    path: spot.path,
+                }
             })
             .collect();
         // Stable, so errors at one value keep the schema's order.
-        placed.sort_by_key(|(offset, ..)| *offset);
+        placed.sort_by_key(|finding| finding.offset);
         self.errors.append(&mut placed);
         if found.more {
-            self.errors.push((
-                document.offset,
-                messages::text("schema.more").to_owned(),
-                true,
-            ));
+            self.errors.push(Diagnostic {
+                offset: document.offset,
+                message: messages::text("schema.more").to_owned(),
+                summary: true,
+                path: None,
+            });
         }
     }
 }
@@ -720,7 +736,7 @@ impl Schema {
         // takes the stack or hours, however shallow the schema is.
         let refuse = |over: limits::Over| {
             let target = (over.path.clone(), vec![over.key.clone()]);
-            at(tree().place(&[target])[0].0, &over.message())
+            at(tree().place(&[target], false)[0].offset, &over.message())
         };
         let kept = Reach::new(schema).measure(&registry).map_err(refuse)?;
         admit(limits::patterns(schema).map_err(refuse)?)?;
@@ -757,7 +773,7 @@ impl Schema {
         }
         let tree = tree();
         let errors = found(None, tree.root(), &error, String::new);
-        let (offset, _) = place_found(&tree, &errors)[0];
+        let offset = place_found(&tree, &errors, false)[0].offset;
         // A regex too large to compile is reported as no regex at all.
         if matches!(error.kind(), ValidationErrorKind::Format { format } if format == "regex") {
             let mb = PATTERN_BYTES >> 20;
@@ -770,7 +786,7 @@ impl Schema {
     }
 
     /// `text`'s report under `config`, read no deeper than [`SCHEMA_MAX_DEPTH`], and its schema
-    /// errors as (offset, message, summary): each document's in order, then a summary if it has
+    /// findings: each document's in order, then a summary if it has
     /// more than [`MAX_ERRORS`]. A text with a syntax error gets none. The values are checked and
     /// their errors placed as the text is read, a document at a time, so its events are never all
     /// held at once.
@@ -778,7 +794,7 @@ impl Schema {
         &self,
         text: &'t str,
         config: &Config,
-    ) -> (Report<'t>, Vec<(usize, String, bool)>) {
+    ) -> (Report<'t>, Vec<Diagnostic>) {
         let config = config.clone().max_depth(SCHEMA_MAX_DEPTH);
         self.check_with(
             |sink| jsonvet::parse_with(text, &config, sink),
@@ -794,7 +810,7 @@ impl Schema {
         text: &str,
         lines: Range<usize>,
         config: &Config,
-    ) -> (jsonvet::Lines, Vec<(usize, String, bool)>) {
+    ) -> (jsonvet::Lines, Vec<Diagnostic>) {
         let config = config.clone().max_depth(SCHEMA_MAX_DEPTH);
         self.check_with(
             |sink| jsonvet::parse_lines(text, lines.clone(), &config, Some(sink)),
@@ -810,7 +826,7 @@ impl Schema {
         read: impl FnOnce(&mut dyn FnMut(Event<'t>)) -> R,
         syntax_error: impl FnOnce(&R) -> bool,
         (text, dialect): (&'t str, Dialect),
-    ) -> (R, Vec<(usize, String, bool)>) {
+    ) -> (R, Vec<Diagnostic>) {
         let mut checking = self.checking(text, dialect);
         let first = read(&mut |event| checking.event(&event));
         if syntax_error(&first) {
@@ -1292,7 +1308,7 @@ mod tests {
     }
 
     /// The schema errors [`Schema::check`] returns.
-    type Errors = Vec<(usize, String, bool)>;
+    type Errors = Vec<super::Diagnostic>;
 
     /// `text`'s schema errors under `schema`, checked in one pass and, if it can be, split.
     fn one_pass_and_split(schema: &Value, text: &str) -> (Errors, Option<Errors>) {
@@ -1414,15 +1430,18 @@ mod tests {
         let config = Config::new(Dialect::JsonLines);
         let (_, errors) = schema.check_lines(text, 0..text.len(), &config);
         assert_eq!(errors.len(), 3);
-        assert_eq!(errors[0].0, 6);
-        assert_eq!(errors[1].0, 20);
-        assert_eq!(errors[2].0, 43);
+        assert_eq!(errors[0].offset, 6);
+        assert_eq!(errors[1].offset, 20);
+        assert_eq!(errors[2].offset, 43);
+        assert!(
+            errors
+                .iter()
+                .all(|error| error.path.as_deref() == Some("$['a']"))
+        );
 
         // Subrange starting at line 2 (offset 14) to end of text
-        let (_, errors) = schema.check_lines(text, 14..text.len(), &config);
-        assert_eq!(errors.len(), 2);
-        assert_eq!(errors[0].0, 20);
-        assert_eq!(errors[1].0, 43);
+        let (_, later) = schema.check_lines(text, 14..text.len(), &config);
+        assert_eq!(later, errors[1..]);
     }
 
     proptest! {

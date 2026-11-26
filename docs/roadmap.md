@@ -27,8 +27,7 @@ a promise, and none of it has a date. Released work is in [CHANGELOG.md](../CHAN
 
 ## Ideas, not planned yet
 
-A PyO3 Python API ([#287](https://github.com/simonvanlierde/jsonvet/issues/287)), RFC 9535
-normalized paths in output ([#288](https://github.com/simonvanlierde/jsonvet/issues/288)),
+A PyO3 Python API ([#287](https://github.com/simonvanlierde/jsonvet/issues/287)),
 `jsonc.org` modeline support ([#289](https://github.com/simonvanlierde/jsonvet/issues/289)), more
 output formats ([#290](https://github.com/simonvanlierde/jsonvet/issues/290)), Kani proofs of the
 pure parser helpers ([#291](https://github.com/simonvanlierde/jsonvet/issues/291)), and more speed

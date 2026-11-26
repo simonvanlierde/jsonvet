@@ -1,4 +1,4 @@
-# The jsonvet GitHub Action: `uses: simonvanlierde/jsonvet@v3`. It installs jsonvet from PyPI
+# The jsonvet GitHub Action: `uses: simonvanlierde/jsonvet@v4`. It installs jsonvet from PyPI
 # into a virtual environment, so it needs only the Python that every hosted runner has.
 name: jsonvet
 description: Check JSON, I-JSON, JSONC, JWCC, JSON5 and JSON Lines for syntax errors and duplicate keys, with JSON Schema and SARIF

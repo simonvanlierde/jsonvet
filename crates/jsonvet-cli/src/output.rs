@@ -10,6 +10,7 @@ use annotate_snippets::renderer::Style;
 use jsonvet::{Location, Problem, Report, Severity, is_hidden};
 
 use crate::frame::{self, Mark, STYLED};
+use crate::schema;
 use crate::{json, messages, sarif};
 
 /// The output format, from `--format`.
@@ -109,6 +110,7 @@ struct Place<'t> {
     report: &'t Report<'t>,
     mark: Mark<'t>,
     end: Option<Location>,
+    path: Option<&'t str>,
 }
 
 pub(crate) struct Printer<W: Write> {
@@ -218,6 +220,7 @@ impl<W: Write> Printer<W> {
                 label: None,
             },
             end: (end > offset).then(|| report.location(end)),
+            path: None,
         };
         self.line(
             file,
@@ -229,19 +232,19 @@ impl<W: Write> Printer<W> {
         )
     }
 
-    /// A value the `--schema` schema rejects, at `offset`. A `summary` of the errors not listed
+    /// A value a schema rejects. A summary of the errors not listed
     /// is left out of SARIF and JSON, where each result is one finding.
     pub(crate) fn schema_error(
         &mut self,
         file: &OsStr,
         report: &Report<'_>,
-        offset: usize,
-        message: &str,
-        summary: bool,
+        finding: &schema::Diagnostic,
     ) -> io::Result<()> {
-        if summary && !matches!(self.sink, Sink::Text { .. }) {
+        if finding.summary && !matches!(self.sink, Sink::Text { .. }) {
             return Ok(());
         }
+        let offset = finding.offset;
+        let message = finding.message.as_str();
         let place = Place {
             report,
             mark: Mark {
@@ -250,6 +253,7 @@ impl<W: Write> Printer<W> {
                 label: None,
             },
             end: None,
+            path: finding.path.as_deref(),
         };
         self.line(
             file,
@@ -303,6 +307,7 @@ impl<W: Write> Printer<W> {
                     message,
                     place.map(|p| (p.mark.at, p.mark.span.0)),
                     related.and_then(|r| Some((r.at, r.span.0, r.label?))),
+                    place.and_then(|p| p.path),
                 );
                 return self.out.write_all(diagnostic.as_bytes());
             }

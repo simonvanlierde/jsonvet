@@ -4,7 +4,7 @@
 use jsonschema::ValidationError;
 
 use super::Found;
-use super::nodes::Tree;
+use super::nodes::{Spot, Tree};
 
 /// The segments of `error`'s instance path, under element `index` if it is on one.
 pub(super) fn pointer_path(index: Option<usize>, error: &ValidationError<'_>) -> Vec<String> {
@@ -40,16 +40,19 @@ pub(super) fn found_targets(found: &[Found]) -> Vec<(Vec<String>, Vec<String>)> 
 
 /// Where each error in `found` is, from the `spots` of its [`found_targets`], and that value's
 /// path; for an error about a key, the path of the key's member.
-pub(super) fn found_spots(found: &[Found], spots: Vec<(usize, String)>) -> Vec<(usize, String)> {
+pub(super) fn found_spots(found: &[Found], spots: Vec<Spot>) -> Vec<Spot> {
     let mut spots = spots.into_iter();
     found
         .iter()
         .filter_map(|found| {
-            let (offset, at) = spots.next()?;
+            let spot = spots.next()?;
             if found.key {
-                spots.next().map(|(_, at)| (offset, at))
+                spots.next().map(|member| Spot {
+                    offset: spot.offset,
+                    ..member
+                })
             } else {
-                Some((offset, at))
+                Some(spot)
             }
         })
         .collect()
@@ -57,8 +60,8 @@ pub(super) fn found_spots(found: &[Found], spots: Vec<(usize, String)>) -> Vec<(
 
 /// Where each error in `found` is in `tree`, and that value's path; for an error about a key, the
 /// path of the key's member.
-pub(super) fn place_found(tree: &Tree<'_>, found: &[Found]) -> Vec<(usize, String)> {
-    found_spots(found, tree.place(&found_targets(found)))
+pub(super) fn place_found(tree: &Tree<'_>, found: &[Found], include_path: bool) -> Vec<Spot> {
+    found_spots(found, tree.place(&found_targets(found), include_path))
 }
 
 #[cfg(test)]
@@ -88,9 +91,9 @@ mod tests {
             .collect();
         let paths: Vec<_> = errors.iter().map(|e| e.path.join("/")).collect();
         assert_eq!(paths, ["a", "b\u{e9}/~"]);
-        let located: Vec<_> = place_found(&documents[0].tree, &errors)
+        let located: Vec<_> = place_found(&documents[0].tree, &errors, true)
             .into_iter()
-            .map(|(o, _)| o)
+            .map(|spot| spot.offset)
             .collect();
         assert_eq!(located, [44, 34]);
     }
@@ -112,7 +115,11 @@ mod tests {
         ];
         for (pointer, path) in cases {
             let target = (segments(pointer).collect(), Vec::new());
-            assert_eq!(document.tree.place(&[target])[0].1, path, "{pointer}");
+            assert_eq!(
+                document.tree.place(&[target], true)[0].message_path,
+                path,
+                "{pointer}"
+            );
         }
     }
 }

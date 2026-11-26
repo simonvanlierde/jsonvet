@@ -11,18 +11,22 @@ breaking public contract.
 
 ## [4.0.0] - 2026-11-20
 
-Update scripts that read `--format json`: read `schema_version` instead of `version`.
+Update scripts that read `--format json` to check `schema_version == 2`. See the
+[JSON migration example](docs/usage.md#json) for scripts that read both layouts.
 The `check-json5` command, package and hook id, and `--strict`, remain supported in 4.0.
 
 ### Changed
 
-- **Breaking, JSON report:** `--format json` names the layout's version `schema_version`, not
-  `version` ([JSON schema](docs/json-output.schema.json)).
+- **Breaking, JSON report.** `--format json` reports layout version 2 as `schema_version`
+  ([JSON schema](docs/json-output.schema.json)).
 - Compared with 3.5.1, file-check medians range from 8% faster to 0.7% slower; the 10,000-file walk
   changes by +0.1%. Startup changes from 1.17 to 1.20 ms (+2.6%). These are 40-run medians on a
   shared Linux host, not a speed guarantee.
 
 ### Added
+
+- JSON Schema diagnostics in `--format json` can include a normalized JSONPath to the value
+  ([JSON output](docs/usage.md#json)).
 
 - With `--format json`, a usage error or a `--schema` that cannot be read or used prints a JSON
   document with `errors` instead of a message on standard error. The exit status stays 2

@@ -13,8 +13,8 @@ use jsonvet::{Dialect, Event, EventKind, Report, Rule};
 
 use memchr::memmem;
 
-use super::Schema;
 use super::limits::{PATTERN_BYTES, RUN_PATTERNS};
+use super::{Diagnostic, Schema};
 use crate::settings::{self, Settings};
 use crate::{check, messages, output};
 
@@ -333,7 +333,7 @@ pub(crate) fn check_own_schema<'t>(
     root: &impl Fn(&Path) -> PathBuf,
     load: &impl Fn(&Path, bool) -> Loaded,
     parts: usize,
-) -> (Report<'t>, Vec<(usize, String, bool)>) {
+) -> (Report<'t>, Vec<Diagnostic>) {
     let config = settings.config_for(name);
     // With the file's own depth limit, so a file with no usable `$schema` gets the report a
     // plain check gives, without a second parse.
@@ -361,7 +361,15 @@ pub(crate) fn check_own_schema<'t>(
         Ok(None) => (report, Vec::new()),
         // As with `--schema`.
         Ok(Some(schema)) => check(name, text, settings, Some(&schema), parts, None),
-        Err(error) => (report, vec![(offset, output::printable(&error), false)]),
+        Err(error) => (
+            report,
+            vec![Diagnostic {
+                offset,
+                message: output::printable(&error),
+                summary: false,
+                path: None,
+            }],
+        ),
     }
 }
 

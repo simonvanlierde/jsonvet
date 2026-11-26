@@ -241,19 +241,23 @@ The tag is signed, so GitHub shows it as verified and anyone can check it with `
 cargo-release prints a "Publishing" line, but it publishes nothing.
 
 Do not create the GitHub release by hand. The tag runs `release.yml`, which builds, attests and
-publishes everything ([design.md](docs/design.md#publishing)). Each publish job waits for an
-approval: the `pypi` environment twice (the wheels, then `check-json5`) and `crates-io` once. If a
-publish job fails, use "Re-run failed jobs", never "Re-run all jobs". A full re-run builds the
+publishes everything ([design.md](docs/design.md#publishing)). After the `github-release` job
+finishes, download the assets from the draft. Check the archive checksums and verify an archive's
+provenance and SBOM attestations against the release tag
+([verification commands](SECURITY.md#verifying-a-release)).
+
+Then approve the `pypi` environment twice (the wheels, then `check-json5`) and `crates-io` once.
+If a publish job fails, use "Re-run failed jobs", never "Re-run all jobs". A full re-run builds the
 wheels again, so PyPI and the GitHub release could hold different builds.
 
 "Re-run failed jobs" uses the workflow file at the tagged commit, so a fix to a workflow needs a
-new commit and a moved tag. Which way depends on how far the release got:
+new commit. Check both registries before choosing how to release that commit.
 
-- **Nothing is on PyPI yet** (a wheels row, `smoke` or `github-release` failed). Fix main through
+- **Neither PyPI nor crates.io has the version.** Fix main through
   a pull request. Delete the remote tag with `git push origin :refs/tags/vX.Y.Z`, then sign and
   push the tag again on the new release commit, as above. `github-release` replaces a leftover
   draft for the same tag and refuses a published release, so the old draft needs no cleanup.
-- **PyPI already has a file.** Never move the tag. Ship a patch version.
+- **Either registry has published part of the release.** Keep the tag and ship a patch version.
 
 The release pull request changes `Cargo.toml` and `Cargo.lock`, so `wheels-check.yml` builds the
 wheels on it. Look at its `wheels / wheels (...)` checks before you tag. They cannot be required
@@ -263,9 +267,9 @@ A pre-release has a `-` in its tag (`v3.1.0-rc.1`). cargo-release bumps only the
 Edit the other places by hand, with the PEP 440 form (`3.2.0rc1`) in `setup.py` and the
 compatibility package.
 
-Once the release is published, run `just major`. It moves the major tag (`v3`), which
-`uses: simonvanlierde/jsonvet@v3` follows, to the newest `vX.Y.Z`, so a pre-release or a patch to
-an older minor leaves it alone. The workflow's token cannot move a tag past changes to
+Once the release is published, run `just major`. It creates or updates the alias that
+`uses: simonvanlierde/jsonvet@v4` follows. After 4.0.0, it creates `v4` at that release.
+It selects the newest stable `vX.Y.Z`. The workflow's token cannot move a tag past changes to
 `.github/workflows/`, and one that could would give CI write access to the workflows.
 
 ## Sign off your commits

@@ -273,7 +273,10 @@ pub(super) mod tests {
         let far = u32::MAX as usize + 10;
         let events = moved("[true]", &[far, far, far]);
         let document = first_document(&events);
-        assert_eq!(document.tree.place(&[(vec![], vec![])])[0].0, far);
+        assert_eq!(
+            document.tree.place(&[(vec![], vec![])], false)[0].offset,
+            far
+        );
     }
 
     #[test]
