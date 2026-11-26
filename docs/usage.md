@@ -434,6 +434,37 @@ wheel came from jsonvet's `release.yml` ([how](../SECURITY.md#verifying-a-releas
 without `gh`, or for a release before 3.1.0, it installs the wheel unchecked, with a notice. Set
 `verify: false` on GitHub Enterprise Server.
 
+## Trunk Code Quality
+
+Trunk can run jsonvet as a custom linter. Add this example to your existing
+`.trunk/trunk.yaml`. If you already have a Python runtime enabled, keep that entry.
+
+```yaml
+runtimes:
+  enabled:
+    - python@3.14.4
+lint:
+  enabled:
+    - jsonvet@3.5.1
+  definitions:
+    - name: jsonvet
+      runtime: python
+      package: jsonvet
+      files: [json]
+      commands:
+        - name: lint
+          run: jsonvet -- ${target}
+          output: pass_fail
+          success_codes: [0, 1]
+```
+
+Run `trunk check --filter=jsonvet --all` to check files Trunk classifies as JSON.
+Trunk installs the pinned PyPI package and reports one pass or fail per file.
+Exit code 1 is a lint failure. Exit code 2 means jsonvet could not run the check.
+
+The example follows [Trunk's custom linter format](https://github.com/trunk-io/docs/blob/main/code-quality/overview/linters/custom-linters.md)
+and the [community jsonvet definition in use at 3ware](https://github.com/3ware/trunk-code-quality-plugins/blob/7f030452217c8721f2e2b7770d80024b3c02d01f/linters/jsonvet/plugin.yaml).
+
 ## SARIF
 
 `--format sarif` prints one SARIF 2.1.0 document instead of text lines:

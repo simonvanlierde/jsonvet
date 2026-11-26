@@ -76,6 +76,11 @@ The Action only checks. To check formatting too, add a step with `run: uvx jsonv
 To see the problems in GitHub code scanning, set `sarif: jsonvet.sarif` and upload that file, as in
 [this workflow](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#code-scanning).
 
+### Trunk Code Quality
+
+Use the [custom linter example](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#trunk-code-quality)
+to run jsonvet from Trunk.
+
 ### Command line
 
 ```bash
