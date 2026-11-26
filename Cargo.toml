@@ -19,6 +19,7 @@ categories = ["command-line-utilities", "development-tools", "parser-implementat
 [workspace.lints.rust]
 unsafe_code = "forbid"
 unreachable_pub = "warn"
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
 missing_docs = "warn"
 
 [workspace.lints.clippy]
