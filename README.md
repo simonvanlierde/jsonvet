@@ -78,7 +78,7 @@ To see the problems in GitHub code scanning, set `sarif: jsonvet.sarif` and uplo
 
 ### Trunk Code Quality
 
-Use the [custom linter example](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#trunk-code-quality)
+Use the [custom linter example](https://simonvanlierde.com/jsonvet/docs/usage.html#trunk-code-quality)
 to run jsonvet from Trunk.
 
 ### Command line
