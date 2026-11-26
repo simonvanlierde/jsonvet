@@ -1,0 +1,8 @@
+[licenses]
+allow = ["Apache-2.0", "MIT", "Unicode-3.0"]
+# PyO3 uses target-lexicon to recognize cross-compilation targets.
+exceptions = [{ crate = "target-lexicon", allow = ["Apache-2.0 WITH LLVM-exception"] }]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

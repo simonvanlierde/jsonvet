@@ -22,7 +22,7 @@ These change, and the CHANGELOG marks them **Breaking**:
 
 - syntax errors use jsonvet's own wording;
 - the output line gains a severity and a rule id;
-- the wheel has no importable Python module, only the commands;
+- the CLI wheel has no importable Python module, only the commands;
 - a line also ends at a lone CR, and in JSON5 at U+2028 and U+2029, so positions after one differ;
 - *since 3.0*, a duplicate-key JSONPath over 256 bytes keeps the segments that fit in 128 bytes at
   each end, with `…` between them, so it is at most 259 bytes;
