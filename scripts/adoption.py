@@ -11,6 +11,10 @@ from urllib.parse import urlencode
 QUERIES = (
     '"simonvanlierde/jsonvet"',
     '"uvx jsonvet"',
+    '"uv tool install jsonvet"',
+    '"pipx install jsonvet"',
+    '"cargo install jsonvet-cli"',
+    '"cargo binstall jsonvet-cli"',
     '"package: jsonvet"',
     '"jsonvet" filename:.pre-commit-config.yaml',
     '"jsonvet" path:.github/workflows',
