@@ -42,9 +42,8 @@ Options:
                                 standard output, with the problems left on standard error.
       --unsafe-fixes            With --fix, also fix duplicate keys: keep the last of each key
                                 and drop the earlier members, as JSON.parse does.
-      --format FORMAT           Print problems as text (the default), sarif (one SARIF 2.1.0
-                                document, for GitHub code scanning) or json (one JSON document;
-                                docs/usage.md in the repository lists its fields).
+      --format FORMAT           Print problems as text (the default), sarif for code scanning,
+                                json (one document), or gitlab for GitLab Code Quality.
       --color WHEN              Color text output: auto (the default), always or never. Auto
                                 colors it on a terminal, unless NO_COLOR is set; FORCE_COLOR
                                 colors it anywhere, and FORCE_COLOR=0 or false nowhere. On a
@@ -140,8 +139,9 @@ fn parse_format(name: &str) -> Result<Format, String> {
         "text" => Ok(Format::Text),
         "sarif" => Ok(Format::Sarif),
         "json" => Ok(Format::Json),
+        "gitlab" => Ok(Format::GitLab),
         _ => {
-            let hint = messages::did_you_mean(name, ["text", "sarif", "json"]);
+            let hint = messages::did_you_mean(name, ["text", "sarif", "json", "gitlab"]);
             Err(messages::fill(
                 "error.format",
                 &[("value", &name), ("hint", &hint)],
@@ -524,7 +524,7 @@ mod tests {
         assert_eq!(
             parse(["--format", "SARIF"].iter().map(Into::into)).err(),
             Some(
-                "--format takes text, sarif or json, not `SARIF` (did you mean `sarif`?)"
+                "--format takes text, sarif, json or gitlab, not `SARIF` (did you mean `sarif`?)"
                     .to_owned()
             )
         );

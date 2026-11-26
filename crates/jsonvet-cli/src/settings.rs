@@ -415,6 +415,15 @@ impl Resolver {
         project(start, self.last(start))
     }
 
+    /// A file name as written relative to the checkout, or the working directory without Git.
+    pub(crate) fn checkout_path(&self, path: &Path) -> Option<PathBuf> {
+        let root = self.repo.as_deref().unwrap_or(&self.cwd);
+        lexical(&self.cwd.join(path))
+            .strip_prefix(root)
+            .ok()
+            .map(Path::to_owned)
+    }
+
     /// Where the search from the folder `start` stops if it meets no `.git` first.
     fn last<'s>(&'s self, start: &'s Path) -> Option<&'s Path> {
         if self

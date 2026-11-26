@@ -1,5 +1,5 @@
 //! How problems are printed: `file:line:col: severity[rule] message`, plus a GitHub Actions
-//! annotation for each when running there, or one SARIF or JSON document for the whole run.
+//! annotation for each when running there, or a structured report for the whole run.
 
 use std::ffi::OsStr;
 use std::fmt::Write as _;
@@ -10,7 +10,7 @@ use annotate_snippets::renderer::Style;
 use jsonvet::{Location, Problem, Report, Severity, is_hidden};
 
 use crate::frame::{self, Mark, STYLED};
-use crate::{json, messages, sarif};
+use crate::{gitlab, json, messages, sarif};
 
 /// The output format, from `--format`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -18,6 +18,7 @@ pub(crate) enum Format {
     Text,
     Sarif,
     Json,
+    GitLab,
 }
 
 /// A file name or message with control characters made visible: a newline would start a line
@@ -140,9 +141,15 @@ enum Sink {
     },
     /// How many results were written as they came, and how many past [`sarif::MAX_RESULTS`]
     /// were counted but not written.
-    Sarif { written: usize, dropped: usize },
+    Sarif {
+        written: usize,
+        dropped: usize,
+    },
     /// Whether the document has started.
-    Json { started: bool },
+    Json {
+        started: bool,
+    },
+    GitLab(gitlab::Report),
 }
 
 impl<W: Write> Printer<W> {
@@ -171,6 +178,7 @@ impl<W: Write> Printer<W> {
                 dropped: 0,
             },
             Format::Json => Sink::Json { started: false },
+            Format::GitLab => Sink::GitLab(gitlab::Report::default()),
         };
         let related =
             messages::RELATED.map(|(what, label)| (messages::text(what), messages::text(label)));
@@ -180,6 +188,12 @@ impl<W: Write> Printer<W> {
             related,
             notes: Vec::new(),
             stderr_report,
+        }
+    }
+
+    pub(crate) fn begin_file(&mut self) {
+        if let Sink::GitLab(report) = &mut self.sink {
+            report.begin_file();
         }
     }
 
@@ -274,7 +288,7 @@ impl<W: Write> Printer<W> {
     }
 
     /// One problem, in whichever format: a text line or code frame and maybe an annotation, a
-    /// SARIF result or a JSON diagnostic. A code frame's title is the message without the part
+    /// structured finding. A code frame's title is the message without the part
     /// naming the related place, which the frame marks instead. `related` always has a label.
     /// With no `place`, for a file that could not be read, the text shows neither a position
     /// nor the rule.
@@ -289,6 +303,16 @@ impl<W: Write> Printer<W> {
     ) -> io::Result<()> {
         let at = place.map(|p| p.mark.at);
         let (annotate, frames, color) = match &mut self.sink {
+            Sink::GitLab(report) => {
+                return report.finding(
+                    &mut self.out,
+                    file,
+                    rule,
+                    severity,
+                    (message, frame_title),
+                    at.unwrap_or(Location::START).line,
+                );
+            }
             Sink::Json { started } => {
                 if *started {
                     self.out.write_all(b",\n")?;
@@ -362,9 +386,21 @@ impl<W: Write> Printer<W> {
             let position = Self::position(at, severity, rule, color);
             writeln!(self.out, "{}{position} {message}", line_start(file))?;
         }
-        if !annotate {
-            return Ok(());
+        if annotate {
+            self.annotation(file, rule, severity, message, place)
+        } else {
+            Ok(())
         }
+    }
+
+    fn annotation(
+        &mut self,
+        file: &str,
+        rule: &str,
+        severity: Severity,
+        message: &str,
+        place: Option<Place<'_>>,
+    ) -> io::Result<()> {
         let title = match place {
             Some(place) => {
                 let at = place.mark.at;
@@ -435,7 +471,7 @@ impl<W: Write> Printer<W> {
         } else {
             Ok(())
         };
-        if !matches!(self.sink, Sink::Text { .. }) {
+        if matches!(self.sink, Sink::Json { .. } | Sink::Sarif { .. }) {
             self.notes.push(message);
         }
         written
@@ -446,6 +482,7 @@ impl<W: Write> Printer<W> {
     pub(crate) fn finish(&mut self) -> io::Result<()> {
         match &self.sink {
             Sink::Text { .. } => {}
+            Sink::GitLab(report) => report.finish(&mut self.out)?,
             Sink::Json { started } => {
                 if *started {
                     writeln!(self.out)?;

@@ -15,8 +15,8 @@ The details behind the [README](../README.md). Why things work this way is in
 --max-warnings N
 --fix                      fix what has a safe fix, in place, then report what is left
 --unsafe-fixes             with --fix, also drop duplicate keys
---format text|sarif|json   text lines (the default), one SARIF 2.1.0 document, or one JSON
-                           document on stdout
+--format text|sarif|json|gitlab
+                           text lines (the default), SARIF 2.1.0, JSON or GitLab Code Quality
 --color auto|always|never  color text output; auto colors it on a terminal unless NO_COLOR
                            is set, and anywhere when FORCE_COLOR is
 --schema FILE              check each file against the JSON Schema in FILE, instead of the
@@ -38,8 +38,8 @@ lists the files that would change and writes nothing ([formatting](format.md)).
 `--fix` rewrites each file with the fixes that are safe, then checks the result and reports what
 is left. The exit status comes from those problems, so a run that fixes everything exits 0. When
 it fixed something, it prints a count to standard error, such as `fixed 3 problems in 2 files`.
-With standard input and `--format json` or `sarif` the report takes standard error, so the count
-is left out.
+With standard input and `--format json`, `sarif` or `gitlab`, the report goes to standard error
+and the count is left out.
 
 | Problem                                                           | Fix                          | Safe |
 | ----------------------------------------------------------------- | ---------------------------- | ---- |
@@ -118,7 +118,7 @@ color off, even on a terminal. `NO_COLOR` wins over `FORCE_COLOR`, and `--color`
 Text output is in the language `LC_ALL`, `LC_MESSAGES` or `LANG` asks for, the first one set, when
 jsonvet has a translation for it, and in English otherwise. English is the only language so far.
 `LANGUAGE` and the Windows language setting are not read. `LC_ALL=C` gives English, and so do
-`--format json` and `--format sarif`, whose documents never change with the locale. Rule ids,
+`--format json`, `sarif` and `gitlab`, whose documents never change with the locale. Rule ids,
 severities, JSONPaths and exit codes are never translated.
 
 - Lines and columns count from 1, and columns count Unicode code points. A byte order mark is
@@ -158,7 +158,7 @@ On a panic, jsonvet prints the message and where it happened to standard error, 
 the [issue tracker](https://github.com/simonvanlierde/jsonvet/issues), and exits 101. Output not
 yet written is lost, and the verdict for the files checked so far is not given.
 
-On exit 2 or 101 the run may stop part way, so a SARIF or JSON document on standard output may be cut
+On exit 2 or 101 the run may stop part way, so a structured report on standard output may be cut
 off. Do not upload it. `--format json` can print an [`errors` document](#json) instead.
 
 jsonvet reads regular files, and follows a symlink to one. A device, FIFO or socket prints
@@ -479,6 +479,37 @@ jobs:
         with:
           sarif_file: jsonvet.sarif
 ```
+
+## GitLab Code Quality
+
+`--format gitlab` writes a [GitLab Code Quality report](https://docs.gitlab.com/ci/testing/code_quality/#code-quality-report-format).
+If your CI job already has jsonvet installed, add this job to `.gitlab-ci.yml`.
+
+```yaml
+jsonvet:
+  script:
+    - |
+      jsonvet_status=0
+      jsonvet --format gitlab . > gl-code-quality-report.json || jsonvet_status=$?
+      if [ "$jsonvet_status" -gt 1 ]; then
+        rm gl-code-quality-report.json
+      fi
+      exit "$jsonvet_status"
+  artifacts:
+    when: always
+    reports:
+      codequality: gl-code-quality-report.json
+```
+
+The report is a JSON array. Errors have severity `major` and warnings have severity `minor`.
+Files must have UTF-8 paths inside the checkout, or inside the working directory when you run
+outside Git. Use `--stdin-filename` to give standard input a path GitLab can match to a file.
+Unchanged findings keep their fingerprint when their line numbers or severities change. The
+fingerprint uses the path, rule, message and occurrence number within the file.
+
+The usual exit codes apply. Usage errors are written to standard error as text and can leave an
+empty or incomplete report. When fixing standard input, the report goes to standard error and
+the fixed text goes to standard output.
 
 ## JSON
 
