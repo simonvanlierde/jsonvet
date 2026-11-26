@@ -1,13 +1,14 @@
 # Where JSON parsers disagree
 
-A JSONC file can work in one tool and lose a setting in another. In the
+The same JSONC file can parse in one tool and fail in another. In the
 [conformance matrix](conformance.md), a single carriage return ends a line comment
-for some readers. For others the comment runs on, and the next key disappears
-before parsing starts.
+for some readers. For others the comment swallows the next key and the closing
+brace, so the remaining text fails to parse.
 
 The matrix runs the same files through parsers for JSON, JSON5, JSONC, JWCC, and
-JSON Lines. It uses each parser's default options. Here are three cases where
-that matters when you move files between tools.
+JSON Lines. Most runs use the parser's default options. The
+[test harness notes](../conformance/README.md#what-the-verdicts-mean) explain the
+exceptions, including how the runs count duplicate keys.
 
 ## A carriage return can hide a JSONC key
 
