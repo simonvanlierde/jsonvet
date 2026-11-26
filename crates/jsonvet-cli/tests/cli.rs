@@ -1412,6 +1412,36 @@ fn gitlab_gives_the_same_finding_on_disk_and_standard_input_the_same_fingerprint
     assert_eq!(report[0], report[1]);
 }
 
+#[cfg(unix)]
+#[test]
+fn gitlab_resolves_parent_paths_on_disk_and_keeps_stdin_names() {
+    use std::os::unix::fs::symlink;
+
+    let input = "{a:1,a:2}\n";
+    let dir = workdir(&[
+        ("a.json", "{}\n"),
+        ("nested/a.json", input),
+        ("nested/sub/a.json", input),
+    ]);
+    symlink("nested/sub", dir.join("alias")).expect("directory alias");
+    let check = |name: &str| jsonvet_stderr(&dir, &["--format=gitlab", name]);
+    assert_eq!(check("alias/../a.json"), check("nested/a.json"));
+    assert_eq!(check("alias/../absent.json"), check("nested/absent.json"));
+    let (_, out, _) = check("alias/a.json");
+    let report: serde_json::Value = serde_json::from_str(&out).expect("report");
+    assert_eq!(report[0]["location"]["path"], "alias/a.json");
+
+    let (code, out, err) = jsonvet_stdin(
+        &dir,
+        &["--format=gitlab", "--stdin-filename", "alias/../a.json"],
+        input,
+    );
+    assert_eq!(code, 1);
+    assert!(err.is_empty(), "{err}");
+    let report: serde_json::Value = serde_json::from_str(&out).expect("report");
+    assert_eq!(report[0]["location"]["path"], "a.json");
+}
+
 #[cfg(windows)]
 #[test]
 fn a_backslash_path_matches_a_slash_pattern() {

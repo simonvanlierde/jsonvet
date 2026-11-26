@@ -7,6 +7,7 @@ use std::path::Path;
 
 use jsonvet::Severity;
 
+use crate::args::STDIN;
 use crate::output::{printable, string};
 use crate::{messages, settings::Resolver};
 
@@ -20,7 +21,7 @@ pub(crate) fn paths(
         .iter()
         .map(|file| {
             let name = shown(file);
-            let relative = resolver.checkout_path(Path::new(&name));
+            let relative = resolver.checkout_path(Path::new(&name), file != STDIN);
             let relative = relative
                 .as_deref()
                 .and_then(Path::to_str)

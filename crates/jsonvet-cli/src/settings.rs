@@ -415,13 +415,20 @@ impl Resolver {
         project(start, self.last(start))
     }
 
-    /// A file name as written relative to the checkout, or the working directory without Git.
-    pub(crate) fn checkout_path(&self, path: &Path) -> Option<PathBuf> {
+    /// A file name relative to the checkout, or the working directory without Git.
+    pub(crate) fn checkout_path(&self, path: &Path, on_disk: bool) -> Option<PathBuf> {
         let root = self.repo.as_deref().unwrap_or(&self.cwd);
-        lexical(&self.cwd.join(path))
-            .strip_prefix(root)
-            .ok()
-            .map(Path::to_owned)
+        let path = self.cwd.join(path);
+        // The parent of a symlink target can be different from the parent written in the path.
+        // Resolve only the parent directory, so a missing file still gets a location.
+        if on_disk
+            && path.components().any(|part| part == Component::ParentDir)
+            && let (Some(parent), Some(name)) = (path.parent(), path.file_name())
+            && let (Ok(parent), Ok(root)) = (parent.canonicalize(), root.canonicalize())
+        {
+            return parent.strip_prefix(root).ok().map(|path| path.join(name));
+        }
+        lexical(&path).strip_prefix(root).ok().map(Path::to_owned)
     }
 
     /// Where the search from the folder `start` stops if it meets no `.git` first.

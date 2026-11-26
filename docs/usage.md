@@ -509,9 +509,11 @@ outside Git. Use `--stdin-filename` to give standard input a path GitLab can mat
 Unchanged findings keep their fingerprint when their line numbers or severities change. The
 fingerprint uses the path, rule, message and occurrence number within the file.
 
-The usual exit codes apply. Usage errors are written to standard error as text and can leave an
-empty or incomplete report. When fixing standard input, the report goes to standard error and
-the fixed text goes to standard output.
+A completed check exits 0 or 1 and writes the full array. Usage errors are written to standard
+error as text and can leave an empty or incomplete report. When fixing standard input, the
+report goes to standard error and the fixed text goes to standard output. In that mode, runtime
+notices such as a missing local schema or a stale catalog cache are omitted. Use `--format json`
+or `sarif` to keep those notices.
 
 ## JSON
 

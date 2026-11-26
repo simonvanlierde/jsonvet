@@ -464,7 +464,7 @@ impl<W: Write> Printer<W> {
         Ok(())
     }
 
-    /// Runtime notes belong inside a structured report, especially when it occupies stderr.
+    /// Write runtime notes to stderr when available and include them in formats that carry notes.
     pub(crate) fn note(&mut self, message: String) -> io::Result<()> {
         let written = if !self.stderr_report || matches!(self.sink, Sink::Text { .. }) {
             writeln!(io::stderr(), "jsonvet: {}", printable(&message))
