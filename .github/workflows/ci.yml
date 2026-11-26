@@ -361,6 +361,7 @@ jobs:
         uses: $/
         with:
           files: "**/*.json"
+          args: --format=sarif --format json
           sarif: out.sarif
           verify: false
       - name: Track dup.json
