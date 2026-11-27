@@ -26,15 +26,4 @@ jobs:
       - name: Count changed lines
         env:
           BASE_REF: ${{ github.base_ref }}
-          CAP: "500"
-        run: |-
-          total=0
-          while IFS=$'\t' read -r added deleted path; do
-            [[ $added == - ]] && continue # binary file
-            [[ $(git check-attr linguist-generated -- "$path") == *": true" ]] && continue
-            total=$((total + added + deleted))
-          done < <(git diff --numstat --no-renames "origin/${BASE_REF}...HEAD")
-          echo "Changed lines, generated files excluded: $total (cap $CAP)" >>"$GITHUB_STEP_SUMMARY"
-          if ((total > CAP)); then
-            echo "::warning title=Large pull request::This pull request changes $total lines (cap $CAP, generated files excluded). Split refactors into their own pull request."
-          fi
+        run: python3 scripts/pr_size.py "origin/${BASE_REF}...HEAD"
