@@ -12,6 +12,8 @@ timeout_multiplier = 2
 # Matched by column, not line, so they survive edits elsewhere in the file. Any other mutant
 # that survives fails the weekly run.
 exclude_re = [
+  # These harnesses run only in Kani. Their parser and Unicode helpers stay in scope.
+  "jsonvet/src/(parse|unicode)\\.rs:.* (in |replace )proofs::",
   # Speed only: whether a closed object's key table is kept, and which hash bits hashbrown's
   # tag gets.
   "parse.rs:.* replace (>|\\*) with .* in Keys<'a>::clear",
