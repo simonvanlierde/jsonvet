@@ -86,6 +86,14 @@ choice in [docs/decisions/](docs/decisions/README.md) brings the evidence its "R
 A pull request over 500 changed lines (generated files excluded) gets a CI warning: split a
 refactor into its own pull request.
 
+## Checking adoption
+
+Run `uv run scripts/adoption.py` with an authenticated GitHub CLI. It groups public code
+search hits by repository and omits forks and this owner's repositories. Open the listed
+files to confirm an install, an integration or a CI run. Package indexes and examples can
+also match. GitHub search misses private and unindexed use, and download counts include
+CI and repeated installs. Neither source counts people.
+
 ## Choosing dependencies
 
 Prefer the standard library or a crate the workspace already uses. A new dependency in `jsonvet`
