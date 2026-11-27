@@ -321,7 +321,7 @@ fn superseded(note: &Notification, queue: &VecDeque<Message>) -> bool {
     })
 }
 
-/// What the client can take, from its capabilities, and the workspace folders it opened.
+/// The client's capabilities, settings and workspace folders.
 struct Client {
     /// The workspace folders, as paths: none when the client named none.
     roots: Vec<PathBuf>,
@@ -331,6 +331,8 @@ struct Client {
     versioned: bool,
     /// Code action data is preserved and the client resolves edits when it needs them.
     resolve: bool,
+    /// The most diagnostics to publish per file, or `usize::MAX` for no limit.
+    max_problems: usize,
 }
 
 impl Client {
@@ -363,6 +365,12 @@ impl Client {
                     .and_then(Value::as_array)
                     .is_some_and(|properties| properties.iter().any(|p| p == "edit")),
             versioned: flag("/capabilities/workspace/workspaceEdit/documentChanges"),
+            max_problems: params
+                .pointer("/initializationOptions/maxProblems")
+                .and_then(Value::as_u64)
+                .and_then(|limit| usize::try_from(limit).ok())
+                .filter(|&limit| limit > 0)
+                .unwrap_or(usize::MAX),
         }
     }
 }
@@ -543,7 +551,7 @@ fn diagnostics(
         }
     };
     let mut diagnostics = Vec::new();
-    for problem in report.problems() {
+    for problem in report.problems().iter().take(client.max_problems) {
         let id = problem.rule().id();
         let mut diagnostic = json!({
             "range": lines.span(problem.offset()..problem.end()),
@@ -563,7 +571,8 @@ fn diagnostics(
         }
         diagnostics.push(diagnostic);
     }
-    for finding in schema_errors {
+    let remaining = client.max_problems - diagnostics.len();
+    for finding in schema_errors.into_iter().take(remaining) {
         let (start, end) = frame::one_char(&report, finding.offset);
         let mut diagnostic = json!({
             "range": lines.span(start..end),
@@ -1091,7 +1100,7 @@ fn path_of(uri: &str) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Lines, apply, edits, path_of, serve, uri_of, watch, within};
+    use super::{FIX_ALL, Lines, apply, edits, path_of, serve, uri_of, watch, within};
     use lsp_server::{Connection, Message, Notification, Request, RequestId};
     use serde_json::{Value, json};
     use std::collections::BTreeSet;
@@ -1112,6 +1121,7 @@ mod tests {
             utf8: false,
             versioned: false,
             resolve: false,
+            max_problems: usize::MAX,
         };
         for n in [100, 1_000] {
             let text = format!("[{}]", vec!["[0,]"; n].join(","));
@@ -1170,6 +1180,7 @@ mod tests {
                         utf8,
                         versioned,
                         resolve: false,
+                        max_problems: usize::MAX,
                     };
                     let document = super::Document {
                         text: text.to_owned(),
@@ -1690,6 +1701,79 @@ mod tests {
         );
         assert!(diagnostics[100].get("code").is_none());
         client.stop();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_diagnostic_limit_counts_rule_and_schema_findings_together() {
+        let dir = folder("diagnostic-limit-schema");
+        std::fs::write(
+            dir.join("s.json"),
+            r#"{"properties":{"a":{"type":"string"},"b":{"type":"string"}}}"#,
+        )
+        .expect("schema");
+        std::fs::write(
+            dir.join("jsonvet.toml"),
+            "schemas = [{ files = \"a.json\", schema = \"s.json\" }]\n",
+        )
+        .expect("config");
+        let file = uri(&dir.join("a.json"));
+        let (client, _) =
+            Client::start_with(json!({ "initializationOptions": { "maxProblems": 2 } }));
+        let published = client.open(&file, r#"{"a":1,"a":2,"b":3}"#);
+        let diagnostics = published["diagnostics"].as_array().expect("diagnostics");
+        assert_eq!(diagnostics.len(), 2);
+        assert_eq!(diagnostics[0]["code"], "duplicate-key");
+        assert_eq!(diagnostics[1]["code"], "schema");
+        client.notify(
+            "workspace/didChangeWatchedFiles",
+            json!({ "changes": [{ "uri": uri(&dir.join("s.json")), "type": 2 }] }),
+        );
+        assert_eq!(client.diagnostics(), published);
+        client.stop();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_diagnostic_limit_keeps_quick_fixes_for_unpublished_findings() {
+        let dir = folder("diagnostic-limit-fixes");
+        let file = uri(&dir.join("a.jsonl"));
+        let (mut client, _) =
+            Client::start_with(json!({ "initializationOptions": { "maxProblems": 1 } }));
+        let published = client.open(&file, "\u{feff}{\"a\":1}");
+        let diagnostics = published["diagnostics"].as_array().expect("diagnostics");
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0]["code"], "byte-order-mark");
+        let actions = client.request(
+            "textDocument/codeAction",
+            json!({ "textDocument": { "uri": file }, "range": range((0, 0), (0, 8)),
+                "context": { "only": ["quickfix", FIX_ALL] } }),
+        );
+        assert!(actions.as_array().expect("actions").iter().any(|action| {
+            action["title"] == "Add the final newline"
+                && action["edit"]["changes"][file.as_str()][0]["newText"] == "\n"
+        }));
+        assert!(actions.as_array().expect("actions").iter().any(|action| {
+            action["kind"] == FIX_ALL
+                && action["edit"]["changes"][file.as_str()]
+                    .as_array()
+                    .is_some_and(|edits| edits.len() == 2)
+        }));
+        client.stop();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn zero_and_invalid_diagnostic_limits_are_unlimited() {
+        let dir = folder("invalid-diagnostic-limit");
+        let file = uri(&dir.join("a.jsonl"));
+        for max in [json!(0), json!(-1), json!(1.5), json!("1"), Value::Null] {
+            let (client, _) =
+                Client::start_with(json!({ "initializationOptions": { "maxProblems": max } }));
+            let published = client.open(&file, "\u{feff}{}");
+            assert_eq!(published["diagnostics"].as_array().map(Vec::len), Some(2));
+            client.stop();
+        }
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -2811,6 +2895,7 @@ mod tests {
             roots: Vec::new(),
             utf8: false,
             resolve: false,
+            max_problems: usize::MAX,
             versioned: false,
         };
         let published = super::update(&change, &mut documents, &mut 1, &server, true);
