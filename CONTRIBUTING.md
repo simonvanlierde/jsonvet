@@ -135,6 +135,10 @@ licence and has no RustSec advisory or unmaintained notice. Renovate bumps the p
 - **Language server.** `cargo nextest run -p jsonvet-cli lsp` runs the in-process tests. The stdio
   test is `lsp_checks_a_document_over_stdio_and_exits_0_after_shutdown` in
   `crates/jsonvet-cli/tests/cli.rs`.
+- **Kani proofs.** With [Kani](https://model-checking.github.io/kani/install-guide.html) set up,
+  run `cargo kani -p jsonvet`. The harnesses check the digit scan, how a string scan classifies
+  each byte and skips a 16-byte block, and the Unicode predicates. Line separator detection
+  covers byte slices through eight bytes.
 - **Mutation testing.** `just mutants` takes over an hour on one CI runner, so `mutants.yml` runs
   it weekly in 64 shards, 15 at a time; its `shards` input reruns only the ones you list. It fails
   when a mutant survives that `.cargo/mutants.toml` does not list. List one there only when it

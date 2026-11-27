@@ -113,6 +113,55 @@ pub(crate) fn is_identifier_part(c: char) -> bool {
         )
 }
 
+#[cfg(kani)]
+mod proofs {
+    use super::{
+        is_high_surrogate, is_low_surrogate, is_noncharacter, is_surrogate, line_separator_at,
+    };
+
+    #[kani::proof]
+    fn surrogate_halves_partition_the_surrogate_range() {
+        let unit: u32 = kani::any();
+        let high = is_high_surrogate(unit);
+        let low = is_low_surrogate(unit);
+        assert!(!(high && low));
+        assert_eq!(high || low, is_surrogate(unit));
+
+        if let Ok(unit) = u16::try_from(unit) {
+            assert_eq!(high, unit >> 10 == 0b11_0110);
+            assert_eq!(low, unit >> 10 == 0b11_0111);
+        } else {
+            assert!(!high && !low);
+        }
+    }
+
+    #[kani::proof]
+    fn noncharacters_are_the_designated_code_points() {
+        let code_point: u32 = kani::any();
+        kani::assume(code_point <= u32::from(char::MAX));
+
+        let plane_offset = code_point % 0x1_0000;
+        let expected =
+            matches!(plane_offset, 0xFFFE | 0xFFFF) || (0xFDD0..=0xFDEF).contains(&code_point);
+        assert_eq!(is_noncharacter(code_point), expected);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(9)]
+    fn line_separator_matches_its_utf8_prefix() {
+        let buffer: [u8; 8] = kani::any();
+        let len: usize = kani::any();
+        let at: usize = kani::any();
+        kani::assume(at <= len && len <= buffer.len());
+
+        let bytes = &buffer[..len];
+        let tail = &bytes[at..];
+        let expected =
+            tail.starts_with("\u{2028}".as_bytes()) || tail.starts_with("\u{2029}".as_bytes());
+        assert_eq!(line_separator_at(bytes, at), expected);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
