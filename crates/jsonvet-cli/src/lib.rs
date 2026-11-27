@@ -18,6 +18,7 @@ mod catalog;
 mod editorconfig;
 mod format;
 mod frame;
+mod gitlab;
 mod glob;
 mod json;
 mod lsp;
@@ -289,6 +290,16 @@ fn run_checked(
             file.to_owned()
         }
     };
+    let gitlab_paths = (args.format == Format::GitLab)
+        .then(|| gitlab::paths(&files, &shown, &lock(&resolver)))
+        .transpose()?;
+    let report_name = |file: &OsStr| {
+        gitlab_paths
+            .as_ref()
+            .and_then(|paths| paths.get(file))
+            .cloned()
+            .unwrap_or_else(|| shown(file))
+    };
     // Every config file, and every schema one names, is read before any file is checked, so a
     // bad one stops the run at once.
     let files = jobs(files, &shown, &settings_for, args.schema.as_deref(), &load)?;
@@ -373,12 +384,12 @@ fn run_checked(
             },
         );
         schemas.over().map_err(|e| output::printable(&e))?;
-        let outcome = print_checked(chunk, checked, &shown, &mut printer, &mut counts);
+        let outcome = print_checked(chunk, checked, &report_name, &mut printer, &mut counts);
         if outcome.is_err() {
             break outcome;
         }
     };
-    // A JSON or SARIF report on standard error is all of it, so the count stays out.
+    // A structured report on standard error takes the place of the count.
     let count = !stdin_fix || args.format == Format::Text;
     // The fixed text goes out even when the problems could not be written.
     let finished = fixed.finish(count, &mut out);
@@ -401,14 +412,17 @@ fn print_checked(
     chunk
         .iter()
         .zip(checked)
-        .try_for_each(|((_, file), checked)| match checked {
-            Ok((report, schema_errors)) => {
-                print_file(&shown(file), &report, &schema_errors, printer, counts)
-            }
-            Err(message) => {
-                counts.errors += 1;
-                counts.files += 1;
-                printer.unreadable(&shown(file), message)
+        .try_for_each(|((_, file), checked)| {
+            printer.begin_file();
+            match checked {
+                Ok((report, schema_errors)) => {
+                    print_file(&shown(file), &report, &schema_errors, printer, counts)
+                }
+                Err(message) => {
+                    counts.errors += 1;
+                    counts.files += 1;
+                    printer.unreadable(&shown(file), message)
+                }
             }
         })
 }

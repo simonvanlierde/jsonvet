@@ -1339,6 +1339,222 @@ fn jsonc_modelines_apply_when_reading_schema_files() {
     );
 }
 
+#[test]
+fn gitlab_reports_checkout_paths_and_stable_fingerprints() {
+    let dir = workdir(&[("sub/a #1.json", "{a: 1, a: 2}\n")]);
+    let report = |cwd: &Path, file: &str| {
+        let (code, out, err) = jsonvet_stderr(cwd, &["--format", "gitlab", file]);
+        assert_eq!(code, 1, "{err}");
+        assert!(err.is_empty(), "{err}");
+        assert!(out.starts_with('['));
+        serde_json::from_str::<serde_json::Value>(&out).expect("Code Quality JSON")
+    };
+    let first = report(&dir, "./sub/a #1.json");
+    assert_eq!(first.as_array().map(Vec::len), Some(1));
+    let entry = &first[0];
+    assert_eq!(entry["check_name"], "duplicate-key");
+    assert_eq!(entry["severity"], "major");
+    assert_eq!(entry["location"]["path"], "sub/a #1.json");
+    assert_eq!(entry["location"]["lines"]["begin"], 1);
+    assert!(
+        entry["description"]
+            .as_str()
+            .is_some_and(|s| s.contains("duplicate key"))
+    );
+    let fingerprint = entry["fingerprint"].as_str().expect("fingerprint");
+    assert_eq!(fingerprint, "252c5d06144eb416ffea9f48e94a7e2b");
+    assert_eq!(report(&dir.join("sub"), "a #1.json"), first);
+
+    let full = dir.join("sub/a #1.json");
+    fs::write(&full, "\n\n{a: 1, a: 2}\n").expect("file changed");
+    let mut second = report(&dir, &full.to_string_lossy());
+    assert_eq!(second[0]["location"]["lines"]["begin"], 3);
+    assert_eq!(second[0]["fingerprint"], fingerprint);
+    assert_ne!(second[0]["description"], entry["description"]);
+    second[0]["description"] = entry["description"].clone();
+    second[0]["location"]["lines"]["begin"] = serde_json::json!(1);
+    assert_eq!(first, second);
+}
+
+#[test]
+fn the_last_format_controls_malformed_gitlab_or_json_invocations() {
+    let dir = workdir(&[]);
+    let (code, out, err) = jsonvet_stderr(&dir, &["--format=json", "--format=gitlab", "--bad"]);
+    assert_eq!(code, 2);
+    assert!(out.is_empty(), "{out}");
+    assert!(err.contains("unknown option"), "{err}");
+
+    let (code, out, err) = jsonvet_stderr(&dir, &["--format=gitlab", "--format=json", "--bad"]);
+    assert_eq!(code, 2);
+    assert!(err.is_empty(), "{err}");
+    let report: serde_json::Value = serde_json::from_str(&out).expect("JSON usage error");
+    assert_eq!(report["schema_version"], 2);
+}
+
+#[test]
+fn gitlab_separates_findings_usage_errors_and_fixed_standard_input() {
+    let dir = workdir(&[("good.json", "{}\n"), ("sub/placeholder", "")]);
+    assert_eq!(
+        jsonvet_stderr(&dir, &["--format=gitlab", "good.json"]),
+        (0, "[]\n".into(), String::new())
+    );
+    let (code, out, err) = jsonvet_stderr(
+        &dir,
+        &[
+            "--format",
+            "gitlab",
+            "--schema",
+            "missing.json",
+            "good.json",
+        ],
+    );
+    assert_eq!(code, 2);
+    assert!(out.is_empty(), "{out}");
+    assert!(err.contains("missing.json"), "{err}");
+    let (code, out, err) = jsonvet_stdin(
+        &dir,
+        &[
+            "--format=gitlab",
+            "--fix",
+            "--stdin-filename",
+            "sub/data.jsonc",
+        ],
+        "// data\n[1,]\n",
+    );
+    assert_eq!(
+        (code, out.as_str(), err.as_str()),
+        (0, "// data\n[1]\n", "[]\n")
+    );
+
+    let (code, out, err) = jsonvet_stdin(
+        &dir,
+        &[
+            "--format=gitlab",
+            "--fix",
+            "--stdin-filename",
+            "sub/data.json",
+        ],
+        "{a:1,a:2}\n",
+    );
+    assert_eq!(code, 1);
+    assert_eq!(out, "{a:1,a:2}\n");
+    let report: serde_json::Value =
+        serde_json::from_str(&err).expect("Code Quality JSON on stderr");
+    assert_eq!(report[0]["location"]["path"], "sub/data.json");
+    assert_eq!(report[0]["check_name"], "duplicate-key");
+}
+
+#[test]
+fn gitlab_keeps_repeat_findings_and_exits_on_too_many_warnings() {
+    let dir = workdir(&[("records.jsonl", "{\"a\":1,\"a\":2}\n{\"a\":1,\"a\":3}\n")]);
+    for (limit, exit_code) in [("2", 0), ("1", 1)] {
+        let args = [
+            "--format",
+            "gitlab",
+            "--warn",
+            "duplicate-key",
+            "--max-warnings",
+            limit,
+            "records.jsonl",
+            "missing.json",
+        ];
+        let (code, output, err) = jsonvet_stderr(&dir, &args[..args.len() - 1]);
+        assert_eq!(code, exit_code);
+        assert!(err.is_empty(), "{err}");
+        let report: serde_json::Value = serde_json::from_str(&output).expect("report");
+        assert_eq!(report.as_array().map(Vec::len), Some(2));
+        for (index, row) in report.as_array().expect("findings").iter().enumerate() {
+            assert_eq!(row["severity"], "minor");
+            assert_eq!(row["location"]["lines"]["begin"], index + 1);
+        }
+        assert_ne!(report[0]["fingerprint"], report[1]["fingerprint"]);
+        let (code, output, err) = jsonvet_stderr(&dir, &args);
+        assert_eq!(code, 1);
+        assert!(err.is_empty(), "{err}");
+        let report: serde_json::Value = serde_json::from_str(&output).expect("unreadable finding");
+        assert_eq!(report.as_array().map(Vec::len), Some(3));
+        assert_eq!(report[2]["check_name"], "unreadable");
+        assert_eq!(report[2]["location"]["lines"]["begin"], 1);
+    }
+}
+
+#[test]
+fn gitlab_refuses_a_path_outside_the_checkout_before_changing_files() {
+    let dir = workdir(&[("data.jsonc", "[1,]\n")]);
+    let (code, out, err) = jsonvet_stderr(
+        &dir,
+        &[
+            "--format",
+            "gitlab",
+            "--fix",
+            "data.jsonc",
+            "../outside.json",
+        ],
+    );
+    assert_eq!(code, 2);
+    assert!(out.is_empty(), "{out}");
+    assert!(
+        err.contains("inside the checkout: `../outside.json`"),
+        "{err}"
+    );
+    assert_eq!(
+        fs::read_to_string(dir.join("data.jsonc")).expect("file"),
+        "[1,]\n"
+    );
+}
+
+#[test]
+fn gitlab_gives_the_same_finding_on_disk_and_standard_input_the_same_fingerprint() {
+    let text = "{a:1,a:2}\n";
+    let dir = workdir(&[("data.json", text)]);
+    let (code, output, err) = jsonvet_stdin(
+        &dir,
+        &[
+            "--format=gitlab",
+            "--stdin-filename",
+            "data.json",
+            "-",
+            "data.json",
+        ],
+        text,
+    );
+    assert_eq!(code, 1);
+    assert!(err.is_empty(), "{err}");
+    let report: serde_json::Value = serde_json::from_str(&output).expect("report");
+    assert_eq!(report.as_array().map(Vec::len), Some(2));
+    assert_eq!(report[0], report[1]);
+}
+
+#[cfg(unix)]
+#[test]
+fn gitlab_resolves_parent_paths_on_disk_and_keeps_stdin_names() {
+    use std::os::unix::fs::symlink;
+
+    let input = "{a:1,a:2}\n";
+    let dir = workdir(&[
+        ("a.json", "{}\n"),
+        ("nested/a.json", input),
+        ("nested/sub/a.json", input),
+    ]);
+    symlink("nested/sub", dir.join("alias")).expect("directory alias");
+    let check = |name: &str| jsonvet_stderr(&dir, &["--format=gitlab", name]);
+    assert_eq!(check("alias/../a.json"), check("nested/a.json"));
+    assert_eq!(check("alias/../absent.json"), check("nested/absent.json"));
+    let (_, out, _) = check("alias/a.json");
+    let report: serde_json::Value = serde_json::from_str(&out).expect("report");
+    assert_eq!(report[0]["location"]["path"], "alias/a.json");
+
+    let (code, out, err) = jsonvet_stdin(
+        &dir,
+        &["--format=gitlab", "--stdin-filename", "alias/../a.json"],
+        input,
+    );
+    assert_eq!(code, 1);
+    assert!(err.is_empty(), "{err}");
+    let report: serde_json::Value = serde_json::from_str(&out).expect("report");
+    assert_eq!(report[0]["location"]["path"], "a.json");
+}
+
 #[cfg(windows)]
 #[test]
 fn a_backslash_path_matches_a_slash_pattern() {
