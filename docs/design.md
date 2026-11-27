@@ -12,17 +12,15 @@ jsonvet 2.0 replaced check-json5 1.4 (Python) in place, with one hand-written pa
 
 - the verdict for every file in the two dialects 1.4 knows: JSON5 (the default for `.json`,
   `.json5`, `.geojson`, `.jsonld`, `.webmanifest`, `.babelrc` and any other extension) and strict
-  JSON through `--strict`;
+  JSON through `--dialect json:GLOB`;
 - the exit code: 0 when every file passes, 1 when any fails, 2 on a usage error;
-- a duplicate-key report: the position of the repeated key and its JSONPath;
-- `--strict GLOB`, now an alias for `--dialect json:GLOB`, and `--strict '!GLOB'` for
-  `--dialect auto:GLOB`.
+- a duplicate-key report: the position of the repeated key and its JSONPath.
 
 These change, and the CHANGELOG marks them **Breaking**:
 
 - syntax errors use jsonvet's own wording;
 - the output line gains a severity and a rule id;
-- the wheel has no importable Python module, only the commands;
+- the CLI wheel has no importable Python module, only the commands;
 - a line also ends at a lone CR, and in JSON5 at U+2028 and U+2029, so positions after one differ;
 - *since 3.0*, a duplicate-key JSONPath over 256 bytes keeps the segments that fit in 128 bytes at
   each end, with `…` between them, so it is at most 259 bytes;
@@ -57,16 +55,17 @@ are intended, besides the line ends and paths above:
 ## Speed
 
 <!-- speed:start -->
-Median of 40 runs of jsonvet from `uv run scripts/bench.py`, on 4 cores of an EPYC 9V74 under Linux
-(2026-11-15), of 10 for 1.4.1 and of 3 for 1.0.1. Every tool gives the same verdict in every case:
+Median of 40 runs of jsonvet from `uv run scripts/bench.py`, on 4 cores of a Xeon 6975P-C under
+Linux (2026-11-27), of 10 for 1.4.1 and of 3 for 1.0.1. Every tool gives the same verdict in every
+case:
 
-| Case                       | check-json5 1.0.1 | check-json5 1.4.1 | jsonvet 3.5 | Speed-up over 1.4.1 | over 1.0.1 |
+| Case                       | check-json5 1.0.1 | check-json5 1.4.1 | jsonvet 4.0 | Speed-up over 1.4.1 | over 1.0.1 |
 | -------------------------- | ----------------: | ----------------: | ----------: | ------------------: | ---------: |
-| 1,100 config files         |          2,476 ms |             43 ms |      5.6 ms |                  8x |       443x |
-| 2.7 MB JSON                |         13,043 ms |             47 ms |      7.9 ms |                  6x |     1,659x |
-| 2.7 MB JSON, duplicate key |         13,496 ms |            428 ms |     10.8 ms |                 39x |     1,245x |
-| 120 KB JSONC               |            665 ms |             24 ms |      1.6 ms |                 15x |       426x |
-| 1.8 MB JSON5               |         15,343 ms |         15,453 ms |      7.9 ms |              1,965x |     1,951x |
+| 1,100 config files         |          2,289 ms |             34 ms |      4.1 ms |                  8x |       554x |
+| 2.7 MB JSON                |         12,705 ms |             44 ms |      6.9 ms |                  6x |     1,843x |
+| 2.7 MB JSON, duplicate key |         12,812 ms |            401 ms |     10.1 ms |                 40x |     1,266x |
+| 120 KB JSONC               |            638 ms |             23 ms |      1.3 ms |                 18x |       508x |
+| 1.8 MB JSON5               |         14,794 ms |         14,915 ms |      7.1 ms |              2,098x |     2,081x |
 <!-- speed:end -->
 
 1.4 sent strict JSON and JSONC to Python's C parser, so those were already fast, and everything
@@ -308,14 +307,13 @@ Every version falls in one of five groups, which `.github/renovate.json5` encode
   against. So it can take a crate published that day, and it waits for review.
   - The fuzz crate pins json5 exactly, because `diff_json5` compares with it.
   - ruff is pinned in one place, the `rev` in `.pre-commit-config.yaml`.
-  - `uv_build`, which builds `check-json5`, moves with the uv CI uses.
 - **Bumped quarterly, with a re-run:** the conformance matrix's parsers, pinned exactly with their
   lock files, and its images, pinned by tag and digest. CI's `conformance/run.py --check` fails
   until `results/versions.json` matches the pins, so the pull request cannot merge until someone
   re-runs the matrix.
 - **Fixed:** `check-json5==1.4.1` on Python 3.13 in `scripts/`, the reference for the contract;
   `rust-version = "1.88"`, raised by hand when a dependency or a language feature needs it; and
-  jsonvet's own version in `setup.py` and `compat/`, which cargo-release sets in the release commit
+  jsonvet's own version in `setup.py`, which cargo-release sets in the release commit
   and `scripts/check-versions.py` checks against the tag.
 - **Pinned to the release:** the images and the Rust that build the release wheels, by digest and
   version, so a wheel does not change with an upstream image.

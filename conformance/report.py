@@ -164,8 +164,8 @@ NOTES = {
     " in the 2026-10-14 run and parsed the file in the 2026-10-19 run, with the same version, compiler and"
     " 8 MB stack, so its verdict here is not stable. `pyjson5` rejects the file at its own nesting limit,"
     " which §10 allows.",
-    "conformance/extra/jsonc/lone-cr-ends-comment.jsonc": "`strip-json-comments` and Go `tidwall/jsonc` end a"
-    " line comment only at LF, so a comment ended by a lone CR swallows the rest of the file.",
+    "conformance/extra/jsonc/lone-cr-ends-comment.jsonc": "`strip-json-comments` ends a line comment only at LF,"
+    " so a comment ended by a lone CR swallows the rest of the file.",
     "conformance/extra/jsonc/comment-only.jsonc": "The Rust `jsonc-parser` returns no value and no error for a"
     " file holding only a comment; the driver counts that as an accept.",
     "conformance/extra/jsonc/json5-syntax.jsonc": "The Rust `jsonc-parser` accepts unquoted keys, single quotes"
@@ -393,10 +393,11 @@ def main() -> None:
         f"How {len(parsers)} parser runs treat the same files in JSON5, JSONC, JWCC (HuJSON), JSON",
         f"Lines and strict JSON: {others_count(parsers)} other parsers, plus jsonvet in each dialect and the",
         "duplicate-key variants. Each dialect's table lists the parsers that claim that dialect.",
-        f"Run on {summary['date']}; a full run took {summary['seconds']} s. How it works and how to",
+        f"Results updated on {summary['date']}. The last full run took {summary['seconds']} s. How to",
         "rerun it: [conformance/README.md](../conformance/README.md). The",
         "[matrix page](https://simonvanlierde.com/jsonvet/docs/matrix.html) shows the same results",
-        "with filters, and each file's text and verdicts in every dialect.",
+        "with filters, and each file's text and verdicts in every dialect. See also",
+        "[where JSON parsers disagree](parser-disagreements.md).",
         "",
         "Cells: ✓ the parser agrees with the expected verdict, ✗ it disagrees, ‼ it crashed or",
         f"took longer than {TIMEOUT} s. Where the spec allows both verdicts (expected: either), the cell",

@@ -27,6 +27,7 @@ export const NAV = [
   ["docs/architecture.md", "Architecture"],
   ["docs/conformance.md", "Conformance"],
   [MATRIX, "Matrix"],
+  ["docs/parser-disagreements.md", "Where parsers disagree"],
   ["docs/accessibility.md", "Accessibility"],
   ["docs/assurance-case.md", "Assurance case"],
   ["docs/decisions/README.md", "Decisions"],
@@ -90,6 +91,22 @@ export function anchorsOf(file) {
       .filter((t) => t.type === "heading")
       .map((t) => slug(toText(t.tokens))),
   );
+}
+
+/** The diagnostic headings in the reference, used for direct matches in docs search. */
+export function ruleIds() {
+  const tokens = new Marked().lexer(readFileSync(resolve(ROOT, "docs/usage.md"), "utf8"));
+  const start = tokens.findIndex(
+    (token) => token.type === "heading" && token.depth === 2 && token.text === "Rules and severities",
+  );
+  if (start < 0) throw new Error("docs/usage.md has no Rules and severities section");
+  const ids = [];
+  for (const token of tokens.slice(start + 1)) {
+    if (token.type !== "heading") continue;
+    if (token.depth <= 2) break;
+    if (token.depth === 3) ids.push(toText(token.tokens));
+  }
+  return ids;
 }
 
 // Submodules are not in this repository on GitHub, so their files link to their own repository at

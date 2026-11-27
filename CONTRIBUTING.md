@@ -86,6 +86,14 @@ choice in [docs/decisions/](docs/decisions/README.md) brings the evidence its "R
 A pull request over 500 changed lines (generated files excluded) gets a CI warning: split a
 refactor into its own pull request.
 
+## Checking adoption
+
+Run `uv run scripts/adoption.py` with an authenticated GitHub CLI. It groups public code
+search hits by repository and omits forks and this owner's repositories. Open the listed
+files to confirm an install, an integration or a CI run. Package indexes and examples can
+also match. GitHub search misses private and unindexed use, and download counts include
+CI and repeated installs. Neither source counts people.
+
 ## Choosing dependencies
 
 Prefer the standard library or a crate the workspace already uses. A new dependency in `jsonvet`
@@ -124,9 +132,15 @@ licence and has no RustSec advisory or unmaintained notice. Renovate bumps the p
 - **Fuzzing.** `just fuzz check` (or `diff_serde_json`, `diff_json5`, `parse`, `fix`, `config`, `config_file`) runs a target
   for 20 minutes on a nightly toolchain. A new json5 version in `fuzz/` can need new skips in
   `diff_json5`: read its skip list before you call a divergence a jsonvet bug.
+- **Python API.** See [Build and test](crates/jsonvet-python/README.md#build-and-test) for the
+  separate native wheel.
 - **Language server.** `cargo nextest run -p jsonvet-cli lsp` runs the in-process tests. The stdio
   test is `lsp_checks_a_document_over_stdio_and_exits_0_after_shutdown` in
   `crates/jsonvet-cli/tests/cli.rs`.
+- **Kani proofs.** With [Kani](https://model-checking.github.io/kani/install-guide.html) set up,
+  run `cargo kani -p jsonvet`. The harnesses check the digit scan, how a string scan classifies
+  each byte and skips a 16-byte block, and the Unicode predicates. Line separator detection
+  covers byte slices through eight bytes.
 - **Mutation testing.** `just mutants` takes over an hour on one CI runner, so `mutants.yml` runs
   it weekly in 64 shards, 15 at a time; its `shards` input reruns only the ones you list. It fails
   when a mutant survives that `.cargo/mutants.toml` does not list. List one there only when it
@@ -205,10 +219,9 @@ A release changes the version in these places, in one commit on a branch:
 1. `version` in the root `Cargo.toml`, and `Cargo.lock` with it
 2. the `=x.y.z` pin on `jsonvet` in `crates/jsonvet-cli/Cargo.toml`
 3. the pin in `setup.py`
-4. `version` and the `jsonvet==` pin in `compat/check-json5/pyproject.toml`
-5. `version` in `editors/vscode/package.json`
-6. `rev: vX.Y.Z` in the hook examples in `README.md`, `docs/usage.md` and `docs/format.md`
-7. in `CHANGELOG.md`, the Unreleased entries moved under a new `## [X.Y.Z] - date` heading, and
+4. `version` in `editors/vscode/package.json`
+5. `rev: vX.Y.Z` in the hook examples in `README.md`, `docs/usage.md` and `docs/format.md`
+6. in `CHANGELOG.md`, the Unreleased entries moved under a new `## [X.Y.Z] - date` heading, and
    the compare links at the bottom
 
 [cargo-release](https://github.com/crate-ci/cargo-release) makes all of them. It only bumps and
@@ -241,31 +254,34 @@ The tag is signed, so GitHub shows it as verified and anyone can check it with `
 cargo-release prints a "Publishing" line, but it publishes nothing.
 
 Do not create the GitHub release by hand. The tag runs `release.yml`, which builds, attests and
-publishes everything ([design.md](docs/design.md#publishing)). Each publish job waits for an
-approval: the `pypi` environment twice (the wheels, then `check-json5`) and `crates-io` once. If a
-publish job fails, use "Re-run failed jobs", never "Re-run all jobs". A full re-run builds the
+publishes everything ([design.md](docs/design.md#publishing)). After the `github-release` job
+finishes, download the assets from the draft. Check the archive checksums and verify an archive's
+provenance and SBOM attestations against the release tag
+([verification commands](SECURITY.md#verifying-a-release)).
+
+Then approve the `pypi` and `crates-io` environments.
+If a publish job fails, use "Re-run failed jobs", never "Re-run all jobs". A full re-run builds the
 wheels again, so PyPI and the GitHub release could hold different builds.
 
 "Re-run failed jobs" uses the workflow file at the tagged commit, so a fix to a workflow needs a
-new commit and a moved tag. Which way depends on how far the release got:
+new commit. Check both registries before choosing how to release that commit.
 
-- **Nothing is on PyPI yet** (a wheels row, `smoke` or `github-release` failed). Fix main through
+- **Neither PyPI nor crates.io has the version.** Fix main through
   a pull request. Delete the remote tag with `git push origin :refs/tags/vX.Y.Z`, then sign and
   push the tag again on the new release commit, as above. `github-release` replaces a leftover
   draft for the same tag and refuses a published release, so the old draft needs no cleanup.
-- **PyPI already has a file.** Never move the tag. Ship a patch version.
+- **Either registry has published part of the release.** Keep the tag and ship a patch version.
 
 The release pull request changes `Cargo.toml` and `Cargo.lock`, so `wheels-check.yml` builds the
 wheels on it. Look at its `wheels / wheels (...)` checks before you tag. They cannot be required
 checks, because the workflow only runs for some paths.
 
 A pre-release has a `-` in its tag (`v3.1.0-rc.1`). cargo-release bumps only the crates for one.
-Edit the other places by hand, with the PEP 440 form (`3.2.0rc1`) in `setup.py` and the
-compatibility package.
+Edit the other places by hand. Use the PEP 440 form (`4.1.0rc1`) in `setup.py`.
 
-Once the release is published, run `just major`. It moves the major tag (`v3`), which
-`uses: simonvanlierde/jsonvet@v3` follows, to the newest `vX.Y.Z`, so a pre-release or a patch to
-an older minor leaves it alone. The workflow's token cannot move a tag past changes to
+Once the release is published, run `just major`. It creates or updates the alias that
+`uses: simonvanlierde/jsonvet@v4` follows. After 4.0.0, it creates `v4` at that release.
+It selects the newest stable `vX.Y.Z`. The workflow's token cannot move a tag past changes to
 `.github/workflows/`, and one that could would give CI write access to the workflows.
 
 ## Sign off your commits

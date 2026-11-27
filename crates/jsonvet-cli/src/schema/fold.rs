@@ -38,10 +38,8 @@ enum Open<'e> {
 pub(super) struct Fold<'e> {
     stack: Vec<Open<'e>>,
     build: Builder<'e>,
-    /// How many events came before this one.
-    seen: usize,
-    /// The index and offset of the open document's first event.
-    first: (usize, usize),
+    /// The offset of the open document's first event.
+    first: usize,
     unchecked: Option<(usize, &'static str)>,
 }
 
@@ -61,14 +59,12 @@ impl<'e> Fold<'e> {
 
     /// Take the next event, and give back the document it completes, if any.
     pub(super) fn event(&mut self, event: &Event<'e>) -> Option<Document<'e>> {
-        let i = self.seen;
-        self.seen += 1;
         if self.stack.is_empty() {
-            self.first = (i, event.offset);
+            self.first = event.offset;
             self.build.begin(event.offset);
         }
         // The tree keeps offsets from the document's start in 32 bits.
-        if event.offset - self.first.1 > super::nodes::MAX_OFFSET {
+        if event.offset - self.first > super::nodes::MAX_OFFSET {
             self.unchecked
                 .get_or_insert((event.offset, messages::text("schema.too-far")));
         }
@@ -127,7 +123,7 @@ impl<'e> Fold<'e> {
             None => {
                 return Some(Document {
                     tree: self.build.finish(node),
-                    offset: self.first.1,
+                    offset: self.first,
                     unchecked: self.unchecked.take(),
                 });
             }
@@ -277,7 +273,10 @@ pub(super) mod tests {
         let far = u32::MAX as usize + 10;
         let events = moved("[true]", &[far, far, far]);
         let document = first_document(&events);
-        assert_eq!(document.tree.place(&[(vec![], vec![])])[0].0, far);
+        assert_eq!(
+            document.tree.place(&[(vec![], vec![])], false)[0].offset,
+            far
+        );
     }
 
     #[test]

@@ -38,6 +38,7 @@ fn options(settings: &FormatSettings, user: bool, style: editorconfig::Style) ->
 /// The dialect and rules, and the layout, that `jsonvet fmt` uses for the file at `path`.
 pub(crate) fn setup(
     path: &Path,
+    text: &str,
     resolver: &Mutex<Resolver>,
     styles: &editorconfig::Cache,
 ) -> Result<(Config, FormatOptions), String> {
@@ -45,7 +46,7 @@ pub(crate) fn setup(
         let mut resolver = lock(resolver);
         (resolver.for_file(path)?, resolver.search_dirs(path))
     };
-    let config = settings.config_for(&path.to_string_lossy());
+    let config = settings.config_for(&path.to_string_lossy(), text);
     let style = styles.style(path, &dirs);
     Ok((
         config,
@@ -150,8 +151,8 @@ fn one(
         }
     };
     let path = Path::new(shown);
-    let (config, options) = setup(path, resolver, styles)?;
-    let formatted = match jsonvet::format(&text, &config, &options) {
+    let (config, options) = setup(path, &text, resolver, styles)?;
+    let formatted = match jsonvet::format_file(path, &text, &config, &options) {
         Ok(formatted) => formatted,
         Err(jsonvet::FormatError::Syntax(report)) => {
             for problem in report

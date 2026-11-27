@@ -2,7 +2,8 @@
 //! validates through its `Json` trait instead of a `serde_json::Value` copy of the document.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::fmt::Write as _;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::OnceLock;
 
@@ -51,6 +52,8 @@ pub(super) struct Tree<'e> {
     /// The key as written, by the entry of its value, for a key that holds U+FFFD: a lone
     /// surrogate in the text is U+FFFD in the key's text.
     raws: HashMap<u32, Cow<'e, [u8]>>,
+    /// First key offsets of members whose name occurs more than once in their object.
+    duplicates: HashSet<u32>,
     root: u32,
     /// The text the offsets are in, and its dialect's index in [`Dialect::ALL`], so that a
     /// container can be read again from its span. Empty when the tree is not to be read again.
@@ -71,6 +74,49 @@ pub(super) fn offset(at: usize) -> u32 {
 
 /// An object member: its key, its value's entry, and the offset of its key in the text.
 type Member<'e> = (Cow<'e, str>, u32, u32);
+
+pub(super) struct Spot {
+    pub(super) offset: usize,
+    pub(super) message_path: String,
+    pub(super) path: Option<String>,
+}
+
+/// RFC 9535 section 2.7 names each value with a full path. Omit long paths so a
+/// large key repeated in the findings does not dominate the report.
+fn normalized_path(steps: &[PathStep<'_>]) -> Option<String> {
+    const MAX_PATH_BYTES: usize = 256;
+    let mut path = String::from("$");
+    for step in steps {
+        match step {
+            PathStep::Index(i) => write!(path, "[{i}]").ok()?,
+            PathStep::Key(key) => {
+                if path.len() + key.len() + 4 > MAX_PATH_BYTES {
+                    return None;
+                }
+                path.push_str("['");
+                for ch in std::str::from_utf8(key).ok()?.chars() {
+                    match ch {
+                        '\'' => path.push_str("\\'"),
+                        '\\' => path.push_str("\\\\"),
+                        '\x08' => path.push_str("\\b"),
+                        '\t' => path.push_str("\\t"),
+                        '\n' => path.push_str("\\n"),
+                        '\x0c' => path.push_str("\\f"),
+                        '\r' => path.push_str("\\r"),
+                        '\0'..='\x1f' => write!(path, "\\u{:04x}", u32::from(ch)).ok()?,
+                        _ => path.push(ch),
+                    }
+                }
+                path.push_str("']");
+            }
+            _ => return None,
+        }
+        if path.len() > MAX_PATH_BYTES {
+            return None;
+        }
+    }
+    Some(path)
+}
 
 /// What [`Tree`] is built with while a document's events come in: the children of every open
 /// container, until it ends.
@@ -153,7 +199,10 @@ impl<'e> Builder<'e> {
         for member in self.members.drain(start..) {
             match self.tree.members[from as usize..].last_mut() {
                 // The later value, at the first copy of the key.
-                Some(last) if last.0 == member.0 => last.1 = member.1,
+                Some(last) if last.0 == member.0 => {
+                    self.tree.duplicates.insert(last.2);
+                    last.1 = member.1;
+                }
                 _ => self.tree.members.push(member),
             }
         }
@@ -169,6 +218,7 @@ impl<'e> Builder<'e> {
         tree.elems.clear();
         tree.members.clear();
         tree.raws.clear();
+        tree.duplicates.clear();
         tree.root = 0;
         tree.base = 0;
         // `tree` came from this builder, so its source and dialect are already this one's.
@@ -199,19 +249,24 @@ impl<'e> Tree<'e> {
     }
 
     /// Where each target is: given as a value's path and keys in it, the first of those keys'
-    /// offset, or else the value's. With it, the value's JSONPath, written as duplicate-key
-    /// paths are. A later duplicate key's value is the one found, at the key's first copy.
-    pub(super) fn place(&self, targets: &[(Vec<String>, Vec<String>)]) -> Vec<(usize, String)> {
+    /// offset, or else the value's. A later duplicate key's value is the one found, at the
+    /// key's first copy.
+    pub(super) fn place(
+        &self,
+        targets: &[(Vec<String>, Vec<String>)],
+        include_path: bool,
+    ) -> Vec<Spot> {
         targets
             .iter()
-            .map(|(path, keys)| self.place_one(path, keys))
+            .map(|(path, keys)| self.place_one(path, keys, include_path))
             .collect()
     }
 
-    fn place_one(&self, path: &[String], keys: &[String]) -> (usize, String) {
+    fn place_one(&self, path: &[String], keys: &[String], include_path: bool) -> Spot {
         let mut node = self.root;
         let mut steps = Vec::with_capacity(path.len());
         let mut lost = false;
+        let mut unique = include_path;
         for segment in path {
             let next = match (lost, &self.entries[node as usize]) {
                 (false, Entry::Array(from, to, _)) => segment
@@ -224,7 +279,8 @@ impl<'e> Tree<'e> {
                     let found =
                         members.binary_search_by(|(k, ..)| k.as_ref().cmp(segment.as_str()));
                     found.ok().map(|at| {
-                        let child = members[at].1;
+                        let (_, child, offset) = members[at];
+                        unique = unique && !self.duplicates.contains(&offset);
                         let raw = self.raws.get(&child).map_or(segment.as_bytes(), |raw| raw);
                         (child, PathStep::Key(raw))
                     })
@@ -251,10 +307,15 @@ impl<'e> Tree<'e> {
             }
             _ => None,
         };
-        (
-            offset.unwrap_or(self.base + self.at[node as usize] as usize),
-            json_path(steps),
-        )
+        Spot {
+            offset: offset.unwrap_or(self.base + self.at[node as usize] as usize),
+            path: if !lost && unique {
+                normalized_path(&steps)
+            } else {
+                None
+            },
+            message_path: json_path(steps),
+        }
     }
 
     /// The text of the container at `index`, if the tree keeps its text.
@@ -680,6 +741,38 @@ mod tests {
         assert_eq!(offset(MAX_OFFSET + 1) as usize, MAX_OFFSET + 1);
     }
 
+    #[test]
+    fn normalized_paths_use_the_rfc_escapes() {
+        let key = b"\"'\\\x08\t\n\x0c\r\x00\x0b\x1f";
+        let path = normalized_path(&[PathStep::Key(b""), PathStep::Index(9), PathStep::Key(key)]);
+        assert_eq!(
+            path.as_deref(),
+            Some(r#"$[''][9]['"\'\\\b\t\n\f\r\u0000\u000b\u001f']"#)
+        );
+    }
+
+    #[test]
+    fn normalized_paths_must_fit_including_quotes_and_escapes() {
+        let key = "x".repeat(251);
+        assert_eq!(
+            normalized_path(&[PathStep::Key(key.as_bytes())]).as_deref(),
+            Some(format!("$['{key}']").as_str())
+        );
+        let nested = &key[3..];
+        assert_eq!(
+            normalized_path(&[PathStep::Index(0), PathStep::Key(nested.as_bytes())]).as_deref(),
+            Some(format!("$[0]['{nested}']").as_str())
+        );
+        let longer = format!("{key}x");
+        assert_eq!(normalized_path(&[PathStep::Key(longer.as_bytes())]), None);
+        let escaped = format!("\n{}", &key[1..]);
+        assert_eq!(normalized_path(&[PathStep::Key(escaped.as_bytes())]), None);
+        assert_eq!(
+            normalized_path(&[PathStep::Key(key.as_bytes()), PathStep::Index(0)]),
+            None
+        );
+    }
+
     /// The second record of a JSON Lines text, which starts past offset 0.
     const RECORDS: &str = "1\n[true, {\"a\": [2]}, null]\n";
 
@@ -695,7 +788,9 @@ mod tests {
     #[test]
     fn a_later_record_keeps_its_offsets_and_its_text() {
         with_second_record(|tree| {
-            assert_eq!(tree.place(&[(vec![], vec![])])[0].0, 2);
+            let root = &tree.place(&[(vec![], vec![])], false)[0];
+            assert_eq!(root.offset, 2);
+            assert_eq!(root.path, None);
             let lazy = tree.root().lazy_value();
             assert!(matches!(lazy, LazyInstance::Deferred { .. }));
             assert_eq!(lazy.get().as_ref(), &json!([true, {"a": [2]}, null]));
@@ -710,14 +805,13 @@ mod tests {
     fn an_index_below_the_length_and_written_plainly_names_an_element() {
         with_second_record(|tree| {
             let path = |segment: &str| {
-                tree.place(&[(vec![segment.to_owned()], vec![])])[0]
-                    .1
-                    .clone()
+                let spot = tree.place_one(&[segment.to_owned()], &[], true);
+                (spot.message_path, spot.path)
             };
-            assert_eq!(path("0"), "$[0]");
-            assert_eq!(path("2"), "$[2]");
-            assert_eq!(path("3"), "$[\"3\"]");
-            assert_eq!(path("01"), "$[\"01\"]");
+            assert_eq!(path("0"), ("$[0]".to_owned(), Some("$[0]".to_owned())));
+            assert_eq!(path("2"), ("$[2]".to_owned(), Some("$[2]".to_owned())));
+            assert_eq!(path("3"), ("$[\"3\"]".to_owned(), None));
+            assert_eq!(path("01"), ("$[\"01\"]".to_owned(), None));
         });
     }
 

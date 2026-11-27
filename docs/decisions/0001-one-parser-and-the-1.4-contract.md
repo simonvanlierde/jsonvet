@@ -37,4 +37,5 @@ json5.
 ## Revisit if
 
 A maintained crate offers strict dialect modes with offsets and duplicate reports and passes our
-corpus, or 4.0 drops check-json5 compatibility.
+corpus, or jsonvet drops the 1.4 verdict contract. Version 4.0 retires the old entry points and
+keeps the differential check.

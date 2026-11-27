@@ -40,9 +40,9 @@ The playground runs jsonvet's own parser, built to WebAssembly, on the text you 
 it as a printer's proof: every problem gets a proofreader's mark at the exact token, and its
 correction sits in the margin beside its line, with the position, rule id and, for a duplicate
 key, its JSONPath and where its first copy is. Clicking a correction moves the caret to it. The
-six dialects run along the top as proof stages, each with its verdict. One line under the proof
-says whether the text parses (a rule can flag text that does, such as a duplicate key) and what the hook and CLI do, and a fold below gives the hook, Action and command for
-the chosen dialect, each also with `--fix` and as `jsonvet fmt`.
+six dialects run along the top as proof stages, each with its verdict. One line says whether the
+text parses and what the hook and CLI do. It sits above the editor controls on narrow screens.
+A fold below gives the hook, Action and command for the chosen dialect, with fix and format examples.
 
 Two actions edit the proof, as the CLI's `--fix` and `jsonvet fmt` do. Fix applies the safe fixes
 (duplicate keys only when set in its options, keeping the last), either all at once or one correction at a
@@ -55,7 +55,7 @@ check again, update the share link and show the time they took.
 The verdict row times each check in the visitor's own browser, and the "hosts.json (2.7 MB)" sample
 builds a large made-up file in the page and checks it, so the speed shows rather than being
 claimed. A caption above the editor says what the text is (its name and line count) and offers
-"Copy link to this text".
+"Copy share link".
 
 A visit succeeds when the visitor sees the verdict jsonvet would give their text, understands
 each problem well enough to fix it, and knows how to run the same check in their repository.
@@ -134,6 +134,6 @@ Help text is one sentence and about one line wide at 1440 px; a concept is expla
 
 - Each correction has a number in the gutter and a mark shape (struck, underlined, ringed) as
   well as a colour, so it shows in forced-colors mode and without colour vision.
-- The verdict line is a live region that is emptied when it changes, so it never holds two verdicts; the corrections are a list of buttons that move the caret,
-  each named with its position, severity, message and related place.
+- The verdict live region clears when the verdict changes. Each correction is a button that moves
+  the caret. Its name starts with the visible message and includes its position, severity and related place.
 - The editor text is 16px on narrow screens so iOS does not zoom on focus.

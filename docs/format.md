@@ -16,7 +16,7 @@ The pre-commit hook is `jsonvet-format`:
 
 ```yaml
 - repo: https://github.com/simonvanlierde/jsonvet
-  rev: v3.5.1
+  rev: v4.0.0
   hooks:
     - id: jsonvet-format
 ```
@@ -168,7 +168,7 @@ It is off by default, so existing files keep their layout.
 
 ## Options
 
-`jsonvet fmt` takes `--check`, `--dialect`, `--strict`, `--config`, `--no-config` and
+`jsonvet fmt` takes `--check`, `--dialect`, `--config`, `--no-config` and
 `--stdin-filename`, which work as for a check. The options for checking (`--format`, `--color`,
 `--schema`, `--max-warnings`, `--error`, `--warn`, `--ignore`, `--fix` and `--unsafe-fixes`) are a
 usage error under `fmt`.

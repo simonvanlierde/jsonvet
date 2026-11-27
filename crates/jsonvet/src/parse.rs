@@ -1515,7 +1515,7 @@ impl<'a, const SCAN: bool> Parser<'a, '_, SCAN> {
     #[inline(never)]
     fn not_literal(&mut self, word: &'static str, instead: &'static str) -> Result<(), Fail> {
         let start = self.pos;
-        for &expected in &word.as_bytes()[1..word.len() - 1] {
+        for expected in word.trim_matches('`').bytes() {
             if self.peek() != Some(expected) {
                 // A different word, such as `None` for `NaN`, shows whole; a cut-off `nul` or
                 // `nul]` still says which literal it started.
@@ -1847,6 +1847,59 @@ fn push_wtf8(buffer: &mut Vec<u8>, code_point: u32) {
             0x80 | ((code_point >> 6) & 0x3F) as u8,
             0x80 | (code_point & 0x3F) as u8,
         ]),
+    }
+}
+
+#[cfg(kani)]
+mod proofs {
+    use super::{digit_run, plain_bytes, plain_run, string_stops};
+
+    #[kani::proof]
+    #[kani::unwind(9)]
+    fn digit_run_matches_byte_scan() {
+        let word: u64 = kani::any();
+        let bytes = word.to_le_bytes();
+        let expected = bytes
+            .iter()
+            .position(|byte| !byte.is_ascii_digit())
+            .unwrap_or(bytes.len());
+        assert_eq!(digit_run(word), expected);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(3)]
+    fn plain_string_scan_classifies_each_byte() {
+        let byte: u8 = kani::any();
+        let quote = if kani::any() { b'"' } else { b'\'' };
+        let json5: bool = kani::any();
+        let ascii_only: bool = kani::any();
+        let should_stop = byte == quote
+            || matches!(byte, b'\\' | b'\n' | b'\r')
+            || (!json5 && byte < b' ')
+            || (ascii_only && !byte.is_ascii());
+
+        let stops = string_stops(quote, json5, ascii_only);
+        assert_eq!(
+            plain_bytes(&[byte], stops, quote, ascii_only),
+            usize::from(!should_stop)
+        );
+    }
+
+    #[kani::proof]
+    #[kani::unwind(17)]
+    fn plain_string_block_skips_only_bytes_without_stops() {
+        let block: [u8; 16] = kani::any();
+        let quote = if kani::any() { b'"' } else { b'\'' };
+        let ascii_only: bool = kani::any();
+        let safe = (0..block.len()).all(|index| {
+            let byte = block[index];
+            byte != quote && byte != b'\\' && byte >= b' ' && (!ascii_only || byte.is_ascii())
+        });
+
+        assert_eq!(
+            plain_run(&block, quote, ascii_only),
+            if safe { 16 } else { 0 }
+        );
     }
 }
 

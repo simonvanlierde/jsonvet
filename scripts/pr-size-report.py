@@ -13,7 +13,7 @@ import subprocess
 import sys
 from typing import Any
 
-CAP = 500
+from pr_size import CAP, changed_lines
 
 
 def gh(*args: str) -> Any:  # noqa: ANN401 - gh's JSON has a different shape per command
@@ -27,19 +27,6 @@ def gh(*args: str) -> Any:  # noqa: ANN401 - gh's JSON has a different shape per
     return json.loads(out)
 
 
-def generated(paths: list[str]) -> set[str]:
-    """Return the paths among `paths` that .gitattributes marks linguist-generated."""
-    out = subprocess.run(
-        ["git", "check-attr", "-z", "--stdin", "linguist-generated"],  # noqa: S607
-        input="\0".join(paths) + "\0",
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.split("\0")
-    # Triples of path, attribute, value.
-    return {out[i] for i in range(0, len(out) - 2, 3) if out[i + 2] == "true"}
-
-
 def main() -> None:
     """Print one line per merged pull request, then the share over the cap."""
     since = sys.argv[1] if len(sys.argv) > 1 else "2026-11-06"
@@ -50,8 +37,7 @@ def main() -> None:
         n = pr["number"]
         pages = gh("api", "--paginate", "--slurp", f"repos/{{owner}}/{{repo}}/pulls/{n}/files")
         files = [f for page in pages for f in page]
-        skip = generated([f["filename"] for f in files])
-        lines = sum(f["additions"] + f["deletions"] for f in files if f["filename"] not in skip)
+        lines = changed_lines((f["filename"], f["additions"], f["deletions"]) for f in files)
         view = gh("pr", "view", str(n), "--json", "reviews,comments,commits")
         talk = [
             x.get("submittedAt") or x["createdAt"]

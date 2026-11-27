@@ -6,7 +6,7 @@
 Usage: uv run scripts/differential.py [--cases N] [--seed S] [--jsonvet PATH]
 
 It writes random JSON-ish files, the json5-tests suite and tests/corpus to a temporary
-directory, runs both tools over it in JSON5 mode and with --strict, and compares the verdict
+directory, runs both tools over it in JSON5 and strict JSON modes, and compares the verdict
 for every file and, where both find no syntax error, the duplicate-key reports. It sorts every
 difference into a category. The design accepts some of them, and docs/design.md lists those. The
 exit status is 1 when a difference falls in no accepted category.
@@ -195,10 +195,10 @@ def classify(name: str, text: str, ours: list[Problem], theirs: list[Problem]) -
     return "unexplained: syntax verdict" if syntax_differs else "unexplained: duplicate reports"
 
 
-def compare(mode: str, files: list[Path], cwd: Path, jsonvet: str, extra: list[str]) -> Counter:
+def compare(mode: str, files: list[Path], cwd: Path, jsonvet: str) -> Counter:
     """Run both tools on `files` and print how their reports differ, by category."""
-    ours = run([jsonvet, "--no-config", *extra], files, cwd)
-    theirs = run([*REFERENCE, *extra], files, cwd)
+    ours = run([jsonvet, "--no-config", *(["--dialect", "json:*"] if mode == "strict" else [])], files, cwd)
+    theirs = run([*REFERENCE, *(["--strict", "*"] if mode == "strict" else [])], files, cwd)
     tally: Counter = Counter()
     examples: dict[str, list[str]] = defaultdict(list)
     for path in files:
@@ -263,8 +263,8 @@ def main() -> int:
         cwd = Path(tmp)
         check_reference(cwd)
         files = corpus(cwd, args.cases, args.seed)
-        totals = compare("json5", files, cwd, args.jsonvet, [])
-        totals += compare("strict", files, cwd, args.jsonvet, ["--strict", "*"])
+        totals = compare("json5", files, cwd, args.jsonvet)
+        totals += compare("strict", files, cwd, args.jsonvet)
     unexplained = sum(n for c, n in totals.items() if c.startswith("unexplained"))
     print(f"\nunexplained differences: {unexplained}")
     return 1 if unexplained else 0

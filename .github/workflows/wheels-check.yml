@@ -19,7 +19,6 @@ on:
       - scripts/smoke.py
       - scripts/cargo-auditable
       - scripts/check-auditable.py
-      - compat/**
 
 permissions:
   contents: read

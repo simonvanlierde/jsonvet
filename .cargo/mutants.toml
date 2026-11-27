@@ -12,6 +12,8 @@ timeout_multiplier = 2
 # Matched by column, not line, so they survive edits elsewhere in the file. Any other mutant
 # that survives fails the weekly run.
 exclude_re = [
+  # These harnesses run only in Kani. Their parser and Unicode helpers stay in scope.
+  "jsonvet/src/(parse|unicode)\\.rs:.* (in |replace )proofs::",
   # Speed only: whether a closed object's key table is kept, and which hash bits hashbrown's
   # tag gets.
   "parse.rs:.* replace (>|\\*) with .* in Keys<'a>::clear",
@@ -23,7 +25,7 @@ exclude_re = [
   "parse.rs:\\d+:38: replace \\* with (/|\\+) in Keys<'a>::first_or_insert",
   # Speed only: scanning the kept text again when no duplicate was dropped finds the same line
   # endings, since no other fix touches one.
-  "fixes.rs:\\d+:24: replace && with \\|\\| in try_fix_at",
+  "fixes.rs:\\d+:24: replace && with \\|\\| in try_fix$",
   # Speed only: which column-count branch runs.
   "report.rs:\\d+:26: replace - with \\+ in Report<'a>::location",
   # With `decode` off, the extra value goes to an event sink that is absent, or to a key path
@@ -89,11 +91,11 @@ exclude_re = [
   # The formatter, `jsonvet fmt`. Memory and speed only: the room given in advance to the output
   # string and the vectors, and the tree of a JSON Lines record, which is cleared before the next
   # (the records are pieces of the same text either way).
-  "format.rs:\\d+:(36|49): replace (\\+ with (\\*|-)|/ with (%|\\*)) in format$",
+  "format.rs:\\d+:(36|49): replace (\\+ with (\\*|-)|/ with (%|\\*)) in format_inner$",
   "format.rs:.* in Parser<'a>::reserve$",
   "format.rs:.* replace Parser<'a>::reset with \\(\\)",
   # The white space a JSON Lines record is trimmed of is skipped by the lexer anyway.
-  "format.rs:\\d+:70: replace \\|\\| with && in format$",
+  "format.rs:\\d+:70: replace \\|\\| with && in format_inner$",
   # Only JSON5 text has a U+2028 or U+2029 outside a string or comment that passes the check,
   # so the other dialects never reach that arm.
   "format.rs:\\d+:44: replace match guard dialect == Dialect::Json5 with true in Lexer<'_>::next$",
@@ -125,13 +127,11 @@ exclude_re = [
   # way it moved; and the indent character is one byte, so dividing by its length changes nothing.
   "format.rs:\\d+:64: replace > with >= in Writer<'_>::comment$",
   "format.rs:\\d+:34: replace \\* with / in Writer<'_>::comment$",
-  # The index of the document's first event is kept but never read.
-  "schema/fold.rs:60:19: replace \\+= with \\*= in Fold<'e>::event$",
   # Speed only: the hash only sorts the items into buckets, which `equal` then compares, and
   # items that are equal hash alike however it is made.
   "schema/nodes.rs:.* in hash$",
   "schema/nodes.rs:.* replace hash with \\(\\)$",
-  "schema/nodes.rs:407:.* in <impl Array<'a, Own> for Elems<'a>>::is_unique$",
+  "schema/nodes.rs:\\d+:24: replace <= with > in <impl Array<'a, Own> for Elems<'a>>::is_unique$",
   # Only a temporary name taken already, by the same process id and counter, counts the tries.
   # Any other error gives up after eight tries instead of one, with the same message.
   "write.rs:\\d+:(64|73|86): .* in temp_beside$",

@@ -321,7 +321,7 @@ fn superseded(note: &Notification, queue: &VecDeque<Message>) -> bool {
     })
 }
 
-/// What the client can take, from its capabilities, and the workspace folders it opened.
+/// The client's capabilities, settings and workspace folders.
 struct Client {
     /// The workspace folders, as paths: none when the client named none.
     roots: Vec<PathBuf>,
@@ -331,6 +331,8 @@ struct Client {
     versioned: bool,
     /// Code action data is preserved and the client resolves edits when it needs them.
     resolve: bool,
+    /// The most diagnostics to publish per file, or `usize::MAX` for no limit.
+    max_problems: usize,
 }
 
 impl Client {
@@ -363,6 +365,12 @@ impl Client {
                     .and_then(Value::as_array)
                     .is_some_and(|properties| properties.iter().any(|p| p == "edit")),
             versioned: flag("/capabilities/workspace/workspaceEdit/documentChanges"),
+            max_problems: params
+                .pointer("/initializationOptions/maxProblems")
+                .and_then(Value::as_u64)
+                .and_then(|limit| usize::try_from(limit).ok())
+                .filter(|&limit| limit > 0)
+                .unwrap_or(usize::MAX),
         }
     }
 }
@@ -543,7 +551,7 @@ fn diagnostics(
         }
     };
     let mut diagnostics = Vec::new();
-    for problem in report.problems() {
+    for problem in report.problems().iter().take(client.max_problems) {
         let id = problem.rule().id();
         let mut diagnostic = json!({
             "range": lines.span(problem.offset()..problem.end()),
@@ -563,15 +571,16 @@ fn diagnostics(
         }
         diagnostics.push(diagnostic);
     }
-    for (offset, message, summary) in schema_errors {
-        let (start, end) = frame::one_char(&report, offset);
+    let remaining = client.max_problems - diagnostics.len();
+    for finding in schema_errors.into_iter().take(remaining) {
+        let (start, end) = frame::one_char(&report, finding.offset);
         let mut diagnostic = json!({
             "range": lines.span(start..end),
-            "severity": if summary { 3 } else { 1 },
+            "severity": if finding.summary { 3 } else { 1 },
             "source": "jsonvet",
-            "message": message,
+            "message": finding.message,
         });
-        if !summary {
+        if !finding.summary {
             diagnostic["code"] = json!(sarif::SCHEMA);
             diagnostic["codeDescription"] = json!({ "href": rules::help_uri(sarif::SCHEMA) });
         }
@@ -598,9 +607,11 @@ fn resolver(path: &Path, roots: &[PathBuf]) -> Result<Resolver, String> {
 }
 
 /// The checking config for the file at `path`, as a run picks it.
-fn config_for(path: &Path, roots: &[PathBuf]) -> Result<Config, String> {
+fn config_for(path: &Path, text: &str, roots: &[PathBuf]) -> Result<Config, String> {
     let mut resolver = resolver(path, roots)?;
-    Ok(resolver.for_file(path)?.config_for(&path.to_string_lossy()))
+    Ok(resolver
+        .for_file(path)?
+        .config_for(&path.to_string_lossy(), text))
 }
 
 /// A quick fix for each safe fix with a problem in `range`, and one action for them all.
@@ -617,7 +628,7 @@ fn code_actions(
         return json!([]);
     }
     let text = lines.text;
-    let Ok(config) = config_for(path, &client.roots) else {
+    let Ok(config) = config_for(path, text, &client.roots) else {
         return json!([]);
     };
     let Ok(all) = jsonvet::try_fix(text, &config, false, None) else {
@@ -711,7 +722,7 @@ fn resolve_action(
             "the document changed or was closed".to_owned(),
         );
     };
-    let fixed = config_for(&path, &client.roots).and_then(|config| {
+    let fixed = config_for(&path, &document.text, &client.roots).and_then(|config| {
         jsonvet::try_fix(
             &document.text,
             &config,
@@ -776,17 +787,19 @@ fn formatting(
         Ok(resolver) => Mutex::new(resolver),
         Err(_) => return Value::Null,
     };
-    let Ok((config, options)) = format::setup(path, &resolver, &editorconfig::Cache::default())
+    let Ok((config, options)) =
+        format::setup(path, text, &resolver, &editorconfig::Cache::default())
     else {
         return Value::Null;
     };
-    let Ok(formatted) = jsonvet::format(text, &config, &options) else {
+    let Ok(formatted) = jsonvet::format_file(path, text, &config, &options) else {
         return Value::Null;
     };
     let mut edits = edits(text, &formatted);
     if let Some(range) = range {
         let same = |edits: &[(Range<usize>, &str)]| {
-            jsonvet::format(&apply(text, edits), &config, &options).is_ok_and(|f| f == formatted)
+            jsonvet::format_file(path, &apply(text, edits), &config, &options)
+                .is_ok_and(|f| f == formatted)
         };
         edits = within(text, edits, &range, same);
     }
@@ -1087,7 +1100,7 @@ fn path_of(uri: &str) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Lines, apply, edits, path_of, serve, uri_of, watch, within};
+    use super::{FIX_ALL, Lines, apply, edits, path_of, serve, uri_of, watch, within};
     use lsp_server::{Connection, Message, Notification, Request, RequestId};
     use serde_json::{Value, json};
     use std::collections::BTreeSet;
@@ -1108,6 +1121,7 @@ mod tests {
             utf8: false,
             versioned: false,
             resolve: false,
+            max_problems: usize::MAX,
         };
         for n in [100, 1_000] {
             let text = format!("[{}]", vec!["[0,]"; n].join(","));
@@ -1156,7 +1170,8 @@ mod tests {
         ] {
             let path = dir.join(name);
             let uri = uri(&path);
-            let config = super::config_for(&path, std::slice::from_ref(&dir)).expect("config");
+            let config =
+                super::config_for(&path, text, std::slice::from_ref(&dir)).expect("config");
             let expected = jsonvet::try_fix(text, &config, false, None).expect("fixes");
             for utf8 in [false, true] {
                 for versioned in [false, true] {
@@ -1165,6 +1180,7 @@ mod tests {
                         utf8,
                         versioned,
                         resolve: false,
+                        max_problems: usize::MAX,
                     };
                     let document = super::Document {
                         text: text.to_owned(),
@@ -1382,6 +1398,37 @@ mod tests {
         client.notify(
             "textDocument/didClose",
             json!({ "textDocument": { "uri": file } }),
+        );
+        assert_eq!(client.diagnostics()["diagnostics"], json!([]));
+        client.stop();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn an_unsaved_jsonc_modeline_applies_to_diagnostics_fixes_and_formatting() {
+        let dir = folder("jsonc-modeline");
+        let file = uri(&dir.join("a.json"));
+        let (mut client, _) = Client::start(&json!({}));
+        let text = "// -*- jsonc -*-\n[1,]";
+        let published = client.open(&file, text);
+        assert_eq!(published["diagnostics"][0]["code"], "syntax");
+        let actions = client.request(
+            "textDocument/codeAction",
+            json!({ "textDocument": { "uri": file }, "range": range((1, 2), (1, 3)),
+                "context": { "only": ["quickfix"] } }),
+        );
+        assert_eq!(actions.as_array().map(Vec::len), Some(1));
+        assert_eq!(
+            client.request(
+                "textDocument/formatting",
+                json!({ "textDocument": { "uri": file }, "options": {} }),
+            ),
+            Value::Null
+        );
+        client.notify(
+            "textDocument/didChange",
+            json!({ "textDocument": { "uri": file, "version": 2 },
+                "contentChanges": [{ "text": "[1,]" }] }),
         );
         assert_eq!(client.diagnostics()["diagnostics"], json!([]));
         client.stop();
@@ -1654,6 +1701,79 @@ mod tests {
         );
         assert!(diagnostics[100].get("code").is_none());
         client.stop();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_diagnostic_limit_counts_rule_and_schema_findings_together() {
+        let dir = folder("diagnostic-limit-schema");
+        std::fs::write(
+            dir.join("s.json"),
+            r#"{"properties":{"a":{"type":"string"},"b":{"type":"string"}}}"#,
+        )
+        .expect("schema");
+        std::fs::write(
+            dir.join("jsonvet.toml"),
+            "schemas = [{ files = \"a.json\", schema = \"s.json\" }]\n",
+        )
+        .expect("config");
+        let file = uri(&dir.join("a.json"));
+        let (client, _) =
+            Client::start_with(json!({ "initializationOptions": { "maxProblems": 2 } }));
+        let published = client.open(&file, r#"{"a":1,"a":2,"b":3}"#);
+        let diagnostics = published["diagnostics"].as_array().expect("diagnostics");
+        assert_eq!(diagnostics.len(), 2);
+        assert_eq!(diagnostics[0]["code"], "duplicate-key");
+        assert_eq!(diagnostics[1]["code"], "schema");
+        client.notify(
+            "workspace/didChangeWatchedFiles",
+            json!({ "changes": [{ "uri": uri(&dir.join("s.json")), "type": 2 }] }),
+        );
+        assert_eq!(client.diagnostics(), published);
+        client.stop();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_diagnostic_limit_keeps_quick_fixes_for_unpublished_findings() {
+        let dir = folder("diagnostic-limit-fixes");
+        let file = uri(&dir.join("a.jsonl"));
+        let (mut client, _) =
+            Client::start_with(json!({ "initializationOptions": { "maxProblems": 1 } }));
+        let published = client.open(&file, "\u{feff}{\"a\":1}");
+        let diagnostics = published["diagnostics"].as_array().expect("diagnostics");
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0]["code"], "byte-order-mark");
+        let actions = client.request(
+            "textDocument/codeAction",
+            json!({ "textDocument": { "uri": file }, "range": range((0, 0), (0, 8)),
+                "context": { "only": ["quickfix", FIX_ALL] } }),
+        );
+        assert!(actions.as_array().expect("actions").iter().any(|action| {
+            action["title"] == "Add the final newline"
+                && action["edit"]["changes"][file.as_str()][0]["newText"] == "\n"
+        }));
+        assert!(actions.as_array().expect("actions").iter().any(|action| {
+            action["kind"] == FIX_ALL
+                && action["edit"]["changes"][file.as_str()]
+                    .as_array()
+                    .is_some_and(|edits| edits.len() == 2)
+        }));
+        client.stop();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn zero_and_invalid_diagnostic_limits_are_unlimited() {
+        let dir = folder("invalid-diagnostic-limit");
+        let file = uri(&dir.join("a.jsonl"));
+        for max in [json!(0), json!(-1), json!(1.5), json!("1"), Value::Null] {
+            let (client, _) =
+                Client::start_with(json!({ "initializationOptions": { "maxProblems": max } }));
+            let published = client.open(&file, "\u{feff}{}");
+            assert_eq!(published["diagnostics"].as_array().map(Vec::len), Some(2));
+            client.stop();
+        }
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -2002,6 +2122,17 @@ mod tests {
                 assert_eq!(lines.position(offset)["character"], units, "at {offset}");
             }
         }
+    }
+
+    #[test]
+    fn a_nearby_position_counts_only_the_gap_from_its_cached_position() {
+        let text = "é😀a".repeat(10_000);
+        let lines = Lines::new(&text, false);
+        let before = 7 * 9_000;
+        assert_eq!(lines.position(before)["character"], 4 * 9_000);
+        let counted = lines.counted.get();
+        assert_eq!(lines.position(before + 7)["character"], 4 * 9_001);
+        assert_eq!(lines.counted.get() - counted, 7);
     }
 
     #[test]
@@ -2764,6 +2895,7 @@ mod tests {
             roots: Vec::new(),
             utf8: false,
             resolve: false,
+            max_problems: usize::MAX,
             versioned: false,
         };
         let published = super::update(&change, &mut documents, &mut 1, &server, true);

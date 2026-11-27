@@ -20,8 +20,8 @@ package.json:2:14: error[syntax] missing `,`
 events.jsonl:12:1: error[syntax] blank line; JSON Lines needs a value on every line
 ```
 
-It replaces check-json5, a Python hook, and is up to **1,965 times faster** than check-json5 1.4.1
-on JSON5 files, and 6-39x on JSON and JSONC ([figures](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#speed)).
+It replaces check-json5, a Python hook, and is up to **2,098 times faster** than check-json5 1.4.1
+on JSON5 files, and 6-40x on JSON and JSONC ([figures](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#speed)).
 
 **Try it in your browser:** the [playground](https://simonvanlierde.com/jsonvet/) checks, fixes
 and formats the text you paste. Nothing to install, and the text stays on your machine.
@@ -32,8 +32,8 @@ and formats the text you paste. Nothing to install, and the text stays on your m
   and leaves your comments where they are.
 - **JSON Schema with positions.** Each schema error points at its value's line and column.
   Default runs stay offline; `--schema-catalog` opts into SchemaStore downloads.
-- **Fits CI.** A pre-commit or prek hook, a GitHub Action, a command or a Rust library, with text,
-  SARIF or JSON output.
+- **Fits CI.** A pre-commit or prek hook, a GitHub Action, a command or a Rust library.
+  The CLI writes text, SARIF, JSON, or GitLab Code Quality reports.
 
 ## Quick start
 
@@ -44,7 +44,7 @@ Add this to `.pre-commit-config.yaml` (for [pre-commit](https://pre-commit.com) 
 
 ```yaml
 - repo: https://github.com/simonvanlierde/jsonvet
-  rev: v3.5.1
+  rev: v4.0.0
   hooks:
     - id: jsonvet
     - id: jsonvet-format
@@ -57,14 +57,14 @@ Add this to `.pre-commit-config.yaml` (for [pre-commit](https://pre-commit.com) 
 It checks files by name: `.json`, `.jsonc`, `.json5`, `.jsonl`, `.ndjson`, `.geojson`, `.jsonld`,
 `.hujson`, `.jwcc`, `.code-workspace`, `.code-snippets`, `.webmanifest` and `.babelrc`.
 
-Options go in `args`, such as `args: [--strict, package.json]` to hold `package.json` to strict
+Options go in `args`, such as `args: [--dialect, 'json:package.json']` to hold `package.json` to strict
 JSON. The hook installs a prebuilt binary from PyPI, so you need no Rust. On Linux the wheel needs glibc
 2.28 or newer; older systems build from the source distribution, which needs Rust.
 
 ### GitHub Action
 
 ```yaml
-- uses: simonvanlierde/jsonvet@v3
+- uses: simonvanlierde/jsonvet@v4
 ```
 
 The step fails when a file has an error, and each problem shows up as an annotation on the pull
@@ -75,6 +75,11 @@ repository's release workflow. Its inputs are in the
 The Action only checks. To check formatting too, add a step with `run: uvx jsonvet fmt --check .`.
 To see the problems in GitHub code scanning, set `sarif: jsonvet.sarif` and upload that file, as in
 [this workflow](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#code-scanning).
+
+### Trunk Code Quality
+
+Use the [custom linter example](https://simonvanlierde.com/jsonvet/docs/usage.html#trunk-code-quality)
+to run jsonvet from Trunk.
 
 ### Command line
 
@@ -123,7 +128,7 @@ The API is on [docs.rs](https://docs.rs/jsonvet).
 
 | Dialect  | Adds to JSON                                                                 | Default for                                                          |
 | -------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `json`   | nothing ([RFC 8259](https://www.rfc-editor.org/rfc/rfc8259))                  | none; choose it with `--dialect` or `--strict`                       |
+| `json`   | nothing ([RFC 8259](https://www.rfc-editor.org/rfc/rfc8259))                  | none; choose it with `--dialect json`                       |
 | `i-json` | stricter content ([RFC 7493](https://www.rfc-editor.org/rfc/rfc7493))         | none                                                                 |
 | `jsonc`  | `//` and `/* */` comments                                                    | `.jsonc`, `.code-workspace`, `.code-snippets`                        |
 | `jwcc`   | comments and trailing commas ([HuJSON](https://github.com/tailscale/hujson)) | `.hujson`, `.jwcc`                                                   |
@@ -131,8 +136,8 @@ The API is on [docs.rs](https://docs.rs/jsonvet).
 | `jsonl`  | one JSON value per line ([JSON Lines](https://jsonlines.org/))               | `.jsonl`, `.ndjson`                                                  |
 
 Any other extension is checked as JSON5. `.json` defaults to JSON5 because most `.json` files that
-fail as JSON are config files with comments. To check a file as strict JSON, use
-`--dialect json:package.json`.
+fail as JSON are config files with comments. A first-line [JSONC modeline](docs/usage.md#jsonc-modelines)
+selects JSONC. To check a file as strict JSON, use `--dialect json:package.json`.
 
 ## Rules
 
@@ -219,8 +224,9 @@ schema paths and the limits are in the
 
 ## Coming from check-json5
 
-Bump `rev` to the newest tag. The `check-json5` hook id, the `check-json5` command and `--strict`
-keep working through 3.x.
+Use the `jsonvet` package, command and hook ID in 4.0. See the
+[migration guide](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#coming-from-check-json5)
+for hook and flag changes.
 
 jsonvet gives the same pass or fail as 1.4.1, apart from a few
 [edge cases](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#known-differences-from-14).

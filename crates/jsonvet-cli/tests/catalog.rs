@@ -163,6 +163,56 @@ fn catalog_precedence_uses_the_fixed_schema_declaration() {
 }
 
 #[test]
+fn a_catalog_error_after_stdin_diagnostics_adds_no_second_json_document() {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let path = setup();
+    seed(
+        &path.join("cache/jsonvet/schemastore"),
+        CATALOG,
+        r#"{"schemas":[{"url":"http://127.0.0.1/schema","fileMatch":["package.json"]}]}"#,
+    );
+    std::fs::write(path.join("local.json"), "false").expect("local schema");
+    std::fs::write(
+        path.join("jsonvet.toml"),
+        "schemas = [{files = 'in.json', schema = 'local.json'}]\n",
+    )
+    .expect("config");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_jsonvet"))
+        .current_dir(&path)
+        .env("XDG_CACHE_HOME", path.join("cache"))
+        .args([
+            "--fix",
+            "--format",
+            "json",
+            "--schema-catalog",
+            "--stdin-filename",
+            "in.json",
+            "-",
+            "package.json",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run jsonvet");
+    child
+        .stdin
+        .take()
+        .expect("stdin")
+        .write_all(b"{}")
+        .expect("write input");
+    let result = child.wait_with_output().expect("jsonvet exits");
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert_eq!(result.status.code(), Some(2), "{stderr}");
+    assert!(stderr.contains("\"rule\":\"schema\""), "{stderr}");
+    assert!(stderr.contains("unsupported catalog URL"), "{stderr}");
+    assert!(!stderr.contains("\"errors\""), "{stderr}");
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[test]
 fn matched_unsupported_origin_is_a_usage_error() {
     let path = setup();
     seed(

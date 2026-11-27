@@ -5,7 +5,7 @@ import { posix, resolve } from "node:path";
 import { after, test } from "node:test";
 import { decode } from "../../playground/share.mjs";
 import { policy, scriptHashes } from "./csp-hash.mjs";
-import { anchorsOf, NAV, pageOf, REPO, ROOT, slugger, sources } from "./lib.mjs";
+import { anchorsOf, NAV, pageOf, REPO, ROOT, ruleIds, slugger, sources } from "./lib.mjs";
 import { shown } from "./matrix.mjs";
 
 // The site as deployed, built into a folder of its own (DOCS_OUT), so a test never touches ../../site.
@@ -264,6 +264,14 @@ test("the docs nav lists every page, in order", () => {
   assert.ok(html["docs/usage.html"].includes('aria-current="page"'));
 });
 
+test("exact rule search links lead to their reference sections", () => {
+  const usage = html["docs/usage.html"];
+  const rules = ruleIds();
+  assert.ok(rules.includes("duplicate-key"));
+  assert.ok(usage.includes(`data-rule-ids="${rules.join(" ")}"`));
+  for (const rule of rules) assert.ok(ids(usage).has(rule), rule);
+});
+
 test("the matrix page has a table per dialect, and details for every file and parser", () => {
   const page = html["docs/matrix.html"];
   const data = JSON.parse(readFileSync(resolve(ROOT, "docs/conformance.json"), "utf8"));
@@ -298,7 +306,7 @@ test("a file's text names its invisible characters, and its share link opens the
   );
   assert.equal(shown(new Uint8Array([0x7b, 0xff, 0x7d])), null);
   const [, dialect, data] = html["docs/matrix.html"].match(
-    /<section class="detail" id="file\/corpus\/json5\/bom.json">[\s\S]*?href="\.\.\/#([a-z0-9-]+):([\w-]+)"/,
+    /<section class="detail" id="file\/corpus\/json5\/bom.json"[^>]*>[\s\S]*?href="\.\.\/#([a-z0-9-]+):([\w-]+)"/,
   );
   const text = readFileSync(resolve(ROOT, "tests/corpus/json5/bom.json"), "utf8");
   assert.ok(text.startsWith(bom));

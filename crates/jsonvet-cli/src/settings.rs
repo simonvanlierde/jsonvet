@@ -21,7 +21,7 @@ use crate::output::printable;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DialectPattern {
     pub(crate) files: Option<Glob>,
-    /// `None` means `auto`: the default for the file's extension.
+    /// `None` means `auto`: choose from the file name and modeline.
     pub(crate) dialect: Option<Dialect>,
     /// The absolute directory of the config file the pattern comes from, normalized, which
     /// `files` is relative to. `None` for the command line, whose patterns match the path as
@@ -234,8 +234,8 @@ impl Settings {
     }
 
     /// The checking config for one file: the last matching dialect pattern wins.
-    pub(crate) fn config_for(&self, path: &str) -> Config {
-        let auto = || Dialect::for_path(Path::new(path)).unwrap_or(Dialect::Json5);
+    pub(crate) fn config_for(&self, path: &str, text: &str) -> Config {
+        let auto = || Dialect::for_path_and_text(Path::new(path), text).unwrap_or(Dialect::Json5);
         let mut located = Located::new(path);
         let dialect = self
             .dialects
@@ -413,6 +413,22 @@ impl Resolver {
         let path = lexical(&self.cwd.join(path));
         let start = path.parent().unwrap_or(&path);
         project(start, self.last(start))
+    }
+
+    /// A file name relative to the checkout, or the working directory without Git.
+    pub(crate) fn checkout_path(&self, path: &Path, on_disk: bool) -> Option<PathBuf> {
+        let root = self.repo.as_deref().unwrap_or(&self.cwd);
+        let path = self.cwd.join(path);
+        // The parent of a symlink target can be different from the parent written in the path.
+        // Resolve only the parent directory, so a missing file still gets a location.
+        if on_disk
+            && path.components().any(|part| part == Component::ParentDir)
+            && let (Some(parent), Some(name)) = (path.parent(), path.file_name())
+            && let (Ok(parent), Ok(root)) = (parent.canonicalize(), root.canonicalize())
+        {
+            return parent.strip_prefix(root).ok().map(|path| path.join(name));
+        }
+        lexical(&path).strip_prefix(root).ok().map(Path::to_owned)
     }
 
     /// Where the search from the folder `start` stops if it meets no `.git` first.

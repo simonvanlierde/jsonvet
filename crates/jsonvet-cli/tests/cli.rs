@@ -346,8 +346,8 @@ fn help_into_a_closed_pipe_succeeds() {
 }
 
 #[test]
-fn help_version_and_the_check_json5_name() {
-    let dir = workdir(&[("dup.json", "{\"a\":1,\"a\":2}"), ("sub.json", "{}")]);
+fn help_and_version() {
+    let dir = workdir(&[]);
     let run = |args: &[&str]| jsonvet(&dir, args);
     let version = format!("jsonvet {}\n", env!("CARGO_PKG_VERSION"));
     assert_eq!(run(&["-V"]), (0, version.clone()));
@@ -356,19 +356,13 @@ fn help_version_and_the_check_json5_name() {
         let (code, out) = run(&[flag]);
         assert_eq!(code, 0);
         assert!(out.starts_with("Check JSON, I-JSON,"), "{flag}");
+        assert!(!out.contains("--strict"), "{flag}");
         // The help names every place a schema can come from.
         assert!(
             out.contains("schemas setting") && out.contains("local $schema"),
             "{flag}"
         );
     }
-    let out = command(env!("CARGO_BIN_EXE_check-json5"))
-        .arg("dup.json")
-        .current_dir(&dir)
-        .output()
-        .expect("run check-json5");
-    assert_eq!(out.status.code(), Some(1));
-    assert_eq!(String::from_utf8_lossy(&out.stdout), run(&["dup.json"]).1);
     fs::create_dir(dir.join("folder.json")).expect("create a folder");
     assert_eq!(
         run(&["folder.json"]),
@@ -417,7 +411,7 @@ fn only_regular_files_are_read() {
 }
 
 #[test]
-fn strict_globs_keep_their_1x_meaning() {
+fn dialect_globs_can_restore_automatic_detection() {
     let dir = workdir(&[
         ("package.json", "{// c\n}"),
         ("a/package.json", "{// c\n}"),
@@ -427,12 +421,12 @@ fn strict_globs_keep_their_1x_meaning() {
     let (code, out) = jsonvet(
         &dir,
         &[
-            "--strict",
-            "*.json",
-            "--strict",
-            "!tsconfig*.json",
-            "--strict",
-            "!.vscode/*",
+            "--dialect",
+            "json:*.json",
+            "--dialect",
+            "auto:tsconfig*.json",
+            "--dialect",
+            "auto:.vscode/*",
             "package.json",
             "a/package.json",
             "tsconfig.json",
@@ -452,12 +446,16 @@ fn strict_globs_keep_their_1x_meaning() {
 fn an_unknown_option_is_a_usage_error_unless_it_is_a_file() {
     let dir = workdir(&[("bad.json", "[1,"), ("--x.json", "[1,")]);
     let run = |args: &[&str]| jsonvet_stderr(&dir, args);
-    let (code, out, err) = run(&["--strcit", "*.json", "bad.json"]);
+    let (code, out, err) = run(&["--strict", "*.json", "bad.json"]);
     assert_eq!((code, out.as_str()), (2, ""));
     assert!(
-        err.starts_with("jsonvet: unknown option `--strcit`\n"),
+        err.starts_with("jsonvet: unknown option `--strict`\n"),
         "{err}"
     );
+    let (code, out, err) = run(&["--strict", "--format", "json"]);
+    assert_eq!((code, err.as_str()), (2, ""));
+    let report: serde_json::Value = serde_json::from_str(&out).expect("JSON usage error");
+    assert_eq!(report["errors"][0]["message"], "unknown option `--strict`");
     let found = "--x.json:1:4: error[syntax] unclosed `[`: expected a value, found the end of the file (opened at 1:1)\n";
     assert_eq!(run(&["--x.json"]), (1, found.to_owned(), String::new()));
     assert_eq!(
@@ -1123,11 +1121,11 @@ fn json_holds_every_problem_and_keeps_the_exit_codes() {
     // JSON replaces the workflow annotations, even in GitHub Actions, and adds no summary.
     let (code, out, err) = run_jsonvet(&dir, &args, true);
     assert_eq!((code, err.as_str()), (1, ""));
-    let expected = r#"{"schema_version":1,"diagnostics":[
+    let expected = r#"{"schema_version":2,"diagnostics":[
 {"file":"bad.json","rule":"syntax","url":"https://simonvanlierde.com/jsonvet/docs/usage.html#syntax","severity":"error","message":"unclosed `[`: expected a value, found the end of the file (opened at 1:1)","line":1,"column":4,"offset":3,"related":[{"message":"opened here","line":1,"column":1,"offset":0}]},
 {"file":"dup.json","rule":"duplicate-key","url":"https://simonvanlierde.com/jsonvet/docs/usage.html#duplicate-key","severity":"error","message":"duplicate key $.a (first at 2:3)","line":3,"column":3,"offset":14,"related":[{"message":"first copy","line":2,"column":3,"offset":4}]},
 {"file":"bom.json","rule":"byte-order-mark","url":"https://simonvanlierde.com/jsonvet/docs/usage.html#byte-order-mark","severity":"warning","message":"byte order mark at the start of the file","line":1,"column":1,"offset":0,"related":[]},
-{"file":"arr.json","rule":"schema","url":"https://simonvanlierde.com/jsonvet/docs/usage.html#schema","severity":"error","message":"[] is not of type \"object\" (at $)","line":1,"column":1,"offset":0,"related":[]},
+{"file":"arr.json","rule":"schema","url":"https://simonvanlierde.com/jsonvet/docs/usage.html#schema","severity":"error","message":"[] is not of type \"object\" (at $)","line":1,"column":1,"offset":0,"related":[],"path":"$"},
 {"file":"gone.json","rule":"unreadable","url":"https://simonvanlierde.com/jsonvet/docs/usage.html#unreadable","severity":"error","message":"no such file","line":null,"column":null,"offset":null,"related":[]}
 ]}
 "#;
@@ -1151,7 +1149,7 @@ fn json_holds_every_problem_and_keeps_the_exit_codes() {
             jsonvet_stderr(&dir, args),
             (
                 0,
-                "{\"schema_version\":1,\"diagnostics\":[\n]}\n".to_owned(),
+                "{\"schema_version\":2,\"diagnostics\":[\n]}\n".to_owned(),
                 String::new()
             )
         );
@@ -1169,7 +1167,7 @@ fn json_strings_stay_valid_whatever_the_names_hold() {
     let (code, out, _) = jsonvet_stdin(&dir, &args, &format!("{{\"{key}\":1,\"{key}\":2}}"));
     assert_eq!(code, 1);
     assert!(out.starts_with(
-        "{\"schema_version\":1,\"diagnostics\":[\n{\"file\":\"q\\\"b\\\\s\\u000a::error::\\u001b[2J\\u202e##\\u005bx.json\""
+        "{\"schema_version\":2,\"diagnostics\":[\n{\"file\":\"q\\\"b\\\\s\\u000a::error::\\u001b[2J\\u202e##\\u005bx.json\""
     ), "{out}");
     assert!(
         out.lines()
@@ -1239,6 +1237,322 @@ fn the_last_matching_dialect_wins_and_auto_means_the_extension() {
     let args = ["--dialect", "json", "--dialect", "auto", "c.jsonc"];
     assert_eq!(run(&args), (0, String::new()));
     assert_eq!(run(&["--dialect", "json", "c.jsonc"]).0, 1);
+}
+
+#[test]
+fn jsonc_modelines_only_apply_to_automatic_json_dialect_selection() {
+    let dir = workdir(&[
+        ("short.json", "// -*- jsonc -*-\n{a: 1}"),
+        ("long.json", "\u{feff}  // -*- mode: jsonc -*- \t\r{a: 1}"),
+        ("other.json5", "// -*- jsonc -*-\n{a: 1}"),
+        ("later.json", "\n// -*- jsonc -*-\n{a: 1}"),
+        ("suffix.json", "// -*- jsonc -*- example\n{a: 1}"),
+        (
+            "jsonvet.toml",
+            r#"dialects = [{ files = "short.json", dialect = "auto" }]"#,
+        ),
+    ]);
+    for name in ["short.json", "long.json"] {
+        let (code, output) = jsonvet(&dir, &[name]);
+        assert_eq!(code, 1, "{name}: {output}");
+        assert!(
+            output.contains("unquoted keys are not allowed in jsonc"),
+            "{output}"
+        );
+        assert_eq!(jsonvet(&dir, &["--dialect", "json5", name]).0, 0);
+        assert_eq!(
+            jsonvet(&dir, &["--dialect", "json5", "--dialect", "auto", name]).0,
+            1
+        );
+    }
+    for name in ["other.json5", "later.json", "suffix.json"] {
+        assert_eq!(jsonvet(&dir, &[name]).0, 0, "{name}");
+    }
+    assert_eq!(
+        jsonvet_stdin(
+            &dir,
+            &["--stdin-filename", "stdin.json"],
+            "// -*- jsonc -*-\r\n{a: 1}"
+        )
+        .0,
+        1
+    );
+}
+
+#[test]
+fn jsonc_modelines_apply_to_fixes_and_formatting() {
+    let input = "// -*- mode: jsonc -*-\n[1,]\n";
+    let dir = workdir(&[("config.json", input)]);
+    assert_eq!(jsonvet(&dir, &["fmt", "config.json"]).0, 1);
+    assert_eq!(
+        std::fs::read_to_string(dir.join("config.json")).expect("input"),
+        input
+    );
+    assert_eq!(jsonvet(&dir, &["--fix", "config.json"]).0, 0);
+    assert_eq!(
+        std::fs::read_to_string(dir.join("config.json")).expect("fixed file"),
+        "// -*- mode: jsonc -*-\n[1]\n"
+    );
+    assert_eq!(jsonvet(&dir, &["fmt", "--check", "config.json"]).0, 0);
+}
+
+#[test]
+fn formatting_does_not_move_a_later_modeline_to_the_first_line() {
+    let modeline = "\u{feff}\r\n// -*- jsonc -*-\r\n{a:1}\r\n";
+    let dir = workdir(&[("config.json", modeline), ("config.json5", modeline)]);
+    assert_eq!(jsonvet(&dir, &["fmt", "config.json", "config.json5"]).0, 0);
+    assert_eq!(
+        std::fs::read_to_string(dir.join("config.json")).expect("formatted file"),
+        "\u{feff}\r\n// -*- jsonc -*-\r\n{ a: 1 }\r\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("config.json5")).expect("formatted file"),
+        "\u{feff}// -*- jsonc -*-\r\n{ a: 1 }\r\n"
+    );
+    assert_eq!(jsonvet(&dir, &["fmt", "--check", "config.json"]).0, 0);
+    assert_eq!(jsonvet(&dir, &["config.json"]).0, 0);
+}
+
+#[test]
+fn jsonc_modelines_apply_when_reading_schema_files() {
+    let dir = workdir(&[
+        ("schema.json", "// -*- jsonc -*-\n{type: \"integer\"}\n"),
+        ("config.json", "1"),
+    ]);
+    assert_eq!(
+        jsonvet(&dir, &["--schema", "schema.json", "config.json"]).0,
+        2
+    );
+    assert_eq!(
+        jsonvet(
+            &dir,
+            &[
+                "--dialect",
+                "json5",
+                "--schema",
+                "schema.json",
+                "config.json"
+            ]
+        )
+        .0,
+        0
+    );
+}
+
+#[test]
+fn gitlab_reports_checkout_paths_and_stable_fingerprints() {
+    let dir = workdir(&[("sub/a #1.json", "{a: 1, a: 2}\n")]);
+    let report = |cwd: &Path, file: &str| {
+        let (code, out, err) = jsonvet_stderr(cwd, &["--format", "gitlab", file]);
+        assert_eq!(code, 1, "{err}");
+        assert!(err.is_empty(), "{err}");
+        assert!(out.starts_with('['));
+        serde_json::from_str::<serde_json::Value>(&out).expect("Code Quality JSON")
+    };
+    let first = report(&dir, "./sub/a #1.json");
+    assert_eq!(first.as_array().map(Vec::len), Some(1));
+    let entry = &first[0];
+    assert_eq!(entry["check_name"], "duplicate-key");
+    assert_eq!(entry["severity"], "major");
+    assert_eq!(entry["location"]["path"], "sub/a #1.json");
+    assert_eq!(entry["location"]["lines"]["begin"], 1);
+    assert!(
+        entry["description"]
+            .as_str()
+            .is_some_and(|s| s.contains("duplicate key"))
+    );
+    let fingerprint = entry["fingerprint"].as_str().expect("fingerprint");
+    assert_eq!(fingerprint, "252c5d06144eb416ffea9f48e94a7e2b");
+    assert_eq!(report(&dir.join("sub"), "a #1.json"), first);
+
+    let full = dir.join("sub/a #1.json");
+    fs::write(&full, "\n\n{a: 1, a: 2}\n").expect("file changed");
+    let mut second = report(&dir, &full.to_string_lossy());
+    assert_eq!(second[0]["location"]["lines"]["begin"], 3);
+    assert_eq!(second[0]["fingerprint"], fingerprint);
+    assert_ne!(second[0]["description"], entry["description"]);
+    second[0]["description"] = entry["description"].clone();
+    second[0]["location"]["lines"]["begin"] = serde_json::json!(1);
+    assert_eq!(first, second);
+}
+
+#[test]
+fn the_last_format_controls_malformed_gitlab_or_json_invocations() {
+    let dir = workdir(&[]);
+    let (code, out, err) = jsonvet_stderr(&dir, &["--format=json", "--format=gitlab", "--bad"]);
+    assert_eq!(code, 2);
+    assert!(out.is_empty(), "{out}");
+    assert!(err.contains("unknown option"), "{err}");
+
+    let (code, out, err) = jsonvet_stderr(&dir, &["--format=gitlab", "--format=json", "--bad"]);
+    assert_eq!(code, 2);
+    assert!(err.is_empty(), "{err}");
+    let report: serde_json::Value = serde_json::from_str(&out).expect("JSON usage error");
+    assert_eq!(report["schema_version"], 2);
+}
+
+#[test]
+fn gitlab_separates_findings_usage_errors_and_fixed_standard_input() {
+    let dir = workdir(&[("good.json", "{}\n"), ("sub/placeholder", "")]);
+    assert_eq!(
+        jsonvet_stderr(&dir, &["--format=gitlab", "good.json"]),
+        (0, "[]\n".into(), String::new())
+    );
+    let (code, out, err) = jsonvet_stderr(
+        &dir,
+        &[
+            "--format",
+            "gitlab",
+            "--schema",
+            "missing.json",
+            "good.json",
+        ],
+    );
+    assert_eq!(code, 2);
+    assert!(out.is_empty(), "{out}");
+    assert!(err.contains("missing.json"), "{err}");
+    let (code, out, err) = jsonvet_stdin(
+        &dir,
+        &[
+            "--format=gitlab",
+            "--fix",
+            "--stdin-filename",
+            "sub/data.jsonc",
+        ],
+        "// data\n[1,]\n",
+    );
+    assert_eq!(
+        (code, out.as_str(), err.as_str()),
+        (0, "// data\n[1]\n", "[]\n")
+    );
+
+    let (code, out, err) = jsonvet_stdin(
+        &dir,
+        &[
+            "--format=gitlab",
+            "--fix",
+            "--stdin-filename",
+            "sub/data.json",
+        ],
+        "{a:1,a:2}\n",
+    );
+    assert_eq!(code, 1);
+    assert_eq!(out, "{a:1,a:2}\n");
+    let report: serde_json::Value =
+        serde_json::from_str(&err).expect("Code Quality JSON on stderr");
+    assert_eq!(report[0]["location"]["path"], "sub/data.json");
+    assert_eq!(report[0]["check_name"], "duplicate-key");
+}
+
+#[test]
+fn gitlab_keeps_repeat_findings_and_exits_on_too_many_warnings() {
+    let dir = workdir(&[("records.jsonl", "{\"a\":1,\"a\":2}\n{\"a\":1,\"a\":3}\n")]);
+    for (limit, exit_code) in [("2", 0), ("1", 1)] {
+        let args = [
+            "--format",
+            "gitlab",
+            "--warn",
+            "duplicate-key",
+            "--max-warnings",
+            limit,
+            "records.jsonl",
+            "missing.json",
+        ];
+        let (code, output, err) = jsonvet_stderr(&dir, &args[..args.len() - 1]);
+        assert_eq!(code, exit_code);
+        assert!(err.is_empty(), "{err}");
+        let report: serde_json::Value = serde_json::from_str(&output).expect("report");
+        assert_eq!(report.as_array().map(Vec::len), Some(2));
+        for (index, row) in report.as_array().expect("findings").iter().enumerate() {
+            assert_eq!(row["severity"], "minor");
+            assert_eq!(row["location"]["lines"]["begin"], index + 1);
+        }
+        assert_ne!(report[0]["fingerprint"], report[1]["fingerprint"]);
+        let (code, output, err) = jsonvet_stderr(&dir, &args);
+        assert_eq!(code, 1);
+        assert!(err.is_empty(), "{err}");
+        let report: serde_json::Value = serde_json::from_str(&output).expect("unreadable finding");
+        assert_eq!(report.as_array().map(Vec::len), Some(3));
+        assert_eq!(report[2]["check_name"], "unreadable");
+        assert_eq!(report[2]["location"]["lines"]["begin"], 1);
+    }
+}
+
+#[test]
+fn gitlab_refuses_a_path_outside_the_checkout_before_changing_files() {
+    let dir = workdir(&[("data.jsonc", "[1,]\n")]);
+    let (code, out, err) = jsonvet_stderr(
+        &dir,
+        &[
+            "--format",
+            "gitlab",
+            "--fix",
+            "data.jsonc",
+            "../outside.json",
+        ],
+    );
+    assert_eq!(code, 2);
+    assert!(out.is_empty(), "{out}");
+    assert!(
+        err.contains("inside the checkout: `../outside.json`"),
+        "{err}"
+    );
+    assert_eq!(
+        fs::read_to_string(dir.join("data.jsonc")).expect("file"),
+        "[1,]\n"
+    );
+}
+
+#[test]
+fn gitlab_gives_the_same_finding_on_disk_and_standard_input_the_same_fingerprint() {
+    let text = "{a:1,a:2}\n";
+    let dir = workdir(&[("data.json", text)]);
+    let (code, output, err) = jsonvet_stdin(
+        &dir,
+        &[
+            "--format=gitlab",
+            "--stdin-filename",
+            "data.json",
+            "-",
+            "data.json",
+        ],
+        text,
+    );
+    assert_eq!(code, 1);
+    assert!(err.is_empty(), "{err}");
+    let report: serde_json::Value = serde_json::from_str(&output).expect("report");
+    assert_eq!(report.as_array().map(Vec::len), Some(2));
+    assert_eq!(report[0], report[1]);
+}
+
+#[cfg(unix)]
+#[test]
+fn gitlab_resolves_parent_paths_on_disk_and_keeps_stdin_names() {
+    use std::os::unix::fs::symlink;
+
+    let input = "{a:1,a:2}\n";
+    let dir = workdir(&[
+        ("a.json", "{}\n"),
+        ("nested/a.json", input),
+        ("nested/sub/a.json", input),
+    ]);
+    symlink("nested/sub", dir.join("alias")).expect("directory alias");
+    let check = |name: &str| jsonvet_stderr(&dir, &["--format=gitlab", name]);
+    assert_eq!(check("alias/../a.json"), check("nested/a.json"));
+    assert_eq!(check("alias/../absent.json"), check("nested/absent.json"));
+    let (_, out, _) = check("alias/a.json");
+    let report: serde_json::Value = serde_json::from_str(&out).expect("report");
+    assert_eq!(report[0]["location"]["path"], "alias/a.json");
+
+    let (code, out, err) = jsonvet_stdin(
+        &dir,
+        &["--format=gitlab", "--stdin-filename", "alias/../a.json"],
+        input,
+    );
+    assert_eq!(code, 1);
+    assert!(err.is_empty(), "{err}");
+    let report: serde_json::Value = serde_json::from_str(&out).expect("report");
+    assert_eq!(report[0]["location"]["path"], "a.json");
 }
 
 #[cfg(windows)]
@@ -4429,6 +4743,120 @@ fn json_output_matches_its_published_schema() {
     assert!(!validator.is_valid(&json));
 }
 
+#[test]
+fn json_error_format_ignores_option_values_and_existing_files() {
+    let dir = workdir(&[("--format=json", "{}"), ("--format=text", "{}")]);
+    for args in [
+        &[
+            "--format",
+            "json",
+            "--stdin-filename",
+            "--format=text",
+            "--frmat",
+        ][..],
+        &["--format", "json", "--format=text", "--frmat"],
+    ] {
+        let (code, out, err) = jsonvet_stderr(&dir, args);
+        assert_eq!(code, 2);
+        assert_eq!(err, "", "{args:?}: {err}");
+        let json: serde_json::Value = serde_json::from_str(&out).expect("JSON error");
+        assert_eq!(json["errors"].as_array().map(Vec::len), Some(1));
+    }
+    for args in [
+        &["--stdin-filename", "--format=json", "--frmat"][..],
+        &["--format=json", "--frmat"],
+    ] {
+        let (code, out, err) = jsonvet_stderr(&dir, args);
+        assert_eq!((code, out.as_str()), (2, ""), "{args:?}");
+        assert!(err.contains("unknown option"), "{args:?}: {err}");
+    }
+}
+
+#[test]
+fn json_config_errors_leave_fixed_stdin_stdout_empty() {
+    let dir = workdir(&[]);
+    for stdin in [&["-"][..], &["--stdin-filename", "input.json"]] {
+        let mut args = vec!["--fix", "--format", "json", "--config", "gone.toml"];
+        args.extend_from_slice(stdin);
+        let (code, out, err) = jsonvet_stdin(&dir, &args, "{}");
+        assert_eq!((code, out.as_str()), (2, ""), "{args:?}: {out}{err}");
+        let json: serde_json::Value = serde_json::from_str(&err).expect("JSON error on stderr");
+        assert_eq!(json["errors"].as_array().map(Vec::len), Some(1));
+    }
+}
+
+#[test]
+fn json_argument_errors_leave_fixed_stdin_stdout_empty() {
+    let dir = workdir(&[
+        ("-existing", "{}"),
+        ("--exists", "{}"),
+        ("--no-config", "{}"),
+    ]);
+    for args in [
+        &["--fix", "--format", "json", "-", "--unknown"][..],
+        &["--unknown", "--fix", "--format", "json", "-"],
+        &[
+            "--fix",
+            "--format",
+            "json",
+            "--stdin-filename",
+            "input.json",
+            "--unknown",
+        ],
+        &["--unknown", "--fix", "--format", "json", "--", "-"],
+        &["--fix=typo", "--fix", "--format=json", "-"],
+        &["--fix", "--format=json", "--format=bogus", "-"],
+        &[
+            "--fix",
+            "--format=json",
+            "--stdin-filename",
+            "-",
+            "--no-config",
+            "--unknown",
+        ],
+    ] {
+        let (code, out, err) = jsonvet_stdin(&dir, args, "{}");
+        assert_eq!((code, out.as_str()), (2, ""), "{args:?}: {out}{err}");
+        let json: serde_json::Value = serde_json::from_str(&err).expect("JSON error on stderr");
+        assert_eq!(json["errors"].as_array().map(Vec::len), Some(1));
+    }
+    for args in [
+        &["--fix", "--format", "json", "--config", "-", "--unknown"][..],
+        &[
+            "--fix",
+            "--format",
+            "json",
+            "--stdin-filename",
+            "-",
+            "--exists",
+            "--unknown",
+        ],
+        &[
+            "--fix",
+            "--format",
+            "json",
+            "--stdin-filename",
+            "-",
+            "-existing",
+            "--unknown",
+        ],
+        &["--unknown", "--format", "json", "--", "--fix", "-"],
+        &["--fix=typo", "--format=json", "-"],
+        &["--format=json", "--fix=typo", "-"],
+    ] {
+        let (code, out, err) = jsonvet_stdin(&dir, args, "{}");
+        assert_eq!((code, err.as_str()), (2, ""), "{args:?}: {out}{err}");
+        let json: serde_json::Value = serde_json::from_str(&out).expect("JSON error on stdout");
+        assert_eq!(json["errors"].as_array().map(Vec::len), Some(1));
+    }
+    for format in ["--format=text", "--format=sarif"] {
+        let args = ["--unknown", "--format=json", format];
+        let (code, out, err) = jsonvet_stderr(&dir, &args);
+        assert_eq!((code, out.as_str()), (2, ""), "{args:?}: {out}{err}");
+        assert!(err.contains("unknown option"), "{args:?}: {err}");
+    }
+}
+
 /// With `--format json`, a usage error or a bad schema is a JSON document with `errors` on
 /// standard output, still with exit 2, and the published schema accepts it.
 #[test]
@@ -4450,7 +4878,7 @@ fn json_usage_and_schema_errors_are_documents() {
         assert_eq!(code, 2, "{args:?}: {out}{err}");
         assert_eq!(err, "", "{args:?}");
         let json: serde_json::Value = serde_json::from_str(&out).expect("JSON output");
-        assert_eq!(json["schema_version"], 1);
+        assert_eq!(json["schema_version"], 2);
         assert_eq!(json["diagnostics"], serde_json::json!([]));
         let message = json["errors"][0]["message"].as_str().expect("a message");
         assert!(message.contains(needle), "{args:?}: {out}");

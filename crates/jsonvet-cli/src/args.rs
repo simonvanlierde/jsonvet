@@ -24,12 +24,11 @@ checked.
 
 Options:
       --dialect DIALECT[:GLOB]  Check files matching GLOB (every file, without one) as DIALECT:
-                                json, i-json, jsonc, jwcc, json5, jsonl, or auto for the file
-                                extension's default. Also accepted: ijson, hujson (jwcc),
+                                json, i-json, jsonc, jwcc, json5, jsonl, or auto. Auto uses the
+                                file name and any JSONC modeline. Aliases: ijson, hujson (jwcc),
                                 ndjson and json-lines (jsonl). Repeatable; the last match wins.
                                 Files with any other extension are checked as json5;
                                 extensions match in lower case only.
-      --strict GLOB             Same as --dialect json:GLOB; --strict '!GLOB' means auto:GLOB.
       --error RULE              Report RULE as an error. Repeatable, as are the next two.
       --warn RULE               Report RULE as a warning.
       --ignore RULE             Do not check RULE.
@@ -42,9 +41,8 @@ Options:
                                 standard output, with the problems left on standard error.
       --unsafe-fixes            With --fix, also fix duplicate keys: keep the last of each key
                                 and drop the earlier members, as JSON.parse does.
-      --format FORMAT           Print problems as text (the default), sarif (one SARIF 2.1.0
-                                document, for GitHub code scanning) or json (one JSON document;
-                                docs/usage.md in the repository lists its fields).
+      --format FORMAT           Print problems as text (the default), sarif for code scanning,
+                                json (one document), or gitlab for GitLab Code Quality.
       --color WHEN              Color text output: auto (the default), always or never. Auto
                                 colors it on a terminal, unless NO_COLOR is set; FORCE_COLOR
                                 colors it anywhere, and FORCE_COLOR=0 or false nowhere. On a
@@ -140,8 +138,9 @@ fn parse_format(name: &str) -> Result<Format, String> {
         "text" => Ok(Format::Text),
         "sarif" => Ok(Format::Sarif),
         "json" => Ok(Format::Json),
+        "gitlab" => Ok(Format::GitLab),
         _ => {
-            let hint = messages::did_you_mean(name, ["text", "sarif", "json"]);
+            let hint = messages::did_you_mean(name, ["text", "sarif", "json", "gitlab"]);
             Err(messages::fill(
                 "error.format",
                 &[("value", &name), ("hint", &hint)],
@@ -172,6 +171,67 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
         return lsp(args);
     }
     check(args)
+}
+
+/// Where argument errors go, even if parsing stops before all options are read.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ErrorOutput {
+    Text,
+    JsonStdout,
+    JsonStderr,
+}
+
+/// Scan with the same tokenizer and file-name rules as `check`. The parser still
+/// validates every argument and decides where output goes once parsing succeeds.
+pub(crate) fn error_output(args: &[OsString]) -> ErrorOutput {
+    let mut parser = lexopt::Parser::from_args(args.iter().cloned());
+    parser.set_short_equals(false);
+    let (mut json, mut fix, mut stdin, mut named_stdin, mut has_file) =
+        (false, false, false, false, false);
+    loop {
+        if raw_file(&mut parser).is_some() {
+            has_file = true;
+            continue;
+        }
+        match parser.next() {
+            Ok(Some(Long("format"))) => {
+                // A malformed value leaves the last valid format in effect.
+                let Ok(value) = parser.value() else { continue };
+                match value.to_str() {
+                    Some("json") => json = true,
+                    Some("text" | "sarif" | "gitlab") => json = false,
+                    _ => {}
+                }
+            }
+            Ok(Some(Long("fix"))) => fix |= parser.optional_value().is_none(),
+            Ok(Some(Long("unsafe-fixes" | "no-config" | "list-rules" | "schema-catalog"))) => {
+                let _ = parser.optional_value();
+            }
+            Ok(Some(Long("stdin-filename"))) => named_stdin |= parser.value().is_ok(),
+            Ok(Some(Long(
+                "dialect" | "error" | "warn" | "ignore" | "max-warnings" | "color" | "config"
+                | "explain" | "schema",
+            ))) => {
+                let _ = parser.value();
+            }
+            Ok(Some(Value(file))) => {
+                stdin |= file == STDIN;
+                has_file = true;
+            }
+            Ok(Some(option)) => {
+                let (file, separator) = option_file(option);
+                has_file |= exists(with_option_rest(&mut parser, file, separator));
+            }
+            Ok(None) | Err(_) => break,
+        }
+    }
+    if !json {
+        ErrorOutput::Text
+    } else if fix && (stdin || named_stdin && !has_file) {
+        ErrorOutput::JsonStderr
+    } else {
+        ErrorOutput::JsonStdout
+    }
 }
 
 /// A check or `jsonvet fmt`, or what an option asks for instead.
@@ -207,13 +267,6 @@ fn check(args: impl IntoIterator<Item = OsString>) -> Result<Command, String> {
             Long("dialect") => settings
                 .dialects
                 .push(DialectPattern::parse(&value(&mut parser)?)?),
-            Long("strict") => {
-                let glob = value(&mut parser)?;
-                settings.dialects.push(match glob.strip_prefix('!') {
-                    Some(glob) => DialectPattern::parse(&format!("auto:{glob}"))?,
-                    None => DialectPattern::parse(&format!("json:{glob}"))?,
-                });
-            }
             Long(severity @ ("error" | "warn" | "ignore")) => {
                 let severity = parse_severity(severity)?;
                 let rule = (parse_rule(&value(&mut parser)?)?, severity);
@@ -244,25 +297,14 @@ fn check(args: impl IntoIterator<Item = OsString>) -> Result<Command, String> {
             }
             // pre-commit puts file names after the options with no `--`, so an existing file
             // named like `-x.json`, `-h.json` or `--y.json` is a file, not an option.
-            arg => {
-                let (mut file, separator) = match arg {
-                    Short(c) => (OsString::from(format!("-{c}")), ""),
-                    Long(name) => (OsString::from(format!("--{name}")), "="),
-                    Value(file) => {
-                        files.push(file);
-                        continue;
-                    }
-                };
-                let rest = rest(&mut parser);
-                if rest.is_empty() {
-                    match file.to_str() {
-                        Some("-h" | "--help") => return Ok(Command::Help),
-                        Some("-V" | "--version") => return Ok(Command::Version),
-                        _ => {}
-                    }
-                } else {
-                    file.push(separator);
-                    file.push(rest);
+            Value(file) => files.push(file),
+            option => {
+                let (file, separator) = option_file(option);
+                let file = with_option_rest(&mut parser, file, separator);
+                match file.to_str() {
+                    Some("-h" | "--help") => return Ok(Command::Help),
+                    Some("-V" | "--version") => return Ok(Command::Version),
+                    _ => {}
                 }
                 files.push(on_disk(file)?);
             }
@@ -376,10 +418,21 @@ fn value(parser: &mut lexopt::Parser) -> Result<String, String> {
         .map_err(|v| messages::fill("error.not-utf8", &[("value", &v.to_string_lossy())]))
 }
 
-/// The rest of the current argument after an unknown option: the remaining letters of
-/// `-dash.json`, or the value of `--name=value`.
-fn rest(parser: &mut lexopt::Parser) -> OsString {
-    parser.optional_value().unwrap_or_default()
+/// Restore the original spelling of an option that might be a file name.
+fn option_file(option: lexopt::Arg<'_>) -> (OsString, &'static str) {
+    match option {
+        Short(c) => (OsString::from(format!("-{c}")), ""),
+        Long(name) => (OsString::from(format!("--{name}")), "="),
+        Value(file) => (file, ""),
+    }
+}
+
+fn with_option_rest(parser: &mut lexopt::Parser, mut file: OsString, separator: &str) -> OsString {
+    if let Some(rest) = parser.optional_value().filter(|rest| !rest.is_empty()) {
+        file.push(separator);
+        file.push(rest);
+    }
+    file
 }
 
 #[cfg(test)]
@@ -427,7 +480,7 @@ mod tests {
             assert_ne!(error, Some(format!("unknown option `{option}`")));
         }
         help.retain(|option| option != "--help" && option != "--version");
-        let docs = options(&block(&usage, "## Options\n\n```text\n", "```"));
+        let docs = options(&block(&usage, "\n## Options\n\n", "\n\n"));
         assert_eq!(help, docs, "options in --help and in docs/usage.md");
     }
 
@@ -524,12 +577,12 @@ mod tests {
         assert_eq!(
             parse(["--format", "SARIF"].iter().map(Into::into)).err(),
             Some(
-                "--format takes text, sarif or json, not `SARIF` (did you mean `sarif`?)"
+                "--format takes text, sarif, json or gitlab, not `SARIF` (did you mean `sarif`?)"
                     .to_owned()
             )
         );
         assert!(parse(["--error", "nope"].iter().map(Into::into)).is_err());
         assert!(parse(["--dialect", "yaml"].iter().map(Into::into)).is_err());
-        assert!(parse(["--strict"].iter().map(Into::into)).is_err());
+        assert!(parse(["--dialect"].iter().map(Into::into)).is_err());
     }
 }

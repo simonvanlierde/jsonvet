@@ -87,7 +87,11 @@ const ENGLISH: &[(&str, &str)] = &[
     ("error.usage", "{error}\n\nRun `jsonvet --help` for usage."),
     (
         "error.format",
-        "--format takes text, sarif or json, not `{value}`{hint}",
+        "--format takes text, sarif, json or gitlab, not `{value}`{hint}",
+    ),
+    (
+        "error.gitlab-path",
+        "GitLab Code Quality needs a UTF-8 path inside the checkout: `{path}`",
     ),
     (
         "error.color",

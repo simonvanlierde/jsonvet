@@ -23,8 +23,8 @@ can change the repository and the packages.
   passing, including the `DCO sign-off` check. Force-pushes and deletion are blocked. The ruleset
   asks for one approving review, which the admin may skip when merging, since there is no second
   reviewer.
-- The packages are `jsonvet` and `check-json5` on PyPI and `jsonvet` and `jsonvet-cli` on
-  crates.io. @simonvanlierde is the only owner of each. They are published only by `release.yml`,
+- The current packages are `jsonvet` on PyPI and `jsonvet` and `jsonvet-cli` on crates.io.
+  @simonvanlierde is the only owner of each. They are published only by `release.yml`,
   through trusted publishing with no stored token. Its `pypi` and `crates-io` environments accept
   only `v*` tags and wait for an approval from @simonvanlierde.
 - Release tags are signed with the maintainer's key ([CONTRIBUTING.md](CONTRIBUTING.md#releasing)).

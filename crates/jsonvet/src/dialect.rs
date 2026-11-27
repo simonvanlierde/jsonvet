@@ -96,6 +96,17 @@ impl Dialect {
         find(Self::FILE_NAMES, name).or_else(|| find(Self::EXTENSIONS, ext))
     }
 
+    /// Automatic dialect selection for the CLI. A first-line JSONC modeline in a `.json` file
+    /// takes precedence over the file name.
+    #[doc(hidden)]
+    pub fn for_path_and_text(path: &Path, text: &str) -> Option<Dialect> {
+        if is_json_path(path) && has_jsonc_modeline(text) {
+            Some(Dialect::Jsonc)
+        } else {
+            Self::for_path(path)
+        }
+    }
+
     pub(crate) fn comments(self) -> bool {
         matches!(self, Dialect::Jsonc | Dialect::Jwcc | Dialect::Json5)
     }
@@ -112,6 +123,26 @@ impl Dialect {
     pub(crate) fn json5(self) -> bool {
         self == Dialect::Json5
     }
+}
+
+pub(crate) fn is_json_path(path: &Path) -> bool {
+    path.file_name()
+        .is_some_and(|name| name.as_encoded_bytes().ends_with(b".json"))
+}
+
+pub(crate) fn has_jsonc_modeline(text: &str) -> bool {
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+    let text = text.trim_start_matches([' ', '\t']);
+    let Some(rest) = text
+        .strip_prefix("// -*- jsonc -*-")
+        .or_else(|| text.strip_prefix("// -*- mode: jsonc -*-"))
+    else {
+        return false;
+    };
+    matches!(
+        rest.trim_start_matches([' ', '\t']).as_bytes().first(),
+        None | Some(b'\r' | b'\n')
+    )
 }
 
 impl fmt::Display for Dialect {

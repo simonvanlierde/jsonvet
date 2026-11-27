@@ -4,23 +4,58 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Bump the minor
-version for a new option or output, the patch version for a fix.
+version for a new option or output, the patch version for a fix, and the major version for a
+breaking public contract.
 
 ## [Unreleased]
 
+## [4.0.0]
+
+Update scripts that read `--format json` to check `schema_version == 2`. See the
+[JSON migration example](docs/usage.md#json) for scripts that read both layouts.
+Replace the `check-json5` package, command and hook ID with `jsonvet`. Replace
+`--strict GLOB` with `--dialect json:GLOB` and `--strict '!GLOB'` with
+`--dialect auto:GLOB`. See [the migration guide](docs/usage.md#coming-from-check-json5).
+
 ### Changed
 
-- **Breaking, JSON report:** `--format json` names the layout's version `schema_version`, not
-  `version`, as the other command line tools do. This makes the next release 4.0.0. To upgrade,
-  read `schema_version` where a script read `version`;
-  [docs/json-output.schema.json](docs/json-output.schema.json) is updated.
+- **Breaking, JSON report.** `--format json` reports layout version 2 as `schema_version`
+  ([JSON schema](docs/json-output.schema.json)).
+
+### Removed
+
+- **Breaking.** The `check-json5` command, hook ID and `--strict` option are gone.
+  New releases go to PyPI as `jsonvet` ([migration](docs/usage.md#coming-from-check-json5)).
 
 ### Added
+
+- JSON Schema diagnostics in `--format json` can include a normalized JSONPath to the value
+  ([JSON output](docs/usage.md#json)).
 
 - With `--format json`, a usage error or a `--schema` that cannot be read or used prints a JSON
   document with `errors` instead of a message on standard error. The exit status stays 2
   ([JSON](docs/usage.md#json)).
+- A first-line JSONC modeline in a `.json` file selects JSONC when dialect detection is automatic
+  ([dialects](docs/usage.md#dialects)).
+- Use `--format gitlab` to write a GitLab Code Quality report
+  ([example](docs/usage.md#gitlab-code-quality)).
+- Set `jsonvet.maxProblems` in VS Code to limit diagnostics sent per file. Quick fixes remain
+  available for findings above the limit ([editor guide](docs/editors.md)).
+- Build the separate [Python bindings](crates/jsonvet-python/README.md) from source to check
+  strings in Python with the Rust parser.
+- The docs show [where JSON parsers disagree](docs/parser-disagreements.md) and
+  [how to run jsonvet in Trunk](docs/usage.md#trunk-code-quality).
 - `--help` ends with three example commands.
+
+### Fixed
+
+- JSON usage errors respect option values and file names that look like `--format` options.
+- VS Code reads the built-in JSON validation setting at window scope and applies settings
+  changes made while the language server starts.
+- The playground, docs search, and conformance matrix work better on small screens and
+  restore keyboard focus when leaving a dialog or matrix detail.
+- With `--fix` on standard input, configuration errors leave standard output for fixed text.
+  A failure after diagnostics start no longer appends a second JSON document on standard error.
 
 ## [3.5.1] - 2026-11-16
 
@@ -866,7 +901,8 @@ hook's output, or imports `pre_commit_hooks.check_json5`, needs a change (see Ch
 
 - Renamed from `pre-commit-check-json5` to `check-json5`.
 
-[Unreleased]: https://github.com/simonvanlierde/jsonvet/compare/v3.5.1...HEAD
+[Unreleased]: https://github.com/simonvanlierde/jsonvet/compare/v4.0.0...HEAD
+[4.0.0]: https://github.com/simonvanlierde/jsonvet/compare/v3.5.1...v4.0.0
 [3.5.1]: https://github.com/simonvanlierde/jsonvet/compare/v3.5.0...v3.5.1
 [3.5.0]: https://github.com/simonvanlierde/jsonvet/compare/v3.4.0...v3.5.0
 [3.4.0]: https://github.com/simonvanlierde/jsonvet/compare/v3.3.1...v3.4.0

@@ -5,9 +5,8 @@
 
 The crates' version (Cargo.toml), the VS Code extension's (editors/vscode/package.json), the
 `=x.y.z` pin of the library in the CLI crate, the wheel pin in the hook placeholder (setup.py), the
-check-json5 compatibility package's version and pin (compat/check-json5/pyproject.toml), the `rev:`
-in the hook examples (README.md, docs/usage.md and docs/format.md) and a heading in the CHANGELOG
-must name the same release, or a hook install would pull another version than the tag.
+`rev:` in the hook examples (README.md, docs/usage.md and docs/format.md) and a heading in the
+CHANGELOG must name the same release, or a hook install would pull another version than the tag.
 
 The speed table in docs/design.md, which `scripts/bench.py --write` fills in, must name the
 release's minor version (`jsonvet 3.2` for 3.2.x), so each minor release measures again. The
@@ -41,7 +40,6 @@ MARKETPLACE_ABOUT = 125
 
 ROOT = Path(__file__).resolve().parent.parent
 REV_DOCS = ["README.md", "docs/usage.md", "docs/format.md"]  # each shows one hook `rev:`
-PINS = 2  # setup.py and the compatibility package each pin jsonvet once
 
 
 def pep440(cargo: str) -> str:
@@ -61,16 +59,12 @@ def main() -> int:
     """Print each version and exit 1 when they differ or the CHANGELOG has no heading for it."""
     package = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]
     cargo = package["version"]
-    compat = tomllib.loads((ROOT / "compat" / "check-json5" / "pyproject.toml").read_text())["project"]
-    pins = re.findall(r"jsonvet==([^\"']+)", (ROOT / "setup.py").read_text()) + [
-        dep.split("==")[1] for dep in compat["dependencies"] if dep.startswith("jsonvet==")
-    ]
+    pins = re.findall(r"jsonvet==([^\"']+)", (ROOT / "setup.py").read_text())
     cli = tomllib.loads((ROOT / "crates" / "jsonvet-cli" / "Cargo.toml").read_text())
     cli_pin = cli["dependencies"]["jsonvet"]["version"].removeprefix("=")
     revs_per_doc = {doc: re.findall(r"^\s*rev: v(\S+)\s*$", (ROOT / doc).read_text(), re.MULTILINE) for doc in REV_DOCS}
     revs = [rev for found_revs in revs_per_doc.values() for rev in found_revs]
-    found = {"Cargo.toml": pep440(cargo), "compat version": compat["version"]}
-    found.update({f"pin {i + 1}": pin for i, pin in enumerate(pins)})
+    found = {"Cargo.toml": pep440(cargo), "hook wheel pin": pins[0] if len(pins) == 1 else None}
     found["cli crate pin"] = pep440(cli_pin)
     found["vscode extension"] = pep440(
         json.loads((ROOT / "editors" / "vscode" / "package.json").read_text())["version"]
@@ -109,8 +103,7 @@ def main() -> int:
     about = first(r"^description: ([^\n]*)", "action.yml") or ""
     print(f"{'action about':16} {len(about)} characters")
     if (
-        len(pins) != PINS
-        or any(len(found_revs) != 1 for found_revs in revs_per_doc.values())
+        any(len(found_revs) != 1 for found_revs in revs_per_doc.values())
         or len(set(found.values())) != 1
         or not has_heading
         or len(set(msrvs.values())) != 1

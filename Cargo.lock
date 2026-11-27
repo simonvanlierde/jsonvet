@@ -824,7 +824,7 @@ dependencies = [
 
 [[package]]
 name = "jsonvet"
-version = "3.5.1"
+version = "4.0.0"
 dependencies = [
  "codspeed-divan-compat",
  "gungraun",
@@ -838,7 +838,7 @@ dependencies = [
 
 [[package]]
 name = "jsonvet-cli"
-version = "3.5.1"
+version = "4.0.0"
 dependencies = [
  "annotate-snippets",
  "codspeed-divan-compat",
@@ -863,7 +863,7 @@ dependencies = [
 
 [[package]]
 name = "jsonvet-wasm"
-version = "3.5.1"
+version = "4.0.0"
 dependencies = [
  "jsonvet",
  "wasm-bindgen",

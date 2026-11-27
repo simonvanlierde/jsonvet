@@ -60,8 +60,10 @@ jobs:
         # The token turns on zizmor's online audits, so a stale pin comment fails here too.
         env:
           GH_TOKEN: ${{ github.token }}
-      # The crates, the placeholder's wheel pin and the check-json5 package name one release.
+      # The crates and the placeholder's wheel pin name one release.
       - run: uv run scripts/check-versions.py
+      - name: Check the separate Python bindings lockfile
+        run: cargo metadata --locked --manifest-path crates/jsonvet-python/Cargo.toml --format-version 1 > /dev/null
       # Zenodo reads CITATION.cff on each release and refuses a file the schema rejects.
       - run: uvx cffconvert@2.0.0 --validate -i CITATION.cff
       # The schema allows a licence list, but Zenodo takes one id (3.4.0 and 3.5.0 failed with a list).
@@ -302,7 +304,7 @@ jobs:
           printf '{"a": 1, "a": 2}\n' > dup.json
           for tool in pre-commit@4.7.0 prek@0.5.7; do
             uvx "$tool" try-repo . jsonvet --files ok.json
-            if uvx "$tool" try-repo . check-json5 --files dup.json; then
+            if uvx "$tool" try-repo . jsonvet --files dup.json; then
               echo "$tool: the hook passed a duplicate key"
               exit 1
             fi
@@ -353,7 +355,7 @@ jobs:
         continue-on-error: true
         uses: $/
         with:
-          args: --strict conf.json5
+          args: --dialect json:conf.json5
           verify: false
       - name: "** reaches nested files"
         id: globstar
@@ -398,8 +400,7 @@ jobs:
           assert uris == ["nested/deep/dup.json"], uris
           '
 
-  # What the release publishes besides the wheels: the sdist, built and installed from source;
-  # the check-json5 package; and the crates, packaged and built as crates.io will see them.
+  # Check the source distribution and the packaged Rust crates before they ship.
   packaging:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -423,10 +424,8 @@ jobs:
         with:
           version: ${{ env.PINNED_UV }}
           save-cache: ${{ github.event_name != 'pull_request' }}
-      - name: Install the sdist and the check-json5 package, and run them
-        run: |
-          uv build --out-dir compat-dist compat/check-json5
-          uv run scripts/smoke.py dist/*.tar.gz compat-dist/*.whl
+      - name: Install and run jsonvet from the source distribution
+        run: uv run scripts/smoke.py dist/*.tar.gz
       # Each crate and the sdist must carry both license texts, the same as the root files.
       - name: Check the LICENSE files
         run: |

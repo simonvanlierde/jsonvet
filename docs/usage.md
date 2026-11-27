@@ -6,29 +6,24 @@ The details behind the [README](../README.md). Why things work this way is in
 
 ## Options
 
-```text
---dialect DIALECT[:GLOB]   check files matching GLOB (every file, without one) as DIALECT,
-                           or as `auto`, the extension's default; the last match wins
---strict GLOB              the same as --dialect json:GLOB, kept from check-json5;
-                           --strict '!GLOB' means --dialect auto:GLOB
---error RULE, --warn RULE, --ignore RULE
---max-warnings N
---fix                      fix what has a safe fix, in place, then report what is left
---unsafe-fixes             with --fix, also drop duplicate keys
---format text|sarif|json   text lines (the default), one SARIF 2.1.0 document, or one JSON
-                           document on stdout
---color auto|always|never  color text output; auto colors it on a terminal unless NO_COLOR
-                           is set, and anywhere when FORCE_COLOR is
---schema FILE              check each file against the JSON Schema in FILE, instead of the
-                           schemas from settings or a file's own local $schema
---schema-catalog           enable HTTPS SchemaStore lookup by file name as a fallback
---stdin-filename PATH      the name standard input (`-`) goes by
---config FILE, --no-config
-jsonvet fmt FILE...       format files instead of checking them, see [formatting](format.md)
-jsonvet lsp               run the language server for editors, see [editors](editors.md)
---list-rules               list the rules with their default severities
---explain RULE             explain a rule, with an example
-```
+- `--dialect DIALECT[:GLOB]` checks files matching the glob as the given dialect. Without a glob,
+  it applies to every file. Use `auto` to detect the dialect by file name and any supported
+  [JSONC modeline](#dialects). The last match wins.
+- `--error RULE`, `--warn RULE` and `--ignore RULE` set a [rule's severity](#rules-and-severities).
+  `--max-warnings N` fails when warnings exceed that count.
+- `--fix` applies safe fixes in place and reports what is left. Add `--unsafe-fixes` to allow
+  dropping duplicate keys.
+- `--format text|sarif|json|gitlab` writes text lines by default, or a SARIF 2.1.0, JSON, or
+  [GitLab Code Quality](#gitlab-code-quality) report.
+  `--color auto|always|never` controls color in text output. See [Output](#output).
+- `--schema FILE` checks against that JSON Schema in place of schemas from settings or a file's
+  local `$schema`. `--schema-catalog` enables HTTPS SchemaStore lookup by file name as a fallback.
+- `--stdin-filename PATH` supplies the name for [standard input](#standard-input).
+- `--config FILE` selects a [configuration file](#configuration-file). `--no-config` skips it.
+- `--list-rules` lists the rules and their default severities. `--explain RULE` explains a rule
+  and gives an example.
+- `jsonvet fmt FILE...` [formats files](format.md). `jsonvet lsp` runs the
+  [language server for editors](editors.md).
 
 `jsonvet --help` prints the same list with more detail. `jsonvet fmt` also takes `--check`, which
 lists the files that would change and writes nothing ([formatting](format.md)).
@@ -38,8 +33,8 @@ lists the files that would change and writes nothing ([formatting](format.md)).
 `--fix` rewrites each file with the fixes that are safe, then checks the result and reports what
 is left. The exit status comes from those problems, so a run that fixes everything exits 0. When
 it fixed something, it prints a count to standard error, such as `fixed 3 problems in 2 files`.
-With standard input and `--format json` or `sarif` the report takes standard error, so the count
-is left out.
+With standard input and `--format json`, `sarif` or `gitlab`, the report goes to standard error
+and the count is left out.
 
 | Problem                                                           | Fix                          | Safe |
 | ----------------------------------------------------------------- | ---------------------------- | ---- |
@@ -77,7 +72,7 @@ run, so you review the change and commit again.
 
 ```yaml
 - repo: https://github.com/simonvanlierde/jsonvet
-  rev: v3.5.1
+  rev: v4.0.0
   hooks:
     - id: jsonvet
       args: [--fix]
@@ -118,7 +113,7 @@ color off, even on a terminal. `NO_COLOR` wins over `FORCE_COLOR`, and `--color`
 Text output is in the language `LC_ALL`, `LC_MESSAGES` or `LANG` asks for, the first one set, when
 jsonvet has a translation for it, and in English otherwise. English is the only language so far.
 `LANGUAGE` and the Windows language setting are not read. `LC_ALL=C` gives English, and so do
-`--format json` and `--format sarif`, whose documents never change with the locale. Rule ids,
+`--format json`, `sarif` and `gitlab`, whose documents never change with the locale. Rule ids,
 severities, JSONPaths and exit codes are never translated.
 
 - Lines and columns count from 1, and columns count Unicode code points. A byte order mark is
@@ -158,7 +153,7 @@ On a panic, jsonvet prints the message and where it happened to standard error, 
 the [issue tracker](https://github.com/simonvanlierde/jsonvet/issues), and exits 101. Output not
 yet written is lost, and the verdict for the files checked so far is not given.
 
-On exit 2 or 101 the run may stop part way, so a SARIF or JSON document on standard output may be cut
+On exit 2 or 101 the run may stop part way, so a structured report on standard output may be cut
 off. Do not upload it. `--format json` can print an [`errors` document](#json) instead.
 
 jsonvet reads regular files, and follows a symlink to one. A device, FIFO or socket prints
@@ -190,6 +185,20 @@ name exists. To be sure, put `--` before the file names: `jsonvet -- --x.json`.
   that use them, select `jwcc`.
 - JSONC, JWCC and JSON5 each add syntax to the one before, except where a `//` comment ends. JWCC
   ends it at LF only, JSONC also at a lone CR, and JSON5 also at U+2028 and U+2029.
+
+### JSONC modelines
+
+Automatic detection checks a `.json` file as JSONC if its first line is either of these
+[JSONC modelines](https://jsonc.org/#filename-extension).
+
+```text
+// -*- jsonc -*-
+// -*- mode: jsonc -*-
+```
+
+The line may start with a byte order mark. Spaces and tabs may surround the comment. An explicit
+dialect from `--dialect` or the config file takes precedence. For standard input, pass a `.json`
+name with `--stdin-filename` to enable detection.
 
 ## Rules and severities
 
@@ -391,7 +400,8 @@ dialect = "jwcc"
   duplicate-key = "ignore" }]`. Each entry holds a `files` glob and any rule ids from `rules`. A
   rule takes the severity from `rules` first, then from each matching entry in order, so a later
   entry wins, then from the command line.
-- `dialects` picks a dialect per glob. The last matching entry wins.
+- `dialects` picks a dialect per glob. The last matching entry wins. Set `auto` to detect the
+  dialect from the file name and a [JSONC modeline](#jsonc-modelines).
 - `exclude` lists globs for a folder walk to skip. A walk uses each folder's nearest config file.
 - `schemas` checks the files a glob matches against a schema on disk, as `--schema` does:
   `schemas = [{ files = "config/*.json5", schema = "schemas/server.schema.json" }]`. The schema
@@ -411,7 +421,7 @@ All inputs are optional:
 | Input     | What it does                                                                                |
 | --------- | ------------------------------------------------------------------------------------------- |
 | `files`   | paths or globs to check, separated by spaces; by default every tracked file the hook checks |
-| `args`    | extra options, separated by spaces, such as `--strict package.json`                         |
+| `args`    | extra options, separated by spaces, such as `--dialect json:package.json`                         |
 | `sarif`   | also write a SARIF file to this path, besides the usual log and annotations                 |
 | `version` | the jsonvet version to install: `X.Y.Z` (also with a suffix such as `rc1` or `.post1`), `X.*`, `X.Y.*` or `latest` |
 | `verify`  | `true` (the default) checks the wheel's attestation before installing it; `false` skips that |
@@ -427,12 +437,43 @@ pass, and its log and the SARIF file report the files after fixing.
 When you set `sarif`, the report file uses SARIF. Use `--format` in `args` to set the log
 format. The log uses text by default.
 
-By default the Action installs the release that matches its own tag: `@v3` gets the newest 3.x on
-PyPI, and `@v3.0.0` gets 3.0.0. Pinned to a commit or a branch, it installs the release named in
+By default the Action installs the release that matches its own tag. `@v4` gets the newest 4.x on
+PyPI, and `@v4.0.0` gets 4.0.0. Pinned to a commit or a branch, it installs the release named in
 that commit's `Cargo.toml`, not the code in it. Before it installs the wheel, it checks that the
 wheel came from jsonvet's `release.yml` ([how](../SECURITY.md#verifying-a-release)). On a runner
 without `gh`, or for a release before 3.1.0, it installs the wheel unchecked, with a notice. Set
 `verify: false` on GitHub Enterprise Server.
+
+## Trunk Code Quality
+
+Trunk can run jsonvet as a custom linter. Add this example to your existing
+`.trunk/trunk.yaml`. If you already have a Python runtime enabled, keep that entry.
+
+```yaml
+runtimes:
+  enabled:
+    - python@3.14.4
+lint:
+  enabled:
+    - jsonvet@3.5.1
+  definitions:
+    - name: jsonvet
+      runtime: python
+      package: jsonvet
+      files: [json]
+      commands:
+        - name: lint
+          run: jsonvet -- ${target}
+          output: pass_fail
+          success_codes: [0, 1]
+```
+
+Run `trunk check --filter=jsonvet --all` to check files Trunk classifies as JSON.
+Trunk installs the pinned PyPI package and reports one pass or fail per file.
+Exit code 1 is a lint failure. Exit code 2 means jsonvet could not run the check.
+
+The example follows [Trunk's custom linter format](https://github.com/trunk-io/docs/blob/main/code-quality/overview/linters/custom-linters.md)
+and the [community jsonvet definition in use at 3ware](https://github.com/3ware/trunk-code-quality-plugins/blob/7f030452217c8721f2e2b7770d80024b3c02d01f/linters/jsonvet/plugin.yaml).
 
 ## SARIF
 
@@ -470,7 +511,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: simonvanlierde/jsonvet@v3
+      - uses: simonvanlierde/jsonvet@v4
         with:
           sarif: jsonvet.sarif
       # Upload when jsonvet found problems too: that is when the step fails.
@@ -479,6 +520,41 @@ jobs:
         with:
           sarif_file: jsonvet.sarif
 ```
+
+## GitLab Code Quality
+
+`--format gitlab` writes a [GitLab Code Quality report](https://docs.gitlab.com/ci/testing/code_quality/#code-quality-report-format).
+If your CI job already has jsonvet installed, add this job to `.gitlab-ci.yml`.
+The hidden directory keeps the report out of the file walk.
+
+```yaml
+jsonvet:
+  script:
+    - |
+      mkdir -p .jsonvet-report
+      jsonvet_status=0
+      jsonvet --format gitlab . > .jsonvet-report/gl-code-quality-report.json || jsonvet_status=$?
+      if [ "$jsonvet_status" -gt 1 ]; then
+        rm .jsonvet-report/gl-code-quality-report.json
+      fi
+      exit "$jsonvet_status"
+  artifacts:
+    when: always
+    reports:
+      codequality: .jsonvet-report/gl-code-quality-report.json
+```
+
+The report is a JSON array. Errors have severity `major` and warnings have severity `minor`.
+Files must have UTF-8 paths inside the checkout, or inside the working directory when you run
+outside Git. Use `--stdin-filename` to give standard input a path GitLab can match to a file.
+Unchanged findings keep their fingerprint when their line numbers or severities change. The
+fingerprint uses the path, rule, message and occurrence number within the file.
+
+A completed check exits 0 or 1 and writes the full array. Usage errors are written to standard
+error as text and can leave an empty or incomplete report. When fixing standard input, the
+report goes to standard error and the fixed text goes to standard output. In that mode, runtime
+notices such as a missing local schema or a stale catalog cache are omitted. Use `--format json`
+or `sarif` to keep those notices.
 
 ## JSON
 
@@ -489,15 +565,18 @@ jsonvet --format json config.json5 | jq -r '.diagnostics[] | "\(.file):\(.line) 
 ```
 
 ```json
-{"schema_version":1,"diagnostics":[
+{"schema_version":2,"diagnostics":[
 {"file":"dup.json","rule":"duplicate-key","url":"https://simonvanlierde.com/jsonvet/docs/usage.html#duplicate-key","severity":"error","message":"duplicate key $.a (first at 2:3)","line":3,"column":3,"offset":14,"related":[{"message":"first copy","line":2,"column":3,"offset":4}]},
 {"file":"gone.json","rule":"unreadable","url":"https://simonvanlierde.com/jsonvet/docs/usage.html#unreadable","severity":"error","message":"no such file","line":null,"column":null,"offset":null,"related":[]}
 ]}
 ```
 
-- `schema_version` is the version of this layout, now `1`. A new field may come without a new
+- `schema_version` is the version of this layout, now `2`. A new field may come without a new
   version; a field that changes meaning or goes away gets one. Ignore fields you do not know. To
   pin the layout, stop when `schema_version` is not the number you wrote your code for.
+- A script upgrading from 3.5.1 changes its version check from `.version == 1` to
+  `.schema_version == 2`. A script that reads both layouts can use this `jq` filter:
+  `(.schema_version == 2) or (.schema_version == null and .version == 1)`.
 - `errors` is there only when the run stopped on a usage error, such as an unknown option, or on
   a schema that cannot be read or used, before any diagnostic was printed. It is a complete
   document, in English, instead of a message on standard error: on standard output, or on
@@ -515,11 +594,15 @@ jsonvet --format json config.json5 | jq -r '.diagnostics[] | "\(.file):\(.line) 
   | `url`      | a link to the rule's section in this page, the same as SARIF's `helpUri`          |
   | `severity` | `error` or `warning`                                                              |
   | `message`  | the message as text output prints it in English, with its `(first at 2:3)` part   |
+  | `path`     | optional [RFC 9535 normalized JSONPath](https://www.rfc-editor.org/rfc/rfc9535.html#section-2.7) for a schema diagnostic, such as `$['items'][0]` |
   | `line`     | the line, from 1; `null` for a file jsonvet could not read                        |
   | `column`   | the column, from 1, in code points as in text output; `null` with no line         |
   | `offset`   | the byte offset in the file, from 0; `null` with no line                          |
   | `related`  | other places the problem names, each with `message`, `line`, `column` and `offset`: a duplicate key's first copy (`first copy`), the bracket an unclosed value opened at (`opened here`), or where an unterminated comment or string starts (`starts here`). Often empty |
 
+- A schema path starts at `$`. For JSON Lines, use `line` to choose the record before applying
+  `path`. A missing required property points to its containing object. The field requires a
+  validation finding with a unique path of at most 256 UTF-8 bytes.
 - [json-output.schema.json](json-output.schema.json) is a JSON Schema for the document. A test
   checks real output against it.
 - Strings are escaped as in SARIF, so a JSON reader gets the name and message back unchanged.
@@ -647,7 +730,14 @@ exists is in [design.md](design.md#--schema).
 
 ## Coming from check-json5
 
-The `check-json5` package on PyPI keeps working through 3.x: it installs jsonvet. Besides the
-dialect change in the README, the output line, syntax-error wording, positions after a lone CR or
-U+2028, the hook's `.jsonl` and `.ndjson` files and the Python module changed
-([full list](design.md#the-contract-with-14)).
+Install and run `jsonvet` in 4.0. Existing `check-json5` releases stay on PyPI.
+
+- In pre-commit or prek, use `repo: https://github.com/simonvanlierde/jsonvet` and
+  `rev: v4.0.0`. Change `id: check-json5` to `id: jsonvet`.
+- Replace `--strict GLOB` with `--dialect json:GLOB`. For example, use
+  `args: [--dialect, 'json:package.json']` in a hook.
+- Replace `--strict '!GLOB'` with `--dialect 'auto:GLOB'`. For example, use
+  `args: [--dialect, 'auto:fixtures/*.json']` to restore automatic detection for those files.
+
+See [the contract with 1.4](design.md#the-contract-with-14) for differences in diagnostics and
+file detection.

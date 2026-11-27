@@ -1,5 +1,6 @@
-//! The jsonvet command line, shared by the `jsonvet` and `check-json5` binaries.
+//! The jsonvet command line.
 
+use std::cell::Cell;
 use std::ffi::{OsStr, OsString};
 use std::io::{self, BufWriter, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
@@ -17,6 +18,7 @@ mod catalog;
 mod editorconfig;
 mod format;
 mod frame;
+mod gitlab;
 mod glob;
 mod json;
 mod lsp;
@@ -175,20 +177,25 @@ pub fn run_with(
     out: impl Write,
 ) -> Result<u8, String> {
     let args: Vec<OsString> = args.into_iter().collect();
+    let wrote = Cell::new(false);
     // `jsonvet fmt` and `lsp` take no `--format`, so their usage errors stay text.
-    if args.first().is_some_and(|a| a == "fmt" || a == "lsp") || !wants_json(&args) {
-        return run_checked(args, annotate, terminal, out, &mut false);
+    if args.first().is_some_and(|a| a == "fmt" || a == "lsp") {
+        return run_checked(args, annotate, terminal, out, &mut false, &wrote);
+    }
+    let error_output = args::error_output(&args);
+    if error_output == args::ErrorOutput::Text {
+        return run_checked(args, annotate, terminal, out, &mut false, &wrote);
     }
     // A JSON reader gets English, and a document it can parse, from the first byte.
     messages::english_only(true);
-    let mut stdin_fix = false;
+    let mut stdin_fix = error_output == args::ErrorOutput::JsonStderr;
     let mut out = Tracked {
         inner: out,
-        wrote: false,
+        wrote: &wrote,
     };
-    match run_checked(args, annotate, terminal, &mut out, &mut stdin_fix) {
+    match run_checked(args, annotate, terminal, &mut out, &mut stdin_fix, &wrote) {
         // NOTE: after output has started, the document is cut off: a second one would not parse.
-        Err(message) if !out.wrote => {
+        Err(message) if !wrote.get() => {
             let usage_help = messages::text("error.usage")
                 .rsplit("\n\n")
                 .next()
@@ -215,32 +222,15 @@ pub fn run_with(
     }
 }
 
-/// Whether the arguments ask for `--format json`: the last `--format` before any `--` wins, as
-/// the parser has it.
-fn wants_json(args: &[OsString]) -> bool {
-    let mut json = false;
-    let mut args = args.iter();
-    while let Some(arg) = args.next() {
-        if arg == "--" {
-            break;
-        } else if arg == "--format" {
-            json = args.next().is_some_and(|v| v == "json");
-        } else if let Some(value) = arg.to_str().and_then(|a| a.strip_prefix("--format=")) {
-            json = value == "json";
-        }
-    }
-    json
-}
-
 /// A writer that notes whether anything went through it.
-struct Tracked<W> {
+struct Tracked<'a, W> {
     inner: W,
-    wrote: bool,
+    wrote: &'a Cell<bool>,
 }
 
-impl<W: Write> Write for Tracked<W> {
+impl<W: Write> Write for Tracked<'_, W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.wrote |= !buf.is_empty();
+        self.wrote.set(self.wrote.get() || !buf.is_empty());
         self.inner.write(buf)
     }
 
@@ -259,6 +249,7 @@ fn run_checked(
     terminal: Terminal,
     out: impl Write,
     stdin_fix: &mut bool,
+    wrote: &Cell<bool>,
 ) -> Result<u8, String> {
     // Usage errors quote arguments and the schema file, which can hold a newline or an escape.
     let args = match args::parse(args)
@@ -272,12 +263,13 @@ fn run_checked(
         Command::Check(args) => *args,
     };
     messages::english_only(args.format != Format::Text);
+    // Standard input fixed to standard output leaves only standard error for the problems,
+    // including failures while loading configuration or expanding directories.
+    *stdin_fix = args.fix && args.files.iter().any(|file| file == STDIN);
     let resolver = Arc::new(Mutex::new(Resolver::new(&args.config, args.settings)?));
     let settings_for = |path: &Path| lock(&resolver).for_file(path);
     let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     let files = expand(args.files, &resolver, threads)?;
-    // Standard input fixed to standard output leaves only standard error for the problems.
-    *stdin_fix = args.fix && files.iter().any(|file| file == STDIN);
     if let Some(check_only) = args.fmt {
         return format::run(&files, check_only, args.stdin_filename, &resolver, out);
     }
@@ -298,6 +290,16 @@ fn run_checked(
             file.to_owned()
         }
     };
+    let gitlab_paths = (args.format == Format::GitLab)
+        .then(|| gitlab::paths(&files, &shown, &lock(&resolver)))
+        .transpose()?;
+    let report_name = |file: &OsStr| {
+        gitlab_paths
+            .as_ref()
+            .and_then(|paths| paths.get(file))
+            .cloned()
+            .unwrap_or_else(|| shown(file))
+    };
     // Every config file, and every schema one names, is read before any file is checked, so a
     // bad one stops the run at once.
     let files = jobs(files, &shown, &settings_for, args.schema.as_deref(), &load)?;
@@ -308,7 +310,10 @@ fn run_checked(
     let look = look(args.format, args.color, terminal);
     let stdin_fix = *stdin_fix;
     let mut out = out;
-    let mut stderr = io::stderr();
+    let mut stderr = Tracked {
+        inner: io::stderr(),
+        wrote,
+    };
     // Standard error stands in for standard output's problems when that carries a fixed text.
     let sink: &mut dyn Write = if stdin_fix { &mut stderr } else { &mut out };
     let mut printer = Printer::new(sink, args.format, annotate, look, stdin_fix);
@@ -379,12 +384,12 @@ fn run_checked(
             },
         );
         schemas.over().map_err(|e| output::printable(&e))?;
-        let outcome = print_checked(chunk, checked, &shown, &mut printer, &mut counts);
+        let outcome = print_checked(chunk, checked, &report_name, &mut printer, &mut counts);
         if outcome.is_err() {
             break outcome;
         }
     };
-    // A JSON or SARIF report on standard error is all of it, so the count stays out.
+    // A structured report on standard error takes the place of the count.
     let count = !stdin_fix || args.format == Format::Text;
     // The fixed text goes out even when the problems could not be written.
     let finished = fixed.finish(count, &mut out);
@@ -393,7 +398,7 @@ fn run_checked(
 }
 
 /// A file's report and its schema errors.
-type Checked<'t> = (Report<'t>, Vec<(usize, String, bool)>);
+type Checked<'t> = (Report<'t>, Vec<schema::Diagnostic>);
 
 /// Print what checking the files of `chunk` found, in order: the problems of each, or why it
 /// could not be read.
@@ -407,14 +412,17 @@ fn print_checked(
     chunk
         .iter()
         .zip(checked)
-        .try_for_each(|((_, file), checked)| match checked {
-            Ok((report, schema_errors)) => {
-                print_file(&shown(file), &report, &schema_errors, printer, counts)
-            }
-            Err(message) => {
-                counts.errors += 1;
-                counts.files += 1;
-                printer.unreadable(&shown(file), message)
+        .try_for_each(|((_, file), checked)| {
+            printer.begin_file();
+            match checked {
+                Ok((report, schema_errors)) => {
+                    print_file(&shown(file), &report, &schema_errors, printer, counts)
+                }
+                Err(message) => {
+                    counts.errors += 1;
+                    counts.files += 1;
+                    printer.unreadable(&shown(file), message)
+                }
             }
         })
 }
@@ -806,7 +814,7 @@ fn fix_chunk(
         |(((settings, _), file), (text, _))| {
             let text = text.as_ref().ok()?;
             let name = shown(file);
-            let config = settings.config_for(&name.to_string_lossy());
+            let config = settings.config_for(&name.to_string_lossy(), text);
             let fixed = match jsonvet::try_fix(text, &config, unsafe_fixes, None) {
                 Ok(fixed) => fixed,
                 Err(problems) => return Some(Err(problems)),
@@ -947,8 +955,8 @@ fn check<'t>(
     schema: Option<&Schema>,
     parts: usize,
     known: Option<&[Problem]>,
-) -> (Report<'t>, Vec<(usize, String, bool)>) {
-    let config = settings.config_for(name);
+) -> Checked<'t> {
+    let config = settings.config_for(name, text);
     let ranges = split(text, config.dialect(), parts);
     if ranges.len() > 1 {
         // Each line is a document of its own, and the error cap counts per document, so each
@@ -1049,7 +1057,7 @@ fn look(format: Format, color: Option<bool>, terminal: Terminal) -> Look {
 fn print_file(
     file: &OsStr,
     report: &Report<'_>,
-    schema_errors: &[(usize, String, bool)],
+    schema_errors: &[schema::Diagnostic],
     printer: &mut Printer<impl Write>,
     counts: &mut Counts,
 ) -> io::Result<()> {
@@ -1062,9 +1070,9 @@ fn print_file(
         }
         printer.problem(file, report, problem)?;
     }
-    for (offset, message, summary) in schema_errors {
-        counts.errors += usize::from(!summary);
-        printer.schema_error(file, report, *offset, message, *summary)?;
+    for finding in schema_errors {
+        counts.errors += usize::from(!finding.summary);
+        printer.schema_error(file, report, finding)?;
     }
     counts.files += usize::from(counts.errors + counts.warnings > before);
     Ok(())
@@ -1406,8 +1414,10 @@ mod tests {
 
     #[test]
     fn the_last_format_before_a_double_dash_decides() {
-        let json =
-            |args: &[&str]| super::wants_json(&args.iter().map(Into::into).collect::<Vec<_>>());
+        let json = |args: &[&str]| {
+            super::args::error_output(&args.iter().map(Into::into).collect::<Vec<_>>())
+                != super::args::ErrorOutput::Text
+        };
         assert!(json(&["--format", "json"]));
         assert!(json(&["--format=json", "a.json"]));
         assert!(!json(&["--format", "json", "--format=text"]));
@@ -1420,7 +1430,7 @@ mod tests {
     #[test]
     fn an_error_after_output_has_started_adds_no_document() {
         let dir = std::env::temp_dir().join(format!("jsonvet-cutoff-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("a temporary directory");
+        std::fs::create_dir(&dir).expect("an exclusive temporary directory");
         let file = dir.join("bad.json");
         std::fs::write(&file, "[1,").expect("write");
         let mut probe = Probe::default();
@@ -1579,7 +1589,9 @@ mod tests {
         let (_, errors) = check("x.jsonl", &texts[0], &settings, Some(&schema), 8, None);
         // 570 strings, 100 and a summary for each wide line, and one for each line not checked.
         assert_eq!(errors.len(), 570 + 4 * 101 + 8);
-        let unchecked = errors.iter().filter(|(_, m, _)| m.contains("not checked"));
+        let unchecked = errors
+            .iter()
+            .filter(|finding| finding.message.contains("not checked"));
         assert_eq!(unchecked.count(), 8);
     }
 
@@ -1781,6 +1793,64 @@ mod tests {
             assert!(!out.contains("XX"), "{out}");
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn schema_json_reports_normalized_paths_when_they_name_a_value() {
+        let dir = std::env::temp_dir().join(format!("jsonvet-paths-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a temp dir");
+        let schema = dir.join("schema.json");
+        let data = dir.join("input.jsonl");
+        std::fs::write(
+            &schema,
+            r#"{"required":["missing"],"properties":{"0":{"items":{"additionalProperties":false}}}}"#,
+        )
+        .expect("write schema");
+        let long = "x".repeat(256);
+        std::fs::write(
+            &data,
+            format!(
+                "{{\"0\":[{{\"a'\\\\\\\"\\u000B\\n\\u00e9\":1,\"{long}\":2}}]}}\n{{\"0\":[{{\"repeated\":3,\"repeated\":4}}]}}\n{{\"0\":[{{\"\\ud800\":5}}]}}\n{{\"0\":[{{\"\\ufffd\":6}}]}}\n"
+            ),
+        )
+        .expect("write data");
+        let args = [
+            "--no-config".into(),
+            "--format=json".into(),
+            "--schema".into(),
+            schema.into(),
+            data.into(),
+        ];
+        let mut out = Vec::new();
+        let result = super::run_with(args, false, super::Terminal::default(), &mut out);
+        std::fs::remove_dir_all(&dir).expect("clean up");
+        assert_eq!(result, Ok(1));
+        let report: serde_json::Value = serde_json::from_slice(&out).expect("a JSON report");
+        let diagnostics = report["diagnostics"].as_array().expect("diagnostics");
+        let paths: Vec<_> = diagnostics
+            .iter()
+            .map(|finding| (finding["line"].as_u64(), finding["path"].as_str()))
+            .collect();
+        assert_eq!(
+            paths,
+            [
+                (Some(2), None), // Duplicate-key diagnostic.
+                (Some(1), Some("$")),
+                (Some(1), Some(r#"$['0'][0]['a\'\\"\u000b\né']"#)),
+                (Some(1), None), // Too long.
+                (Some(2), Some("$")),
+                (Some(2), None), // Duplicate member.
+                (Some(3), Some("$")),
+                (Some(3), None), // Lone surrogate.
+                (Some(4), Some("$")),
+                (Some(4), Some("$['0'][0]['�']")),
+            ]
+        );
+        assert!(
+            diagnostics[2]["message"]
+                .as_str()
+                .is_some_and(|message| message.contains(r#"$["0"][0]"#))
+        );
     }
 
     /// A JSON Lines file and a `--schema` error get the same code frames on a terminal as any

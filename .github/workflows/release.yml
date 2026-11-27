@@ -1,12 +1,11 @@
 name: release
 
-# Publishes jsonvet's wheels to PyPI, then the check-json5 compatibility package, and the
-# jsonvet and jsonvet-cli crates to crates.io, all with trusted publishing: no API token. Both
-# PyPI projects trust this workflow and the `pypi` environment, and both crates trust it and the
-# `crates-io` environment. Each environment only accepts v* tags, so an edited copy of this
+# Publishes jsonvet to PyPI and the jsonvet and jsonvet-cli crates to crates.io with trusted
+# publishing. The PyPI project trusts this workflow and the `pypi` environment, and both crates
+# trust it and the `crates-io` environment. Each environment only accepts v* tags, so a copy of this
 # workflow on a branch cannot publish.
 #
-# The wheels hold the jsonvet and check-json5 binaries (maturin bindings = "bin"), so a
+# The wheels hold the jsonvet binary (maturin bindings = "bin"), so a
 # pre-commit or prek install downloads a prebuilt binary and never compiles Rust. The GitHub
 # release ships the same jsonvet binary, unpacked from those wheels, with an SBOM and SHA256SUMS.
 # Every file it builds gets a build provenance attestation, and the binaries an SBOM attestation;
@@ -62,9 +61,8 @@ jobs:
     with:
       upload: true
 
-  # The sdist and the check-json5 package (the old name, which only installs jsonvet). Built apart
-  # from their upload, so the jobs holding the publishing token run no build code.
-  build-sdists:
+  # Build the source distribution before the job holding the publishing token runs.
+  build-sdist:
     needs: versions
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -78,24 +76,15 @@ jobs:
           working-directory: crates/jsonvet-cli
           command: sdist
           args: --out ../../dist
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-        with:
-          version: ${{ env.PINNED_UV }}
-          enable-cache: false
-      - run: uv build --out-dir compat-dist compat/check-json5
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: wheels-sdist
           path: dist/
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: check-json5
-          path: compat-dist/
 
   # Install each wheel a hosted runner can run, and run it, before anything uploads. The jobs are in
   # smoke.yml, which pull requests run too (wheels-check.yml).
   smoke:
-    needs: [wheels, build-sdists]
+    needs: [wheels, build-sdist]
     uses: $/.github/workflows/smoke.yml
 
   # The GitHub release's files: the jsonvet binary for each target, unpacked from its wheel, and a
@@ -120,7 +109,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: stable
-      # After the toolchain: the script asks cargo for the crate's binaries.
       - run: uv run scripts/release-archives.py wheels release
       - uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
         with:
@@ -144,7 +132,7 @@ jobs:
   # publishes it once PyPI and crates.io have the version. The notes are the version's CHANGELOG
   # section.
   github-release:
-    needs: [release-files, build-sdists, smoke]
+    needs: [release-files, build-sdist, smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -163,10 +151,6 @@ jobs:
           path: dist/
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: check-json5
-          path: dist/
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
           name: release-files
           path: release/
       - run: cd release && sha256sum -- * > SHA256SUMS && cat SHA256SUMS
@@ -176,8 +160,7 @@ jobs:
           subject-path: |
             dist/*
             release/*
-      # The SBOM describes jsonvet-cli's dependencies, so its subjects are the jsonvet binaries:
-      # the archives and the jsonvet wheels, not check-json5's.
+      # The archives and wheels contain the jsonvet binary that the SBOM describes.
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         id: sbom
         with:
@@ -220,7 +203,7 @@ jobs:
             "${prerelease[@]}" release/*
 
   publish-jsonvet:
-    needs: [wheels, build-sdists, smoke, github-release]
+    needs: [wheels, build-sdist, smoke, github-release]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: pypi
@@ -239,25 +222,6 @@ jobs:
           # A rerun after a partial upload skips the files PyPI already has. That is only safe
           # for "Re-run failed jobs": a rerun of the whole workflow rebuilds the wheels, and
           # PyPI would keep the old ones beside the new GitHub release files.
-          skip-existing: true
-
-  # Uploaded last, so it never points at a jsonvet wheel that is not on PyPI yet.
-  publish-check-json5:
-    needs: [publish-jsonvet, build-sdists]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    environment: pypi
-    permissions:
-      contents: read
-      id-token: write # required for trusted publishing
-    steps:
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: check-json5
-          path: dist/
-      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
-        with:
-          # A rerun after a partial upload skips the files PyPI already has.
           skip-existing: true
 
   # `--no-verify` packages and uploads without compiling, so this job, which holds the token,
@@ -312,7 +276,7 @@ jobs:
   # Publishes the draft once every package is up. Only the newest vX.Y.Z becomes the latest
   # release, so a patch to an older minor or a pre-release does not take over the release page.
   publish-release:
-    needs: [publish-check-json5, publish-crates]
+    needs: [publish-jsonvet, publish-crates]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
