@@ -185,7 +185,7 @@ export function matrixPage() {
     )
     .join("\n");
   // The page's h1 is Starlight's title.
-  const body = `<p>How ${shownParsers.length} parser runs treat the same files in five JSON dialects, run on ${data.date}. Pick a dialect and what to show, then a file or a parser for its details. <a href="${DOCS}conformance.html">Conformance</a> has the same results as text, with the duplicate-key table and every version.</p>
+  const body = `<p>How ${shownParsers.length} parser runs treat the same files in five JSON dialects. Results updated on ${data.date}. Pick a dialect and what to show, then a file or a parser for its details. <a href="${DOCS}conformance.html">Conformance</a> has the same results as text, with the duplicate-key table and every version.</p>
 <ul class="key not-content" aria-label="Legend">
 <li><b>✓</b> agrees with the expected verdict</li>
 <li><b>✗</b> disagrees</li>

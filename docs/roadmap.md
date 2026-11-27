@@ -19,8 +19,6 @@ a promise, and none of it has a date. Released work is in [CHANGELOG.md](../CHAN
    channel installs the release archives or wheels, so it follows a release.
 3. **Listings in other linter registries**, such as MegaLinter, Trunk and aqua, once the install
    channels exist.
-4. **Where the parsers disagree.** A write-up of the conformance matrix, published after the
-   disagreements found so far have been reported to the parsers' maintainers.
 
 ## Ideas, not planned yet
 

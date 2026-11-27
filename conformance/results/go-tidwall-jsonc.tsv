@@ -107,7 +107,7 @@ tests/json5-tests/misc/npm-package.json	accept
 tests/json5-tests/misc/npm-package.json5	reject
 tests/json5-tests/misc/readme-example.json5	reject
 tests/json5-tests/misc/valid-whitespace.json5	reject
-tests/json5-tests/new-lines/comment-cr.json5	reject
+tests/json5-tests/new-lines/comment-cr.json5	accept
 tests/json5-tests/new-lines/comment-crlf.json5	accept
 tests/json5-tests/new-lines/comment-lf.json5	accept
 tests/json5-tests/new-lines/escaped-cr.json5	reject
@@ -202,7 +202,7 @@ conformance/extra/jsonc/comment-only.jsonc	reject
 conformance/extra/jsonc/hash-comment.jsonc	reject
 conformance/extra/jsonc/json5-syntax.jsonc	reject
 conformance/extra/jsonc/line-comment-at-end.jsonc	accept
-conformance/extra/jsonc/lone-cr-ends-comment.jsonc	reject
+conformance/extra/jsonc/lone-cr-ends-comment.jsonc	accept
 conformance/extra/jsonc/nested-block-comment.jsonc	reject
 conformance/extra/jsonc/trailing-comma-array.jsonc	accept
 conformance/extra/jsonl/bom.jsonl	reject
@@ -210,7 +210,7 @@ conformance/extra/jsonl/crlf.jsonl	reject
 conformance/extra/jsonl/padded-line.jsonl	accept
 conformance/extra/jsonl/scalars.jsonl	reject
 conformance/extra/jsonl/trailing-blank-line.jsonl	accept
-conformance/extra/jwcc/cr-does-not-end-comment.json	reject
+conformance/extra/jwcc/cr-does-not-end-comment.json	accept
 conformance/extra/jwcc/hash-comment.json	reject
 conformance/extra/jwcc/hex-number.json	reject
 conformance/extra/jwcc/line-comment-at-end.json	accept

@@ -27,6 +27,7 @@ export const NAV = [
   ["docs/architecture.md", "Architecture"],
   ["docs/conformance.md", "Conformance"],
   [MATRIX, "Matrix"],
+  ["docs/parser-disagreements.md", "Where parsers disagree"],
   ["docs/accessibility.md", "Accessibility"],
   ["docs/assurance-case.md", "Assurance case"],
   ["docs/decisions/README.md", "Decisions"],
