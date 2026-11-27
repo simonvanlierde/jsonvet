@@ -1,0 +1,23 @@
+[package]
+name = "jsonvet-python"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "In-memory JSON-family lint checks in Python."
+readme = "README.md"
+repository = "https://github.com/simonvanlierde/jsonvet"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[lib]
+name = "jsonvet"
+crate-type = ["cdylib"]
+
+[dependencies]
+jsonvet-core = { package = "jsonvet", path = "../jsonvet" }
+pyo3 = { version = "0.30.1", features = ["abi3-py311"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[workspace]

@@ -16,6 +16,8 @@ ignore = [
 "scripts/**" = ["INP001", "T201"]
 # The conformance harness scripts are standalone too.
 "conformance/**" = ["INP001", "T201"]
+# Pytest checks assertions in the installed native module.
+"crates/jsonvet-python/tests/**" = ["S101"]
 # The placeholder is not a package.
 "setup.py" = ["INP001"]
 
