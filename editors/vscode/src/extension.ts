@@ -21,7 +21,7 @@ export async function activate(context: ExtensionContext): Promise<void> {
     documentSelector,
     middleware: {
       handleDiagnostics(uri, diagnostics, next) {
-        const builtIn = workspace.getConfiguration("json", uri).get<boolean>("validate.enable", true);
+        const builtIn = workspace.getConfiguration("json").get<boolean>("validate.enable", true);
         next(uri, withoutBuiltIn(languageIdOf(workspace.textDocuments, uri), builtIn, diagnostics));
       },
     },
