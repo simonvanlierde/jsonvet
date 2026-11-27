@@ -6,27 +6,24 @@ The details behind the [README](../README.md). Why things work this way is in
 
 ## Options
 
-```text
---dialect DIALECT[:GLOB]   check files matching GLOB (every file, without one) as DIALECT,
-                           or use `auto` to detect the dialect; the last match wins
---error RULE, --warn RULE, --ignore RULE
---max-warnings N
---fix                      fix what has a safe fix, in place, then report what is left
---unsafe-fixes             with --fix, also drop duplicate keys
---format text|sarif|json|gitlab
-                           text lines (the default), SARIF 2.1.0, JSON or GitLab Code Quality
---color auto|always|never  color text output; auto colors it on a terminal unless NO_COLOR
-                           is set, and anywhere when FORCE_COLOR is
---schema FILE              check each file against the JSON Schema in FILE, instead of the
-                           schemas from settings or a file's own local $schema
---schema-catalog           enable HTTPS SchemaStore lookup by file name as a fallback
---stdin-filename PATH      the name standard input (`-`) goes by
---config FILE, --no-config
-jsonvet fmt FILE...       format files instead of checking them, see [formatting](format.md)
-jsonvet lsp               run the language server for editors, see [editors](editors.md)
---list-rules               list the rules with their default severities
---explain RULE             explain a rule, with an example
-```
+- `--dialect DIALECT[:GLOB]` checks files matching the glob as the given dialect. Without a glob,
+  it applies to every file. Use `auto` to detect the dialect by file name and any supported
+  [JSONC modeline](#dialects). The last match wins.
+- `--error RULE`, `--warn RULE` and `--ignore RULE` set a [rule's severity](#rules-and-severities).
+  `--max-warnings N` fails when warnings exceed that count.
+- `--fix` applies safe fixes in place and reports what is left. Add `--unsafe-fixes` to allow
+  dropping duplicate keys.
+- `--format text|sarif|json|gitlab` writes text lines by default, or a SARIF 2.1.0, JSON, or
+  [GitLab Code Quality](#gitlab-code-quality) report.
+  `--color auto|always|never` controls color in text output. See [Output](#output).
+- `--schema FILE` checks against that JSON Schema in place of schemas from settings or a file's
+  local `$schema`. `--schema-catalog` enables HTTPS SchemaStore lookup by file name as a fallback.
+- `--stdin-filename PATH` supplies the name for [standard input](#standard-input).
+- `--config FILE` selects a [configuration file](#configuration-file). `--no-config` skips it.
+- `--list-rules` lists the rules and their default severities. `--explain RULE` explains a rule
+  and gives an example.
+- `jsonvet fmt FILE...` [formats files](format.md). `jsonvet lsp` runs the
+  [language server for editors](editors.md).
 
 `jsonvet --help` prints the same list with more detail. `jsonvet fmt` also takes `--check`, which
 lists the files that would change and writes nothing ([formatting](format.md)).

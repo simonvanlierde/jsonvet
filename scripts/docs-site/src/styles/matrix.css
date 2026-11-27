@@ -5,7 +5,6 @@
    on the tokens of jsonvet.css, and takes the room a wide table needs. */
 :root:root[data-theme], :root:root { --sl-content-width: 90rem; }
 .matrix { font-size: 1rem; line-height: 1.55; margin-top: 1.5rem; }
-.key { margin-top: 1rem; }
 .matrix a { color: inherit; text-decoration: underline; text-decoration-color: var(--rule-strong); text-underline-offset: .22em; text-decoration-thickness: 1px; }
 .matrix a:hover { text-decoration-color: currentColor; }
 .matrix :is(h2, h3) { font-weight: 600; }
@@ -17,12 +16,13 @@
 .matrix th { border-bottom-color: var(--rule-strong); font-weight: 600; white-space: nowrap; }
 /* A wide table scrolls inside its box, so the page never does. */
 .scroll { max-width: 100%; margin: 12px 0; overflow-x: auto; scrollbar-color: var(--rule-strong) transparent; }
-.matrix .skip-matrix { position: absolute; left: -10000px; }
 @media (forced-colors: active) { .matrix fieldset label:has(:checked) { outline: 2px solid Highlight; } }
 
 .key, .matrix .aside { color: var(--faint); font-size: .9375rem; }
 /* The legend: one chip per glyph, so each reads on its own. */
-.key { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 14px; padding: 0; list-style: none; }
+.key { margin: 0 0 14px; }
+.key summary { min-height: 24px; cursor: pointer; width: fit-content; }
+.key ul { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 6px 0 0; padding: 0; list-style: none; }
 .key li { display: flex; align-items: baseline; gap: 6px; }
 .key b { min-width: 1.75em; padding: 0 4px; border: 1px solid var(--rule-strong); color: var(--ink); font: 600 12.5px/1.6 var(--mono); text-align: center; }
 .matrix fieldset { display: flex; flex-wrap: wrap; margin: 0 0 12px; padding: 0; border: 0; font: 13px/1.6 var(--mono); }
@@ -42,6 +42,8 @@
 .matrix table { font: 12.5px/1.5 var(--mono); }
 /* Holds the cells' hidden words, which are positioned, so they cannot widen the page. */
 .matrix .scroll { position: relative; }
+.matrix .scroll[data-fits] { overflow: visible; }
+.matrix .scroll[data-fits] thead th { top: var(--sl-nav-height); }
 .matrix .dialect th, .matrix .dialect td { padding: 2px 6px; text-align: center; white-space: nowrap; }
 .matrix .dialect th[scope="row"], .matrix .dialect thead th:first-child { position: sticky; left: 0; z-index: 1; min-width: 9rem; max-width: 15rem; text-align: left; white-space: normal; overflow-wrap: anywhere; background: var(--paper); }
 .matrix .dialect td:nth-child(2), .matrix .dialect thead th:nth-child(2) { text-align: left; color: var(--faint); }
@@ -49,7 +51,7 @@
 .matrix .dialect thead th:first-child { z-index: 3; }
 .matrix .dialect td.bad { font-weight: 700; background: var(--tint); }
 .detail .back { margin: 0 0 4px; font-size: .9375rem; }
-@media (max-width: 480px) { .matrix .dialect th[scope="row"], .matrix .dialect thead th:first-child { min-width: 0; max-width: 6.5rem; font-size: 11px; } }
+@media (max-width: 480px) { .matrix .dialect th[scope="row"], .matrix .dialect thead th:first-child { min-width: 6.5rem; max-width: 6.5rem; font-size: 11px; } }
 .matrix th.run span { writing-mode: vertical-rl; transform: rotate(180deg); }
 .matrix th.run a { display: inline-block; min-width: 24px; padding: 4px 0; }
 .matrix .group th { position: sticky; left: 0; padding-top: 12px; text-align: left; color: var(--faint); font-weight: 400; background: var(--paper); }
@@ -60,6 +62,7 @@
 .details { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--rule); }
 .detail { display: none; }
 .detail:target { display: block; }
+.detail, #matrix, #details { scroll-margin-top: calc(var(--sl-nav-height) + 12px); }
 .details:has(.detail:target) .hint { display: none; }
 .hint { color: var(--faint); font-style: italic; }
 .detail h2 { margin: 0 0 4px; padding: 0; border: 0; font: 600 15px/1.5 var(--mono); overflow-wrap: anywhere; }
@@ -90,12 +93,8 @@
 }
 @media (min-width: 1100px) {
   .matrix { display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem); gap: 0 32px; align-items: start; }
-  .matrix > fieldset, .skip-matrix { grid-column: 1 / -1; }
-  /* The table scrolls inside one window's height, so its header stays in view; the details stay
-     in view beside it as the page moves. Neither passes its scroll on to the page, so the wheel
-     never moves two things at once. */
-  .tables { max-height: calc(100dvh - 24px); overflow-y: auto; overscroll-behavior: contain; scrollbar-color: var(--rule-strong) transparent; }
-  .details { position: sticky; top: 12px; max-height: calc(100dvh - 24px); overflow-y: auto; overscroll-behavior: contain; scrollbar-color: var(--rule-strong) transparent; }
+  .matrix > fieldset, .key, .skip-matrix { grid-column: 1 / -1; }
+  .details { position: sticky; top: calc(var(--sl-nav-height) + 12px); max-height: calc(100dvh - var(--sl-nav-height) - 24px); overflow-y: auto; scrollbar-color: var(--rule-strong) transparent; }
   .details { margin-top: 0; padding: 0 0 0 20px; border-top: 0; border-left: 1px solid var(--rule); }
   .dialect h2 { margin-top: 0; }
 }

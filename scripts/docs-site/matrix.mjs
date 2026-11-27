@@ -140,7 +140,7 @@ function fileDetail(path, entries) {
 <table class="runs"><thead><tr><th scope="col">parser</th><th scope="col">verdict</th><th scope="col">against expected</th></tr></thead><tbody>${runs}</tbody></table>
 ${f.note ? `<p class="why">${inline(f.note)}</p>` : ""}`;
   });
-  return `<section class="detail" id="${esc(fileId(path))}">
+  return `<section class="detail" id="${esc(fileId(path))}" tabindex="-1">
 <h2>${esc(short(path))}</h2>
 <p class="back"><a href="#matrix">Back to the matrix</a></p>
 <p class="meta"><span>${bytes.length.toLocaleString("en")} bytes</span><span><a href="${fileUrl(path)}">on GitHub</a></span></p>
@@ -164,7 +164,7 @@ function parserDetail(name, info, dialects) {
 <p>Agrees on ${n("✓")} of ${scored.length} scored files, disagrees on ${n("✗")}, crashed or timed out on ${crashes.length}.</p>
 ${list}`;
     });
-  return `<section class="detail" id="parser/${name}">
+  return `<section class="detail" id="parser/${name}" tabindex="-1">
 <h2>${name}</h2>
 <p class="back"><a href="#matrix">Back to the matrix</a></p>
 <p class="meta"><span>${esc(info.language)}</span>${info.package ? `<span>${esc(info.package)}</span>` : ""}<span>${esc(info.version)}</span></p>
@@ -186,7 +186,13 @@ export function matrixPage() {
     .join("\n");
   // The page's h1 is Starlight's title.
   const body = `<p>How ${shownParsers.length} parser runs treat the same files in five JSON dialects. Results updated on ${data.date}. Pick a dialect and what to show, then a file or a parser for its details. <a href="${DOCS}conformance.html">Conformance</a> has the same results as text, with the duplicate-key table and every version.</p>
-<ul class="key not-content" aria-label="Legend">
+<div class="matrix not-content" id="matrix">
+<fieldset class="dialects"><legend>Dialect</legend>
+${choices}
+</fieldset>
+<details class="key">
+<summary>What the marks mean</summary>
+<ul aria-label="Legend">
 <li><b>✓</b> agrees with the expected verdict</li>
 <li><b>✗</b> disagrees</li>
 <li><b>‼</b> crashed or took longer than ${data.timeout}&nbsp;s</li>
@@ -194,10 +200,7 @@ export function matrixPage() {
 <li><b>R</b> rejected, where the spec allows both</li>
 <li><b>†</b> the spec decides the expected verdict</li>
 </ul>
-<div class="matrix not-content" id="matrix">
-<fieldset class="dialects"><legend>Dialect</legend>
-${choices}
-</fieldset>
+</details>
 <a class="skip-matrix" href="#details">Skip past the matrix</a>
 <div class="tables">
 ${data.dialects.map(dialectTable).join("\n")}

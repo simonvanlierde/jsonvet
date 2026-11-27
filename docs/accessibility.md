@@ -35,14 +35,17 @@ axe-core (WCAG 2.2 AA and best practice) at 400 px and 1440 px wide, in light an
 
 The docs pages: axe-core at 400 px and 1440 px wide, in light and dark mode, with no
 violations (2026-11-11). Their build tests check landmarks, labels and unique ids on every page.
-The docs search is Pagefind's dialog: `/` opens it, arrows and Enter pick a result and Esc closes it. Without
-script the button is hidden and the pages work as before. The axe runs below had the dialog closed;
-the open dialog has not been checked with axe or a screen reader.
+Press `/` to open docs search. Tab to a result and press Enter. For an exact rule ID, Enter
+from the search field opens that rule's reference section. Escape closes the dialog and returns
+focus. Without script the search button is hidden and the docs stay readable.
 The matrix page: axe-core at 400 px and 1440 px wide, in light and dark mode, with a file's and a
 parser's details open, with no violations (2026-11-15). After the changes for 3.5.1, axe-core (WCAG
 2.0 to 2.2 A and AA, and best practice) again found no violation on the playground, a docs page,
 the docs contents, the matrix page with a file's and a parser's details open, and the 404 page, at
-400 px and 1440 px wide in light and dark mode (2026-11-15).
+400 px and 1440 px wide in light and dark mode (2026-11-15). The 2026-11-26 pass checked the
+playground, reference, open search dialog and matrix, including open file details, with axe-core
+in Chrome at the same widths in both themes. It found no reported WCAG A or AA violations.
+The playground, search and matrix keyboard paths also passed in Firefox and WebKit.
 
 ### Known gaps
 

@@ -480,7 +480,7 @@ mod tests {
             assert_ne!(error, Some(format!("unknown option `{option}`")));
         }
         help.retain(|option| option != "--help" && option != "--version");
-        let docs = options(&block(&usage, "## Options\n\n```text\n", "```"));
+        let docs = options(&block(&usage, "\n## Options\n\n", "\n\n"));
         assert_eq!(help, docs, "options in --help and in docs/usage.md");
     }
 

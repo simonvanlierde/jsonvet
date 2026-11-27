@@ -164,7 +164,8 @@ Timings, positions and counts use tabular figures.
 - Past 30 corrections, when the stacked notes would run past the text, above 5,000 rows, or under
   860px, the margin gives way to a numbered list under the proof, keyed to red numbers in the
   gutter.
-- The verdict line, the asides, the "Use this check" fold and the colophon follow in one column.
+- Below 860px the verdict and timing come before the editor controls. On a wide screen the verdict
+  follows the proof. The asides, "Use this check" fold and colophon follow in one column.
 
 ### Elevation & Depth
 
@@ -179,8 +180,8 @@ The page opens with the one-line h1 and the check-json5 line; the file meta come
 controls it belongs to. Above the editor, at the right of the Fix and Format row, a caption in
 small mono: the text's name, `staging.json` for the sample, a dropped file's name, `hosts.json`
 with a note that it was made in the page, "Shared text" or "Your text" (which the sample becomes
-at the first edit); its line count; and "Copy link to this text", an underlined text button, with
-"(the link contains your text)" beside it. The caption is not a live region, so typing does not
+at the first edit); its line count; and "Copy share link", an underlined text button, with
+"(includes your text)" beside it. The caption is not a live region, so typing does not
 announce it. Under the keys line, "Samples:" offers the two other texts as text buttons:
 `staging.json` (once the text has changed) and `hosts.json (2.7 MB)`.
 
@@ -235,7 +236,8 @@ token is a quoted string, a run of word characters, or one character (`tokenEnd`
 #### Margin notes
 
 Each correction is a list item: a button with the CLI's message in italic red (JSONPaths in mono)
-whose accessible name is its position, severity, message and related place, and a mono meta line
+whose accessible name starts with the message and includes its position, severity and related place,
+and a mono meta line
 with the position, "warning" when it is one, the rule id linked to its section in docs/usage.md,
 "first at 6:5" and, for a correction with a fix, an underlined "apply" in ink (not pen: the pen
 marks the correction, not the cure). A fix that is not safe reads "changes data: allow in Fix options" until the
@@ -272,7 +274,7 @@ workflow step, `jsonvet fmt` on the command line), each under a `#` comment line
 One short italic sentence on the playground only: the text is checked in the browser and never
 sent. It is not in `footer.html`, which the docs pages share. Then the shared mono line: "jsonvet
 <version> · Simon van Lierde · MIT or Apache-2.0 · source · accessibility", the version added by
-the playground's script. The fact that a link carries the text sits beside "Copy link to this text".
+the playground's script. The fact that a link carries the text sits beside "Copy share link".
 
 #### Docs pages
 
@@ -290,8 +292,8 @@ button.
 #### Matrix page
 
 `docs/matrix.html`, built by `scripts/docs-site/matrix.mjs` from `docs/conformance.json`, which
-`conformance/report.py` writes next to `docs/conformance.md`. No script: the dialect and the filter
-are radio inputs set as segmented controls (the tint and the 2px ink bar), read by `:has()` in
+`conformance/report.py` writes next to `docs/conformance.md`. The dialect and filter work without script.
+They are radio inputs set as segmented controls (the tint and the 2px ink bar), read by `:has()` in
 `scripts/docs-site/src/styles/matrix.css`; a browser without `:has()` shows every table unfiltered. The filter's legend gives the
 counts and disables an empty choice. Rows are the files, grouped by folder under a faint mono
 heading, with the name in a sticky first column; the columns are the dialect's parser runs, their
@@ -300,10 +302,12 @@ for screen readers and in a tooltip; a row where some parser disagrees is set in
 pen marks corrections, and nothing here is one. A file name or a parser name links to `#file/<path>`
 or `#parser/<name>`, a section shown by `:target`: the file's text (invisible characters named in
 small boxed mono, the first 2,000 characters), its expected verdict and source per dialect, every
-run's verdict, the note on it, and a link that opens it in the playground. The legend above the
-table is a list with one boxed glyph per meaning. From 1100px the details sit beside the table and
-stay in view (sticky) as the page moves; the table scrolls inside one window's height, so its
-header stays in view, and neither passes its scroll on to the page. Below that they follow the table.
+run's verdict, the note on it, and a link that opens it in the playground. The legend below the
+dialect picker opens on request, with one boxed glyph per meaning. The page scrolls vertically and
+the table scrolls horizontally within its own region when it is wider than the viewport. From
+1100px the details stay alongside the table as the page moves. Below that they follow the table.
+With script, a table that fits keeps its header in view, and the Back link restores focus to the
+file or parser that opened the details.
 
 ### Do's and Don'ts
 

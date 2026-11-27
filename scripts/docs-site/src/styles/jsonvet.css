@@ -85,6 +85,16 @@ body { background: var(--paper); }
 :root { --sl-sidebar-width: 14rem; --sl-content-width: 50rem; }
 .page > header { padding: 0; border-bottom: 0; }
 .bar { height: 100%; }
+.docs-search { position: relative; }
+.docs-search button[data-open-modal] { min-width: 44px; min-height: 44px; justify-content: center; }
+.docs-search > kbd { display: none; position: absolute; inset-inline-end: .5rem; top: 50%; transform: translateY(-50%); pointer-events: none; padding-inline: .35rem; background: var(--tint); font: .75rem/1.5 var(--mono); }
+@media (min-width: 50rem) {
+  .docs-search button[data-open-modal] { padding-inline-end: 4.25rem; }
+  .docs-search > kbd { display: flex; gap: .25em; }
+}
+.rule-result { margin-block: .75rem; padding: .5rem 0; border-bottom: 1px solid var(--rule); }
+.sl-markdown-content :is(p, li) { max-inline-size: 72ch; }
+#options + ul code { display: inline-block; max-inline-size: 100%; }
 @media (max-width: 49.99rem) { .bar { padding-inline-end: calc(var(--sl-nav-pad-x) + var(--sl-menu-button-size) + .5rem); } }
 .colophon { margin-top: 1.5rem; padding-top: 0; border-top: 0; }
 

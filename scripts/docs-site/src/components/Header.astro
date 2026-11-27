@@ -1,12 +1,76 @@
 ---
 // The playground's header (playground/header.html), with the search where its marker is.
 import Search from "virtual:starlight/components/Search";
-import { chrome } from "../../lib.mjs";
+import { chrome, DOCS, ruleIds } from "../../lib.mjs";
 const [before, after] = chrome("header.html").split("<!--search-->");
 ---
 
 <div class="bar">
   <Fragment set:html={before} />
-  <Search />
+  <div class="docs-search" data-rule-ids={ruleIds().join(" ")} data-reference={DOCS + "usage.html"}>
+    <Search />
+  </div>
   <Fragment set:html={after} />
 </div>
+
+<script>
+  const search = document.querySelector<HTMLElement>(".docs-search");
+  const button = search?.querySelector<HTMLButtonElement>("[data-open-modal]");
+  const dialog = search?.querySelector("dialog");
+
+  if (search && button && dialog) {
+    const rules = new Set(search.dataset.ruleIds?.split(" "));
+    const shortcut = button.querySelector("kbd");
+    if (shortcut) {
+      shortcut.setAttribute("aria-hidden", "true");
+      search.append(shortcut);
+    }
+    button.setAttribute("aria-keyshortcuts", `${button.getAttribute("aria-keyshortcuts")} /`);
+
+    document.addEventListener("keydown", (event) => {
+      if (dialog.open || button.disabled) return;
+      if (event.key === "k" && (event.ctrlKey || event.metaKey)) {
+        // Starlight's window listener opens the dialog and the browser records focus.
+        if (document.activeElement === document.body) button.focus();
+        return;
+      }
+      if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey ||
+          (event.target instanceof Element && event.target.closest("input,textarea,select,[contenteditable]"))) return;
+      event.preventDefault();
+      if (document.activeElement === document.body) button.focus();
+      button.click();
+    });
+
+    // Pagefind's fuzzy results still follow the direct reference match.
+    const result = document.createElement("p");
+    result.className = "rule-result";
+    result.setAttribute("aria-live", "polite");
+    const link = document.createElement("a");
+    dialog.addEventListener("input", (event) => {
+      const input = event.target;
+      if (!(input instanceof HTMLInputElement) || !input.matches(".pagefind-ui__search-input")) return;
+      const rule = input.value.trim().toLowerCase();
+      if (!rules.has(rule)) {
+        result.remove();
+        return;
+      }
+      link.href = `${search.dataset.reference}#${encodeURIComponent(rule)}`;
+      link.textContent = `Rule reference: ${rule}`;
+      result.replaceChildren(link);
+      input.form?.querySelector(".pagefind-ui__drawer")?.before(result);
+    });
+    dialog.addEventListener("click", (event) => {
+      if (event.target instanceof Element && event.target.closest(".pagefind-ui__search-clear")) result.remove();
+    });
+    dialog.addEventListener("close", () => {
+      const input = dialog.querySelector<HTMLInputElement>(".pagefind-ui__search-input");
+      if (!input?.value.trim()) result.remove();
+    });
+    dialog.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || !result.isConnected ||
+          !(event.target instanceof HTMLInputElement) || !event.target.matches(".pagefind-ui__search-input")) return;
+      event.preventDefault();
+      link.click();
+    });
+  }
+</script>

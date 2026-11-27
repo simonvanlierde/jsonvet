@@ -168,7 +168,7 @@ textarea, textarea:focus-visible { padding: 8px 8px 8px 6px; border: 0; resize: 
 .margin ol { margin: 0; padding: 0; list-style: none; }
 .note { color: var(--pen); font: italic 16px/var(--lh) var(--serif); }
 .proof:not(.listed) .note { position: absolute; left: 30px; right: 10px; padding: 0 4px; background: var(--paper); }
-.note > button { all: unset; box-sizing: border-box; display: block; cursor: pointer; overflow-wrap: anywhere; }
+.note > button { all: unset; box-sizing: border-box; display: block; min-height: 24px; cursor: pointer; overflow-wrap: anywhere; }
 .note button:hover .msg { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: .2em; }
 .note button:focus-visible { outline-offset: 2px; outline: 2px solid var(--ink); }
 .note .msg code { font-style: normal; font-size: .82em; }
@@ -195,7 +195,6 @@ textarea, textarea:focus-visible { padding: 8px 8px 8px 6px; border: 0; resize: 
 .proof.listed .note .n { display: block; position: absolute; left: 0; width: 3.4ch; font: normal 12.5px/var(--lh) var(--mono); text-align: right; font-variant-numeric: tabular-nums; }
 .more { padding: 5px 0 5px 4.4ch; color: var(--faint); font-style: italic; }
 
-/* The verdict, one line under the proof. */
 .verdict { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 20px; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--rule); }
 #status { margin: 0; font-size: 1.125rem; }
 #status b { color: var(--pen); font-weight: 700; }
@@ -231,6 +230,11 @@ noscript p { max-width: 1240px; margin: 0 auto; padding: 16px; color: var(--pen)
   .stages button { min-width: 0; }
   .stages button:nth-child(3n) { border-right: 0; }
   .stages button:nth-child(n + 4) { border-top: 1px solid var(--rule); }
+}
+@media (width < 860px) {
+  .verdict { margin-top: 8px; padding-top: 6px; }
+  .keys-row { margin-top: 6px; }
+  .proof { margin-top: 12px; }
 }
 @media (max-width: 560px) {
   .num { font-size: 16px; }
