@@ -20,8 +20,8 @@ package.json:2:14: error[syntax] missing `,`
 events.jsonl:12:1: error[syntax] blank line; JSON Lines needs a value on every line
 ```
 
-It replaces check-json5, a Python hook, and is up to **1,886 times faster** than check-json5 1.4.1
-on JSON5 files, and 6-38x on JSON and JSONC ([figures](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#speed)).
+It replaces check-json5, a Python hook, and is up to **2,098 times faster** than check-json5 1.4.1
+on JSON5 files, and 6-40x on JSON and JSONC ([figures](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#speed)).
 
 **Try it in your browser:** the [playground](https://simonvanlierde.com/jsonvet/) checks, fixes
 and formats the text you paste. Nothing to install, and the text stays on your machine.
@@ -32,8 +32,8 @@ and formats the text you paste. Nothing to install, and the text stays on your m
   and leaves your comments where they are.
 - **JSON Schema with positions.** Each schema error points at its value's line and column.
   Default runs stay offline; `--schema-catalog` opts into SchemaStore downloads.
-- **Fits CI.** A pre-commit or prek hook, a GitHub Action, a command or a Rust library, with text,
-  SARIF or JSON output.
+- **Fits CI.** A pre-commit or prek hook, a GitHub Action, a command or a Rust library.
+  The CLI writes text, SARIF, JSON, or GitLab Code Quality reports.
 
 ## Quick start
 
