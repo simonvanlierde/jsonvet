@@ -9,7 +9,7 @@ breaking public contract.
 
 ## [Unreleased]
 
-## [4.0.0] - 2026-11-20
+## [4.0.0]
 
 Update scripts that read `--format json` to check `schema_version == 2`. See the
 [JSON migration example](docs/usage.md#json) for scripts that read both layouts.
@@ -21,9 +21,6 @@ Replace the `check-json5` package, command and hook ID with `jsonvet`. Replace
 
 - **Breaking, JSON report.** `--format json` reports layout version 2 as `schema_version`
   ([JSON schema](docs/json-output.schema.json)).
-- Compared with 3.5.1, file-check medians range from 8% faster to 0.7% slower; the 10,000-file walk
-  changes by +0.1%. Startup changes from 1.17 to 1.20 ms (+2.6%). These are 40-run medians on a
-  shared Linux host, not a speed guarantee.
 
 ### Removed
 
@@ -38,11 +35,25 @@ Replace the `check-json5` package, command and hook ID with `jsonvet`. Replace
 - With `--format json`, a usage error or a `--schema` that cannot be read or used prints a JSON
   document with `errors` instead of a message on standard error. The exit status stays 2
   ([JSON](docs/usage.md#json)).
+- A first-line JSONC modeline in a `.json` file selects JSONC when dialect detection is automatic
+  ([dialects](docs/usage.md#dialects)).
+- Use `--format gitlab` to write a GitLab Code Quality report
+  ([example](docs/usage.md#gitlab-code-quality)).
+- Set `jsonvet.maxProblems` in VS Code to limit diagnostics sent per file. Quick fixes remain
+  available for findings above the limit ([editor guide](docs/editors.md)).
+- Build the separate [Python bindings](crates/jsonvet-python/README.md) from source to check
+  strings in Python with the Rust parser.
+- The docs show [where JSON parsers disagree](docs/parser-disagreements.md) and
+  [how to run jsonvet in Trunk](docs/usage.md#trunk-code-quality).
 - `--help` ends with three example commands.
 
 ### Fixed
 
 - JSON usage errors respect option values and file names that look like `--format` options.
+- VS Code reads the built-in JSON validation setting at window scope and applies settings
+  changes made while the language server starts.
+- The playground, docs search, and conformance matrix work better on small screens and
+  restore keyboard focus when leaving a dialog or matrix detail.
 - With `--fix` on standard input, configuration errors leave standard output for fixed text.
   A failure after diagnostics start no longer appends a second JSON document on standard error.
 

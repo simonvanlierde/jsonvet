@@ -23,6 +23,7 @@ lint:
     cargo deny check --hide-inclusion-graph advisories bans licenses sources
     prek run ruff-check ruff-format zizmor --all-files --show-diff-on-failure
     uv run scripts/check-versions.py
+    cargo metadata --locked --manifest-path crates/jsonvet-python/Cargo.toml --format-version 1 > /dev/null
     just matrix-check
     uv run conformance/run.py --check
 

@@ -1,6 +1,6 @@
 # Roadmap
 
-Last reviewed: 2026-11-20
+Last reviewed: 2026-11-27
 
 What is planned for jsonvet over the next year, to October 2027, in rough order. It is a plan, not
 a promise, and none of it has a date. Released work is in [CHANGELOG.md](../CHANGELOG.md), and
@@ -9,25 +9,19 @@ a promise, and none of it has a date. Released work is in [CHANGELOG.md](../CHAN
 
 ## Planned
 
-1. **A redesign of the site.** The playground and the docs pages now share one header, footer and
-   theme, and the docs are built with Starlight ([0019](decisions/0019-docs-on-starlight.md)). The
-   redesign is one pass over hierarchy, type, colour and the first screen of each surface, with the
-   accessibility checks rerun afterwards.
-2. **More ways to install.** A Homebrew tap
+1. **More ways to install.** A Homebrew tap
    ([#209](https://github.com/simonvanlierde/jsonvet/issues/209)), then conda-forge, winget,
    nixpkgs, AUR and mise ([#210](https://github.com/simonvanlierde/jsonvet/issues/210)). Each
    channel installs the release archives or wheels, so it follows a release.
-3. **Listings in other linter registries**, such as MegaLinter, Trunk and aqua, once the install
+2. **Listings in linter registries**, such as MegaLinter, Trunk and aqua, once the install
    channels exist.
 
 ## Ideas, not planned yet
 
-A PyO3 Python API ([#287](https://github.com/simonvanlierde/jsonvet/issues/287)),
-`jsonc.org` modeline support ([#289](https://github.com/simonvanlierde/jsonvet/issues/289)), more
-output formats ([#290](https://github.com/simonvanlierde/jsonvet/issues/290)), Kani proofs of the
-pure parser helpers ([#291](https://github.com/simonvanlierde/jsonvet/issues/291)), and more speed
-work at the scanner, which needs a new profile that shows a larger share than the attempts in
-[#211](https://github.com/simonvanlierde/jsonvet/issues/211), closed in November 2026.
+More machine-readable output, such as streaming JSON Lines diagnostics
+([#290](https://github.com/simonvanlierde/jsonvet/issues/290)), and scanner experiments to measure
+numeric parsing and UTF-8 validation on the 4.0 baseline
+([#211](https://github.com/simonvanlierde/jsonvet/issues/211)).
 
 ## Not planned
 
