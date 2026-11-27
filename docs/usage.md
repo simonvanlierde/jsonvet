@@ -8,7 +8,7 @@ The details behind the [README](../README.md). Why things work this way is in
 
 ```text
 --dialect DIALECT[:GLOB]   check files matching GLOB (every file, without one) as DIALECT,
-                           or as `auto`, the extension's default; the last match wins
+                           or use `auto` to detect the dialect; the last match wins
 --error RULE, --warn RULE, --ignore RULE
 --max-warnings N
 --fix                      fix what has a safe fix, in place, then report what is left
@@ -188,6 +188,20 @@ name exists. To be sure, put `--` before the file names: `jsonvet -- --x.json`.
   that use them, select `jwcc`.
 - JSONC, JWCC and JSON5 each add syntax to the one before, except where a `//` comment ends. JWCC
   ends it at LF only, JSONC also at a lone CR, and JSON5 also at U+2028 and U+2029.
+
+### JSONC modelines
+
+Automatic detection checks a `.json` file as JSONC if its first line is either of these
+[JSONC modelines](https://jsonc.org/#filename-extension).
+
+```text
+// -*- jsonc -*-
+// -*- mode: jsonc -*-
+```
+
+The line may start with a byte order mark. Spaces and tabs may surround the comment. An explicit
+dialect from `--dialect` or the config file takes precedence. For standard input, pass a `.json`
+name with `--stdin-filename` to enable detection.
 
 ## Rules and severities
 
@@ -389,7 +403,8 @@ dialect = "jwcc"
   duplicate-key = "ignore" }]`. Each entry holds a `files` glob and any rule ids from `rules`. A
   rule takes the severity from `rules` first, then from each matching entry in order, so a later
   entry wins, then from the command line.
-- `dialects` picks a dialect per glob. The last matching entry wins.
+- `dialects` picks a dialect per glob. The last matching entry wins. Set `auto` to detect the
+  dialect from the file name and a [JSONC modeline](#jsonc-modelines).
 - `exclude` lists globs for a folder walk to skip. A walk uses each folder's nearest config file.
 - `schemas` checks the files a glob matches against a schema on disk, as `--schema` does:
   `schemas = [{ files = "config/*.json5", schema = "schemas/server.schema.json" }]`. The schema

@@ -89,11 +89,11 @@ exclude_re = [
   # The formatter, `jsonvet fmt`. Memory and speed only: the room given in advance to the output
   # string and the vectors, and the tree of a JSON Lines record, which is cleared before the next
   # (the records are pieces of the same text either way).
-  "format.rs:\\d+:(36|49): replace (\\+ with (\\*|-)|/ with (%|\\*)) in format$",
+  "format.rs:\\d+:(36|49): replace (\\+ with (\\*|-)|/ with (%|\\*)) in format_inner$",
   "format.rs:.* in Parser<'a>::reserve$",
   "format.rs:.* replace Parser<'a>::reset with \\(\\)",
   # The white space a JSON Lines record is trimmed of is skipped by the lexer anyway.
-  "format.rs:\\d+:70: replace \\|\\| with && in format$",
+  "format.rs:\\d+:70: replace \\|\\| with && in format_inner$",
   # Only JSON5 text has a U+2028 or U+2029 outside a string or comment that passes the check,
   # so the other dialects never reach that arm.
   "format.rs:\\d+:44: replace match guard dialect == Dialect::Json5 with true in Lexer<'_>::next$",

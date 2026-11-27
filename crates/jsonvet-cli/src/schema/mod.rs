@@ -683,7 +683,7 @@ impl Schema {
     ) -> Result<Schema, String> {
         let name = path.to_string_lossy();
         // jsonschema compiles a schema recursively: a deep one can take gigabytes or the stack.
-        let mut config = settings.config_for(&name);
+        let mut config = settings.config_for(&name, text);
         // A schema is one value, so a JSON Lines dialect set for the documents does not apply.
         if config.dialect() == Dialect::JsonLines
             && Dialect::for_path(path) != Some(Dialect::JsonLines)

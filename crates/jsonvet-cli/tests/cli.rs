@@ -1239,6 +1239,106 @@ fn the_last_matching_dialect_wins_and_auto_means_the_extension() {
     assert_eq!(run(&["--dialect", "json", "c.jsonc"]).0, 1);
 }
 
+#[test]
+fn jsonc_modelines_only_apply_to_automatic_json_dialect_selection() {
+    let dir = workdir(&[
+        ("short.json", "// -*- jsonc -*-\n{a: 1}"),
+        ("long.json", "\u{feff}  // -*- mode: jsonc -*- \t\r{a: 1}"),
+        ("other.json5", "// -*- jsonc -*-\n{a: 1}"),
+        ("later.json", "\n// -*- jsonc -*-\n{a: 1}"),
+        ("suffix.json", "// -*- jsonc -*- example\n{a: 1}"),
+        (
+            "jsonvet.toml",
+            r#"dialects = [{ files = "short.json", dialect = "auto" }]"#,
+        ),
+    ]);
+    for name in ["short.json", "long.json"] {
+        let (code, output) = jsonvet(&dir, &[name]);
+        assert_eq!(code, 1, "{name}: {output}");
+        assert!(
+            output.contains("unquoted keys are not allowed in jsonc"),
+            "{output}"
+        );
+        assert_eq!(jsonvet(&dir, &["--dialect", "json5", name]).0, 0);
+        assert_eq!(
+            jsonvet(&dir, &["--dialect", "json5", "--dialect", "auto", name]).0,
+            1
+        );
+    }
+    for name in ["other.json5", "later.json", "suffix.json"] {
+        assert_eq!(jsonvet(&dir, &[name]).0, 0, "{name}");
+    }
+    assert_eq!(
+        jsonvet_stdin(
+            &dir,
+            &["--stdin-filename", "stdin.json"],
+            "// -*- jsonc -*-\r\n{a: 1}"
+        )
+        .0,
+        1
+    );
+}
+
+#[test]
+fn jsonc_modelines_apply_to_fixes_and_formatting() {
+    let input = "// -*- mode: jsonc -*-\n[1,]\n";
+    let dir = workdir(&[("config.json", input)]);
+    assert_eq!(jsonvet(&dir, &["fmt", "config.json"]).0, 1);
+    assert_eq!(
+        std::fs::read_to_string(dir.join("config.json")).expect("input"),
+        input
+    );
+    assert_eq!(jsonvet(&dir, &["--fix", "config.json"]).0, 0);
+    assert_eq!(
+        std::fs::read_to_string(dir.join("config.json")).expect("fixed file"),
+        "// -*- mode: jsonc -*-\n[1]\n"
+    );
+    assert_eq!(jsonvet(&dir, &["fmt", "--check", "config.json"]).0, 0);
+}
+
+#[test]
+fn formatting_does_not_move_a_later_modeline_to_the_first_line() {
+    let modeline = "\u{feff}\r\n// -*- jsonc -*-\r\n{a:1}\r\n";
+    let dir = workdir(&[("config.json", modeline), ("config.json5", modeline)]);
+    assert_eq!(jsonvet(&dir, &["fmt", "config.json", "config.json5"]).0, 0);
+    assert_eq!(
+        std::fs::read_to_string(dir.join("config.json")).expect("formatted file"),
+        "\u{feff}\r\n// -*- jsonc -*-\r\n{ a: 1 }\r\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("config.json5")).expect("formatted file"),
+        "\u{feff}// -*- jsonc -*-\r\n{ a: 1 }\r\n"
+    );
+    assert_eq!(jsonvet(&dir, &["fmt", "--check", "config.json"]).0, 0);
+    assert_eq!(jsonvet(&dir, &["config.json"]).0, 0);
+}
+
+#[test]
+fn jsonc_modelines_apply_when_reading_schema_files() {
+    let dir = workdir(&[
+        ("schema.json", "// -*- jsonc -*-\n{type: \"integer\"}\n"),
+        ("config.json", "1"),
+    ]);
+    assert_eq!(
+        jsonvet(&dir, &["--schema", "schema.json", "config.json"]).0,
+        2
+    );
+    assert_eq!(
+        jsonvet(
+            &dir,
+            &[
+                "--dialect",
+                "json5",
+                "--schema",
+                "schema.json",
+                "config.json"
+            ]
+        )
+        .0,
+        0
+    );
+}
+
 #[cfg(windows)]
 #[test]
 fn a_backslash_path_matches_a_slash_pattern() {

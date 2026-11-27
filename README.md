@@ -131,8 +131,8 @@ The API is on [docs.rs](https://docs.rs/jsonvet).
 | `jsonl`  | one JSON value per line ([JSON Lines](https://jsonlines.org/))               | `.jsonl`, `.ndjson`                                                  |
 
 Any other extension is checked as JSON5. `.json` defaults to JSON5 because most `.json` files that
-fail as JSON are config files with comments. To check a file as strict JSON, use
-`--dialect json:package.json`.
+fail as JSON are config files with comments. A first-line [JSONC modeline](docs/usage.md#jsonc-modelines)
+selects JSONC. To check a file as strict JSON, use `--dialect json:package.json`.
 
 ## Rules
 

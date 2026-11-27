@@ -24,8 +24,8 @@ checked.
 
 Options:
       --dialect DIALECT[:GLOB]  Check files matching GLOB (every file, without one) as DIALECT:
-                                json, i-json, jsonc, jwcc, json5, jsonl, or auto for the file
-                                extension's default. Also accepted: ijson, hujson (jwcc),
+                                json, i-json, jsonc, jwcc, json5, jsonl, or auto. Auto uses the
+                                file name and any JSONC modeline. Aliases: ijson, hujson (jwcc),
                                 ndjson and json-lines (jsonl). Repeatable; the last match wins.
                                 Files with any other extension are checked as json5;
                                 extensions match in lower case only.
