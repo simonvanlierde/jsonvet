@@ -887,10 +887,18 @@ fn edits<'n>(old: &'n str, new: &'n str) -> Vec<(Range<usize>, &'n str)> {
             };
             let head = same(&mut gap.chars().zip(with.chars()));
             let tail = same(&mut gap[head..].chars().rev().zip(with[head..].chars().rev()));
-            edits.push((
-                old_at + head..old_end - tail,
-                &new[new_at + head..new_end - tail],
-            ));
+            let (mut start, mut end) = (old_at + head, old_end - tail);
+            let (mut from, mut to) = (new_at + head, new_end - tail);
+            // No position lies between the CR and LF of a line ending, so take in the CR or the
+            // LF, which both texts share there.
+            let splits = |at: usize| old[..at].ends_with('\r') && old[at..].starts_with('\n');
+            if splits(start) {
+                (start, from) = (start - 1, from - 1);
+            }
+            if splits(end) {
+                (end, to) = (end + 1, to + 1);
+            }
+            edits.push((start..end, &new[from..to]));
         }
         let Some((x, y)) = next else { break };
         (old_at, new_at, i, j) = (olds[x].end, news[y].end, x + 1, y + 1);
@@ -2455,6 +2463,9 @@ mod tests {
         }
         assert_eq!(edits("[1,2]", "[1, 2]"), [(3..3, " ")]);
         assert_eq!(edits("é  ü", "é ü"), [(3..4, "")]);
+        // A lone CR is a line ending of its own; only a CRLF is kept whole.
+        assert_eq!(edits("[1,\r2]", "[1,\r 2]"), [(4..4, " ")]);
+        assert_eq!(edits("[1,\r\n2]", "[1,\r\r\n2]"), [(3..5, "\r\r\n")]);
     }
 
     #[test]
@@ -3324,6 +3335,91 @@ mod tests {
             let edits = parse_edits(text, &client.request(method, params));
             assert_eq!(apply_owned(text, &edits), expected, "{method}");
         }
+        client.stop();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn edits_never_split_a_crlf() {
+        let dir = folder("crlf-edits");
+        let (mut client, _) = Client::start(&json!({}));
+        let file = uri(&dir.join("a.json"));
+        let whole = range((0, 0), (9, 0));
+        // Each text, with what formatting and fixing all make of it.
+        for (text, formatted, fixed) in [
+            (
+                "{\r\"a\": 1, // c\r\n\"b\": 2\r}\r",
+                "{\r  \"a\": 1, // c\r  \"b\": 2\r}\r",
+                "{\r\"a\": 1, // c\r\"b\": 2\r}\r",
+            ),
+            (
+                "{\n\"a\": 1,\r\n\"b\": 2\n}\n",
+                "{\n  \"a\": 1,\n  \"b\": 2\n}\n",
+                "{\n\"a\": 1,\n\"b\": 2\n}\n",
+            ),
+        ] {
+            let published = client.open(&file, text);
+            let formatting = client.request(
+                "textDocument/formatting",
+                json!({ "textDocument": { "uri": file }, "options": {} }),
+            );
+            let actions = client.request(
+                "textDocument/codeAction",
+                json!({ "textDocument": { "uri": file }, "range": whole, "context": {} }),
+            );
+            let fix_all = actions
+                .as_array()
+                .and_then(|a| a.iter().find(|a| a["kind"] == FIX_ALL))
+                .expect("fix all");
+            let lines = Lines::new(text, false);
+            let ends: Vec<_> = (0..lines.starts.len())
+                .map(|n| {
+                    lines.position(lines.offset(Some(&json!({ "line": n, "character": u32::MAX }))))
+                })
+                .collect();
+            for value in [&published, &formatting, &actions] {
+                let mut stack = vec![value];
+                while let Some(value) = stack.pop() {
+                    if let Some(line) = value.get("line").and_then(Value::as_u64) {
+                        let end = &ends[usize::try_from(line).expect("line")];
+                        assert!(
+                            value["character"].as_u64() <= end["character"].as_u64(),
+                            "{text:?}: {value} past {end}"
+                        );
+                    }
+                    match value {
+                        Value::Array(items) => stack.extend(items),
+                        Value::Object(fields) => stack.extend(fields.values()),
+                        _ => {}
+                    }
+                }
+            }
+            // `parse_edits` reads a position past the end of its line as the end, as clients do.
+            assert_eq!(
+                apply_owned(text, &parse_edits(text, &formatting)),
+                formatted
+            );
+            let edits = &fix_all["edit"]["changes"][&file];
+            assert_eq!(apply_owned(text, &parse_edits(text, edits)), fixed);
+        }
+        client.stop();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_change_with_several_full_texts_keeps_the_last() {
+        let dir = folder("several-changes");
+        let file = uri(&dir.join("a.json"));
+        let (client, _) = Client::start(&json!({}));
+        client.open(&file, "{}");
+        client.notify(
+            "textDocument/didChange",
+            json!({
+                "textDocument": { "uri": file, "version": 2 },
+                "contentChanges": [{ "text": "{\"a\": 1, \"a\": 2}" }, { "text": "{\"a\": 1}" }],
+            }),
+        );
+        assert_eq!(client.diagnostics()["diagnostics"], json!([]));
         client.stop();
         let _ = std::fs::remove_dir_all(dir);
     }

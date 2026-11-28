@@ -9,6 +9,12 @@ breaking public contract.
 
 ## [Unreleased]
 
+### Fixed
+
+- Language server formatting and fix-all edits no longer start or end between the CR and LF
+  of a line ending. Editors moved such a position to the line end, so an edit could delete
+  the line break, which turned the next line into part of a comment, or do nothing.
+
 ## [4.0.0] - 2026-11-28
 
 Update scripts that read `--format json` to check `schema_version == 2`. See the
