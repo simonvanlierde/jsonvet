@@ -9,10 +9,14 @@ breaking public contract.
 
 ## [Unreleased]
 
-### Fixed
+### Changed
 
 - `--warn syntax`, `--ignore syntax` and `syntax = "off"` in a settings file now exit 2 like the
-  other always-an-error rules, instead of being accepted and ignored.
+  other always-an-error rules, instead of being accepted and ignored. Remove such a setting: it
+  never had an effect.
+
+### Fixed
+
 - The notes in `--format json` and SARIF no longer start with the stderr label `note:`.
 - An unusable SchemaStore schema with several unresolvable `$ref`s names the same one on every run.
 - `--fix --unsafe-fixes` no longer drops a duplicate key whose removal moves a suppression comment
