@@ -12,9 +12,9 @@ uv tool install jsonvet     # or: pipx install jsonvet, cargo binstall jsonvet-c
 The extension runs `jsonvet` from your `PATH`, or the program the `jsonvet.path` setting names. It
 checks each file with the dialect, rules and schema a `jsonvet` run would use for that path, from
 the nearest `jsonvet.toml` ([configuration](https://github.com/simonvanlierde/jsonvet#configuration)).
-Only files on disk are checked: an untitled file has no path to pick its settings by. VS Code
-knows no JSON5 or JWCC language, so the extension adds them for `.json5`, `.jwcc` and `.hujson`
-files, without syntax highlighting.
+The extension checks documents with a file path, including unsaved edits. An untitled buffer
+needs a path before jsonvet can check it. VS Code knows no JSON5 or JWCC language, so the extension
+adds them for `.json5`, `.jwcc` and `.hujson` files, without syntax highlighting.
 
 A change to a `jsonvet.toml` or `pyproject.toml` checks every open file again.
 

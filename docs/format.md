@@ -1,7 +1,8 @@
 # Formatting
 
-`jsonvet fmt` rewrites files in all six dialects and keeps their
-comments. Why it works this way is in [design.md](design.md).
+Use `jsonvet fmt` to format files in all six dialects and keep their comments. Use
+`jsonvet fmt --check` in CI to list files that would change. See [design.md](design.md) for why it
+works this way.
 
 ```bash
 jsonvet fmt config/ package.json   # rewrite the files in place
@@ -12,13 +13,15 @@ jsonvet fmt - < in.json            # standard input to standard output
 A file literally named `fmt` needs `./fmt`, because `fmt` as the first argument is the
 subcommand. Plain `jsonvet FILE...` still checks.
 
-The pre-commit hook is `jsonvet-format`:
+The pre-commit hook is `jsonvet-format`. In an existing config, add it to the repository's
+`hooks` list, or add the repository entry to `repos`.
 
 ```yaml
-- repo: https://github.com/simonvanlierde/jsonvet
-  rev: v4.0.0
-  hooks:
-    - id: jsonvet-format
+repos:
+  - repo: https://github.com/simonvanlierde/jsonvet
+    rev: v4.0.0
+    hooks:
+      - id: jsonvet-format
 ```
 
 ## What it does
@@ -80,7 +83,8 @@ of these that sets it:
    search finds no project config file.
 4. The default.
 
-So the project decides, and `jsonvet fmt --check` gives the same answer on every machine.
+Commit a `jsonvet.toml` or `[tool.jsonvet]` configuration for the files you check in CI so personal
+settings cannot change the result.
 
 ```toml
 [format]
@@ -169,7 +173,8 @@ It is off by default, so existing files keep their layout.
 ## Options
 
 `jsonvet fmt` takes `--check`, `--dialect`, `--config`, `--no-config` and
-`--stdin-filename`, which work as for a check. The options for checking (`--format`, `--color`,
+`--stdin-filename`. `--no-config` skips the project and personal jsonvet settings. The formatter
+still reads `.editorconfig`. The options for checking (`--format`, `--color`,
 `--schema`, `--max-warnings`, `--error`, `--warn`, `--ignore`, `--fix` and `--unsafe-fixes`) are a
 usage error under `fmt`.
 With no files, `jsonvet fmt` does nothing, as a bare `jsonvet` does. With `--check` nothing is

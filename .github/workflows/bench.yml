@@ -1,6 +1,6 @@
 name: bench
 
-# The speed table in docs/design.md and the README's top speed-up, from scripts/bench.py on a
+# The speed table in docs/design.md and the README summary, from scripts/bench.py on a
 # GitHub runner, for a new minor release. Run it on the release branch, then apply the patch:
 #   gh workflow run bench.yml --ref release/X.Y.Z
 #   gh run download <run-id> -n speed-table && git apply speed-table.patch

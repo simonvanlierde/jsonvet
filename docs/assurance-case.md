@@ -1,8 +1,8 @@
 # Assurance case
 
-This page argues why jsonvet meets its security requirements, and names the code, test or
-workflow behind each claim. [SECURITY.md](../SECURITY.md) holds the requirements, the known limits
-and how to report a problem; the design itself is in [design.md](design.md).
+Find which code, tests and workflows support jsonvet's security claims.
+[SECURITY.md](../SECURITY.md) holds the requirements, the known limits and how to report a
+problem. See [design.md](design.md) for the design behind those controls.
 
 The requirements, from SECURITY.md:
 
@@ -40,7 +40,7 @@ Actions is reported upstream (SECURITY.md, "Scope").
 | Config and ignore files | Settings that change what is checked and how | A size cap (`MAX_CONFIG_BYTES`) and the same regular-file rule; the config search stops at the repository root or the working directory ([0009](decisions/0009-where-the-config-search-stops.md)); a symlinked config is followed, but an error in it shows none of its values (`crates/jsonvet-cli/src/settings.rs`) |
 | Schemas | A schema chosen by `--schema`, a config file or `$schema` | Fixed caps on schema size and depth, file depth, errors and message length, and on regexes (2 MB compiled each, 1,000 per schema and 1,000 per run; SchemaStore's largest is 715 KB, and its most in one schema 457), not a timeout ([0010](decisions/0010-schema-limits-are-deterministic-caps.md), `crates/jsonvet-cli/src/schema/limits.rs`); external schema references stay disabled; only `--schema-catalog` enables bounded HTTPS downloads and a local cache ([0016](decisions/0016-opt-in-schemastore-catalog.md)); a path from a project must stay inside it, and its errors quote nothing from it (`confined` in `settings.rs`, [0012](decisions/0012-schema-paths-stay-in-the-project.md)) |
 | Output | File names, paths and messages printed to a terminal, a CI log, JSON or SARIF | One escaping rule for every format: control, bidi and zero-width characters are printed as `\u` escapes, line breaks as `\r` and `\n`, and workflow-command values are percent-encoded (`printable` and `escape` in `crates/jsonvet-cli/src/output.rs`, [0007](decisions/0007-hand-written-output-with-one-escaping-rule.md)); SARIF stops at 25,000 results (`MAX_RESULTS`) |
-| The GitHub Action | Its inputs, and the wheel it downloads from PyPI | Inputs reach the script through environment variables, never expanded into the shell (`action.yml`); the wheel is checked with `gh attestation verify` against this repository's release workflow before it is installed (`verify_wheel` in `scripts/action.sh`) |
+| The GitHub Action | Its inputs, and the wheel it downloads from PyPI | Inputs reach the script through environment variables, never expanded into the shell (`action.yml`). By default, `gh attestation verify` checks the wheel against this repository's release workflow before installation. See the [Action reference](usage.md#github-action) for exceptions. |
 | The playground | Text pasted into a static page | The library compiled to WebAssembly with no file or network access; a Content-Security-Policy that allows only the page's own script and wasm, and no forms or other origins (`playground/index.html`) |
 | Release and CI | Code, dependencies, the built files | Pull requests run under `pull_request` with a read-only token and no secrets, except that CodSpeed's job also gets an OpenID Connect token to upload its results (a pull request from a fork gets none); every checkout drops its credentials; actions are pinned by commit; zizmor checks the workflows; `cargo deny` checks licences, sources and RustSec advisories; the jobs that publish run on `v*` tags only, run no project code, and wait for the maintainer's approval in the `pypi` and `crates-io` environments; every release file gets a build provenance attestation (`.github/workflows/release.yml`, [GOVERNANCE.md](../GOVERNANCE.md#access)) |
 
@@ -48,7 +48,7 @@ Actions is reported upstream (SECURITY.md, "Scope").
 
 - **Fail-safe defaults.** A file jsonvet cannot read fails the run (`unreadable`), whatever the
   options. A schema path that leaves the project is an error even if nothing is there. The Action
-  stops if a wheel's attestation fails, and only an explicit `verify: false` skips the check.
+  stops when a wheel's attestation check fails.
 - **Least privilege.** The library has no file or network access; the CLI reads only what it is
   given or finds by the config search. Besides the opt-in catalog cache, it writes only with `--fix` or `jsonvet fmt`, and only the
   files it was given or found in a folder walk, through a temporary file in the same folder and a

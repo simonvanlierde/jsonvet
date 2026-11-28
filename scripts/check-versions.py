@@ -10,8 +10,7 @@ CHANGELOG must name the same release, or a hook install would pull another versi
 
 The speed table in docs/design.md, which `scripts/bench.py --write` fills in, must name the
 release's minor version (`jsonvet 3.2` for 3.2.x), so each minor release measures again. The
-README's "up to N times faster than check-json5 1.4.1" must name the table's largest speed-up over
-1.4.1, since the README is also the crate's page on crates.io.
+README benchmark summary must match the table.
 
 The minimum supported Rust has three places too: `rust-version` in Cargo.toml, the toolchain of
 ci.yml's msrv job and `cargo +X` in the justfile's msrv recipe.
@@ -34,6 +33,8 @@ import re
 import sys
 import tomllib
 from pathlib import Path
+
+from bench import readme_summary
 
 # The GitHub Marketplace refuses an action whose description has 125 characters or more.
 MARKETPLACE_ABOUT = 125
@@ -85,11 +86,10 @@ def main() -> int:
     minor = ".".join(cargo.split("-")[0].split(".")[:2])
     speed = first(r"<!-- speed:start -->.*?\| jsonvet (\S+) +\|", "docs/design.md")
     print(f"{'design.md speed':16} {speed}")
-    table = first(r"<!-- speed:start -->(.*?)<!-- speed:end -->", "docs/design.md") or ""
-    rows = [row.split("|") for row in table.splitlines() if row.startswith("|")][2:]
-    largest = max((row[5].strip() for row in rows), key=lambda up: int(up.rstrip("x").replace(",", "")), default=None)
-    claim = first(r"up to \**([\d,]+)\s+times faster\**\s+than check-json5 1\.4\.1", "README.md")
-    print(f"{'README speed-up':16} {claim}x, table {largest}")
+    table = first(r"<!-- speed:start -->(.*?)<!-- speed:end -->", "docs/design.md")
+    claim = first(r"<!-- speed:start -->\n(.*?)<!-- speed:end -->", "README.md")
+    speed_matches = bool(speed) and table is not None and claim == readme_summary(table.splitlines())
+    print(f"{'README speed':16} {'matches' if speed_matches else 'differs from'} the table")
     workflows = Path(".github/workflows")
     image = r"container: (quay\.io/pypa/manylinux_2_28_x86_64:\S+)"
     shared = {
@@ -108,7 +108,7 @@ def main() -> int:
         or not has_heading
         or len(set(msrvs.values())) != 1
         or speed != minor
-        or f"{claim}x" != largest
+        or not speed_matches
         or any(len(set(copies)) != 1 or None in copies for copies in shared.values())
         or not 0 < len(about) < MARKETPLACE_ABOUT
     ):

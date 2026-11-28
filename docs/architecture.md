@@ -1,23 +1,23 @@
 # jsonvet architecture
 
-Last reviewed: 2026-11-15
+Follow a check from the CLI, editor, playground or Python through the parser to its diagnostics.
+See the [design](design.md) and [decisions](decisions/README.md) for why each part works this way.
 
-How the parts of jsonvet fit together. Why each part is built the way it is lives in the
-[design](design.md) and the [decisions](decisions/README.md).
+Last reviewed 2026-11-28.
 
 ## How a check runs
 
-The library in `crates/jsonvet/` does the checking. It reads a text in one pass and returns a
-report of problems with their positions; it does no I/O. Everything else is a way in: the command
-line and the language server in `crates/jsonvet-cli/`, the WebAssembly build in
-`crates/jsonvet-wasm/` for the playground, and the wheel, hook and Action that install the
-command line.
+The library in `crates/jsonvet/` parses text in one pass and returns a report of problems with
+their positions. It works in memory. The command line and language server in `crates/jsonvet-cli/`,
+the playground's WebAssembly build and the [Python bindings](../crates/jsonvet-python/README.md)
+all use the library. The hook and GitHub Action install the CLI wheel.
 
 ```mermaid
 flowchart LR
   files["files and stdin"] --> cli["jsonvet CLI: args, settings, walk"]
   vscode["VS Code extension"] -- "LSP over stdio" --> lsp["jsonvet lsp"]
   playground["playground page"] --> wasm["jsonvet-wasm"]
+  python["Python check()"] --> bindings["jsonvet-python"]
   subgraph library ["crates/jsonvet"]
     parse["parse: events"] --> rules["rules and suppressions"] --> report["report"]
     parse --> fixes["fix and format"]
@@ -25,8 +25,9 @@ flowchart LR
   cli --> parse
   lsp --> parse
   wasm --> parse
+  bindings --> parse
   cli --> schema["--schema: jsonschema"]
-  report --> out["text, JSON, SARIF"]
+  report --> out["text, JSON, SARIF, GitLab Code Quality"]
   schema --> out
 ```
 
@@ -37,8 +38,9 @@ flowchart LR
    report holds the problems by byte offset.
 3. With `--schema`, the CLI folds the same events into the values jsonschema checks
    (`crates/jsonvet-cli/src/schema/`), and places each schema error back at its key or value.
-4. `output.rs`, `json.rs` and `sarif.rs` turn offsets into lines and columns and print them.
-   `--fix` and `jsonvet fmt` write the result through `write.rs`, which replaces a file safely.
+4. The CLI turns byte offsets into lines and columns and writes its report as text, JSON, SARIF
+   or GitLab Code Quality. `--fix` and `jsonvet fmt` write the result through `write.rs`, which
+   replaces a file safely.
 
 ## The parts
 
@@ -49,6 +51,7 @@ crates/jsonvet-cli/    jsonvet CLI: arguments, config, output, --schema
                        (jsonschema, serde_json) and the language server, `jsonvet lsp`
                        (lsp-server). Built into the PyPI wheels by maturin.
 crates/jsonvet-wasm/   the library as WebAssembly for the playground: `check`, `fix`, `format` and `version`
+crates/jsonvet-python/ Python bindings for in-memory checks, built from their own Cargo workspace
 editors/vscode/        the VS Code extension: a thin client for `jsonvet lsp`, in TypeScript
 playground/            the browser playground: a static page around the wasm. Deployed by pages.yml.
 setup.py               placeholder that pre-commit installs: pins the jsonvet wheel
@@ -61,7 +64,7 @@ fuzz/  tests/  scripts/
 The public API is `check`, `Config`, `Dialect`, `UnknownDialect`, `Rule`, `Severity`, `UnknownRule`,
 `Location`, `Report`, `Problem`, `Related` and `RelatedKind` ([docs.rs](https://docs.rs/jsonvet)).
 Each type is `#[non_exhaustive]` or has private fields, so a new variant or field is not a breaking
-change. The `#[doc(hidden)]` items are public for jsonvet-cli only, and can change in any release:
+change. The `#[doc(hidden)]` items serve jsonvet's own crates and can change in any release:
 `parse`, `parse_with`, `parse_lines`, `join_lines`, `line_parts`, `Lines`, `Event`, `EventKind`,
 `json_path`, `PathStep`, `key_text`, `did_you_mean`, `closest`, `MESSAGES`, `fill`,
 `Problem::message_with`, `is_hidden`, `Fix`, `Fixed`, `try_fix`, `report`, `format`, `FormatError`,
