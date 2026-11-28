@@ -51,7 +51,7 @@ jobs:
           # An assignment, not a pipe, so a failed check stops the step.
           versions=$(uv run scripts/check-versions.py)
           echo "$versions"
-          version=$(echo "$versions" | awk '/^Cargo.toml/ {print $2}')
+          version=$(echo "$versions" | awk '/^cargo version/ {print $3}')
           test "v$version" = "$TAG" || { echo "tag $TAG does not match version $version"; exit 1; }
 
   # The wheel matrix lives in wheels.yml, which pull requests run too (wheels-check.yml).

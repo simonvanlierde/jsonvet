@@ -70,6 +70,7 @@ def main() -> int:
         json.loads((ROOT / "editors" / "vscode" / "package.json").read_text())["version"]
     )
     found.update({f"hook rev {i + 1}": pep440(rev) for i, rev in enumerate(revs)})
+    print(f"{'cargo version':16} {cargo}")  # the tag's form; the rows below are PEP 440
     for where, version in found.items():
         print(f"{where:16} {version}")
     heading = f"## [{cargo}]"
