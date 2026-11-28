@@ -61,7 +61,9 @@ export function finish(dir, site) {
     const html = readFileSync(file, "utf8");
     if (!html.includes('<meta name="generator" content="Starlight')) continue;
     pages++;
-    let page = withPolicy(html).replace(/(<html[^>]*?) data-theme="dark"/, "$1");
+    // Cloudflare's email obfuscation can turn version pins and fixture text into links.
+    const literalCode = html.replace(/<pre(?=[\s>])[^>]*>[\s\S]*?<\/pre>/g, "<!--email_off-->$&<!--/email_off-->");
+    let page = withPolicy(literalCode).replace(/(<html[^>]*?) data-theme="dark"/, "$1");
     if (file === resolve(dir, "404.html")) {
       // GitHub Pages serves it for any address with no page, so it has no address of its own.
       page = page
