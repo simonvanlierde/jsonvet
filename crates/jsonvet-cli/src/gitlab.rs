@@ -102,8 +102,8 @@ impl Report {
     }
 }
 
-/// FNV-1a gives the same 128-bit fingerprint on every toolchain.
-fn fnv(state: u128, bytes: &[u8]) -> u128 {
+/// FNV-1a gives the same 128-bit hash on every toolchain, unlike `DefaultHasher`.
+pub(crate) fn fnv(state: u128, bytes: &[u8]) -> u128 {
     bytes.iter().fold(state, |hash, &byte| {
         (hash ^ u128::from(byte)).wrapping_mul(0x0000_0000_0100_0000_0000_0000_0000_013b)
     })

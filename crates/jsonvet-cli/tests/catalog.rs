@@ -2,7 +2,6 @@
 
 #![allow(clippy::expect_used, reason = "test setup must fail loudly")]
 
-use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -17,8 +16,12 @@ fn seed(cache: &Path, url: &str, body: &str) {
 
 /// Seeds an entry fetched `age` seconds ago.
 fn seed_at(cache: &Path, url: &str, body: &str, age: u64) {
-    let mut hash = std::collections::hash_map::DefaultHasher::new();
-    url.hash(&mut hash);
+    // FNV-1a, 128 bits: the same name on every toolchain.
+    let hash = url
+        .bytes()
+        .fold(0x6c62_272e_07bb_0142_62b8_2175_6295_c58d_u128, |h, b| {
+            (h ^ u128::from(b)).wrapping_mul(0x0000_0000_0100_0000_0000_0000_0000_013b)
+        });
     let time = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("clock")
@@ -26,7 +29,7 @@ fn seed_at(cache: &Path, url: &str, body: &str, age: u64) {
         - age;
     let envelope = serde_json::json!({"url": url, "fetched": time, "body": body});
     std::fs::write(
-        cache.join(format!("{:016x}.json", hash.finish())),
+        cache.join(format!("{hash:032x}.json")),
         envelope.to_string(),
     )
     .expect("seed cache");
@@ -242,7 +245,7 @@ fn stale_cache_is_used_with_a_warning_when_the_refresh_fails() {
     let result = run(&path, &["--no-config", "--schema-catalog", "package.json"]);
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert!(
-        stderr.contains(&format!("warning: using stale cached {CATALOG}:")),
+        stderr.contains(&format!("jsonvet: warning: using stale cached {CATALOG}:")),
         "{stderr}"
     );
     assert_eq!(result.status.code(), Some(1), "{stderr}");

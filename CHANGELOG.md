@@ -9,6 +9,16 @@ breaking public contract.
 
 ## [Unreleased]
 
+### Fixed
+
+- `--warn syntax`, `--ignore syntax` and `syntax = "off"` in a settings file now exit 2 like the
+  other always-an-error rules, instead of being accepted and ignored.
+- The notes in `--format json` and SARIF no longer start with the stderr label `note:`.
+- An unusable SchemaStore schema with several unresolvable `$ref`s names the same one on every run.
+- `--fix --unsafe-fixes` no longer drops a duplicate key whose removal moves a suppression comment
+  onto another line, which a second run then changed again.
+- The help for the exit status names a failed write of the output, and `fmt -` on a syntax error.
+
 ## [4.0.0] - 2026-11-28
 
 Update scripts that read `--format json` to check `schema_version == 2`. See the

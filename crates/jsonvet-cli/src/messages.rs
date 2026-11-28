@@ -60,18 +60,12 @@ const ENGLISH: &[(&str, &str)] = &[
         "catalog.too-large",
         "SchemaStore response exceeds its size limit",
     ),
-    (
-        "catalog.stale",
-        "warning: using stale cached {url}: {error}",
-    ),
+    ("catalog.stale", "using stale cached {url}: {error}"),
     (
         "catalog.skipped",
         "not tried after an earlier download failed: {error}",
     ),
-    (
-        "catalog.cache-write",
-        "warning: cannot cache {url}: {error}",
-    ),
+    ("catalog.cache-write", "cannot cache {url}: {error}"),
     (
         "catalog.fetch",
         "cannot load {url} and no usable cached copy exists: {error}",
@@ -273,7 +267,7 @@ const ENGLISH: &[(&str, &str)] = &[
     ),
     (
         "schema.missing",
-        "note: the schema {path} that a `$schema` names does not exist, so the files that name \
+        "the schema {path} that a `$schema` names does not exist, so the files that name \
          it are checked without it",
     ),
     (

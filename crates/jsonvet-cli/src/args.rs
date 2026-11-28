@@ -85,7 +85,9 @@ type, the safe fixes, and formatting. It takes settings as a check does. docs/ed
 repository shows how to set up an editor.
 
 Exit status: 0 when no file has an error, 1 when one does, 2 for a usage error, such as a
-schema that cannot be read or used. With --fix, the problems left decide.
+schema that cannot be read or used, or when the output cannot be written, as to a full disk.
+With --fix, the problems left decide. `fmt -` with a syntax error writes nothing to standard
+output, while --fix - copies the input there unchanged.
 
 Examples:
   jsonvet .                                  Check every JSON file under the current folder.
