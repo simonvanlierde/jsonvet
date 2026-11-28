@@ -9,7 +9,7 @@ breaking public contract.
 
 ## [Unreleased]
 
-## [4.0.0]
+## [4.0.0] - 2026-11-28
 
 Update scripts that read `--format json` to check `schema_version == 2`. See the
 [JSON migration example](docs/usage.md#json) for scripts that read both layouts.
