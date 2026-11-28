@@ -1,33 +1,49 @@
-// The snippets under "Use this check": the check, then the same with `--fix`, then `jsonvet fmt`.
-// `glob` is `DIALECT:*.json` for any dialect but JSON5, else empty.
+// Keep these suffixes in sync with Dialect::EXTENSIONS in crates/jsonvet/src/dialect.rs.
+const byExtension = new Map([
+  ["json", "json5"], ["json5", "json5"], ["geojson", "json5"], ["jsonld", "json5"],
+  ["webmanifest", "json5"], ["jsonc", "jsonc"], ["code-workspace", "jsonc"],
+  ["code-snippets", "jsonc"], ["hujson", "jwcc"], ["jwcc", "jwcc"],
+  ["jsonl", "jsonl"], ["ndjson", "jsonl"],
+]);
 
-export function snippets({ version, glob, file }) {
-  const repo = ["- repo: https://github.com/simonvanlierde/jsonvet", `  rev: v${version}`, "  hooks:"];
-  const hook = (...lines) => [...repo, ...lines].join("\n");
-  const id = ["    - id: jsonvet"];
-  const args = (...a) => (glob ? [`      args: [${[...a, "--dialect", `"${glob}"`].join(", ")}]`] : a.length ? [`      args: [${a.join(", ")}]`] : []);
-  const use = `- uses: simonvanlierde/jsonvet@v${version.split(".")[0]}`;
-  const withArgs = (extra) => {
-    const all = [extra, glob && `--dialect ${glob}`].filter(Boolean).join(" ");
-    return all ? ["  with:", `    args: ${all}`] : [];
-  };
-  const run = (...words) => ["uvx jsonvet", ...words, file].filter(Boolean).join(" ");
-  const dialect = glob && `--dialect '${glob}'`;
+export function snippets({ version, dialect, file, text }) {
+  const dot = file.lastIndexOf(".");
+  const ext = dot < 0 ? "" : file.slice(dot + 1);
+  const jsoncModeline = file.endsWith(".json") && /^\uFEFF?[ \t]*\/\/ -\*- (?:mode: )?jsonc -\*-[ \t]*(?:\r|\n|$)/.test(text);
+  const automatic = jsoncModeline ? "jsonc" : byExtension.get(ext) ?? "json5";
+  const override = dialect !== automatic;
+  const pattern = ext && byExtension.has(ext) ? `*.${ext}` : file === ".babelrc" ? ".babelrc" : "";
+  const glob = override && pattern ? `${dialect}:${pattern}` : "";
+  const path = file === "-" ? "./-" : file;
+  const quoted = "'" + path.replaceAll("'", "'\\''") + "'";
+  const run = (...words) => ["uvx jsonvet", ...words, override && `--dialect ${dialect}`, "--", quoted].filter(Boolean).join(" ");
   return {
     hook: [
-      hook(...id, ...args()),
-      "# Fix what is safe, in place (add --unsafe-fixes to drop duplicate keys)",
-      hook(...id, ...args("--fix")),
-      "# Format, keeping comments (it takes its dialect from the file name)",
-      hook("    - id: jsonvet-format"),
-    ].join("\n\n"),
+      "repos:",
+      "  - repo: https://github.com/simonvanlierde/jsonvet",
+      `    rev: v${version}`,
+      "    hooks:",
+      "      - id: jsonvet",
+      ...(glob ? [`        args: [--dialect, '${glob}']`] : []),
+    ].join("\n"),
     action: [
-      [use, ...withArgs("")].join("\n"),
-      "# Fix what is safe, in the runner's checkout",
-      [use, ...withArgs("--fix")].join("\n"),
-      "# Fail when a file is not formatted",
-      "- run: uvx jsonvet fmt --check .",
-    ].join("\n\n"),
-    cli: [run(dialect), run("--fix", dialect), `uvx jsonvet fmt ${file}`].join("\n"),
+      "name: jsonvet",
+      "on: [push, pull_request]",
+      "permissions:",
+      "  contents: read",
+      "jobs:",
+      "  jsonvet:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1",
+      "        with:",
+      "          persist-credentials: false",
+      `      - uses: simonvanlierde/jsonvet@v${version.split(".")[0]}`,
+      ...(glob ? ["        with:", `          args: --dialect ${glob}`] : []),
+    ].join("\n"),
+    cli: run(),
+    "cli-fix": run("--fix"),
+    "cli-format": run("fmt"),
+    tracked: Boolean(pattern),
   };
 }

@@ -51,20 +51,36 @@ test("a summary names mixed line endings", () => {
   assert.equal(fixSummary([f]), "Fixed 1 problem: 1 mixed line ending.");
 });
 
-test("the snippets add --fix and the format hook", () => {
-  const s = snippets({ version: "3.3.0", glob: "", file: "config.json" });
-  assert.match(s.hook, /rev: v3\.3\.0\n {2}hooks:\n {4}- id: jsonvet\n\n/);
-  assert.match(s.hook, /- id: jsonvet\n {6}args: \[--fix\]/);
-  assert.match(s.hook, /- id: jsonvet-format$/);
-  assert.match(s.action, /- uses: simonvanlierde\/jsonvet@v3\n {2}with:\n {4}args: --fix/);
-  assert.match(s.action, /- run: uvx jsonvet fmt --check \.$/);
-  assert.equal(s.cli, "uvx jsonvet config.json\nuvx jsonvet --fix config.json\nuvx jsonvet fmt config.json");
+test("the snippets give a complete hook config and a check-only workflow with checkout", () => {
+  const s = snippets({ version: "4.0.0", dialect: "json5", file: "config.json", text: "{}" });
+  assert.match(s.hook, /^repos:\n {2}- repo: .*\n {4}rev: v4\.0\.0\n {4}hooks:\n {6}- id: jsonvet$/);
+  assert.match(s.action, /steps:\n {6}- uses: actions\/checkout@[0-9a-f]{40}(?:[^\n]*\n){3} {6}- uses: simonvanlierde\/jsonvet@v4$/);
+  assert.doesNotMatch(s.action, /--fix|jsonvet fmt/);
+  assert.equal(s.cli, "uvx jsonvet -- 'config.json'");
+  assert.equal(s["cli-fix"], "uvx jsonvet --fix -- 'config.json'");
+  assert.equal(s["cli-format"], "uvx jsonvet fmt -- 'config.json'");
 });
 
-test("the snippets keep the dialect glob", () => {
-  const s = snippets({ version: "3.3.0", glob: "jsonc:*.json", file: "a.json" });
-  assert.match(s.hook, /args: \[--dialect, "jsonc:\*\.json"\]/);
-  assert.match(s.hook, /args: \[--fix, --dialect, "jsonc:\*\.json"\]/);
-  assert.match(s.action, /args: --fix --dialect jsonc:\*\.json/);
-  assert.equal(s.cli.split("\n")[1], "uvx jsonvet --fix --dialect 'jsonc:*.json' a.json");
+test("the workflow and hook limit overrides to the filename class", () => {
+  const s = snippets({ version: "4.0.0", dialect: "jsonc", file: "a.json", text: "{}" });
+  assert.match(s.hook, /args: \[--dialect, 'jsonc:\*\.json'\]/);
+  assert.match(s.action, /args: --dialect jsonc:\*\.json/);
+  assert.equal(s["cli-fix"], "uvx jsonvet --fix --dialect jsonc -- 'a.json'");
+});
+
+test("the CLI keeps the dropped name and quotes it for the shell", () => {
+  const settings = { version: "4.0.0", text: "{}" };
+  const s = snippets({ ...settings, dialect: "jsonl", file: "-today's data.ndjson" });
+  assert.equal(s.cli, "uvx jsonvet -- '-today'\\''s data.ndjson'");
+  assert.equal(snippets({ ...settings, dialect: "jsonc", file: "data.jsonc" }).cli, "uvx jsonvet -- 'data.jsonc'");
+  assert.equal(snippets({ ...settings, dialect: "jsonc", file: ".jsonc" }).cli, "uvx jsonvet -- '.jsonc'");
+  assert.equal(snippets({ ...settings, dialect: "json", file: "-" }).cli, "uvx jsonvet --dialect json -- './-'");
+  assert.equal(snippets({ ...settings, dialect: "json5", file: "data.ndjson" }).cli, "uvx jsonvet --dialect json5 -- 'data.ndjson'");
+  assert.equal(snippets({ ...settings, dialect: "jsonl", file: "data.ndjson" }).tracked, true);
+  assert.equal(snippets({ ...settings, dialect: "json", file: "-" }).tracked, false);
+});
+
+test("the CLI override accounts for the JSONC modeline", () => {
+  const s = snippets({ version: "4.0.0", dialect: "json5", file: "data.json", text: "\uFEFF // -*- mode: jsonc -*-\n{}" });
+  assert.equal(s.cli, "uvx jsonvet --dialect json5 -- 'data.json'");
 });

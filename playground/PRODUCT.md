@@ -40,9 +40,10 @@ The playground runs jsonvet's own parser, built to WebAssembly, on the text you 
 it as a printer's proof: every problem gets a proofreader's mark at the exact token, and its
 correction sits in the margin beside its line, with the position, rule id and, for a duplicate
 key, its JSONPath and where its first copy is. Clicking a correction moves the caret to it. The
-six dialects run along the top as proof stages, each with its verdict. One line says whether the
-text parses and what the hook and CLI do. It sits above the editor controls on narrow screens.
-A fold below gives the hook, Action and command for the chosen dialect, with fix and format examples.
+six dialects run along the top as proof stages, each with its verdict. The verdict states whether
+the text parses with the selected dialect and default rules. On narrow screens it sits above the
+editor controls with a button that jumps to the first problem. A fold below gives a hook config,
+a check-only workflow, and command examples for the chosen dialect.
 
 Two actions edit the proof, as the CLI's `--fix` and `jsonvet fmt` do. Fix applies the safe fixes
 (duplicate keys only when set in its options, keeping the last), either all at once or one correction at a
@@ -52,9 +53,10 @@ settings as real config (a `jsonvet.toml` `[format]` table, or the `--fix` flags
 teaches how to set them in a repository. Both change the editor text so Ctrl+Z undoes them,
 check again, update the share link and show the time they took.
 
-The verdict row times each check in the visitor's own browser, and the "hosts.json (2.7 MB)" sample
-builds a large made-up file in the page and checks it, so the speed shows rather than being
-claimed. A caption above the editor says what the text is (its name and line count) and offers
+The verdict row times the WebAssembly check and result decoding in the visitor's own browser.
+The "hosts.json (2.7 MB)" sample builds a large made-up file in the page and checks it. Switching
+to a sample keeps the draft, dialect and selection behind a "Restore previous text" button.
+A caption above the editor says what the text is (its name and line count) and offers
 "Copy share link".
 
 A visit succeeds when the visitor sees the verdict jsonvet would give their text, understands
@@ -62,9 +64,9 @@ each problem well enough to fix it, and knows how to run the same check in their
 
 ## Positioning
 
-It is the same parser and the same messages as the CLI, hook and Action, not a separate JavaScript
-linter, so what the playground says is what CI will say for that dialect. The text never leaves
-the page: a share link keeps it in the URL fragment, which browsers do not send to a server.
+The playground uses the parser and default rules from the CLI, hook and Action. Project settings
+and schemas can change the result outside the playground. A share link keeps the text in the URL
+fragment, which browsers do not send to a server.
 
 ## Operating Context
 
@@ -91,9 +93,9 @@ the page: a share link keeps it in the URL fragment, which browsers do not send 
   checked, and the list shows at most 200 problems.
 - Only the theme choice is kept in local storage. There are no cookies, and requests load only
   the page's own files. The share link lives in the address bar (`#dialect:data`, the text deflated
-  and in base64url, by `share.mjs`), and a dropped file is read in the page.
+  and in base64url, by `share.mjs`). The page rejects dropped files that contain invalid UTF-8.
 - `playground/browser-check.sh` loads the page in headless Chrome and expects the verdict
-  `Parses as JSON5, but a rule found 1 error.` for the sample text.
+  `Parses as JSON5, but rules found 1 error.` for the sample text.
 - Fix and Format edit the text with the browser's editing commands (`insertText`), which keep
   the undo stack. Fix uses the library's `try_fix` and Format its `format`, so they give what the
   CLI gives. Options are not kept: not in the share link, not in storage.
@@ -113,7 +115,7 @@ the page: a share link keeps it in the URL fragment, which browsers do not send 
 - The sample text in `index.html`: a config with a comment, a trailing comma and a `port` key
   repeated inside `server`, so it fails as JSON, and each dialect gives a different verdict.
 - The social card `playground/og.png`: the name, one duplicate key struck and circled, and the address, rendered from `docs/og-card.html`.
-- The speed figures in docs/design.md#speed, linked from the timing as "how measured".
+- The CLI benchmarks in [the design notes](../docs/design.md#speed), linked from the timing.
 - No testimonials, user counts or quotes exist; none may be invented.
 
 The page's own words are plain: a margin item is a problem, a repeated key's first place is "key first set here",

@@ -182,12 +182,12 @@ small mono: the text's name, `staging.json` for the sample, a dropped file's nam
 with a note that it was made in the page, "Shared text" or "Your text" (which the sample becomes
 at the first edit); its line count; and "Copy share link", an underlined text button, with
 "(includes your text)" beside it. The caption is not a live region, so typing does not
-announce it. Under the keys line, "Samples:" offers the two other texts as text buttons:
-`staging.json` (once the text has changed) and `hosts.json (2.7 MB)`.
+announce it. The sample controls sit under the keys line. When a sample replaces a draft,
+"Restore previous text" brings back the text, selected dialect and caret.
 
-The timing is part of the verdict row, at its right: "Checked in 0.08 ms (how measured)", and
-after an action "fixed in 0.2 ms" or "formatted in 1.1 ms". The version is in the footer line,
-with the name.
+The verdict row gives the time for the WebAssembly check and result decoding. Its link leads to
+the CLI benchmarks. Fix and Format show their own times alongside it. The version is in the
+footer line with the name.
 
 #### Proof stages
 
@@ -249,11 +249,10 @@ gutter.
 
 #### Verdict
 
-One line, in bold and then plain: whether the text parses, then what the hook and CLI do. "Does not
-parse as JSON5." (a syntax error), "Parses as JSON5, but a rule found 1 error." (red, with the
-rule's own note in the margin), "Parses as JSON5, with 1 warning.", or "✓ Valid JSON5." in ink. A
-second, hidden live region repeats it a second after the last change and is emptied the moment the
-verdict changes, so the page text never holds two verdicts. Italic asides follow: where checking
+The verdict distinguishes syntax errors from text that parses but breaks a rule, and links to
+project settings below. On narrow screens the first problem appears beside the verdict as a
+button that moves the caret to the problem. A hidden live region repeats the verdict a second
+after the last change. Italic asides follow: where checking
 stopped after a syntax error, a byte order mark that the dialect does not flag, and why the marks
 are off for a big text. The paste-and-F8 line sits above the proof, and a line under the heading
 says the page is the successor of check-json5, with a link that opens the hook.
@@ -264,10 +263,10 @@ The fold's title is "Use this check in your project".
 
 A `details` fold, open by default from 860px and closed below, with a tab list (pre-commit or prek hook, GitHub Action,
 command line), arrow keys between tabs. Each panel holds a focusable, scrolling `pre` on the tint
-and a copy icon in its corner, as in the options popovers. The snippets use the version from the wasm's `version()` and add
-`--dialect DIALECT:*.json` for any dialect but JSON5. Each panel holds the check, then the same
-with `--fix`, then the format variant (the `jsonvet-format` hook, `jsonvet fmt --check` in a
-workflow step, `jsonvet fmt` on the command line), each under a `#` comment line.
+and a copy icon in its corner, as in the options popovers. The hook and workflow panels provide
+complete files for the check. Formatting is separate. The command-line panel gives the check,
+safe fixes and formatting for the dropped file or sample, with a dialect override when the
+filename or modeline would choose another dialect.
 
 #### Colophon
 
@@ -298,7 +297,7 @@ They are radio inputs set as segmented controls (the tint and the 2px ink bar), 
 counts and disables an empty choice. Rows are the files, grouped by folder under a faint mono
 heading, with the name in a sticky first column; the columns are the dialect's parser runs, their
 names turned upright. Cells are text marks (✓ ✗ ‼ A R) in ink, with the parser and verdict in words
-for screen readers and in a tooltip; a row where some parser disagrees is set in bold. No red: the
+for screen readers and in a tooltip. Rows with a disagreement, crash or timeout are bold. No red: the
 pen marks corrections, and nothing here is one. A file name or a parser name links to `#file/<path>`
 or `#parser/<name>`, a section shown by `:target`: the file's text (invisible characters named in
 small boxed mono, the first 2,000 characters), its expected verdict and source per dialect, every
