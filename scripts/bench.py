@@ -12,7 +12,7 @@ its median less, and it runs 10 times; the JSON5 case alone takes seconds a run.
 1.0.1, the last release of the original hook, reads every file with the pure-Python json5
 package and takes seconds a file, so it runs 3 times with no warm-up by default. `--write` also
 puts the table, with the machine and date, between the `speed` markers in docs/design.md;
-check-versions.py fails when that table names an older minor release than Cargo.toml.
+it also updates the README's summary. check-versions.py checks both against Cargo.toml.
 
 Needs hyperfine and a release build (`cargo build --release -p jsonvet-cli`). Each check-json5 is
 installed into its own virtual environment and run from there, so uvx's start-up is not timed.
@@ -162,11 +162,22 @@ def machine() -> str:
     return f"{cores} cores of {article} {model} under {platform.system()}"
 
 
-def write(table: list[str], runs: int, ref_runs: int, old_runs: int, ups: dict[str, float]) -> None:
-    """Replace the text between the speed markers in docs/design.md, and the README's speed-ups.
+def readme_summary(table: list[str]) -> str:
+    """Summarize two named workloads using medians from the published table."""
+    columns = [row.strip("|").split("|") for row in table if row.startswith("|")]
+    release = columns[0][3].strip()
+    times = {row[0].strip(): (row[3].strip(), row[2].strip()) for row in columns[2:]}
+    json5, legacy_json5 = times["1.8 MB JSON5"]
+    configs, legacy_configs = times["1,100 config files"]
+    seconds = float(legacy_json5.removesuffix(" ms").replace(",", "")) / 1_000
+    return (
+        f"On a 1.8 MB JSON5 file, {release} took {json5} and check-json5 1.4.1 took {seconds:.3g} s.\n"
+        f"On 1,100 config files, they took {configs} and {legacy_configs}.\n"
+    )
 
-    `ups` maps each case to its speed-up over 1.4.1.
-    """
+
+def write(table: list[str], runs: int, ref_runs: int, old_runs: int) -> None:
+    """Update the benchmark table and the README summary between their speed markers."""
     text = DESIGN.read_text()
     start, end = text.index(MARKERS[0]) + len(MARKERS[0]), text.index(MARKERS[1])
     intro = (
@@ -175,13 +186,9 @@ def write(table: list[str], runs: int, ref_runs: int, old_runs: int, ups: dict[s
         "Every tool gives the same verdict in every case:"
     )
     DESIGN.write_text(text[:start] + "\n".join([textwrap.fill(intro, 100), "", *table]) + "\n" + text[end:])
-    # The README may set the claim in bold: "up to **N times faster** than".
-    claim = r"(up to \**)[\d,]+(\s+times faster\**\s+than check-json5 1\.4\.1)"
-    readme = re.sub(claim, rf"\g<1>{max(ups.values()):,.0f}\g<2>", README.read_text(), count=1)
-    # "and 6-39x on JSON and JSONC": every case but the JSON5 one.
-    others = [up for name, up in ups.items() if "JSON5" not in name]
-    span = f"{min(others):,.0f}-{max(others):,.0f}x"
-    README.write_text(re.sub(r"[\d,]+-[\d,]+x( on JSON and JSONC)", rf"{span}\g<1>", readme, count=1))
+    readme = README.read_text()
+    start, end = readme.index(MARKERS[0]) + len(MARKERS[0]), readme.index(MARKERS[1])
+    README.write_text(readme[:start] + readme_summary(table) + readme[end:])
 
 
 def main() -> int:
@@ -218,7 +225,7 @@ def main() -> int:
         def median(names: list[str], listed: str, runs: int, warmup: int) -> dict[str, float]:
             # -i: the duplicate-key case exits 1 by design.
             hyperfine = ["hyperfine", "--style", "none", "--warmup", str(warmup), "--runs", str(runs), "-N", "-i"]
-            hyperfine += ["--export-json", result]
+            hyperfine += ["--export-json", str(result)]
             for name in names:
                 hyperfine += ["-n", name, f"{tools[name]} {listed}"]
             subprocess.run(hyperfine, cwd=files, check=True, capture_output=True)  # noqa: S603
@@ -233,7 +240,6 @@ def main() -> int:
 
         header = ["Case", "check-json5 1.0.1", "check-json5 1.4.1", f"jsonvet {release}", "Speed-up over 1.4.1"]
         rows = [[*header, "over 1.0.1"]]
-        ups = {}  # speed-ups over 1.4.1 by case, for the README
         for name, case in fixtures(files):
             exits = {verdict(tool, case, files) for tool in tools.values()}
             if len(exits) != 1:
@@ -246,7 +252,6 @@ def main() -> int:
                 | median(["1.0.1"], listed, args.old_runs, 0)
             )
             old, ref, new = times["1.0.1"], times["1.4.1"], times["jsonvet"]
-            ups[name] = ref / new
             rows.append(
                 [
                     name,
@@ -260,7 +265,7 @@ def main() -> int:
     table = aligned(rows)
     print("\n".join(table))
     if args.write:
-        write(table, args.runs, args.ref_runs, args.old_runs, ups)
+        write(table, args.runs, args.ref_runs, args.old_runs)
     return 0
 
 

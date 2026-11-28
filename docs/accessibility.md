@@ -1,5 +1,8 @@
 # Accessibility
 
+Use jsonvet from a terminal or with a keyboard in the playground and docs. See which
+accessibility checks have run and how to report a problem.
+
 ## Command-line interface
 
 jsonvet is a command-line program. It should work with a screen reader, in a

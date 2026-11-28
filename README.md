@@ -12,7 +12,10 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23461825.svg)](https://doi.org/10.5281/zenodo.23461825)
 
 A linter and formatter for JSON, I-JSON, JSONC, HuJSON (JWCC), JSON5 and JSON Lines. It finds
-syntax errors and duplicate keys, and tells you the exact line and column:
+syntax errors and duplicate keys and reports the exact line and column.
+
+[Try it in your browser](https://simonvanlierde.com/jsonvet/). Edit the sample, or paste your own
+text to check, fix, or format it on your machine.
 
 ```text
 config.json:4:5: error[duplicate-key] duplicate key $.server.port (first at 2:5)
@@ -20,13 +23,15 @@ package.json:2:14: error[syntax] missing `,`
 events.jsonl:12:1: error[syntax] blank line; JSON Lines needs a value on every line
 ```
 
-It replaces check-json5, a Python hook, and is up to **2,098 times faster** than check-json5 1.4.1
-on JSON5 files, and 6-40x on JSON and JSONC ([figures](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#speed)).
+<!-- speed:start -->
+On a 1.8 MB JSON5 file, jsonvet 4.0 took 7.1 ms and check-json5 1.4.1 took 14.9 s.
+On 1,100 config files, they took 4.1 ms and 34 ms.
+<!-- speed:end -->
+See the [benchmark method and other results](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#speed).
+If you use the old hook, see [how to switch](#coming-from-check-json5).
 
-**Try it in your browser:** the [playground](https://simonvanlierde.com/jsonvet/) checks, fixes
-and formats the text you paste. Nothing to install, and the text stays on your machine.
-
-- **Six dialects, one parser.** Each file is checked in the dialect its extension implies.
+- **Six dialects, one parser.** The filename sets the default. Plain `.json` uses JSON5.
+  For strict JSON, use `--dialect json:package.json`.
 - **Fixes.** `--fix` repairs what has a safe fix, such as a stray byte order mark.
 - **Formatting that keeps comments.** `jsonvet fmt` lays out all six dialects
   and leaves your comments where they are.
@@ -39,20 +44,22 @@ and formats the text you paste. Nothing to install, and the text stays on your m
 
 ### Pre-commit or prek hook
 
-Add this to `.pre-commit-config.yaml` (for [pre-commit](https://pre-commit.com) or
-[prek](https://github.com/j178/prek)):
+Save this as `.pre-commit-config.yaml` for [pre-commit](https://pre-commit.com) or
+[prek](https://github.com/j178/prek). If you have a config, add the repository entry to `repos`.
 
 ```yaml
-- repo: https://github.com/simonvanlierde/jsonvet
-  rev: v4.0.0
-  hooks:
-    - id: jsonvet
-    - id: jsonvet-format
+repos:
+  - repo: https://github.com/simonvanlierde/jsonvet
+    rev: v4.0.0
+    hooks:
+      - id: jsonvet
 ```
 
-`jsonvet-format` rewrites files, so a commit that changes one fails and you commit again. Add
-`args: [--fix]` to `jsonvet` to repair what has a safe fix
-([Fixing](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#fixing)). Both hooks are in the same block, but each works alone.
+Run `prek run jsonvet --all-files` or `pre-commit run jsonvet --all-files` to try the hook.
+To format on commit, add `- id: jsonvet-format` as another hook in the same `hooks` list.
+The formatter rewrites files. If it changes any, stage the result and commit again.
+To apply safe fixes, add `args: [--fix]` to `jsonvet`. See
+[Fixing](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#fixing).
 
 It checks files by name: `.json`, `.jsonc`, `.json5`, `.jsonl`, `.ndjson`, `.geojson`, `.jsonld`,
 `.hujson`, `.jwcc`, `.code-workspace`, `.code-snippets`, `.webmanifest` and `.babelrc`.
@@ -63,18 +70,30 @@ JSON. The hook installs a prebuilt binary from PyPI, so you need no Rust. On Lin
 
 ### GitHub Action
 
+Add these steps to a job in your workflow.
+
 ```yaml
-- uses: simonvanlierde/jsonvet@v4
+steps:
+  - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    with:
+      persist-credentials: false
+  - uses: simonvanlierde/jsonvet@v4
 ```
 
-The step fails when a file has an error, and each problem shows up as an annotation on the pull
-request. Before it installs jsonvet from PyPI, it checks that the wheel came from this
-repository's release workflow. Its inputs are in the
+The step fails when a file has an error. The default text output also emits annotations, subject
+to GitHub's display limits. On a runner with `gh`, the Action checks the wheel's attestation
+before installing it by default. See the inputs and verification conditions in the
 [reference](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#github-action).
 
-The Action only checks. To check formatting too, add a step with `run: uvx jsonvet fmt --check .`.
-To see the problems in GitHub code scanning, set `sarif: jsonvet.sarif` and upload that file, as in
-[this workflow](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#code-scanning).
+To check formatting too, append these steps to the job's `steps` list.
+
+```yaml
+- uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+- run: uvx jsonvet fmt --check .
+```
+
+To see the problems in GitHub code scanning, use the
+[SARIF workflow](https://github.com/simonvanlierde/jsonvet/blob/main/docs/usage.md#code-scanning).
 
 ### Trunk Code Quality
 
@@ -138,6 +157,11 @@ The API is on [docs.rs](https://docs.rs/jsonvet).
 Any other extension is checked as JSON5. `.json` defaults to JSON5 because most `.json` files that
 fail as JSON are config files with comments. A first-line [JSONC modeline](docs/usage.md#jsonc-modelines)
 selects JSONC. To check a file as strict JSON, use `--dialect json:package.json`.
+
+See the [JSON5 suite](https://github.com/simonvanlierde/jsonvet/blob/main/crates/jsonvet/tests/conformance.rs)
+and [scored JSON5 cases](https://simonvanlierde.com/jsonvet/docs/conformance.html#json5).
+The [rule tests](https://github.com/simonvanlierde/jsonvet/blob/main/crates/jsonvet/tests/cases.rs)
+include I-JSON.
 
 ## Rules
 
@@ -231,17 +255,21 @@ for hook and flag changes.
 jsonvet gives the same pass or fail as 1.4.1, apart from a few
 [edge cases](https://github.com/simonvanlierde/jsonvet/blob/main/docs/design.md#known-differences-from-14).
 One change can fail a file that passed: `.jsonc`, `.code-workspace` and `.code-snippets` files
-are now checked as JSONC, and `.hujson` and `.jwcc` files as JWCC. To keep the old verdict, add
-`--dialect json5:GLOB`.
+are now checked as JSONC, and `.hujson` and `.jwcc` files as JWCC. To keep the old JSON5 check for
+`.jsonc` files, pass the dialect override in the hook's arguments.
+
+```yaml
+- id: jsonvet
+  args: [--dialect, 'json5:*.jsonc']
+```
 
 ## How it is tested
 
 The tests run on Linux, macOS and Windows, with fuzzing, mutation testing and a comparison with
-check-json5 1.4.1. A
-[conformance matrix](https://github.com/simonvanlierde/jsonvet/blob/main/docs/conformance.md)
-runs the same files against 18 other parsers in four languages (27 runs with jsonvet's own and the
-duplicate-key variants), and shows where each one disagrees
-with the expected verdict.
+check-json5 1.4.1. The [conformance report](https://simonvanlierde.com/jsonvet/docs/conformance.html)
+runs the same files against 18 other parsers in four languages. Its 27 runs include jsonvet and
+the duplicate-key variants. Use the [interactive matrix](https://simonvanlierde.com/jsonvet/docs/matrix.html)
+to see what each parser did on an individual file.
 
 ## Development
 

@@ -19,10 +19,13 @@ Some checks need tools that `mise.toml` does not install:
 | --- | --- |
 | valgrind and gungraun-runner | `just counts` and `just scaling` (Linux only) |
 | samply, perf | `just profile` and `just counters` (perf: Linux only) |
-| wasm-bindgen-cli and wasm-opt | `just playground` |
+| `wasm32-unknown-unknown` Rust target and wasm-bindgen-cli | `just playground` |
 | docker | `just matrix` |
 | pnpm (Node comes from `mise.toml`) | `just vsix`, `just playground` and the `vscode` job |
 | cargo-release | releasing |
+
+For `just playground`, run `rustup target add wasm32-unknown-unknown`. Use the
+`wasm-bindgen-cli` version that matches `cargo pkgid --locked wasm-bindgen`.
 
 ## Checks
 
@@ -63,8 +66,10 @@ Other workflows:
   hash in the page's policy). On a pull
   request it also keeps screenshots of the page and three docs pages (`playground/screenshots.sh`:
   desktop and phone, light and dark) as the `playground-screenshots` artifact for 14 days, and a
-  comment on the pull request links the newest one. `just playground [PORT]` does the same build and tests, and serves it at
-  <http://127.0.0.1:8000/jsonvet/>, or at the PORT you pass.
+  comment on the pull request links the newest one. `just playground [PORT]` runs the site and
+  playground tests, checks the WASM build and serves it at <http://127.0.0.1:8000/jsonvet/>, or at
+  the port you pass. CI also optimizes the WASM with `wasm-opt`, stamps assets with the commit SHA
+  and runs the Chrome smoke check.
 - A pull request that touches the playground, is open, not a draft and not from a bot or a fork,
   also gets a preview at its own `jsonvet-playground-pr-<number>` Worker on workers.dev (the
   `preview` job in `pages.yml`). `preview-retire.yml` deletes that Worker when the pull request
@@ -218,23 +223,28 @@ A release changes the version in these places, in one commit on a branch:
 
 1. `version` in the root `Cargo.toml`, and `Cargo.lock` with it
 2. the `=x.y.z` pin on `jsonvet` in `crates/jsonvet-cli/Cargo.toml`
-3. the pin in `setup.py`
-4. `version` in `editors/vscode/package.json`
-5. `rev: vX.Y.Z` in the hook examples in `README.md`, `docs/usage.md` and `docs/format.md`
-6. in `CHANGELOG.md`, the Unreleased entries moved under a new `## [X.Y.Z] - date` heading, and
+3. the library version in `crates/jsonvet-python/Cargo.lock`
+4. the pin in `setup.py`
+5. `version` in `editors/vscode/package.json`
+6. `rev: vX.Y.Z` in the hook examples in `README.md`, `docs/usage.md` and `docs/format.md`
+7. in `CHANGELOG.md`, the Unreleased entries moved under a new `## [X.Y.Z] - date` heading, and
    the compare links at the bottom
 
-[cargo-release](https://github.com/crate-ci/cargo-release) makes all of them. It only bumps and
-commits, and refuses to run on `main` ([0011](docs/decisions/0011-release-tooling.md)). Write the
-Unreleased entries first; the release commit only moves them. Every figure in a release's
+[cargo-release](https://github.com/crate-ci/cargo-release) bumps the main workspace and commits the
+changes. It refuses to run on `main` ([0011](docs/decisions/0011-release-tooling.md)). Update the
+Python bindings' lockfile in its own workspace and add it to the release commit. Write the
+Unreleased entries first so the release commit can move them. Every figure in a release's
 CHANGELOG section compares with the last release.
 
 ```sh
 git fetch && git switch -c release/X.Y.Z origin/main
 cargo release X.Y.Z                       # dry run: shows every change
 SKIP=dco-signoff,check-versions cargo release X.Y.Z --execute   # commits "chore: release X.Y.Z"
+(cd crates/jsonvet-python && cargo update --workspace)
+cargo metadata --locked --manifest-path crates/jsonvet-python/Cargo.toml --format-version 1 > /dev/null
+git add crates/jsonvet-python/Cargo.lock
 git commit --amend -s --no-edit           # cargo-release cannot sign off
-git push -u origin release/X.Y.Z          # a new minor only: the speed table, from bench.yml
+git push -u origin release/X.Y.Z          # when X.Y changes: refresh the speed table from bench.yml
 gh workflow run bench.yml --ref release/X.Y.Z
 gh run download <run-id> -n speed-table && git apply speed-table.patch
 git commit -s -m "docs: speed figures for X.Y" -- docs/design.md README.md

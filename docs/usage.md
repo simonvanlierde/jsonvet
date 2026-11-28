@@ -1,8 +1,8 @@
 
 # jsonvet reference
 
-The details behind the [README](../README.md). Why things work this way is in
-[design.md](design.md).
+Look up command options, file types, rules, configuration, and report formats.
+To get started, see [how to install jsonvet](../README.md#quick-start).
 
 ## Options
 
@@ -68,14 +68,16 @@ standard error, so `jsonvet --fix --stdin-filename x.json < x.json > fixed.json`
 cannot fix comes back as it was.
 
 In a pre-commit or prek hook, add `args: [--fix]`. The hook changes the files and fails that
-run, so you review the change and commit again.
+run, so you review the change and commit again. In an existing config, add the repository entry
+under `repos` or update the hook you already use.
 
 ```yaml
-- repo: https://github.com/simonvanlierde/jsonvet
-  rev: v4.0.0
-  hooks:
-    - id: jsonvet
-      args: [--fix]
+repos:
+  - repo: https://github.com/simonvanlierde/jsonvet
+    rev: v4.0.0
+    hooks:
+      - id: jsonvet
+        args: [--fix]
 ```
 
 ## Folders
@@ -142,12 +144,12 @@ JSON and annotations, and exactly in SARIF.
 
 ## Exit status and files
 
-| Exit | When                                                     |
-| ---: | -------------------------------------------------------- |
-|    0 | no file has an error, or there were no files             |
-|    1 | a file has an error, or a file cannot be read            |
-|    2 | a usage error, such as an unknown option or a bad schema |
-|  101 | a bug in jsonvet: it panicked                            |
+| Exit | When |
+| ---: | --- |
+|    0 | all files passed, or there were no files |
+|    1 | a file has an error, a file cannot be read, or warnings exceed `--max-warnings` |
+|    2 | a usage error, such as an unknown option or an unusable `--schema` file |
+|  101 | a bug in jsonvet: it panicked |
 
 On a panic, jsonvet prints the message and where it happened to standard error, with a link to
 the [issue tracker](https://github.com/simonvanlierde/jsonvet/issues), and exits 101. Output not
@@ -480,7 +482,7 @@ and the [community jsonvet definition in use at 3ware](https://github.com/3ware/
 `--format sarif` prints one SARIF 2.1.0 document instead of text lines:
 
 ```bash
-jsonvet --format sarif $(git ls-files '*.json') > jsonvet.sarif
+jsonvet --format sarif -- package.json 'settings copy.json' > jsonvet.sarif
 ```
 
 - Each problem is a result with its rule, severity, message and position. The position ends
@@ -498,9 +500,13 @@ or 101 the document may be cut off, so do not upload it.
 
 ### Code scanning
 
-The Action's `sarif` input writes the document for you to upload to GitHub code scanning:
+To upload to GitHub code scanning, run the CLI directly so the workflow can distinguish findings
+from a failed report. This workflow checks JSON files under the checkout.
 
 ```yaml
+name: Check JSON with jsonvet
+on: push
+
 jobs:
   jsonvet:
     runs-on: ubuntu-latest
@@ -511,15 +517,26 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: simonvanlierde/jsonvet@v4
-        with:
-          sarif: jsonvet.sarif
-      # Upload when jsonvet found problems too: that is when the step fails.
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - name: Run jsonvet and write SARIF
+        id: report
+        env:
+          SARIF: ${{ runner.temp }}/jsonvet.sarif
+        run: |
+          status=0
+          uvx --from 'jsonvet==4.*' jsonvet --format sarif . > "$SARIF" || status=$?
+          if [ "$status" -le 1 ] && [ -s "$SARIF" ]; then
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          fi
+          exit "$status"
       - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
-        if: success() || failure()
+        if: ${{ !cancelled() && steps.report.outputs.ready == 'true' }}
         with:
-          sarif_file: jsonvet.sarif
+          sarif_file: ${{ runner.temp }}/jsonvet.sarif
 ```
+
+The check still fails when it finds problems. The upload runs only when jsonvet completes
+the report, with exit 0 or 1.
 
 ## GitLab Code Quality
 
@@ -607,7 +624,8 @@ jsonvet --format json config.json5 | jq -r '.diagnostics[] | "\(.file):\(.line) 
   checks real output against it.
 - Strings are escaped as in SARIF, so a JSON reader gets the name and message back unchanged.
 - Each diagnostic is on a line of its own, written as files are checked. The exit status and
-  `--max-warnings` work as with text. No annotations or count are printed.
+  `--max-warnings` work as with text. The report has no annotations or separate count. If
+  `--fix` edits files on disk, it prints the fix count on standard error.
 
 ## SchemaStore catalog
 
@@ -715,7 +733,8 @@ exists is in [design.md](design.md#--schema).
   SchemaStore takes 715 KB, its schema has 457 patterns, and SchemaStore's 43 schemas with the
   most patterns hold 994 between them.
 - **The schema file.** It may be in any dialect. Its `$schema` picks the draft, from draft 4 to
-  2020-12. A schema jsonvet cannot read or use is a usage error (exit 2). That covers:
+  2020-12. If jsonvet cannot read or use the schema, the [source of the schema](#json-schema-limits)
+  determines how jsonvet reports the error. A schema is unusable in these cases:
   - a `$ref` to another file, or to nothing in the file, even one nothing uses. A `$ref` resolves
     as jsonschema resolves it, against the base the `$id`s above it set;
   - nesting deeper than 128 levels, where each `$ref` followed counts as a level;
@@ -732,8 +751,8 @@ exists is in [design.md](design.md#--schema).
 
 Install and run `jsonvet` in 4.0. Existing `check-json5` releases stay on PyPI.
 
-- In pre-commit or prek, use `repo: https://github.com/simonvanlierde/jsonvet` and
-  `rev: v4.0.0`. Change `id: check-json5` to `id: jsonvet`.
+- In pre-commit or prek, use the repository and revision from the
+  [hook quick start](../README.md#pre-commit-or-prek-hook). Change `id: check-json5` to `id: jsonvet`.
 - Replace `--strict GLOB` with `--dialect json:GLOB`. For example, use
   `args: [--dialect, 'json:package.json']` in a hook.
 - Replace `--strict '!GLOB'` with `--dialect 'auto:GLOB'`. For example, use

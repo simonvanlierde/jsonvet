@@ -1,9 +1,9 @@
 # Roadmap
 
-Last reviewed: 2026-11-27
+See which install channels and linter registries are planned for jsonvet next.
 
-What is planned for jsonvet over the next year, to October 2027, in rough order. It is a plan, not
-a promise, and none of it has a date. Released work is in [CHANGELOG.md](../CHANGELOG.md), and
+The list covers the year to October 2027 in rough order, with no release dates. Last reviewed
+2026-11-27. Released work is in [CHANGELOG.md](../CHANGELOG.md), and
 [GOVERNANCE.md](../GOVERNANCE.md) says who decides what goes here. Ideas and bugs go in
 [GitHub issues](https://github.com/simonvanlierde/jsonvet/issues).
 

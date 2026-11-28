@@ -1,7 +1,8 @@
 # Editors
 
-`jsonvet lsp` is a language server: it speaks the Language Server Protocol on standard input and
-output, so any editor that has a client for it can show jsonvet's problems as you type. It offers:
+Set up jsonvet in VS Code, Neovim, Helix or another editor to see problems as you type and apply
+fixes. The language server (`jsonvet lsp`) speaks the Language Server Protocol on standard input
+and output.
 
 - **Problems** in each open file, checked as `jsonvet FILE` would check it. The dialect, rules and
   schema come from the nearest `jsonvet.toml` and the file's own `$schema`
@@ -20,17 +21,16 @@ output, so any editor that has a client for it can show jsonvet's problems as yo
   for byte as it was. An edit that would break the file without one outside the selection, such as
   a comma the formatter moves to the other side of a comment, is left out.
 
-Only files on disk are checked (`file:` URIs), since the settings are picked by the file's path. A
-file with a syntax error is not formatted. Positions are counted in UTF-16 code units, as the
-protocol asks by default, or in bytes when the editor offers UTF-8. `jsonvet lsp` takes no other
-options but `--help` and `--version`; `--stdio` is accepted, as some clients pass it. A file named
-`lsp` needs `./lsp`, as `fmt` does.
+The server checks documents with a `file:` URI so it can pick settings by path. This includes a
+new file that has a path before its first save. A file with a syntax error is not formatted.
+Positions count UTF-16 code units by default or bytes when the editor offers UTF-8. `jsonvet lsp`
+accepts `--help`, `--version` and `--stdio`. A file named `lsp` needs `./lsp`, as `fmt` does.
 
 The search for `jsonvet.toml` stops at the workspace folder that holds the file, unless a nearer
-`.git` directory stops it first. The server takes
-the folders from the editor's `initialize` request (`workspaceFolders`, else `rootUri`) and follows the folders
-the editor adds and removes later. For a file outside those folders, including when no folder
-is open, the search stops at the file's own folder.
+`.git` entry stops it first. The server takes the folders from the editor's `initialize` request
+(`workspaceFolders`, else `rootUri`) and follows the folders the editor adds and removes later.
+For a file outside those folders, including when no folder is open, the search stops at the
+file's own folder.
 
 When the editor can watch files for the server, the server asks it to watch `jsonvet.toml`,
 `pyproject.toml`, the user's own config file and the local schemas used by open files. It
