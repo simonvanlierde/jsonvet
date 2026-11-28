@@ -17,7 +17,7 @@ dump() {
         --dump-dom "http://127.0.0.1:$port/jsonvet/$1" 2>/dev/null
 }
 dom=$(dump "${1:-}")
-if ! grep -q 'id="status"[^>]*><b>Parses as JSON5, but a rule found 1 error\.</b>' <<<"$dom"; then
+if ! grep -q 'id="status"[^>]*><b>Parses as JSON5, but rules found 1 error\.</b>' <<<"$dom"; then
     echo "the playground did not load: status is '$(grep -o 'id="status".\{0,80\}' <<<"$dom")'" >&2
     exit 1
 fi

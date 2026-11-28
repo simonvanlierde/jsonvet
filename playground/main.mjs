@@ -4,6 +4,10 @@ const editor = $("editor");
 const proof = $("proof");
 const status = $("status");
 const verdictLine = $("verdict");
+const verdictProblem = $("verdict-problem");
+let verdictTarget;
+const caretMeasure = $("caret-measure");
+const dropError = $("drop-error");
 // The verdict for screen readers, a second after it last changed, so typing is not interrupted.
 const said = $("said");
 let sayTimer;
@@ -21,8 +25,10 @@ const stages = $("dialects");
 const share = $("share");
 const shareLabel = share.textContent;
 const shareStatus = $("share-status");
+let announceFrame;
 const tryBig = $("try");
 const back = $("back");
+const restore = $("restore");
 const fixButton = $("fix");
 const formatButton = $("format");
 const acted = $("acted");
@@ -38,29 +44,22 @@ const hints = {
   "i-json": "JSON whose numbers fit a double and whose strings are valid Unicode. The CLI uses it only with `--dialect`.",
   jsonc: "JSON with comments, as in `tsconfig.json` and VS Code settings. The CLI checks `.jsonc` files this way.",
   jwcc: "JSON with comments and trailing commas, also called HuJSON. The CLI checks `.hujson` and `.jwcc` files this way.",
-  json5: "Comments, trailing commas, single quotes, unquoted keys and more. The CLI checks `.json` files this way.",
+  json5: "Comments, trailing commas, single quotes and unquoted keys. By default, the CLI checks `.json` files as JSON5.",
   jsonl: "One JSON value per line. The CLI checks `.jsonl` and `.ndjson` files this way.",
-};
-// The note under the snippets, for the dialects some files already have.
-const already = {
-  jsonc: "`.jsonc` files are JSONC already.",
-  jwcc: "`.hujson` and `.jwcc` files are JWCC already.",
-  jsonl: "`.jsonl` and `.ndjson` files are JSON Lines already.",
 };
 // How a related place reads in a problem's entry, as the CLI writes it after the message.
 const near = { "first copy": "key first set at", "opened here": "opened at", "starts here": "started at" };
 // The same places in the margin, where the CLI's "first copy" would read as a term of art.
 const placeLabel = { "first copy": "key first set here" };
 const BOM_WHY = "RFC 8259 forbids a byte order mark in JSON; JSONC, JWCC and JSON5 readers accept one.";
-const DOCS = "docs/usage.html#";
+const DOCS = "/jsonvet/docs/usage.html#";
 const SAMPLE = input.value;
 const SAMPLE_NAME = "staging.json";
 const MAX_ITEMS = 200;
 // Above this many rows the gutter and the marks are left out: they cost two DOM nodes a row on
 // every check.
 const MAX_ROWS = 5000;
-// Above this many characters a check runs at most every 300 ms while typing, and only the chosen
-// dialect is checked.
+// Above this many characters a check waits for a pause in typing and checks only the chosen dialect.
 const BIG = 200_000;
 // Past this many notes, or when they would stack past the end of the text, the margin gives way to
 // a numbered list under the proof.
@@ -68,11 +67,13 @@ const MAX_NOTES = 30;
 const NOTE_GAP = 6;
 // The textarea's top padding, in style.css.
 const PAD = 8;
+const LEFT_PAD = 6;
 // A share link longer than this is not kept in the address bar.
 const MAX_LINK = 50_000;
 const MAX_FILE = 10 << 20;
 const none = new Uint32Array(0);
 const wide = matchMedia("(min-width: 860px)");
+$("playground").hidden = false;
 function placeVerdict() {
   const focused = document.activeElement;
   if (wide.matches) proof.after(verdictLine);
@@ -118,7 +119,11 @@ let current = [];
 let edited = false;
 // What the text is, for the caption above the editor and the command-line snippet.
 let source = SAMPLE_NAME;
+let droppedName;
+// A later editor action takes precedence over a pending file read, sample or shared link.
+let loadRevision = 0;
 let generated = false;
+let draft;
 let big = false;
 let rows = 1;
 // The step performance.now() moves in, measured once: browsers coarsen it.
@@ -145,6 +150,12 @@ function rich(node, text, path) {
 function setRich(node, text) {
   node.replaceChildren();
   rich(node, text);
+}
+
+function announce(message) {
+  cancelAnimationFrame(announceFrame);
+  shareStatus.textContent = "";
+  announceFrame = requestAnimationFrame(() => (shareStatus.textContent = message));
 }
 
 const plural = (n, word) => `${n.toLocaleString("en")} ${word}${n === 1 ? "" : "s"}`;
@@ -242,7 +253,7 @@ function setStatus(strong, rest) {
   sayTimer = setTimeout(() => (said.textContent = status.textContent), 1000);
 }
 
-// Puts the caret on a problem and scrolls its row into view, as the textarea may not.
+// Sets the caret and scrolls both axes: setSelectionRange can leave the caret out of view.
 function goTo(p) {
   input.focus();
   input.setSelectionRange(p.index, p.index);
@@ -251,21 +262,30 @@ function goTo(p) {
   if (top < input.scrollTop || top + lh > input.scrollTop + input.clientHeight) {
     input.scrollTop = Math.max(0, top - input.clientHeight / 2);
   }
+  const rowStart = p.index > 0 ? input.value.lastIndexOf("\n", p.index - 1) + 1 : 0;
+  caretMeasure.textContent = input.value.slice(rowStart, p.index);
+  const left = LEFT_PAD + caretMeasure.getBoundingClientRect().width;
+  caretMeasure.textContent = "";
+  if (left < input.scrollLeft || left >= input.scrollLeft + input.clientWidth) {
+    input.scrollLeft = Math.max(0, left - input.clientWidth / 2);
+  }
   sync();
 }
 
+verdictProblem.addEventListener("click", () => {
+  if (verdictTarget) goTo(verdictTarget);
+});
+
 const lineHeight = () => parseFloat(getComputedStyle(input).lineHeight);
 
-// Input events can come several to a frame: check once per frame.
-let queued = false;
+let checkFrame;
+let checkTimer;
 function schedule() {
-  if (!loaded || queued) return;
-  queued = true;
-  requestAnimationFrame(() => {
-    queued = false;
-    if (input.value.length > BIG) setTimeout(run, 300);
-    else run();
-  });
+  if (!loaded) return;
+  cancelAnimationFrame(checkFrame);
+  clearTimeout(checkTimer);
+  if (input.value.length > BIG) checkTimer = setTimeout(run, 300);
+  else checkFrame = requestAnimationFrame(run);
 }
 
 // A problem's note: a button that moves the caret to it, and its position and rule id.
@@ -327,6 +347,8 @@ function relNote(r) {
 }
 
 function run() {
+  cancelAnimationFrame(checkFrame);
+  clearTimeout(checkTimer);
   const text = input.value;
   let problems;
   const t0 = performance.now();
@@ -394,21 +416,28 @@ function run() {
   saveSoon();
 }
 
-// A rule can flag text that parses. The hook and CLI exit 1 on errors or when warnings exceed
-// --max-warnings.
+// A rule can flag text that parses.
 function verdict(problems) {
   const count = tally(problems);
   const name = nameOf(dialect);
   const syntax = problems.find((p) => p.rule === "syntax");
   const counts = [count.errors && plural(count.errors, "error"), count.warnings && plural(count.warnings, "warning")].filter(Boolean).join(", ");
   if (syntax) {
-    setStatus(`Does not parse as ${name}.`, "The hook and CLI fail.");
+    setStatus(`Does not parse as ${name}.`);
   } else if (count.errors) {
-    setStatus(`Parses as ${name}, but a rule found ${counts}.`, "The hook and CLI fail.");
+    setStatus(`Parses as ${name}, but rules found ${counts}.`);
   } else if (count.warnings) {
-    setStatus(`Parses as ${name}, with ${plural(count.warnings, "warning")}.`, "The hook and CLI pass, unless run with `--max-warnings`.");
+    setStatus(`Parses as ${name} with ${plural(count.warnings, "warning")}.`);
   } else {
-    setStatus(`\u2713 Valid ${name}.`, "The hook and CLI pass.");
+    setStatus(`\u2713 Valid ${name}.`);
+  }
+  const first = verdictTarget = syntax ?? problems.find((p) => p.severity === "error") ?? problems[0];
+  verdictProblem.hidden = !first;
+  if (first) {
+    const related = first.related[0];
+    const firstPlace = related ? `, ${near[related.message] ?? related.message} ${related.line}:${related.column}` : "";
+    verdictProblem.replaceChildren();
+    rich(verdictProblem, `${first.message} at ${first.line}:${first.column}${firstPlace}`, first.path);
   }
   status.className = count.errors ? "bad" : count.warnings ? "warn" : "ok";
   // A syntax error is always the last problem: checking stops there.
@@ -524,25 +553,24 @@ function sync() {
 
 // The snippets that run this check, for the chosen dialect and this build.
 function ci() {
-  const glob = dialect === "json5" ? "" : `${dialect}:*.json`;
-  const file = /^[\w.-]+\.json$/.test(source) ? source : "config.json";
-  const out = snippets({ version: jsonvetVersion, glob, file });
-  for (const id of ["hook", "action", "cli"]) $(id).textContent = out[id];
-  const note = glob ? (already[dialect] ?? "") : "";
-  $("ci-note").hidden = !note;
-  setRich($("ci-note"), note);
+  const file = droppedName ?? (source === SAMPLE_NAME || generated ? source : "config.json");
+  const out = snippets({ version: jsonvetVersion, dialect, file, text: input.value });
+  for (const id of ["hook", "action", "cli", "cli-fix", "cli-format"]) $(id).textContent = out[id];
+  $("ci-note").hidden = out.tracked;
 }
 
 // The caption above the editor: what the text is.
 function caption() {
   $("name").textContent = source;
   $("made").textContent = generated ? `, ${(input.value.length / 1e6).toFixed(1)} MB, made up in this page` : "";
-  $("try-wrap").hidden = generated;
-  $("back-wrap").hidden = input.value === SAMPLE;
+  tryBig.hidden = generated;
+  back.hidden = input.value === SAMPLE && dialect === "json5";
+  restore.hidden = !draft;
   if (jsonvetVersion) ci();
 }
 
 function select(d, focus) {
+  loadRevision++;
   dialect = d;
   for (const r of radios) {
     const on = r.dataset.dialect === d;
@@ -573,11 +601,14 @@ stages.addEventListener("keydown", (e) => {
 });
 
 // Replaces the whole text, as a dropped file, the big file or the sample do.
-function load(text, name, isGenerated) {
+function load(text, name, { isGenerated = false, file } = {}) {
+  loadRevision++;
   input.value = text;
   input.scrollTop = input.scrollLeft = 0;
   source = name;
+  droppedName = file;
   generated = isGenerated;
+  acted.hidden = $("took-act").hidden = dropError.hidden = true;
   edited = !(text === SAMPLE && dialect === "json5");
   caption();
   if (!edited) history.replaceState(null, "", location.pathname + location.search);
@@ -585,13 +616,14 @@ function load(text, name, isGenerated) {
 }
 
 input.addEventListener("input", () => {
+  loadRevision++;
   edited = true;
-  if (source === SAMPLE_NAME) source = "Your text";
-  if (generated || !input.value) {
-    generated = false;
-    source = input.value ? source : "Your text";
+  if (generated || source === SAMPLE_NAME && !droppedName || !input.value) {
+    source = "Your text";
+    droppedName = undefined;
   }
-  acted.hidden = true;
+  generated = false;
+  acted.hidden = $("took-act").hidden = dropError.hidden = true;
   caption();
   schedule();
 });
@@ -599,6 +631,7 @@ input.addEventListener("input", () => {
 input.addEventListener("paste", () => {
   if (input.selectionStart === 0 && input.selectionEnd === input.value.length) {
     source = "Your text";
+    droppedName = undefined;
     generated = false;
   }
 });
@@ -612,8 +645,7 @@ input.addEventListener("keydown", (e) => {
     ? current.findLast((q) => q.index < caret) ?? current.at(-1)
     : current.find((q) => q.index > caret) ?? current[0];
   goTo(p);
-  shareStatus.textContent = "";
-  requestAnimationFrame(() => (shareStatus.textContent = `${p.line}:${p.column} ${p.severity}: ${p.message.replaceAll("`", "")}`));
+  announce(`${p.line}:${p.column} ${p.severity}: ${p.message.replaceAll("`", "")}`);
 });
 // Fix and Format replace the text through the editing commands, so Ctrl+Z undoes them, and the
 // input event they raise re-runs the check and updates the share link.
@@ -636,8 +668,7 @@ function report(verb, ms, message) {
   $("took-act").hidden = false;
   setRich(acted, message);
   acted.hidden = false;
-  shareStatus.textContent = "";
-  requestAnimationFrame(() => (shareStatus.textContent = acted.textContent));
+  announce(acted.textContent);
 }
 
 // `only` limits a fix to the ones a correction names; empty fixes everything the toggle allows.
@@ -676,13 +707,11 @@ function fixState() {
   if (fixes === null) {
     fixButton.textContent = "Fix";
     fixButton.setAttribute("aria-disabled", "false");
-    fixButton.setAttribute("aria-label", "Fix: apply the fixes in this long text");
     return;
   }
   const n = fixes.filter((f) => f.safe || fixValues.unsafe).length;
   fixButton.textContent = n ? `Fix ${n}` : "Fix";
   fixButton.setAttribute("aria-disabled", String(!n));
-  fixButton.setAttribute("aria-label", n ? `Fix: apply ${plural(n, "fix")}` : "Fix: nothing to fix");
 }
 fixButton.addEventListener("click", () => act("fix"));
 formatButton.addEventListener("click", () => act("format"));
@@ -694,18 +723,45 @@ addEventListener("resize", () => {
   resizeFrame = requestAnimationFrame(layout);
 });
 
+function loadSample(text, name, isGenerated) {
+  if (!generated && (droppedName || input.value !== SAMPLE || (!draft && dialect !== "json5"))) {
+    draft = {
+      text: input.value, name: source, file: droppedName, dialect,
+      start: input.selectionStart, end: input.selectionEnd, direction: input.selectionDirection,
+      top: input.scrollTop, left: input.scrollLeft,
+    };
+  }
+  select("json5");
+  load(text, name, { isGenerated });
+  (draft ? restore : input).focus();
+}
+
+let building = false;
 tryBig.addEventListener("click", () => {
+  if (building) return;
+  building = true;
+  const revision = ++loadRevision;
   tryBig.textContent = "building hosts.json…";
   // A frame first, so the button can say so before the page is busy.
   requestAnimationFrame(() => setTimeout(() => {
-    load(hosts(), "hosts.json", true);
+    building = false;
     tryBig.textContent = "hosts.json (2.7 MB)";
-    shareStatus.textContent = `Loaded a made-up 2.7 MB hosts.json. ${status.textContent}`;
+    if (revision !== loadRevision) return;
+    loadSample(hosts(), "hosts.json", true);
+    announce(`Loaded a made-up 2.7 MB hosts.json. ${status.textContent}`);
   }));
 });
-back.addEventListener("click", () => {
-  load(SAMPLE, SAMPLE_NAME, false);
-  input.focus();
+back.addEventListener("click", () => loadSample(SAMPLE, SAMPLE_NAME, false));
+restore.addEventListener("click", () => {
+  const { text, name, file, dialect, start, end, direction, top, left } = draft;
+  draft = undefined;
+  select(dialect);
+  load(text, name, { file });
+  input.focus({ preventScroll: true });
+  input.setSelectionRange(start, end, direction);
+  input.scrollTop = top;
+  input.scrollLeft = left;
+  sync();
 });
 
 // The address bar holds the dialect and text once they change, so the URL is a share link. The
@@ -718,9 +774,11 @@ function saveSoon() {
 }
 async function save() {
   clearTimeout(saveTimer);
+  if (!edited) return true;
   const text = input.value;
-  const fragment = text.length > BIG ? "" : await encode(dialect, text);
-  if (input.value !== text) return save();
+  const selected = dialect;
+  const fragment = text.length > BIG ? "" : await encode(selected, text);
+  if (!edited || input.value !== text || dialect !== selected) return save();
   const fits = fragment && fragment.length <= MAX_LINK;
   history.replaceState(null, "", fits ? `#${fragment}` : location.pathname + location.search);
   return fits;
@@ -737,7 +795,7 @@ share.addEventListener("click", async () => {
     share.textContent = e instanceof RangeError ? "Too long for a link" : "Copy failed";
     setTimeout(() => (share.textContent = shareLabel), 2500);
   }
-  shareStatus.textContent = said;
+  announce(said);
 });
 for (const button of document.querySelectorAll(".copy")) {
   button.addEventListener("click", async () => {
@@ -748,7 +806,7 @@ for (const button of document.querySelectorAll(".copy")) {
     } catch {
       button.title = "Copy failed";
     }
-    shareStatus.textContent = `${button.title}.`;
+    announce(`${button.title}.`);
     setTimeout(() => {
       button.title = "Copy";
       button.classList.remove("done");
@@ -785,16 +843,27 @@ $("to-hook").addEventListener("click", (e) => {
 });
 
 async function open(hash) {
+  const revision = ++loadRevision;
   const shared = hash ? await decode(hash) : null;
-  if (!shared || !hints[shared.dialect]) return false;
+  if (revision !== loadRevision || !shared || !Object.hasOwn(hints, shared.dialect)) return false;
   input.value = shared.text;
+  input.scrollTop = input.scrollLeft = 0;
+  droppedName = undefined;
   source = shared.text === SAMPLE ? SAMPLE_NAME : "Shared text";
   generated = false;
+  acted.hidden = $("took-act").hidden = dropError.hidden = true;
   edited = true;
   select(shared.dialect);
   return true;
 }
-window.addEventListener("hashchange", () => open(location.hash));
+window.addEventListener("hashchange", () => {
+  if (!loaded) return;
+  if (location.hash) open(location.hash);
+  else {
+    select("json5");
+    load(SAMPLE, SAMPLE_NAME);
+  }
+});
 
 // A file dropped on the text is read here, not opened by the browser.
 document.addEventListener("dragover", (e) => {
@@ -807,19 +876,37 @@ document.addEventListener("dragover", (e) => {
 document.addEventListener("dragleave", (e) => {
   if (!e.relatedTarget || !editor.contains(e.relatedTarget)) editor.classList.remove("drop");
 });
+function rejectDrop(message) {
+  dropError.textContent = message;
+  dropError.hidden = false;
+  announce(message);
+}
 document.addEventListener("drop", async (e) => {
   if (!e.dataTransfer?.types.includes("Files")) return;
   e.preventDefault();
   editor.classList.remove("drop");
   const file = e.dataTransfer.files[0];
   if (!file || !editor.contains(e.target) || !loaded) return;
+  const revision = ++loadRevision;
   if (file.size > MAX_FILE) {
-    setStatus(`${file.name} is over 10 MB.`, "Check it with the command-line tool.");
-    status.className = "bad";
+    rejectDrop(`${file.name} is over 10 MB. Check it with the command-line tool.`);
     return;
   }
-  // Not file.text(): it drops a byte order mark, which jsonvet reports.
-  load(new TextDecoder("utf-8", { ignoreBOM: true }).decode(await file.arrayBuffer()), file.name, false);
+  const bytes = await file.arrayBuffer().catch(() => null);
+  if (revision !== loadRevision) return;
+  if (!bytes) {
+    rejectDrop(`Could not read ${file.name}. Try dropping it again.`);
+    return;
+  }
+  let text;
+  try {
+    // Keep the BOM for jsonvet and reject invalid bytes before the browser can replace them.
+    text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch {
+    rejectDrop(`${file.name} contains invalid UTF-8. Check the original file with the command-line tool.`);
+    return;
+  }
+  load(text, file.name, { file: file.name });
   input.focus();
 });
 
@@ -867,10 +954,9 @@ try {
   if (!Object.hasOwn(HTMLElement.prototype, "popover")) {
     for (const id of ["fix-opts", "fix-pop", "format-opts", "format-pop"]) $(id).hidden = true;
   }
-  const say = (t) => (shareStatus.textContent = t);
   mounted.push(
-    mountOptions({ tool: "fix", button: $("fix-opts"), pop: $("fix-pop"), values: fixValues, dialect: () => dialect, onChange: () => loaded && run(), say }),
-    mountOptions({ tool: "format", button: $("format-opts"), pop: $("format-pop"), values: formatValues, dialect: () => dialect, onChange() {}, say }),
+    mountOptions({ tool: "fix", button: $("fix-opts"), pop: $("fix-pop"), values: fixValues, dialect: () => dialect, onChange: () => loaded && run(), say: announce }),
+    mountOptions({ tool: "format", button: $("format-opts"), pop: $("format-pop"), values: formatValues, dialect: () => dialect, onChange() {}, say: announce }),
   );
   await wasm.default({ module_or_path: wasmFile });
   check = wasm.check;
@@ -880,15 +966,17 @@ try {
   // The footer line is shared with the docs pages, which have no checker: the playground adds its version.
   document.querySelector(".colophon .slug-part span").textContent += ` ${jsonvetVersion}`;
   resolution = clockStep();
-  loaded = true;
-  share.disabled = tryBig.disabled = fixButton.disabled = formatButton.disabled = false;
   if (!(await open(location.hash))) select(dialect);
   // Check at once rather than on the next frame, which a background tab may not get.
   run();
+  loaded = true;
+  input.disabled = share.disabled = tryBig.disabled = fixButton.disabled = formatButton.disabled = false;
+  $("to-hook").hidden = $("use").hidden = $("scope").hidden = false;
 } catch (e) {
   console.error(e);
   input.disabled = share.disabled = tryBig.disabled = fixButton.disabled = formatButton.disabled = true;
   for (const r of radios) r.disabled = true;
   setStatus("Could not load the checker.", "Reload the page to try again.");
   status.className = "bad";
+  $("checker-unavailable").hidden = false;
 }

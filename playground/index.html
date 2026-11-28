@@ -40,7 +40,9 @@
 </header>
 <main class="wrap">
   <h1>Check JSON, JSONC and JSON5 in your browser</h1>
-  <p class="aside lede">Formerly check-json5: in your hook, change <code>id: check-json5</code> to <code>id: jsonvet</code>. <a href="#use" id="to-hook">Show the hook</a></p>
+  <p class="aside lede"><a href="/jsonvet/docs/usage.html#coming-from-check-json5">Formerly check-json5</a>. In your hook, change <code>id: check-json5</code> to <code>id: jsonvet</code>. <a href="#use" id="to-hook" hidden>Show the hook</a></p>
+  <noscript><p class="aside">This checker needs JavaScript and WebAssembly. <a href="https://github.com/simonvanlierde/jsonvet#quick-start">Install jsonvet</a> or <a href="/jsonvet/docs/">read the docs</a>.</p></noscript>
+  <div id="playground" hidden>
   <div class="stages-row">
     <span id="dialect-label" class="vh">Dialect</span>
     <div id="dialects" class="stages" role="radiogroup" aria-labelledby="dialect-label" aria-describedby="dialect-hint">
@@ -100,14 +102,16 @@
   </div>
   <div class="keys-row">
     <p id="keys" class="aside">Paste or drop a file on the text. <kbd>F8</kbd> and <kbd>Shift</kbd>+<kbd>F8</kbd> jump between problems.</p>
-    <p class="samples">Samples: <span id="back-wrap" hidden><button type="button" id="back" class="link">staging.json</button></span> <span id="try-wrap"><button type="button" id="try" class="link" disabled>hosts.json (2.7 MB)</button></span></p>
+    <p class="samples">Samples: <button type="button" id="back" class="link" hidden>staging.json</button> <button type="button" id="try" class="link" disabled>hosts.json (2.7 MB)</button> <button type="button" id="restore" class="link" hidden>Restore previous text</button></p>
   </div>
+  <p id="drop-error" class="aside" hidden></p>
   <div class="proof" id="proof">
     <div class="editor" id="editor">
       <div class="gutter" id="gutter" aria-hidden="true"></div>
       <div class="text">
         <div class="layer" id="layer" aria-hidden="true"></div>
-        <textarea id="input" wrap="off" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Text to check" placeholder="Paste your JSON, JSONC or JSON5 here" aria-describedby="keys">{
+        <div class="caret-measure" aria-hidden="true"><span id="caret-measure"></span></div>
+        <textarea id="input" wrap="off" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Text to check" placeholder="Paste your JSON, JSONC or JSON5 here" aria-describedby="keys" disabled>{
   // Settings for the staging server.
   "name": "staging",
   "server": {
@@ -129,10 +133,15 @@
     <svg class="leaders" aria-hidden="true" focusable="false"><defs><marker id="arrow" viewBox="0 0 8 6" refX="1" refY="3" markerWidth="8" markerHeight="6" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,3L8,0V6Z"/></marker></defs><g id="paths"></g></svg>
   </div>
   <div class="verdict" id="verdict">
-    <p id="status">Loading…</p>
+    <div>
+      <p id="status">Loading…</p>
+      <p id="checker-unavailable" class="scope" hidden><a href="https://github.com/simonvanlierde/jsonvet#quick-start">Install jsonvet</a> or <a href="/jsonvet/docs/">read the docs</a>.</p>
+      <button type="button" class="link" id="verdict-problem" hidden></button>
+      <p class="scope" id="scope" hidden>This check uses the selected dialect and default rules. <a href="/jsonvet/docs/usage.html#configuration-file">Set rules and dialects in your project</a>.</p>
+    </div>
     <p id="said" class="vh" role="status"></p>
     <p class="slug-part speed">
-      <span id="took" hidden>Checked in <em id="t1"></em> (<a class="link" href="/jsonvet/docs/design.html#speed">how measured</a>)</span>
+      <span id="took" hidden>WASM check and result decoding in <em id="t1"></em> (<a href="/jsonvet/docs/design.html#speed">CLI benchmarks</a>)</span>
       <span id="took-act" hidden><span id="act-verb"></span> in <em id="t-act"></em></span>
     </p>
   </div>
@@ -140,7 +149,7 @@
   <p id="stopped" class="aside" hidden></p>
   <p id="big" class="aside" hidden></p>
   <p id="bom" class="aside" hidden></p>
-  <details class="use" id="use">
+  <details class="use" id="use" hidden>
     <summary>Use this check in your project</summary>
     <div class="tabs" role="tablist" aria-label="Where to run the check">
       <button type="button" role="tab" id="tab-hook" aria-selected="true" aria-controls="panel-hook">pre-commit or prek hook</button>
@@ -148,28 +157,43 @@
       <button type="button" role="tab" id="tab-cli" aria-selected="false" aria-controls="panel-cli" tabindex="-1">Command line</button>
     </div>
     <div class="panel" role="tabpanel" id="panel-hook" aria-labelledby="tab-hook">
+      <p class="aside">Use this as your <code>.pre-commit-config.yaml</code>. If you have one, add the entry under <code>repos</code>. <a href="/jsonvet/docs/format.html">Add formatting separately</a>.</p>
       <div class="conf-code">
         <pre id="hook" role="group" tabindex="0" aria-label="Hook for .pre-commit-config.yaml"></pre>
         <button type="button" class="copy conf-copy" data-copy="hook" aria-label="Copy" title="Copy" aria-describedby="tab-hook"><svg class="i-copy" viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M10.5 3.5v-1a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1"/></svg><svg class="i-done" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg></button>
       </div>
     </div>
     <div class="panel" role="tabpanel" id="panel-action" aria-labelledby="tab-action" hidden>
+      <p class="aside">Save this to <code>.github/workflows/jsonvet.yml</code>. <a href="https://github.com/simonvanlierde/jsonvet#github-action">Add a formatting check separately</a>.</p>
       <div class="conf-code">
-        <pre id="action" role="group" tabindex="0" aria-label="Step for a GitHub workflow"></pre>
+        <pre id="action" role="group" tabindex="0" aria-label="GitHub workflow"></pre>
         <button type="button" class="copy conf-copy" data-copy="action" aria-label="Copy" title="Copy" aria-describedby="tab-action"><svg class="i-copy" viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M10.5 3.5v-1a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1"/></svg><svg class="i-done" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg></button>
       </div>
     </div>
     <div class="panel" role="tabpanel" id="panel-cli" aria-labelledby="tab-cli" hidden>
+      <p class="aside">Run this from the file's folder. <a href="https://docs.astral.sh/uv/getting-started/installation/">Install uv</a> to use <code>uvx</code>.</p>
       <div class="conf-code">
-        <pre id="cli" role="group" tabindex="0" aria-label="Shell command"></pre>
+        <pre id="cli" role="group" tabindex="0" aria-label="Check command"></pre>
         <button type="button" class="copy conf-copy" data-copy="cli" aria-label="Copy" title="Copy" aria-describedby="tab-cli"><svg class="i-copy" viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M10.5 3.5v-1a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1"/></svg><svg class="i-done" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg></button>
       </div>
+      <details class="cli-edits">
+        <summary>Fix or format from the command line</summary>
+        <p class="aside">These commands edit the file. Choose the one you want to run.</p>
+        <div class="conf-code">
+          <pre id="cli-fix" role="group" tabindex="0" aria-label="Apply safe fixes"></pre>
+          <button type="button" class="copy conf-copy" data-copy="cli-fix" aria-label="Copy fix command" title="Copy"><svg class="i-copy" viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M10.5 3.5v-1a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1"/></svg><svg class="i-done" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg></button>
+        </div>
+        <div class="conf-code">
+          <pre id="cli-format" role="group" tabindex="0" aria-label="Format command"></pre>
+          <button type="button" class="copy conf-copy" data-copy="cli-format" aria-label="Copy format command" title="Copy"><svg class="i-copy" viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M10.5 3.5v-1a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1"/></svg><svg class="i-done" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg></button>
+        </div>
+      </details>
     </div>
-    <p id="ci-note" class="aside" hidden></p>
+    <p id="ci-note" class="aside" hidden>The hook and Action check supported filenames by default. Use the command line to check this file by name.</p>
   </details>
+  </div>
 </main>
 <footer class="wrap colophon"><p class="quiet">Your text is checked in your browser and never sent anywhere.</p><p class="slug-part"><span>jsonvet</span><span><a href="https://github.com/simonvanlierde">Simon van Lierde</a></span><span><a href="https://github.com/simonvanlierde/jsonvet#credits-and-license">MIT or Apache-2.0</a></span><span><a href="https://github.com/simonvanlierde/jsonvet">source</a></span><span><a href="/jsonvet/docs/accessibility.html">accessibility</a></span></p></footer>
-<noscript><p>The playground needs JavaScript and WebAssembly.</p></noscript>
 <script type="module" src="main.mjs"></script>
 </body>
 </html>
