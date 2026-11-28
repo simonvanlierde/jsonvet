@@ -2,7 +2,8 @@
 //! and how many regexes it holds.
 
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use jsonschema::{Draft, ReferencingError, Registry};
 use referencing::{Resolver, ResourceRef};
@@ -64,10 +65,51 @@ const DEFAULT_BASE: &str = "json-schema:///";
 /// absolute URI, and no way to fetch another.
 pub(super) fn registry(schema: &Value) -> Result<Registry<'_>, ReferencingError> {
     let resource = ResourceRef::new(schema, Draft::default().detect(schema));
-    Registry::new()
-        .draft(resource.draft())
-        .add(resource.id().unwrap_or(DEFAULT_BASE), resource)?
-        .prepare()
+    let build = |recording: Option<Recording>| {
+        let options = Registry::new().draft(resource.draft());
+        let options = match recording {
+            Some(recording) => options.retriever(recording),
+            None => options,
+        };
+        options
+            .add(resource.id().unwrap_or(DEFAULT_BASE), resource)?
+            .prepare()
+    };
+    let error = match build(None) {
+        Err(error @ ReferencingError::Unretrievable { .. }) => error,
+        other => return other,
+    };
+    // jsonschema reports whichever missing reference its hash map yields first, which differs
+    // between runs. Build again with a retriever that records each one and goes on, and name the
+    // first in sorted order.
+    let seen = Arc::new(Mutex::new(BTreeSet::new()));
+    let _ = build(Some(Recording(Arc::clone(&seen))));
+    let seen = seen.lock().unwrap_or_else(PoisonError::into_inner);
+    // One missing reference is named as jsonschema names it. Among several, a relative one is
+    // named by its resolved path, as `json-schema:///path` is only jsonschema's own base.
+    match seen.first() {
+        Some(first) if seen.len() > 1 => Err(ReferencingError::unretrievable(
+            first.strip_prefix("json-schema:///").unwrap_or(first),
+            "external references are not fetched".into(),
+        )),
+        _ => Err(error),
+    }
+}
+
+/// A retriever that notes each URI asked for and answers with the schema `true`.
+struct Recording(Arc<Mutex<BTreeSet<String>>>);
+
+impl referencing::Retrieve for Recording {
+    fn retrieve(
+        &self,
+        uri: &referencing::Uri<String>,
+    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(uri.as_str().to_owned());
+        Ok(Value::Bool(true))
+    }
 }
 
 /// The base URI jsonschema resolves `schema`'s root against, without a fragment.

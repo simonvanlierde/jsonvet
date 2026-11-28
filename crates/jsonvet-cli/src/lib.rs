@@ -333,7 +333,8 @@ fn run_checked(
     let mut ahead = Vec::new();
     let written = loop {
         if rest.is_empty() {
-            let noted = (schemas.missing_notes().into_iter()).try_for_each(|n| printer.note(n));
+            let noted =
+                (schemas.missing_notes().into_iter()).try_for_each(|n| printer.note("note", n));
             let line = (!files.is_empty()).then(|| counts.summary(files.len()));
             let found = counts.errors + counts.warnings > 0;
             break noted
@@ -360,7 +361,9 @@ fn run_checked(
         let mut selected = None;
         if let Some(catalog) = &mut catalog {
             selected = Some(catalog.select(chunk, &texts, &shown, &schemas)?);
-            if let Err(e) = (catalog.take_notes().into_iter()).try_for_each(|n| printer.note(n)) {
+            if let Err(e) =
+                (catalog.take_notes().into_iter()).try_for_each(|n| printer.note("warning", n))
+            {
                 break Err(e);
             }
         }

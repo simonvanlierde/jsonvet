@@ -848,6 +848,17 @@ mod tests {
     }
 
     #[test]
+    fn a_fix_does_not_move_a_suppression_onto_the_next_line_through_a_comment() {
+        // Dropping the first "b" and its line break would put the suppression's comment on the
+        // line of `/* x */ a`, so it would then hide the line after.
+        let text = "{\n/* jsonvet-ignore duplicate-key */\"b\":1,\n/* x */a:{\"a\":1,\"a\":2}, \n\"b\":1,}";
+        let config = Config::new(Dialect::Json5);
+        let once = try_fix(text, &config, true, None).map_or_else(|_| text.to_owned(), |f| f.text);
+        let twice = try_fix(&once, &config, true, None).map_or_else(|_| once.clone(), |f| f.text);
+        assert_eq!(once, twice);
+    }
+
+    #[test]
     fn a_fix_leaves_a_suppressed_duplicate() {
         let text = "{\"a\": 1,\n// jsonvet-ignore duplicate-key\n\"a\": 2}";
         assert!(try_fix(text, &Config::new(Dialect::Json5), true, None).is_err());

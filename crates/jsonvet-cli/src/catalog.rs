@@ -1,7 +1,6 @@
 //! Explicit SchemaStore fetching; documents and repository settings never enable it.
 
 use std::cell::RefCell;
-use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -303,9 +302,8 @@ fn fetch(url: &str, max: u64) -> Result<String, Failed> {
 }
 
 fn cache_path(cache: &Path, url: &str) -> PathBuf {
-    let mut hash = std::collections::hash_map::DefaultHasher::new();
-    url.hash(&mut hash);
-    cache.join(format!("{:016x}.json", hash.finish()))
+    let hash = crate::gitlab::fnv(0x6c62_272e_07bb_0142_62b8_2175_6295_c58d, url.as_bytes());
+    cache.join(format!("{hash:032x}.json"))
 }
 
 fn now() -> u64 {
@@ -516,6 +514,41 @@ mod tests {
         assert!(found.is_some());
         assert_eq!(calls.load(Ordering::Relaxed), 2);
         let _ = std::fs::remove_dir_all(cache);
+    }
+
+    #[test]
+    fn an_unusable_schema_names_the_same_ref_on_every_run() {
+        let schema = "https://json.schemastore.org/x.json";
+        let refs: Vec<String> = ('a'..='h')
+            .map(|c| format!(r#""{c}":{{"$ref":"https://x.test/{c}.json"}}"#))
+            .collect();
+        let body = format!(r#"{{"properties":{{{}}}}}"#, refs.join(","));
+        let fetch = |url: &str, _: u64| {
+            Ok(if url == CATALOG {
+                serde_json::json!({"schemas": [{"url": schema, "fileMatch": ["x.json"]}]})
+                    .to_string()
+            } else {
+                body.clone()
+            })
+        };
+        let errors: std::collections::BTreeSet<String> = (0..30)
+            .map(|_| {
+                let cache = folder();
+                let mut catalog = Catalog {
+                    cache: cache.clone(),
+                    entries: None,
+                    notes: Vec::new(),
+                    down: RefCell::default(),
+                };
+                let error = catalog
+                    .schema_with("x.json", &Schemas::default(), &fetch)
+                    .err()
+                    .expect("unusable schema");
+                let _ = std::fs::remove_dir_all(cache);
+                error
+            })
+            .collect();
+        assert_eq!(errors.len(), 1, "{errors:#?}");
     }
 
     #[test]

@@ -294,8 +294,12 @@ fn duplicate_groups(text: &str, problems: &[Problem], scan: &Scan) -> Vec<Group>
     let suppressed = |span: &Range<usize>| {
         let lines = &scan.suppressed;
         let i = lines.partition_point(|line| line.end < span.start);
-        // Ending at the line's first token joins it onto an earlier line.
-        lines.get(i).is_some_and(|line| line.start <= span.end)
+        // Ending at the line's first token, or only a comment before it, joins it onto an
+        // earlier line.
+        lines.get(i).is_some_and(|line| {
+            line.start <= span.end
+                || !text[span.end..line.start].contains(['\n', '\r', '\u{2028}', '\u{2029}'])
+        })
     };
     for (first, later) in copies {
         let dropped = std::iter::once(first).chain(later.iter().copied().take(later.len() - 1));

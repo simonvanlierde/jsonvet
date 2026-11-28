@@ -106,10 +106,13 @@ pub(crate) fn parse_severity(name: &str) -> Result<Severity, String> {
     }
 }
 
-/// A rule id from the command line or a settings file. File and schema errors cannot be
+/// A rule id from the command line or a settings file. Syntax, file and schema errors cannot be
 /// turned down, so they get their own message rather than "unknown rule".
 pub(crate) fn parse_rule(id: &str) -> Result<Rule, String> {
-    if matches!(id, crate::sarif::SCHEMA | crate::sarif::UNREADABLE) {
+    if matches!(
+        id,
+        "syntax" | crate::sarif::SCHEMA | crate::sarif::UNREADABLE
+    ) {
         return Err(messages::fill("error.fixed-rule", &[("id", &id)]));
     }
     id.parse().map_err(|_: jsonvet::UnknownRule| {

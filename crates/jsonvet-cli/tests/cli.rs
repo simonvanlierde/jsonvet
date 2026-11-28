@@ -613,7 +613,7 @@ fn a_bad_per_file_rules_entry_is_a_config_error() {
         ),
         (
             "per-file-severity.toml",
-            "per-file-rules = [{ files = \"*.json\", syntax = \"of\" }]\n",
+            "per-file-rules = [{ files = \"*.json\", duplicate-key = \"of\" }]\n",
         ),
         (
             "per-file-files.toml",
@@ -630,7 +630,7 @@ fn a_bad_per_file_rules_entry_is_a_config_error() {
         ("per-file-entry.toml", "per-file-rules = [1]\n"),
         ("per-file-glob.toml", "per-file-rules = [{ files = 1 }]\n"),
         // The top-level table names itself the same way.
-        ("rule-level.toml", "rules = { syntax = 1 }\n"),
+        ("rule-level.toml", "rules = { duplicate-key = 1 }\n"),
         ("d.json", "{}"),
     ]);
     for (config, message) in [
@@ -645,7 +645,7 @@ fn a_bad_per_file_rules_entry_is_a_config_error() {
              missing-final-newline, mixed-line-endings, unused-suppression",
         ),
         (
-            "per-file-severity.toml:1:48",
+            "per-file-severity.toml:1:55",
             "unknown severity `of` (did you mean `off`?); expected error, warning or ignore",
         ),
         (
@@ -661,7 +661,10 @@ fn a_bad_per_file_rules_entry_is_a_config_error() {
             "per-file-level.toml:3:17",
             "`per-file-rules.duplicate-key` must be a string",
         ),
-        ("rule-level.toml:1:20", "`rules.syntax` must be a string"),
+        (
+            "rule-level.toml:1:27",
+            "`rules.duplicate-key` must be a string",
+        ),
         (
             "per-file-glob.toml:1:29",
             "each `per-file-rules` entry needs a `files` string",
@@ -832,7 +835,7 @@ fn pyproject_tool_table_and_bad_configs() {
         ("forged.toml", "\"\\n::error::x\" = \"error\"\n"),
         ("typo.toml", "[rules]\nduplicate-keys = \"error\"\n"),
         ("key.toml", "# x\n  rule = {}\n"),
-        ("severity.toml", "[rules]\nsyntax = \"eror\"\n"),
+        ("severity.toml", "[rules]\nduplicate-key = \"eror\"\n"),
         (
             "dialect.toml",
             "[[dialects]]\nfiles = \"*.json\"\ndialect = \"jsno\"\n",
@@ -864,7 +867,7 @@ fn pyproject_tool_table_and_bad_configs() {
             "unknown key `rule` (did you mean `rules`?); expected rules, per-file-rules, per-file-format, dialects, exclude, schemas or format",
         ),
         (
-            "severity.toml:2:10",
+            "severity.toml:2:17",
             "unknown severity `eror` (did you mean `error`?); expected error, warning or ignore",
         ),
         (
@@ -2111,6 +2114,24 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
             ),
             "{err}"
         );
+    }
+
+    #[test]
+    fn a_missing_schema_note_carries_no_stderr_label_in_json_or_sarif() {
+        let dir = workdir(&[("gone.json", "{\"$schema\": \"./nope.json\"}")]);
+        let (code, out, _) = jsonvet_stderr(&dir, &["--format", "json", "gone.json"]);
+        assert_eq!(code, 0, "{out}");
+        assert!(
+            out.contains(r#""notes":["the schema ./nope.json that"#),
+            "{out}"
+        );
+        let (code, out, _) = jsonvet_stderr(&dir, &["--format", "sarif", "gone.json"]);
+        assert_eq!(code, 0, "{out}");
+        assert!(
+            out.contains(r#""text":"the schema ./nope.json that"#),
+            "{out}"
+        );
+        assert!(!out.contains("note:"), "{out}");
     }
 
     /// Three schemas that each demand a different key, so an error names the schema used. A
@@ -3472,7 +3493,7 @@ l.jsonl:2:34: error[schema] Additional properties are not allowed ('x' was unexp
     #[test]
     fn file_and_schema_errors_cannot_be_reconfigured() {
         let dir = workdir(&[("schema.json", "{}"), ("ok.json", "{}")]);
-        for rule in ["schema", "unreadable"] {
+        for rule in ["schema", "unreadable", "syntax"] {
             fs::write(
                 dir.join("jsonvet.toml"),
                 format!("[rules]\n{rule} = \"warn\"\n"),
@@ -4517,7 +4538,10 @@ mod file_reads {
     #[test]
     fn an_error_in_a_symlinked_config_file_shows_no_value_from_it() {
         let dir = workdir(&[
-            ("secret.toml", "[rules]\nsyntax = \"ghp_SECRETTOKEN123\"\n"),
+            (
+                "secret.toml",
+                "[rules]\nduplicate-key = \"ghp_SECRETTOKEN123\"\n",
+            ),
             ("r/x.json", "{}"),
         ]);
         let user = dir.join("no-user");
@@ -4526,7 +4550,7 @@ mod file_reads {
         assert_eq!(code, 2);
         assert!(
             err.ends_with(
-                "/r/jsonvet.toml:2:10: invalid setting, not shown because the file is a symlink\n"
+                "/r/jsonvet.toml:2:17: invalid setting, not shown because the file is a symlink\n"
             ),
             "{err}"
         );

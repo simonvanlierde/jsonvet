@@ -469,10 +469,11 @@ impl<W: Write> Printer<W> {
         Ok(())
     }
 
-    /// Write runtime notes to stderr when available and include them in formats that carry notes.
-    pub(crate) fn note(&mut self, message: String) -> io::Result<()> {
+    /// Write runtime notes to stderr, under `label`, when available and include them, without
+    /// it, in formats that carry notes.
+    pub(crate) fn note(&mut self, label: &str, message: String) -> io::Result<()> {
         let written = if !self.stderr_report || matches!(self.sink, Sink::Text { .. }) {
-            writeln!(io::stderr(), "jsonvet: {}", printable(&message))
+            writeln!(io::stderr(), "jsonvet: {label}: {}", printable(&message))
         } else {
             Ok(())
         };
