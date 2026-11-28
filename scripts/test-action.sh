@@ -111,11 +111,16 @@ fake 'echo "{\"version\": \"2.1.0\", \"runs\": []}"'
 write_sarif "$tmp/jsonvet" python3 "$tmp/out.sarif" -- a.json 2>/dev/null || fail "clean SARIF was rejected"
 # jsonvet 2.0 takes `--format sarif` for two file names it cannot read.
 fake 'echo "--format: cannot read"; exit 1'
-write_sarif "$tmp/jsonvet" python3 "$tmp/out.sarif" -- a.json 2>/dev/null && fail "text output passed as SARIF"
+out=$(write_sarif "$tmp/jsonvet" python3 "$tmp/out.sarif" -- a.json 2>&1) && fail "text output passed as SARIF"
+[[ "$out" == *"needs jsonvet 3.0.0"* ]] || fail "SARIF from an old jsonvet gave no version hint: [$out]"
 fake 'echo "[1]"; exit 1'
 write_sarif "$tmp/jsonvet" python3 "$tmp/out.sarif" -- a.json 2>/dev/null && fail "a JSON array passed as SARIF"
 fake 'echo "{\"version\": \"2.1.0\"}"; exit 2'
 write_sarif "$tmp/jsonvet" python3 "$tmp/out.sarif" -- a.json 2>/dev/null && fail "exit 2 passed"
+# A bad args input or jsonvet.toml: exit 2 and no output. The fault is there, not the version.
+fake 'echo "unknown rule" >&2; exit 2'
+out=$(write_sarif "$tmp/jsonvet" python3 "$tmp/out.sarif" -- a.json 2>&1) && fail "a usage error passed"
+[[ "$out" == *"args input"* && "$out" != *"needs jsonvet 3.0.0"* ]] || fail "a usage error blamed the version: [$out]"
 write_sarif "$tmp/jsonvet" python3 "$tmp/no/such/dir/out.sarif" -- a.json 2>/dev/null && fail "an unwritable path passed"
 fake 'echo "{\"version\": \"2.1.0\", \"runs\": []}"'
 (cd "$tmp/evil" && write_sarif "$tmp/jsonvet" python3 "$tmp/out.sarif" -- a.json 2>/dev/null) || fail "SARIF check ran the repository's json.py"
@@ -126,21 +131,63 @@ mkdir "$tmp/bin"
 printf '#!/usr/bin/env bash\necho "$*" >> "%s/gh.log"\n[[ -z "$GH_FAIL" ]]\n' "$tmp" > "$tmp/bin/gh"
 chmod +x "$tmp/bin/gh"
 wheel="$tmp/jsonvet-3.1.0-py3-none-manylinux_2_28_x86_64.whl"
-PATH="$tmp/bin:$PATH" verify_wheel "$wheel" true 2>/dev/null || fail "an attested wheel was rejected"
-want="attestation verify $wheel --repo simonvanlierde/jsonvet --signer-workflow simonvanlierde/jsonvet/.github/workflows/release.yml"
+PATH="$tmp/bin:$PATH" verify_wheel "$wheel" "" true 2>/dev/null || fail "an attested wheel was rejected"
+want="attestation verify $wheel --repo simonvanlierde/jsonvet --cert-identity-regex ^https://github\.com/simonvanlierde/jsonvet/\.github/workflows/release\.yml@refs/tags/v[0-9]"
 [[ "$(cat "$tmp/gh.log")" == "$want" ]] || fail "gh ran as [$(cat "$tmp/gh.log")], want [$want]"
-GH_FAIL=1 PATH="$tmp/bin:$PATH" verify_wheel "$wheel" true 2>/dev/null && fail "a wheel without a valid attestation passed"
-GH_FAIL=1 PATH="$tmp/bin:$PATH" verify_wheel "$wheel" false 2>/dev/null || fail "verify: false still checked"
-for version in 3.0.0 3.0.0.post1 2.1.0; do
-  GH_FAIL=1 PATH="$tmp/bin:$PATH" verify_wheel "$tmp/jsonvet-$version-py3-none-any.whl" true 2>/dev/null || fail "jsonvet $version, made before attestations, was rejected"
+GH_FAIL=1 PATH="$tmp/bin:$PATH" verify_wheel "$wheel" "" true 2>/dev/null && fail "a wheel without a valid attestation passed"
+GH_FAIL=1 PATH="$tmp/bin:$PATH" verify_wheel "$wheel" "" false 2>/dev/null || fail "verify: false still checked"
+for spec in ==3.0.0 ==3.0.0.post1 ==2.1.0 ==3.0.* ==2.*; do
+  GH_FAIL=1 PATH="$tmp/bin:$PATH" verify_wheel "$tmp/jsonvet-3.0.0-py3-none-any.whl" "$spec" true 2>/dev/null || fail "spec $spec, made before attestations, was rejected"
 done
 for version in 3.1.0rc1 3.10.0 4.0.0; do
-  GH_FAIL=1 PATH="$tmp/bin:$PATH" verify_wheel "$tmp/jsonvet-$version-py3-none-any.whl" true 2>/dev/null && fail "jsonvet $version passed unchecked"
+  GH_FAIL=1 PATH="$tmp/bin:$PATH" verify_wheel "$tmp/jsonvet-$version-py3-none-any.whl" "==$version" true 2>/dev/null && fail "jsonvet $version passed unchecked"
 done
-verify_wheel "$wheel" yes 2>/dev/null && fail "verify accepted 'yes'"
+# The package index names the file: an old-looking wheel for a spec that 3.1.0 or later matches
+# is checked.
+for spec in "" ==3.* ==4.*; do
+  GH_FAIL=1 PATH="$tmp/bin:$PATH" verify_wheel "$tmp/jsonvet-3.0.9-py3-none-any.whl" "$spec" true 2>/dev/null && fail "a 3.0.9 wheel for spec '$spec' passed unchecked"
+done
+verify_wheel "$wheel" "" yes 2>/dev/null && fail "verify accepted 'yes'"
 # Without gh the wheel installs unchecked, with a notice.
-out=$(PATH="$tmp/empty" "$BASH" -c ". '$here/action.sh'; verify_wheel '$wheel' true" 2>&1) || fail "a missing gh failed the run"
+out=$(PATH="$tmp/empty" "$BASH" -c ". '$here/action.sh'; verify_wheel '$wheel' '' true" 2>&1) || fail "a missing gh failed the run"
 [[ "$out" == *"no GitHub CLI"* ]] || fail "a missing gh gave no notice: [$out]"
+
+# main, with python3 and pip faked: the index serves the wheel named in $tmp/serve, pip install
+# logs the wheel it gets, and jsonvet passes.
+real_python=$(command -v python3)
+# shellcheck disable=SC2016
+printf '#!/usr/bin/env bash
+if [[ "$2 $3" == "-m venv" ]]; then
+  mkdir -p "$4/bin"
+  cp "%s/fakepy" "$4/bin/python"
+  printf "#!/usr/bin/env bash\n" > "$4/bin/jsonvet"
+  chmod +x "$4/bin/jsonvet"
+else
+  exec "%s" "$@"
+fi
+' "$tmp" "$real_python" > "$tmp/bin/python3"
+# shellcheck disable=SC2016
+printf '#!/usr/bin/env bash
+case "$3 $4" in
+"pip download") while [[ "$1" != -d ]]; do shift; done; mkdir -p "$2"; touch "$2/$(cat "%s/serve")" ;;
+"pip install") echo "${!#}" >> "%s/pip.log" ;;
+*) exec "%s" "$@" ;;
+esac
+' "$tmp" "$tmp" "$real_python" > "$tmp/fakepy"
+chmod +x "$tmp/bin/python3" "$tmp/fakepy"
+run_main() {
+  mkdir -p "$tmp/runner"
+  (cd "$tmp/dash" && PATH="$tmp/bin:$PATH" VERSION="$1" VERIFY=true FILES=- RUNNER_TEMP="$tmp/runner" main 2>/dev/null)
+}
+echo jsonvet-3.0.9-py3-none-any.whl > "$tmp/serve"
+GH_FAIL=1 run_main latest && fail "main installed an old-looking wheel for version latest unchecked"
+run_main latest || fail "main failed with an attested 3.0.9 wheel"
+echo jsonvet-4.0.0-py3-none-any.whl > "$tmp/serve"
+GH_FAIL=1 run_main 4.0.0 && fail "main passed a wheel without a valid attestation"
+run_main 4.0.0 || fail "main failed with an attested wheel"
+# Each use of the action in a job installs its own wheel, not the 3.0.9 an earlier use downloaded.
+[[ "$(tail -n 1 "$tmp/pip.log")" == */jsonvet-4.0.0-py3-none-any.whl ]] || fail "main installed [$(tail -n 1 "$tmp/pip.log")], want the 4.0.0 wheel"
+[[ $(wc -l < "$tmp/pip.log") -eq 2 ]] || fail "main installed $(wc -l < "$tmp/pip.log") wheels, want 2: [$(cat "$tmp/pip.log")]"
 
 if [[ $failures -gt 0 ]]; then
   echo "$failures failed"

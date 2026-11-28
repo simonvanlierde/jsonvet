@@ -125,12 +125,13 @@ for pattern in sys.argv[1:]:
 }
 
 # Checks the build provenance attestation of a downloaded jsonvet wheel: it must come from this
-# repository's release.yml, which runs only for a pushed tag. Releases before 3.1.0 have no
-# attestation, so they are installed with a notice, as on a runner without gh: only the runner's
-# owner can take gh away, not someone who controls the package index. Arguments: the wheel, the
-# `verify` input.
+# repository's release.yml, run for a pushed v* tag. Releases before 3.1.0 have no attestation,
+# so a spec that only they match installs with a notice, as on a runner without gh: only the
+# runner's owner can take gh away or pick the spec. The wheel's file name never decides, since
+# whoever controls the package index names the file. Arguments: the wheel, the pip version
+# specifier, the `verify` input.
 verify_wheel() {
-  local wheel="$1" verify="$2" version
+  local wheel="$1" spec="$2" verify="$3" version
   # `jsonvet-<version>-<tags>.whl`, read without external commands.
   version=${wheel##*/}
   version=${version#*-}
@@ -142,7 +143,8 @@ verify_wheel() {
     error "verify must be true or false, not '$verify'"
     return 2
   fi
-  if [[ "$version" =~ ^[0-2]\. || "$version" =~ ^3\.0\. ]]; then
+  # ==2.1.0, ==3.0.0.post1, ==3.0.*, ==2.*: no 3.1.0 or later can match.
+  if [[ "$spec" =~ ^==[0-2]\. || "$spec" =~ ^==3\.0\. ]]; then
     echo "::notice title=jsonvet action::jsonvet $version has no attestation to check: releases before 3.1.0 have none" >&2
     return 0
   fi
@@ -150,8 +152,9 @@ verify_wheel() {
     echo "::notice title=jsonvet action::this runner has no GitHub CLI (gh), so the jsonvet $version wheel's attestation is not checked; install gh to check it" >&2
     return 0
   fi
+  # The certificate names the workflow and the ref it ran for: release.yml on a v* tag.
   if ! gh attestation verify "$wheel" --repo simonvanlierde/jsonvet \
-    --signer-workflow simonvanlierde/jsonvet/.github/workflows/release.yml > /dev/null; then
+    --cert-identity-regex '^https://github\.com/simonvanlierde/jsonvet/\.github/workflows/release\.yml@refs/tags/v[0-9]' > /dev/null; then
     error "the jsonvet $version wheel from PyPI has no valid attestation from simonvanlierde/jsonvet's release workflow, so it was not installed; set verify: false only if you trust your package index"
     return 2
   fi
@@ -174,6 +177,8 @@ except (OSError, ValueError, AttributeError):
 ' "$sarif"; then
     if [[ $status -gt 2 ]]; then
       error "jsonvet did not write SARIF to $sarif: it could not run (exit $status)"
+    elif [[ $status -eq 2 ]]; then
+      error "jsonvet did not write SARIF to $sarif (exit 2): check the args input and jsonvet.toml, as its error above says"
     else
       error "jsonvet did not write SARIF to $sarif (exit $status); the sarif input needs jsonvet 3.0.0 or later"
     fi
@@ -196,11 +201,13 @@ main() {
   [[ -d "$bin" ]] || bin="$venv/Scripts"
   # Downloaded first, so the wheel's attestation is checked before it is installed.
   # Forward slashes: a `\` in a Windows path would escape the next character in the glob.
-  local wheels="${RUNNER_TEMP//\\//}/jsonvet-wheel"
+  # A new folder for each use of the action in a job, so the glob finds only this wheel.
+  local wheels
+  wheels=$(mktemp -d "${RUNNER_TEMP//\\//}/jsonvet-wheel.XXXXXX") || exit 2
   "$bin/python" -I -m pip download -q --disable-pip-version-check --no-deps --only-binary :all: \
     -d "$wheels" "jsonvet$spec" || exit 2
   local found=("$wheels"/jsonvet-*.whl)
-  verify_wheel "${found[0]}" "$VERIFY" || exit 2
+  verify_wheel "${found[0]}" "$spec" "$VERIFY" || exit 2
   # Only gh needs the token; jsonvet reads files from strangers.
   unset GH_TOKEN
   "$bin/python" -I -m pip install -q --disable-pip-version-check --no-deps --no-index "${found[0]}" || exit 2

@@ -9,6 +9,21 @@ breaking public contract.
 
 ## [Unreleased]
 
+### Security
+
+- The Action decides from the `version` it asked pip for, not the wheel's file name, whether to
+  skip the attestation check. Before, a package index could serve a wheel named
+  `jsonvet-3.0.9-*.whl` for `version: latest` or `@v3`, and it was installed unchecked. Only a
+  `version` that no release from 3.1.0 on matches, such as `3.0.0` or `3.0.*`, skips the check.
+- The Action accepts only an attestation made by `release.yml` for a `v*` tag, not for a branch.
+
+### Fixed
+
+- Two uses of the Action in one job no longer share a download folder, so the second installs
+  its own wheel, not the first one's.
+- With `sarif` set, a bad `args` input or `jsonvet.toml` (exit 2) now points at those, not at
+  the jsonvet version.
+
 ## [4.0.0] - 2026-11-28
 
 Update scripts that read `--format json` to check `schema_version == 2`. See the
