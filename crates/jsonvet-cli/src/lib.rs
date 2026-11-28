@@ -183,19 +183,20 @@ pub fn run_with(
         return run_checked(args, annotate, terminal, out, &mut false, &wrote);
     }
     let error_output = args::error_output(&args);
-    if error_output == args::ErrorOutput::Text {
-        return run_checked(args, annotate, terminal, out, &mut false, &wrote);
-    }
     // A JSON reader gets English, and a document it can parse, from the first byte.
     messages::english_only(true);
-    let mut stdin_fix = error_output == args::ErrorOutput::JsonStderr;
+    let args::ErrorOutput::Json { stderr, lines } = error_output else {
+        return run_checked(args, annotate, terminal, out, &mut false, &wrote);
+    };
+    let mut stdin_fix = stderr;
     let mut out = Tracked {
         inner: out,
         wrote: &wrote,
     };
     match run_checked(args, annotate, terminal, &mut out, &mut stdin_fix, &wrote) {
         // NOTE: after output has started, the document is cut off: a second one would not parse.
-        Err(message) if !wrote.get() => {
+        // JSON Lines takes one more record at any point.
+        Err(message) if lines || !wrote.get() => {
             let usage_help = messages::text("error.usage")
                 .rsplit("\n\n")
                 .next()
@@ -207,7 +208,11 @@ pub fn run_with(
                     "Fix the file or option the message names, then run again.",
                 ),
             };
-            let document = json::failure(message, help);
+            let document = if lines {
+                json::failure_record(message, help)
+            } else {
+                json::failure(message, help)
+            };
             // With `--fix` on standard input, standard output holds the fixed text.
             let sent = if stdin_fix {
                 io::stderr().write_all(document.as_bytes())
@@ -336,7 +341,10 @@ fn run_checked(
             let noted = (schemas.missing_notes().into_iter()).try_for_each(|n| printer.note(n));
             let line = (!files.is_empty()).then(|| counts.summary(files.len()));
             let found = counts.errors + counts.warnings > 0;
+            let record = (files.len(), counts.files, counts.errors, counts.warnings);
+            let code = verdict(&counts, args.max_warnings);
             break noted
+                .and_then(|()| printer.summary_record(record, code))
                 .and_then(|()| print_summary(&mut printer, line.as_deref(), terminal.tty, found));
         }
         let shares = shares.get(files.len() - rest.len()..);
@@ -414,16 +422,18 @@ fn print_checked(
         .zip(checked)
         .try_for_each(|((_, file), checked)| {
             printer.begin_file();
+            let file = &shown(file);
             match checked {
                 Ok((report, schema_errors)) => {
-                    print_file(&shown(file), &report, &schema_errors, printer, counts)
+                    print_file(file, &report, &schema_errors, printer, counts)?;
                 }
                 Err(message) => {
                     counts.errors += 1;
                     counts.files += 1;
-                    printer.unreadable(&shown(file), message)
+                    printer.unreadable(file, message)?;
                 }
             }
+            printer.end_file(file)
         })
 }
 
@@ -441,8 +451,13 @@ fn conclude(
         }
         _ => {}
     }
+    Ok(verdict(counts, max_warnings))
+}
+
+/// 1 for an error, or for more warnings than `max_warnings` allows, and 0 otherwise.
+fn verdict(counts: &Counts, max_warnings: Option<usize>) -> u8 {
     let too_many_warnings = max_warnings.is_some_and(|max| counts.warnings > max);
-    Ok(u8::from(counts.errors > 0 || too_many_warnings))
+    u8::from(counts.errors > 0 || too_many_warnings)
 }
 
 /// The texts of the first of `files`, read on up to `threads` threads until their [`weight`]s
@@ -1420,6 +1435,7 @@ mod tests {
         };
         assert!(json(&["--format", "json"]));
         assert!(json(&["--format=json", "a.json"]));
+        assert!(json(&["--format=jsonl", "a.json"]));
         assert!(!json(&["--format", "json", "--format=text"]));
         assert!(json(&["--format=text", "--format", "json"]));
         assert!(!json(&["--", "--format=json"]));
@@ -1701,6 +1717,7 @@ mod tests {
             ),
             (Format::Sarif, Some(true), terminal(true, None), lines),
             (Format::Json, Some(true), terminal(true, None), lines),
+            (Format::JsonLines, Some(true), terminal(true, None), lines),
         ];
         for (format, color, terminal, want) in cases {
             assert_eq!(
@@ -1766,7 +1783,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Text output takes a translation; SARIF and JSON stay English with one in place.
+    /// Text output takes a translation; SARIF, JSON and JSON Lines stay English with one in place.
     #[test]
     fn a_translation_reaches_text_output_only() {
         let dir = std::env::temp_dir().join(format!("jsonvet-locale-{}", std::process::id()));
@@ -1787,7 +1804,7 @@ mod tests {
         };
         let text = run("text");
         assert!(text.contains("XX $.a (XX 1:2)"), "{text}");
-        for format in ["json", "sarif"] {
+        for format in ["json", "jsonl", "sarif"] {
             let out = run(format);
             assert!(out.contains("duplicate key $.a (first at 1:2)"), "{out}");
             assert!(!out.contains("XX"), "{out}");

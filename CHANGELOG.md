@@ -9,6 +9,14 @@ breaking public contract.
 
 ## [Unreleased]
 
+### Added
+
+- `--format jsonl` writes JSON Lines: a record for each problem, in the same shape as a
+  `--format json` diagnostic, a record for each file once it is reported, and a last summary
+  record with the counts and the exit code. Records are flushed after each file, so a run that
+  is stopped keeps what it reported, and an error that ends the run is a summary record too
+  ([JSON Lines](docs/usage.md#json-lines), #290).
+
 ## [4.0.0] - 2026-11-28
 
 Update scripts that read `--format json` to check `schema_version == 2`. See the
