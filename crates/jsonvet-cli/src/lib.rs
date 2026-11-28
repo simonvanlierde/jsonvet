@@ -167,7 +167,7 @@ pub fn check_config_text(path: &Path, text: &str) -> Result<(), String> {
 /// The command, with its inputs passed in: 0 when no file has an error, 1 when one does.
 /// On a terminal, text output ends with a count of the problems. A usage error comes back as
 /// `Err`, which `run` turns into exit status 2; under `--format json` it is printed as a JSON
-/// document and comes back as `Ok(2)`. Public only for `benches/codspeed.rs`, which measures
+/// document, and under `--format jsonl` as a summary record, and comes back as `Ok(2)`. Public only for `benches/codspeed.rs`, which measures
 /// `--schema` in-process; not part of the crate's API.
 #[doc(hidden)]
 pub fn run_with(
@@ -341,10 +341,7 @@ fn run_checked(
             let noted = (schemas.missing_notes().into_iter()).try_for_each(|n| printer.note(n));
             let line = (!files.is_empty()).then(|| counts.summary(files.len()));
             let found = counts.errors + counts.warnings > 0;
-            let record = (files.len(), counts.files, counts.errors, counts.warnings);
-            let code = verdict(&counts, args.max_warnings);
             break noted
-                .and_then(|()| printer.summary_record(record, code))
                 .and_then(|()| print_summary(&mut printer, line.as_deref(), terminal.tty, found));
         }
         let shares = shares.get(files.len() - rest.len()..);
@@ -397,12 +394,30 @@ fn run_checked(
             break outcome;
         }
     };
+    let notes = printer.take_notes();
     // A structured report on standard error takes the place of the count.
     let count = !stdin_fix || args.format == Format::Text;
     // The fixed text goes out even when the problems could not be written.
     let finished = fixed.finish(count, &mut out);
     let written = written.and(finished);
-    conclude(written, &counts, args.max_warnings)
+    let code = conclude(written, &counts, args.max_warnings)?;
+    // The JSON Lines summary comes last, once the exit code is known; on an error, `run_with`
+    // writes the failure summary instead.
+    if args.format == Format::JsonLines {
+        let counts = (files.len(), counts.files, counts.errors, counts.warnings);
+        let record = json::summary_record(counts, code, &notes);
+        let sink: &mut dyn Write = if stdin_fix { &mut stderr } else { &mut out };
+        let sent = sink
+            .write_all(record.as_bytes())
+            .and_then(|()| sink.flush());
+        // A closed pipe keeps the verdict, as in `conclude`.
+        if let Err(e) = sent
+            && e.kind() != io::ErrorKind::BrokenPipe
+        {
+            return Err(messages::fill("error.write", &[("error", &e)]));
+        }
+    }
+    Ok(code)
 }
 
 /// A file's report and its schema errors.

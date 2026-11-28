@@ -623,7 +623,7 @@ jsonvet --format jsonl . | jq -c 'select(.type == "file" and .error_count > 0) |
 {"type":"diagnostic","schema_version":2,"file":"dup.json","rule":"duplicate-key","url":"https://simonvanlierde.com/jsonvet/docs/usage.html#duplicate-key","severity":"error","message":"duplicate key $.a (first at 1:2)","line":1,"column":8,"offset":7,"related":[{"message":"first copy","line":1,"column":2,"offset":1}]}
 {"type":"file","schema_version":2,"file":"dup.json","error_count":1,"warning_count":0}
 {"type":"file","schema_version":2,"file":"ok.json","error_count":0,"warning_count":0}
-{"type":"summary","schema_version":2,"files":2,"failed_files":1,"error_count":1,"warning_count":0,"exit_code":1}
+{"type":"summary","schema_version":2,"files":2,"files_with_problems":1,"error_count":1,"warning_count":0,"exit_code":1}
 ```
 
 - Every record has a `type` and the `schema_version` of [JSON](#json), which both formats share.
@@ -631,9 +631,9 @@ jsonvet --format jsonl . | jq -c 'select(.type == "file" and .error_count > 0) |
   `schema_version`. A file jsonvet cannot read gets one under the rule `unreadable`.
 - A `file` record follows each file's diagnostics, clean files included, in the order given,
   with its `error_count` and `warning_count`.
-- The last line is a `summary` record: `files` checked, `failed_files` with a problem or that
-  could not be read, `error_count`, `warning_count`, the `exit_code`, and optional `notes`, as in
-  JSON.
+- The last line is the one `summary` record: `files` checked, `files_with_problems` (with an
+  error or a warning, or that could not be read), `error_count`, `warning_count`, the
+  `exit_code`, which is always jsonvet's exit status, and optional `notes`, as in JSON.
 - A usage error, a schema that cannot be read or used, or another error that ends the run, also
   after other records, gives a `summary` record with `exit_code` 2 and `errors`, as in JSON, and
   no counts. A failed write to standard output can leave the summary out.

@@ -32,18 +32,20 @@ flag.
 - A `diagnostic` record is the JSON diagnostic with those two members in front.
 - A `file` record follows each file's diagnostics with `error_count` and `warning_count`.
   jsonvet flushes standard output after it.
-- The `summary` has `files`, `failed_files`, `error_count`, `warning_count` and `exit_code`, and
-  `notes` as in JSON. The counts are not named `errors`, which keeps JSON's meaning: a usage error,
-  a bad schema or an error later in the run is a `summary` with `exit_code` 2 and `errors`, and no
-  counts. Unlike JSON, that record also comes after other output, since another line still parses.
+- The `summary` has `files`, `files_with_problems`, `error_count`, `warning_count` and
+  `exit_code`, and `notes` as in JSON. `files_with_problems` counts a file with only a warning,
+  on a run that can pass, so it is not called "failed". The counts are not named `errors`, which
+  keeps JSON's meaning: a usage error, a bad schema or an error later in the run is a `summary`
+  with `exit_code` 2 and `errors`, and no counts. Unlike JSON, that record also comes after other
+  output, since another line still parses.
 - Strings go through the one escaping rule ([0007](0007-hand-written-output-with-one-escaping-rule.md)).
 
 ## Consequences
 
 One flush per file, which costs a write call each; not measured on a large walk. Records come in
-the order files are given, a chunk at a time, not as each core finishes. A failed write to
-standard output leaves the summary out, and with `--fix -` a failed write of the fixed text can
-add a second summary after the first; a reader takes the last one.
+the order files are given, a chunk at a time, not as each core finishes. The summary is written
+once the exit code is known, after the fixed text and the fix count, so a run has one summary
+and its `exit_code` is the process's; a failed write to standard output can leave it out.
 
 ## Confirmation
 

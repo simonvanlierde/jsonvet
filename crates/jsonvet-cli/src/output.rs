@@ -222,18 +222,9 @@ impl<W: Write> Printer<W> {
         Ok(())
     }
 
-    /// With `--format jsonl`, the run's last record: `counts` as [`json::summary_record`] takes
-    /// them, the exit code and the notes.
-    pub(crate) fn summary_record(
-        &mut self,
-        counts: (usize, usize, usize, usize),
-        exit_code: u8,
-    ) -> io::Result<()> {
-        if matches!(self.sink, Sink::JsonLines { .. }) {
-            let record = json::summary_record(counts, exit_code, &self.notes);
-            self.out.write_all(record.as_bytes())?;
-        }
-        Ok(())
+    /// The runtime notes kept for the report, taken out of it.
+    pub(crate) fn take_notes(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.notes)
     }
 
     /// A problem in a file's contents.

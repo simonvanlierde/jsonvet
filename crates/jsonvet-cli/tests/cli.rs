@@ -1232,7 +1232,7 @@ fn json_lines_stream_records_and_end_with_a_summary() {
     assert_eq!(records[6]["warning_count"], 1);
     assert_eq!(
         records[7],
-        serde_json::json!({"type":"summary","schema_version":2,"files":4,"failed_files":3,
+        serde_json::json!({"type":"summary","schema_version":2,"files":4,"files_with_problems":3,
             "error_count":2,"warning_count":1,"exit_code":1})
     );
     // The summary's exit code is the process's, with --max-warnings too.
@@ -5032,6 +5032,60 @@ fn json_usage_and_schema_errors_are_documents() {
             "{out}"
         );
     }
+}
+
+/// With `--format jsonl`, a write that fails after the checks, of the fixed text or of the fix
+/// count, still leaves exactly one summary, last, whose `exit_code` is the process's.
+#[cfg(target_os = "linux")] // macOS has no /dev/full
+#[test]
+fn a_json_lines_run_with_a_failed_write_has_one_true_summary() {
+    use std::io::Write as _;
+    use std::process::Stdio;
+    let dir = workdir(&[("dup.json", "{\"a\":1,\"a\":2}\n")]);
+    let summaries = |report: &[u8], code: Option<i32>| {
+        let report = String::from_utf8_lossy(report);
+        let lines: Vec<serde_json::Value> = report
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("one JSON object per line"))
+            .collect();
+        let found: Vec<_> = lines.iter().filter(|r| r["type"] == "summary").collect();
+        assert_eq!(found.len(), 1, "{report}");
+        assert_eq!(lines.last(), Some(found[0]), "{report}");
+        assert_eq!(
+            found[0]["exit_code"].as_i64(),
+            code.map(i64::from),
+            "{report}"
+        );
+    };
+    // The fixed text on standard output cannot be written; the report is on standard error.
+    let full = fs::File::create("/dev/full").expect("open /dev/full");
+    let mut child = command(env!("CARGO_BIN_EXE_jsonvet"))
+        .args(["--format", "jsonl", "--fix", "-"])
+        .current_dir(&dir)
+        .stdin(Stdio::piped())
+        .stdout(full)
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run jsonvet");
+    child
+        .stdin
+        .take()
+        .expect("stdin")
+        .write_all(b"{\"a\":1,}")
+        .expect("write stdin");
+    let out = child.wait_with_output().expect("run jsonvet");
+    assert_eq!(out.status.code(), Some(2));
+    summaries(&out.stderr, out.status.code());
+    // The fix count on standard error cannot be written; the report is on standard output.
+    let full = fs::File::create("/dev/full").expect("open /dev/full");
+    let out = command(env!("CARGO_BIN_EXE_jsonvet"))
+        .args(["--format", "jsonl", "--unsafe-fixes", "--fix", "dup.json"])
+        .current_dir(&dir)
+        .stderr(full)
+        .output()
+        .expect("run jsonvet");
+    assert_eq!(out.status.code(), Some(2));
+    summaries(&out.stdout, out.status.code());
 }
 
 /// A JSON error document that cannot be written is a failed write (exit 2 and a message), not a

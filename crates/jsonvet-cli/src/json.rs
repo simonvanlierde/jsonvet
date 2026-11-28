@@ -69,7 +69,7 @@ pub(crate) fn file_record(file: &OsStr, errors: usize, warnings: usize) -> Strin
 }
 
 /// The last record of a run that checked its files: the counts, the exit code and any notes.
-/// `failed` counts the files with a problem or that could not be read.
+/// `failed` counts the files with a problem, a warning included, or that could not be read.
 pub(crate) fn summary_record(
     (files, failed, errors, warnings): (usize, usize, usize, usize),
     exit_code: u8,
@@ -79,7 +79,7 @@ pub(crate) fn summary_record(
         "summary",
         &format!(
             concat!(
-                r#"{{"files":{},"failed_files":{},"error_count":{},"warning_count":{},"#,
+                r#"{{"files":{},"files_with_problems":{},"error_count":{},"warning_count":{},"#,
                 r#""exit_code":{}{}}}"#
             ),
             files,
@@ -165,7 +165,7 @@ mod tests {
         assert_eq!(
             summary_record((5, 2, 3, 1), 1, &[]),
             concat!(
-                r#"{"type":"summary","schema_version":2,"files":5,"failed_files":2,"#,
+                r#"{"type":"summary","schema_version":2,"files":5,"files_with_problems":2,"#,
                 r#""error_count":3,"warning_count":1,"exit_code":1}"#,
                 "\n"
             )

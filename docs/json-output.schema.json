@@ -16,7 +16,7 @@
       "items": { "$ref": "#/$defs/diagnostic" }
     },
     "errors": {
-      "description": "Why the run stopped on a usage error or a bad schema, before any diagnostic was printed.",
+      "description": "Why the run stopped on a usage error or a bad schema, before any diagnostic was printed. In a --format jsonl summary record, an error can also follow other records.",
       "type": "array",
       "items": {
         "type": "object",
@@ -65,7 +65,7 @@
             "type": { "const": "summary" },
             "schema_version": { "const": 2 },
             "files": { "type": "integer", "minimum": 0 },
-            "failed_files": { "type": "integer", "minimum": 0 },
+            "files_with_problems": { "type": "integer", "minimum": 0 },
             "error_count": { "type": "integer", "minimum": 0 },
             "warning_count": { "type": "integer", "minimum": 0 },
             "exit_code": { "enum": [0, 1, 2] },
