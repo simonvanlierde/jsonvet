@@ -21,13 +21,17 @@ const MARK = {
 // The filters, in legend order: [value, label, test on a row].
 const FILTERS = [
   ["all", "all files", () => true],
-  ["some", "✗ some parser disagrees", (f) => Object.values(f.runs).some((r) => r.mark === "✗" || r.mark === "‼")],
+  [
+    "some",
+    "✗ disagreement, crash or timeout",
+    (f) => Object.values(f.runs).some((r) => r.mark === "✗" || r.mark === "‼"),
+  ],
   [
     "jsonvet",
-    "jsonvet disagrees",
+    "jsonvet disagreement, crash or timeout",
     (f) => Object.entries(f.runs).some(([c, r]) => c.startsWith("jsonvet-") && (r.mark === "✗" || r.mark === "‼")),
   ],
-  ["crash", "‼ a parser crashed", (f) => Object.values(f.runs).some((r) => r.mark === "‼")],
+  ["crash", "‼ crash or timeout", (f) => Object.values(f.runs).some((r) => r.mark === "‼")],
   ["spec", "† spec-decided", (f) => f.why !== ""],
 ];
 
@@ -137,7 +141,9 @@ function fileDetail(path, entries) {
       .join("");
     return `<h3>${esc(d.title)}: expected ${f.expected}</h3>
 <p>From ${source}.${play}</p>
+<div class="scroll" tabindex="0" role="region" aria-label="${esc(d.title)} results: ${esc(short(path))}">
 <table class="runs"><thead><tr><th scope="col">parser</th><th scope="col">verdict</th><th scope="col">against expected</th></tr></thead><tbody>${runs}</tbody></table>
+</div>
 ${f.note ? `<p class="why">${inline(f.note)}</p>` : ""}`;
   });
   return `<section class="detail" id="${esc(fileId(path))}" tabindex="-1">
@@ -185,7 +191,7 @@ export function matrixPage() {
     )
     .join("\n");
   // The page's h1 is Starlight's title.
-  const body = `<p>How ${shownParsers.length} parser runs treat the same files in five JSON dialects. Results updated on ${data.date}. Pick a dialect and what to show, then a file or a parser for its details. <a href="${DOCS}conformance.html">Conformance</a> has the same results as text, with the duplicate-key table and every version.</p>
+  const body = `<p>Compare ${shownParsers.length} syntax runs across five JSON dialects. Results updated on ${data.date}. Pick a dialect and what to show, then a file or a parser for its details. The <a href="${DOCS}conformance.html">conformance report</a> adds duplicate-key results and lists every parser version.</p>
 <div class="matrix not-content" id="matrix">
 <fieldset class="dialects"><legend>Dialect</legend>
 ${choices}
@@ -214,7 +220,7 @@ ${shownParsers.map((p) => parserDetail(p, data.parsers[p], data.dialects)).join(
 `;
   return {
     title: "Conformance matrix",
-    summary: `How ${shownParsers.length} parser runs treat the same files in five JSON dialects, file by file, with each file's text.`,
+    summary: `Filter ${shownParsers.length} syntax runs by dialect and see each file's text and verdicts.`,
     body,
     h2s: [],
   };

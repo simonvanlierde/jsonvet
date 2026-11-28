@@ -92,10 +92,13 @@ body { background: var(--paper); }
   .docs-search button[data-open-modal] { padding-inline-end: 4.25rem; }
   .docs-search > kbd { display: flex; gap: .25em; }
 }
-.rule-result { margin-block: .75rem; padding: .5rem 0; border-bottom: 1px solid var(--rule); }
+.direct-result { margin-block: .75rem; padding: .5rem 0; border-bottom: 1px solid var(--rule); }
 .sl-markdown-content :is(p, li) { max-inline-size: 72ch; }
 #options + ul code { display: inline-block; max-inline-size: 100%; }
-@media (max-width: 49.99rem) { .bar { padding-inline-end: calc(var(--sl-nav-pad-x) + var(--sl-menu-button-size) + .5rem); } }
+@media (max-width: 49.99rem) {
+  .bar { padding-inline-end: calc(var(--sl-nav-pad-x) + var(--sl-menu-button-size) + .5rem); }
+  .bar .theme { margin-inline-end: 0; }
+}
 .colophon { margin-top: 1.5rem; padding-top: 0; border-top: 0; }
 
 /* Code without Expressive Code: the tint, scrolling on its own, in the mono. A wide table scrolls in

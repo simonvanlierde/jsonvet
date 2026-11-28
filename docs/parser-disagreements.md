@@ -1,7 +1,7 @@
 # Where JSON parsers disagree
 
 The same JSONC file can parse in one tool and fail in another. In the
-[conformance matrix](conformance.md), a single carriage return ends a line comment
+[conformance report](conformance.md), a single carriage return ends a line comment
 for some readers. For others the comment swallows the next key and the closing
 brace, so the remaining text fails to parse.
 

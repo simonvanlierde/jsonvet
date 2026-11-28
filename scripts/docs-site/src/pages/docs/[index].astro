@@ -1,6 +1,6 @@
 ---
 import StarlightPage from "@astrojs/starlight/components/StarlightPage.astro";
-import { describe, MATRIX, NAV, pageOf, SITE } from "../../../lib.mjs";
+import { describe, MATRIX, NAV, pageOf, QUICK_START, SITE } from "../../../lib.mjs";
 import { matrixPage } from "../../../matrix.mjs";
 
 // NOTE: a route named `index`, not an index page, keeps the file docs/index.html under
@@ -22,6 +22,9 @@ const head = [
 ---
 
 <StarlightPage frontmatter={{ title: "jsonvet docs", description: "The jsonvet reference, design notes, conformance matrix and decision records.", tableOfContents: false, head }}>
+  <p>
+    <a href={QUICK_START}>Install jsonvet</a> as a Git hook, GitHub Action, or command-line tool.
+  </p>
   <ul class="contents">
     {rows.map((r) => <li><a href={r.href}>{r.label}</a>: {r.summary}</li>)}
   </ul>

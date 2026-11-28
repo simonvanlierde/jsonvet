@@ -12,6 +12,7 @@ import { Marked, Parser } from "marked";
 export const ROOT = resolve(process.cwd(), "../..");
 export const REPO = "https://github.com/simonvanlierde/jsonvet";
 export const SITE = "https://simonvanlierde.com/jsonvet/";
+export const QUICK_START = `${REPO}/blob/main/README.md#quick-start`;
 /** Where the docs live on the site, as the CLI and the playground link to them. */
 export const DOCS = "/jsonvet/docs/";
 
@@ -25,8 +26,8 @@ export const NAV = [
   ["docs/editors.md", "Editors"],
   ["docs/design.md", "Design"],
   ["docs/architecture.md", "Architecture"],
-  ["docs/conformance.md", "Conformance"],
-  [MATRIX, "Matrix"],
+  ["docs/conformance.md", "Conformance report"],
+  [MATRIX, "Conformance matrix"],
   ["docs/parser-disagreements.md", "Where parsers disagree"],
   ["docs/accessibility.md", "Accessibility"],
   ["docs/assurance-case.md", "Assurance case"],
@@ -141,13 +142,15 @@ export function rewrite(href, src, pages, subs) {
 }
 
 /** A doc's title (its h1) and its summary (its first sentence that says something), for the
- * page's title and description. A decision record opens with "Status: accepted (...)", which says
- * nothing about the page, and a paragraph that ends in a colon only introduces a list. */
+ * page's title and description. Skip review dates, decision records' status lines, and paragraphs
+ * that only introduce lists. */
 export function describe(src) {
   const tokens = new Marked().lexer(readFileSync(resolve(ROOT, src), "utf8"));
   const h1 = tokens.find((t) => t.type === "heading" && t.depth === 1);
   const text = (t) => toText(t.tokens).replace(/\s+/g, " ").trim();
-  const first = tokens.find((t) => t.type === "paragraph" && !t.text.startsWith("Status:") && !text(t).endsWith(":"));
+  const first = tokens.find(
+    (t) => t.type === "paragraph" && !/^(?:Status|Last reviewed):/.test(t.text) && !text(t).endsWith(":"),
+  );
   return {
     title: toText(h1.tokens),
     summary: first ? text(first).split(/(?<=[.!?])\s+(?=[A-Z])/)[0] : "",

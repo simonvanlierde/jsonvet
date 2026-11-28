@@ -1,13 +1,21 @@
 ---
 // The playground's header (playground/header.html), with the search where its marker is.
 import Search from "virtual:starlight/components/Search";
-import { chrome, DOCS, ruleIds } from "../../lib.mjs";
+import { chrome, DOCS, QUICK_START, ruleIds } from "../../lib.mjs";
 const [before, after] = chrome("header.html").split("<!--search-->");
+const reference = DOCS + "usage.html";
+const directResults = [
+  ["install jsonvet", { href: QUICK_START, label: "Install jsonvet" }],
+  ["sarif", { href: reference + "#sarif", label: "SARIF output and code scanning" }],
+  ["gitlab", { href: reference + "#gitlab-code-quality", label: "GitLab Code Quality" }],
+  ["gitlab code quality", { href: reference + "#gitlab-code-quality", label: "GitLab Code Quality" }],
+  ...ruleIds().map((rule) => [rule, { href: `${reference}#${encodeURIComponent(rule)}`, label: `Rule reference: ${rule}` }]),
+];
 ---
 
 <div class="bar">
   <Fragment set:html={before} />
-  <div class="docs-search" data-rule-ids={ruleIds().join(" ")} data-reference={DOCS + "usage.html"}>
+  <div class="docs-search" data-direct-results={JSON.stringify(directResults)}>
     <Search />
   </div>
   <Fragment set:html={after} />
@@ -19,7 +27,9 @@ const [before, after] = chrome("header.html").split("<!--search-->");
   const dialog = search?.querySelector("dialog");
 
   if (search && button && dialog) {
-    const rules = new Set(search.dataset.ruleIds?.split(" "));
+    const directResults = new Map<string, { href: string; label: string }>(
+      JSON.parse(search.dataset.directResults ?? "[]"),
+    );
     const shortcut = button.querySelector("kbd");
     if (shortcut) {
       shortcut.setAttribute("aria-hidden", "true");
@@ -41,21 +51,21 @@ const [before, after] = chrome("header.html").split("<!--search-->");
       button.click();
     });
 
-    // Pagefind's fuzzy results still follow the direct reference match.
+    // Pagefind's fuzzy results follow the direct match for a task or rule.
     const result = document.createElement("p");
-    result.className = "rule-result";
+    result.className = "direct-result";
     result.setAttribute("aria-live", "polite");
     const link = document.createElement("a");
     dialog.addEventListener("input", (event) => {
       const input = event.target;
       if (!(input instanceof HTMLInputElement) || !input.matches(".pagefind-ui__search-input")) return;
-      const rule = input.value.trim().toLowerCase();
-      if (!rules.has(rule)) {
+      const match = directResults.get(input.value.trim().toLowerCase());
+      if (!match) {
         result.remove();
         return;
       }
-      link.href = `${search.dataset.reference}#${encodeURIComponent(rule)}`;
-      link.textContent = `Rule reference: ${rule}`;
+      link.href = match.href;
+      link.textContent = match.label;
       result.replaceChildren(link);
       input.form?.querySelector(".pagefind-ui__drawer")?.before(result);
     });

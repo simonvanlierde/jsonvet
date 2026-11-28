@@ -5,7 +5,7 @@ import { posix, resolve } from "node:path";
 import { after, test } from "node:test";
 import { decode } from "../../playground/share.mjs";
 import { policy, scriptHashes } from "./csp-hash.mjs";
-import { anchorsOf, NAV, pageOf, REPO, ROOT, ruleIds, slugger, sources } from "./lib.mjs";
+import { anchorsOf, NAV, pageOf, QUICK_START, REPO, ROOT, ruleIds, SITE, slugger, sources } from "./lib.mjs";
 import { shown } from "./matrix.mjs";
 
 // The site as deployed, built into a folder of its own (DOCS_OUT), so a test never touches ../../site.
@@ -214,14 +214,16 @@ test("search: the index is built over the docs, and the matrix is left out", () 
     assert.equal(indexed, !["docs/matrix.html", "404.html"].includes(path), path);
   }
   assert.ok(existsSync(resolve(site, "index.html")) && !read("index.html").includes("data-pagefind-body"));
+  const index = html["docs/index.html"];
+  assert.ok(index.includes(`<a href="${QUICK_START}">Install jsonvet</a>`));
 });
 
-test("a decision record's description is not its status line, and none ends in a colon", () => {
-  for (const path of Object.keys(html).filter((p) => p.startsWith("docs/decisions/")))
-    assert.doesNotMatch(descriptionOf(path), /^Status:/, path);
+test("page descriptions omit status lines, review dates, and list introductions", () => {
   assert.match(descriptionOf("docs/decisions/0002-no-unsafe-code.html"), /\s.*\s/);
-  for (const path of Object.keys(html).filter((p) => p !== "404.html"))
+  for (const path of Object.keys(html).filter((p) => p !== "404.html")) {
+    assert.doesNotMatch(descriptionOf(path), /^(?:Status|Last reviewed):/, path);
     assert.doesNotMatch(descriptionOf(path), /:$/, path);
+  }
 });
 
 test("the playground's links into the pages resolve", () => {
@@ -245,6 +247,19 @@ test("the playground's links into the pages resolve", () => {
   assert.deepEqual(broken, []);
 });
 
+test("literal code and matrix fixtures opt out of Cloudflare email obfuscation", () => {
+  for (const path of ["docs/usage.html", "docs/matrix.html"]) {
+    const blocks = [...html[path].matchAll(/<pre(?=[\s>])[^>]*>[\s\S]*?<\/pre>/g)];
+    assert.ok(blocks.length > 0, path);
+    for (const block of blocks) {
+      assert.ok(html[path].startsWith("<!--email_off-->", block.index - "<!--email_off-->".length), path);
+      assert.ok(html[path].startsWith("<!--/email_off-->", block.index + block[0].length), path);
+    }
+  }
+  assert.match(html["docs/usage.html"], /python@\d+(?:\.\d+)+/);
+  assert.match(html["docs/usage.html"], /jsonvet@\d+(?:\.\d+)+/);
+});
+
 test("the CLI links each rule to a page the site publishes", () => {
   const src = readFileSync(resolve(ROOT, "crates/jsonvet-cli/src/rules.rs"), "utf8");
   const [, ref, prefix] = src.match(/"https:\/\/simonvanlierde\.com\/jsonvet\/(docs\/usage\.html)(#)\{id\}"/) ?? [];
@@ -264,12 +279,22 @@ test("the docs nav lists every page, in order", () => {
   assert.ok(html["docs/usage.html"].includes('aria-current="page"'));
 });
 
-test("exact rule search links lead to their reference sections", () => {
+test("exact search matches lead to the quick start or the relevant reference section", () => {
   const usage = html["docs/usage.html"];
+  const [, results] = usage.match(/data-direct-results="([^"]+)"/);
+  const matches = new Map(JSON.parse(results.replaceAll("&quot;", '"')));
+  assert.equal(matches.get("install jsonvet").href, QUICK_START);
+  assert.ok(ids(usage).has("sarif"));
+  assert.equal(matches.get("sarif").href, `${BASE}docs/usage.html#sarif`);
+  assert.ok(ids(usage).has("gitlab-code-quality"));
+  assert.equal(matches.get("gitlab").href, `${BASE}docs/usage.html#gitlab-code-quality`);
+  assert.equal(matches.get("gitlab code quality").href, matches.get("gitlab").href);
   const rules = ruleIds();
   assert.ok(rules.includes("duplicate-key"));
-  assert.ok(usage.includes(`data-rule-ids="${rules.join(" ")}"`));
-  for (const rule of rules) assert.ok(ids(usage).has(rule), rule);
+  for (const rule of rules) {
+    assert.ok(ids(usage).has(rule), rule);
+    assert.equal(matches.get(rule).href, `${BASE}docs/usage.html#${rule}`);
+  }
 });
 
 test("the matrix page has a table per dialect, and details for every file and parser", () => {
@@ -296,6 +321,17 @@ test("the matrix page has a table per dialect, and details for every file and pa
     const id = `file/${f.path.replace(/^tests\//, "").replace(/^conformance\//, "")}`;
     assert.ok(ids(page).has(id), id);
   }
+});
+
+test("the report includes duplicate-key variants and links to the syntax matrix", () => {
+  const report = html["docs/conformance.html"];
+  const matrix = html["docs/matrix.html"];
+  assert.ok(report.includes("<title>Conformance report | jsonvet docs</title>"));
+  assert.ok(matrix.includes("<title>Conformance matrix | jsonvet docs</title>"));
+  assert.match(descriptionOf("docs/conformance.html"), /including duplicate-key variants/);
+  assert.match(descriptionOf("docs/matrix.html"), /syntax runs/);
+  assert.ok(matrix.includes('href="/jsonvet/docs/conformance.html">conformance report</a>'));
+  assert.ok(report.includes(`href="${SITE}docs/matrix.html">conformance matrix</a>`));
 });
 
 test("a file's text names its invisible characters, and its share link opens the same text", async () => {
