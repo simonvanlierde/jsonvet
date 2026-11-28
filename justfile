@@ -24,6 +24,9 @@ lint:
     prek run ruff-check ruff-format zizmor --all-files --show-diff-on-failure
     uv run scripts/check-versions.py
     cargo metadata --locked --manifest-path crates/jsonvet-python/Cargo.toml --format-version 1 > /dev/null
+    cargo check --locked --manifest-path crates/jsonvet-python/Cargo.toml
+    uvx cffconvert@2.0.0 --validate -i CITATION.cff
+    uvx cffconvert@2.0.0 -f zenodo -i CITATION.cff | jq -e '.license.id | type == "string"'
     just matrix-check
     uv run conformance/run.py --check
 

@@ -223,6 +223,8 @@ A release changes the version in these places, in one commit on a branch:
 5. `rev: vX.Y.Z` in the hook examples in `README.md`, `docs/usage.md` and `docs/format.md`
 6. in `CHANGELOG.md`, the Unreleased entries moved under a new `## [X.Y.Z] - date` heading, and
    the compare links at the bottom
+7. the `jsonvet` version in `crates/jsonvet-python/Cargo.lock`, a separate workspace that
+   `cargo metadata --locked` in `lint` checks
 
 [cargo-release](https://github.com/crate-ci/cargo-release) makes all of them. It only bumps and
 commits, and refuses to run on `main` ([0011](docs/decisions/0011-release-tooling.md)). Write the
@@ -276,7 +278,7 @@ The release pull request changes `Cargo.toml` and `Cargo.lock`, so `wheels-check
 wheels on it. Look at its `wheels / wheels (...)` checks before you tag. They cannot be required
 checks, because the workflow only runs for some paths.
 
-A pre-release has a `-` in its tag (`v3.1.0-rc.1`). cargo-release bumps only the crates for one.
+A pre-release has a `-` in its tag (`v3.1.0-rc.1`). cargo-release bumps only the crates and the bindings lockfile for one.
 Edit the other places by hand. Use the PEP 440 form (`4.1.0rc1`) in `setup.py`.
 
 Once the release is published, run `just major`. It creates or updates the alias that

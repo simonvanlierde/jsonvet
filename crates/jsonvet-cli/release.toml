@@ -1,12 +1,14 @@
 # The edits each release makes once, outside the crates' manifests. cargo-release runs a
 # replacement once per crate, so they sit on this crate only. Paths are relative to this folder.
-# None runs for a pre-release: the Python pin needs the PEP 440 form (3.2.0rc1) there.
+# None runs for a pre-release except the bindings lockfile (`prerelease = true`): the Python pin
+# needs the PEP 440 form (3.2.0rc1) there, but the lockfile takes the Cargo form.
 pre-release-replacements = [
   { file = "../../setup.py", search = "jsonvet==[^\"]+", replace = "jsonvet=={{version}}", exactly = 1 },
   { file = "../../editors/vscode/package.json", search = "\"version\": \"[^\"]+\"", replace = "\"version\": \"{{version}}\"", exactly = 1 },
   { file = "../../README.md", search = "rev: v\\S+", replace = "rev: v{{version}}", exactly = 1 },
-  { file = "../../docs/usage.md", search = "rev: v\\S+", replace = "rev: v{{version}}", exactly = 1 },
+  { file = "../../docs/usage.md", search = "(?m)^(\\s+)rev: v\\S+$", replace = "${1}rev: v{{version}}", exactly = 1 },
   { file = "../../docs/format.md", search = "rev: v\\S+", replace = "rev: v{{version}}", exactly = 1 },
+  { file = "../../crates/jsonvet-python/Cargo.lock", search = "(name = \"jsonvet\"\\nversion = )\"[^\"]+\"", replace = "${1}\"{{version}}\"", exactly = 1, prerelease = true },
   { file = "../../CHANGELOG.md", search = "## \\[Unreleased\\]", replace = "## [Unreleased]\n\n## [{{version}}] - {{date}}", exactly = 1 },
   { file = "../../CHANGELOG.md", search = "\\[Unreleased\\]: \\S+", replace = "[Unreleased]: {{repository}}/compare/v{{version}}...HEAD\n[{{version}}]: {{repository}}/compare/v{{prev_version}}...v{{version}}", exactly = 1 },
 ]

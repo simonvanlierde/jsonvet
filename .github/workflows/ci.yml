@@ -64,6 +64,9 @@ jobs:
       - run: uv run scripts/check-versions.py
       - name: Check the separate Python bindings lockfile
         run: cargo metadata --locked --manifest-path crates/jsonvet-python/Cargo.toml --format-version 1 > /dev/null
+      # Nothing else compiles the bindings crate.
+      - name: Check the Python bindings compile
+        run: cargo check --locked --manifest-path crates/jsonvet-python/Cargo.toml
       # Zenodo reads CITATION.cff on each release and refuses a file the schema rejects.
       - run: uvx cffconvert@2.0.0 --validate -i CITATION.cff
       # The schema allows a licence list, but Zenodo takes one id (3.4.0 and 3.5.0 failed with a list).
@@ -426,6 +429,10 @@ jobs:
           save-cache: ${{ github.event_name != 'pull_request' }}
       - name: Install and run jsonvet from the source distribution
         run: uv run scripts/smoke.py dist/*.tar.gz
+      # The library has no unpublished dependency, so it packages and builds in full. jsonvet-cli
+      # needs the library version it pins from crates.io, so it only lists.
+      - name: Build the library package
+        run: cargo package --locked -p jsonvet
       # Each crate and the sdist must carry both license texts, the same as the root files.
       - name: Check the LICENSE files
         run: |
