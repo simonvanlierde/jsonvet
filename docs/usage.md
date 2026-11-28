@@ -440,9 +440,10 @@ format. The log uses text by default.
 By default the Action installs the release that matches its own tag. `@v4` gets the newest 4.x on
 PyPI, and `@v4.0.0` gets 4.0.0. Pinned to a commit or a branch, it installs the release named in
 that commit's `Cargo.toml`, not the code in it. Before it installs the wheel, it checks that the
-wheel came from jsonvet's `release.yml` ([how](../SECURITY.md#verifying-a-release)). On a runner
-without `gh`, or for a release before 3.1.0, it installs the wheel unchecked, with a notice. Set
-`verify: false` on GitHub Enterprise Server.
+wheel came from jsonvet's `release.yml`, run for a release tag
+([how](../SECURITY.md#verifying-a-release)). On a runner without `gh`, or for a `version` that
+only releases before 3.1.0 match (`3.0.0`, `3.0.*`), it installs the wheel unchecked, with a
+notice. Set `verify: false` on GitHub Enterprise Server.
 
 ## Trunk Code Quality
 

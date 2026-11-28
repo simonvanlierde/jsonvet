@@ -38,9 +38,10 @@ inputs:
   verify:
     description: >-
       Check the wheel's build provenance attestation with the GitHub CLI before installing it: the
-      wheel must come from jsonvet's release workflow. `false` skips the check, as GitHub
-      Enterprise Server needs. On a runner without `gh`, the wheel is installed unchecked with a
-      notice, and so is a release before 3.1.0, which has no attestation.
+      wheel must come from jsonvet's release workflow, run for a release tag. `false` skips the
+      check, as GitHub Enterprise Server needs. On a runner without `gh`, the wheel is installed
+      unchecked with a notice, and so is a `version` that only releases before 3.1.0 match, such
+      as 3.0.0 or 3.0.*: they have no attestation.
     required: false
     default: "true"
 
