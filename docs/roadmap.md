@@ -18,8 +18,7 @@ a promise, and none of it has a date. Released work is in [CHANGELOG.md](../CHAN
 
 ## Ideas, not planned yet
 
-More machine-readable output, such as streaming JSON Lines diagnostics
-([#290](https://github.com/simonvanlierde/jsonvet/issues/290)), and scanner experiments to measure
+Scanner experiments to measure
 numeric parsing and UTF-8 validation on the 4.0 baseline
 ([#211](https://github.com/simonvanlierde/jsonvet/issues/211)).
 

@@ -33,7 +33,7 @@ and formats the text you paste. Nothing to install, and the text stays on your m
 - **JSON Schema with positions.** Each schema error points at its value's line and column.
   Default runs stay offline; `--schema-catalog` opts into SchemaStore downloads.
 - **Fits CI.** A pre-commit or prek hook, a GitHub Action, a command or a Rust library.
-  The CLI writes text, SARIF, JSON, or GitLab Code Quality reports.
+  The CLI writes text, SARIF, JSON, JSON Lines, or GitLab Code Quality reports.
 
 ## Quick start
 

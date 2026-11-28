@@ -1156,6 +1156,111 @@ fn json_holds_every_problem_and_keeps_the_exit_codes() {
     }
 }
 
+/// `--format jsonl` gives each problem the JSON diagnostic's fields, a record for each file, the
+/// clean ones included, and a last summary with the exit code, each line JSON that the published
+/// schema accepts. A usage error is a summary record.
+#[test]
+fn json_lines_stream_records_and_end_with_a_summary() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/json-output.schema.json");
+    let mut schema: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(path).expect("the schema file")).expect("JSON");
+    schema["$ref"] = "#/$defs/record".into();
+    schema
+        .as_object_mut()
+        .expect("an object")
+        .remove("required");
+    let validator = jsonschema::validator_for(&schema).expect("a valid schema");
+    let parse = |out: &str| -> Vec<serde_json::Value> {
+        assert!(out.ends_with('\n'), "{out}");
+        out.lines()
+            .map(|line| {
+                let record = serde_json::from_str(line).expect("one JSON object per line");
+                assert!(validator.is_valid(&record), "{line}");
+                record
+            })
+            .collect()
+    };
+    let dir = workdir(&[
+        ("dup.json", "{\n  \"a\": 1,\n  \"a\": 2\n}"),
+        ("ok.json", "{}"),
+        ("bom.json", "\u{FEFF}{}"),
+    ]);
+    let files = [
+        "--dialect=json:*",
+        "dup.json",
+        "ok.json",
+        "gone.json",
+        "bom.json",
+    ];
+    let (code, out, err) = jsonvet_stderr(&dir, &[&["--format", "jsonl"][..], &files].concat());
+    assert_eq!((code, err.as_str()), (1, ""));
+    let records = parse(&out);
+    let kinds: Vec<_> = records
+        .iter()
+        .map(|r| (r["type"].as_str(), r["file"].as_str()))
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            (Some("diagnostic"), Some("dup.json")),
+            (Some("file"), Some("dup.json")),
+            (Some("file"), Some("ok.json")),
+            (Some("diagnostic"), Some("gone.json")),
+            (Some("file"), Some("gone.json")),
+            (Some("diagnostic"), Some("bom.json")),
+            (Some("file"), Some("bom.json")),
+            (Some("summary"), None),
+        ]
+    );
+    assert!(records.iter().all(|r| r["schema_version"] == 2));
+    // The diagnostics are the JSON report's, with `type` and `schema_version` in front.
+    let (_, json, _) = jsonvet_stderr(&dir, &[&["--format", "json"][..], &files].concat());
+    let json: serde_json::Value = serde_json::from_str(&json).expect("JSON output");
+    let mut diagnostics: Vec<_> = records
+        .iter()
+        .filter(|r| r["type"] == "diagnostic")
+        .cloned()
+        .collect();
+    for d in &mut diagnostics {
+        let d = d.as_object_mut().expect("an object");
+        d.remove("type");
+        d.remove("schema_version");
+    }
+    assert_eq!(serde_json::Value::from(diagnostics), json["diagnostics"]);
+    assert_eq!(records[2]["error_count"], 0);
+    assert_eq!(records[4]["error_count"], 1);
+    assert_eq!(records[6]["warning_count"], 1);
+    assert_eq!(
+        records[7],
+        serde_json::json!({"type":"summary","schema_version":2,"files":4,"files_with_problems":3,
+            "error_count":2,"warning_count":1,"exit_code":1})
+    );
+    // The summary's exit code is the process's, with --max-warnings too.
+    for (args, want) in [
+        (&["--dialect=json:*", "bom.json"][..], 0),
+        (&["--dialect=json:*", "--max-warnings=0", "bom.json"], 1),
+        (&["ok.json"], 0),
+    ] {
+        let (code, out, _) = jsonvet_stderr(&dir, &[&["--format=jsonl"][..], args].concat());
+        assert_eq!(code, want, "{args:?}");
+        let last = parse(&out).pop().expect("a summary");
+        assert_eq!(last["exit_code"], want, "{args:?}");
+    }
+    // A usage error or a bad schema is a summary record with `errors` and exit code 2.
+    for args in [
+        &["--format", "jsonl", "--frmat"][..],
+        &["--format=jsonl", "--schema", "gone.json", "ok.json"],
+    ] {
+        let (code, out, err) = jsonvet_stderr(&dir, args);
+        assert_eq!((code, err.as_str()), (2, ""), "{args:?}");
+        let records = parse(&out);
+        assert_eq!(records.len(), 1, "{out}");
+        assert_eq!(records[0]["exit_code"], 2);
+        assert!(records[0]["errors"][0]["help"].is_string(), "{out}");
+        assert!(records[0].get("files").is_none(), "{out}");
+    }
+}
+
 /// A file name or message in JSON is a valid JSON string whatever it holds, escaped as SARIF
 /// escapes it: control characters, bidi controls and the `[` of `##[` as `\uXXXX`.
 #[test]
@@ -4927,6 +5032,60 @@ fn json_usage_and_schema_errors_are_documents() {
             "{out}"
         );
     }
+}
+
+/// With `--format jsonl`, a write that fails after the checks, of the fixed text or of the fix
+/// count, still leaves exactly one summary, last, whose `exit_code` is the process's.
+#[cfg(target_os = "linux")] // macOS has no /dev/full
+#[test]
+fn a_json_lines_run_with_a_failed_write_has_one_true_summary() {
+    use std::io::Write as _;
+    use std::process::Stdio;
+    let dir = workdir(&[("dup.json", "{\"a\":1,\"a\":2}\n")]);
+    let summaries = |report: &[u8], code: Option<i32>| {
+        let report = String::from_utf8_lossy(report);
+        let lines: Vec<serde_json::Value> = report
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("one JSON object per line"))
+            .collect();
+        let found: Vec<_> = lines.iter().filter(|r| r["type"] == "summary").collect();
+        assert_eq!(found.len(), 1, "{report}");
+        assert_eq!(lines.last(), Some(found[0]), "{report}");
+        assert_eq!(
+            found[0]["exit_code"].as_i64(),
+            code.map(i64::from),
+            "{report}"
+        );
+    };
+    // The fixed text on standard output cannot be written; the report is on standard error.
+    let full = fs::File::create("/dev/full").expect("open /dev/full");
+    let mut child = command(env!("CARGO_BIN_EXE_jsonvet"))
+        .args(["--format", "jsonl", "--fix", "-"])
+        .current_dir(&dir)
+        .stdin(Stdio::piped())
+        .stdout(full)
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run jsonvet");
+    child
+        .stdin
+        .take()
+        .expect("stdin")
+        .write_all(b"{\"a\":1,}")
+        .expect("write stdin");
+    let out = child.wait_with_output().expect("run jsonvet");
+    assert_eq!(out.status.code(), Some(2));
+    summaries(&out.stderr, out.status.code());
+    // The fix count on standard error cannot be written; the report is on standard output.
+    let full = fs::File::create("/dev/full").expect("open /dev/full");
+    let out = command(env!("CARGO_BIN_EXE_jsonvet"))
+        .args(["--format", "jsonl", "--unsafe-fixes", "--fix", "dup.json"])
+        .current_dir(&dir)
+        .stderr(full)
+        .output()
+        .expect("run jsonvet");
+    assert_eq!(out.status.code(), Some(2));
+    summaries(&out.stdout, out.status.code());
 }
 
 /// A JSON error document that cannot be written is a failed write (exit 2 and a message), not a

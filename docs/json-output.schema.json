@@ -16,7 +16,7 @@
       "items": { "$ref": "#/$defs/diagnostic" }
     },
     "errors": {
-      "description": "Why the run stopped on a usage error or a bad schema, before any diagnostic was printed.",
+      "description": "Why the run stopped on a usage error or a bad schema, before any diagnostic was printed. In a --format jsonl summary record, an error can also follow other records.",
       "type": "array",
       "items": {
         "type": "object",
@@ -34,6 +34,47 @@
     }
   },
   "$defs": {
+    "record": {
+      "description": "One line of --format jsonl, which shares schema_version with --format json.",
+      "oneOf": [
+        {
+          "allOf": [
+            { "$ref": "#/$defs/diagnostic" },
+            { "properties": { "type": { "const": "diagnostic" } } }
+          ],
+          "required": ["type", "schema_version"],
+          "properties": { "schema_version": { "const": 2 } }
+        },
+        {
+          "description": "A file once its diagnostics are reported.",
+          "type": "object",
+          "required": ["type", "schema_version", "file", "error_count", "warning_count"],
+          "properties": {
+            "type": { "const": "file" },
+            "schema_version": { "const": 2 },
+            "file": { "type": "string" },
+            "error_count": { "type": "integer", "minimum": 0 },
+            "warning_count": { "type": "integer", "minimum": 0 }
+          }
+        },
+        {
+          "description": "The last record. The counts are left out when the run stopped on an error, with exit_code 2 and errors.",
+          "type": "object",
+          "required": ["type", "schema_version", "exit_code"],
+          "properties": {
+            "type": { "const": "summary" },
+            "schema_version": { "const": 2 },
+            "files": { "type": "integer", "minimum": 0 },
+            "files_with_problems": { "type": "integer", "minimum": 0 },
+            "error_count": { "type": "integer", "minimum": 0 },
+            "warning_count": { "type": "integer", "minimum": 0 },
+            "exit_code": { "enum": [0, 1, 2] },
+            "errors": { "$ref": "#/properties/errors" },
+            "notes": { "$ref": "#/properties/notes" }
+          }
+        }
+      ]
+    },
     "diagnostic": {
       "type": "object",
       "required": [

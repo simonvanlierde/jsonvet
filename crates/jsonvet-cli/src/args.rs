@@ -42,7 +42,9 @@ Options:
       --unsafe-fixes            With --fix, also fix duplicate keys: keep the last of each key
                                 and drop the earlier members, as JSON.parse does.
       --format FORMAT           Print problems as text (the default), sarif for code scanning,
-                                json (one document), or gitlab for GitLab Code Quality.
+                                json (one document), jsonl (JSON Lines: a record for each
+                                problem and file, then a summary), or gitlab for GitLab
+                                Code Quality.
       --color WHEN              Color text output: auto (the default), always or never. Auto
                                 colors it on a terminal, unless NO_COLOR is set; FORCE_COLOR
                                 colors it anywhere, and FORCE_COLOR=0 or false nowhere. On a
@@ -138,9 +140,10 @@ fn parse_format(name: &str) -> Result<Format, String> {
         "text" => Ok(Format::Text),
         "sarif" => Ok(Format::Sarif),
         "json" => Ok(Format::Json),
+        "jsonl" => Ok(Format::JsonLines),
         "gitlab" => Ok(Format::GitLab),
         _ => {
-            let hint = messages::did_you_mean(name, ["text", "sarif", "json", "gitlab"]);
+            let hint = messages::did_you_mean(name, ["text", "sarif", "json", "jsonl", "gitlab"]);
             Err(messages::fill(
                 "error.format",
                 &[("value", &name), ("hint", &hint)],
@@ -177,8 +180,12 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command,
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ErrorOutput {
     Text,
-    JsonStdout,
-    JsonStderr,
+    /// A JSON document, or a JSON Lines summary record with `lines`, on standard output or, with
+    /// `stderr`, standard error.
+    Json {
+        stderr: bool,
+        lines: bool,
+    },
 }
 
 /// Scan with the same tokenizer and file-name rules as `check`. The parser still
@@ -186,8 +193,9 @@ pub(crate) enum ErrorOutput {
 pub(crate) fn error_output(args: &[OsString]) -> ErrorOutput {
     let mut parser = lexopt::Parser::from_args(args.iter().cloned());
     parser.set_short_equals(false);
-    let (mut json, mut fix, mut stdin, mut named_stdin, mut has_file) =
-        (false, false, false, false, false);
+    // `Some(true)` for JSON Lines.
+    let mut json = None;
+    let (mut fix, mut stdin, mut named_stdin, mut has_file) = (false, false, false, false);
     loop {
         if raw_file(&mut parser).is_some() {
             has_file = true;
@@ -198,8 +206,9 @@ pub(crate) fn error_output(args: &[OsString]) -> ErrorOutput {
                 // A malformed value leaves the last valid format in effect.
                 let Ok(value) = parser.value() else { continue };
                 match value.to_str() {
-                    Some("json") => json = true,
-                    Some("text" | "sarif" | "gitlab") => json = false,
+                    Some("json") => json = Some(false),
+                    Some("jsonl") => json = Some(true),
+                    Some("text" | "sarif" | "gitlab") => json = None,
                     _ => {}
                 }
             }
@@ -225,12 +234,12 @@ pub(crate) fn error_output(args: &[OsString]) -> ErrorOutput {
             Ok(None) | Err(_) => break,
         }
     }
-    if !json {
-        ErrorOutput::Text
-    } else if fix && (stdin || named_stdin && !has_file) {
-        ErrorOutput::JsonStderr
-    } else {
-        ErrorOutput::JsonStdout
+    match json {
+        None => ErrorOutput::Text,
+        Some(lines) => ErrorOutput::Json {
+            stderr: fix && (stdin || named_stdin && !has_file),
+            lines,
+        },
     }
 }
 
@@ -572,12 +581,16 @@ mod tests {
         assert_eq!(check(&["x.json"]).format, Format::Text);
         assert_eq!(check(&["--format=text", "x.json"]).format, Format::Text);
         assert_eq!(check(&["--format", "json", "x.json"]).format, Format::Json);
-        assert!(parse(["--format", "jsonl"].iter().map(Into::into)).is_err());
+        assert_eq!(
+            check(&["--format", "jsonl", "x.json"]).format,
+            Format::JsonLines
+        );
+        assert!(parse(["--format", "ndjson"].iter().map(Into::into)).is_err());
         // Value names are case-sensitive, as in clap and ruff, but a wrong case gets a hint.
         assert_eq!(
             parse(["--format", "SARIF"].iter().map(Into::into)).err(),
             Some(
-                "--format takes text, sarif, json or gitlab, not `SARIF` (did you mean `sarif`?)"
+                "--format takes text, sarif, json, jsonl or gitlab, not `SARIF` (did you mean `sarif`?)"
                     .to_owned()
             )
         );

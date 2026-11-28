@@ -19,6 +19,7 @@ pub(crate) enum Format {
     Text,
     Sarif,
     Json,
+    JsonLines,
     GitLab,
 }
 
@@ -151,6 +152,11 @@ enum Sink {
     Json {
         started: bool,
     },
+    /// The current file's counts, for its record.
+    JsonLines {
+        errors: usize,
+        warnings: usize,
+    },
     GitLab(gitlab::Report),
 }
 
@@ -180,6 +186,10 @@ impl<W: Write> Printer<W> {
                 dropped: 0,
             },
             Format::Json => Sink::Json { started: false },
+            Format::JsonLines => Sink::JsonLines {
+                errors: 0,
+                warnings: 0,
+            },
             Format::GitLab => Sink::GitLab(gitlab::Report::default()),
         };
         let related =
@@ -194,9 +204,27 @@ impl<W: Write> Printer<W> {
     }
 
     pub(crate) fn begin_file(&mut self) {
-        if let Sink::GitLab(report) = &mut self.sink {
-            report.begin_file();
+        match &mut self.sink {
+            Sink::GitLab(report) => report.begin_file(),
+            Sink::JsonLines { errors, warnings } => (*errors, *warnings) = (0, 0),
+            _ => {}
         }
+    }
+
+    /// The end of a file's problems: with `--format jsonl`, its record, flushed so a run that is
+    /// stopped keeps the records of the files reported so far.
+    pub(crate) fn end_file(&mut self, file: &OsStr) -> io::Result<()> {
+        if let Sink::JsonLines { errors, warnings } = self.sink {
+            self.out
+                .write_all(json::file_record(file, errors, warnings).as_bytes())?;
+            self.out.flush()?;
+        }
+        Ok(())
+    }
+
+    /// The runtime notes kept for the report, taken out of it.
+    pub(crate) fn take_notes(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.notes)
     }
 
     /// A problem in a file's contents.
@@ -306,6 +334,17 @@ impl<W: Write> Printer<W> {
         related: Option<Mark<'_>>,
     ) -> io::Result<()> {
         let at = place.map(|p| p.mark.at);
+        let diagnostic = || {
+            json::diagnostic(
+                file,
+                rule,
+                severity,
+                message,
+                place.map(|p| (p.mark.at, p.mark.span.0)),
+                related.and_then(|r| Some((r.at, r.span.0, r.label?))),
+                place.and_then(|p| p.path),
+            )
+        };
         let (annotate, frames, color) = match &mut self.sink {
             Sink::GitLab(report) => {
                 return report.finding(
@@ -324,16 +363,16 @@ impl<W: Write> Printer<W> {
                     self.out.write_all(json::start().as_bytes())?;
                 }
                 *started = true;
-                let diagnostic = json::diagnostic(
-                    file,
-                    rule,
-                    severity,
-                    message,
-                    place.map(|p| (p.mark.at, p.mark.span.0)),
-                    related.and_then(|r| Some((r.at, r.span.0, r.label?))),
-                    place.and_then(|p| p.path),
-                );
-                return self.out.write_all(diagnostic.as_bytes());
+                return self.out.write_all(diagnostic().as_bytes());
+            }
+            Sink::JsonLines { errors, warnings } => {
+                match severity {
+                    Severity::Error => *errors += 1,
+                    Severity::Warning => *warnings += 1,
+                    _ => {}
+                }
+                let record = json::record("diagnostic", &diagnostic());
+                return self.out.write_all(record.as_bytes());
             }
             Sink::Sarif { written, dropped } => {
                 if *written < sarif::MAX_RESULTS {
@@ -476,7 +515,10 @@ impl<W: Write> Printer<W> {
         } else {
             Ok(())
         };
-        if matches!(self.sink, Sink::Json { .. } | Sink::Sarif { .. }) {
+        if matches!(
+            self.sink,
+            Sink::Json { .. } | Sink::JsonLines { .. } | Sink::Sarif { .. }
+        ) {
             self.notes.push(message);
         }
         written
@@ -486,7 +528,7 @@ impl<W: Write> Printer<W> {
     /// document, with SARIF's count of results past the cap.
     pub(crate) fn finish(&mut self) -> io::Result<()> {
         match &self.sink {
-            Sink::Text { .. } => {}
+            Sink::Text { .. } | Sink::JsonLines { .. } => {}
             Sink::GitLab(report) => report.finish(&mut self.out)?,
             Sink::Json { started } => {
                 if *started {
@@ -494,17 +536,7 @@ impl<W: Write> Printer<W> {
                 } else {
                     self.out.write_all(json::start().as_bytes())?;
                 }
-                write!(self.out, "]")?;
-                if !self.notes.is_empty() {
-                    let notes = self
-                        .notes
-                        .iter()
-                        .map(|note| string(note))
-                        .collect::<Vec<_>>()
-                        .join(",");
-                    write!(self.out, ",\"notes\":[{notes}]")?;
-                }
-                writeln!(self.out, "}}")?;
+                writeln!(self.out, "]{}}}", json::notes(&self.notes))?;
             }
             Sink::Sarif { written, dropped } => {
                 if *dropped > 0 && !self.stderr_report {

@@ -13,8 +13,8 @@ The details behind the [README](../README.md). Why things work this way is in
   `--max-warnings N` fails when warnings exceed that count.
 - `--fix` applies safe fixes in place and reports what is left. Add `--unsafe-fixes` to allow
   dropping duplicate keys.
-- `--format text|sarif|json|gitlab` writes text lines by default, or a SARIF 2.1.0, JSON, or
-  [GitLab Code Quality](#gitlab-code-quality) report.
+- `--format text|sarif|json|jsonl|gitlab` writes text lines by default, or a SARIF 2.1.0, JSON,
+  [JSON Lines](#json-lines) or [GitLab Code Quality](#gitlab-code-quality) report.
   `--color auto|always|never` controls color in text output. See [Output](#output).
 - `--schema FILE` checks against that JSON Schema in place of schemas from settings or a file's
   local `$schema`. `--schema-catalog` enables HTTPS SchemaStore lookup by file name as a fallback.
@@ -33,7 +33,7 @@ lists the files that would change and writes nothing ([formatting](format.md)).
 `--fix` rewrites each file with the fixes that are safe, then checks the result and reports what
 is left. The exit status comes from those problems, so a run that fixes everything exits 0. When
 it fixed something, it prints a count to standard error, such as `fixed 3 problems in 2 files`.
-With standard input and `--format json`, `sarif` or `gitlab`, the report goes to standard error
+With standard input and `--format json`, `jsonl`, `sarif` or `gitlab`, the report goes to standard error
 and the count is left out.
 
 | Problem                                                           | Fix                          | Safe |
@@ -113,7 +113,7 @@ color off, even on a terminal. `NO_COLOR` wins over `FORCE_COLOR`, and `--color`
 Text output is in the language `LC_ALL`, `LC_MESSAGES` or `LANG` asks for, the first one set, when
 jsonvet has a translation for it, and in English otherwise. English is the only language so far.
 `LANGUAGE` and the Windows language setting are not read. `LC_ALL=C` gives English, and so do
-`--format json`, `sarif` and `gitlab`, whose documents never change with the locale. Rule ids,
+`--format json`, `jsonl`, `sarif` and `gitlab`, whose documents never change with the locale. Rule ids,
 severities, JSONPaths and exit codes are never translated.
 
 - Lines and columns count from 1, and columns count Unicode code points. A byte order mark is
@@ -154,7 +154,8 @@ the [issue tracker](https://github.com/simonvanlierde/jsonvet/issues), and exits
 yet written is lost, and the verdict for the files checked so far is not given.
 
 On exit 2 or 101 the run may stop part way, so a structured report on standard output may be cut
-off. Do not upload it. `--format json` can print an [`errors` document](#json) instead.
+off. Do not upload it. `--format json` can print an [`errors` document](#json) instead, and
+`--format jsonl` ends with a [summary record](#json-lines).
 
 jsonvet reads regular files, and follows a symlink to one. A device, FIFO or socket prints
 `error: not a regular file`. When the output pipe closes early, as in `jsonvet … | head -1`,
@@ -608,6 +609,38 @@ jsonvet --format json config.json5 | jq -r '.diagnostics[] | "\(.file):\(.line) 
 - Strings are escaped as in SARIF, so a JSON reader gets the name and message back unchanged.
 - Each diagnostic is on a line of its own, written as files are checked. The exit status and
   `--max-warnings` work as with text. No annotations or count are printed.
+
+## JSON Lines
+
+`--format jsonl` prints one JSON object per line, for a reader that wants each file's result as
+it comes, or what a run had reported when it was stopped:
+
+```bash
+jsonvet --format jsonl . | jq -c 'select(.type == "file" and .error_count > 0) | .file'
+```
+
+```json
+{"type":"diagnostic","schema_version":2,"file":"dup.json","rule":"duplicate-key","url":"https://simonvanlierde.com/jsonvet/docs/usage.html#duplicate-key","severity":"error","message":"duplicate key $.a (first at 1:2)","line":1,"column":8,"offset":7,"related":[{"message":"first copy","line":1,"column":2,"offset":1}]}
+{"type":"file","schema_version":2,"file":"dup.json","error_count":1,"warning_count":0}
+{"type":"file","schema_version":2,"file":"ok.json","error_count":0,"warning_count":0}
+{"type":"summary","schema_version":2,"files":2,"files_with_problems":1,"error_count":1,"warning_count":0,"exit_code":1}
+```
+
+- Every record has a `type` and the `schema_version` of [JSON](#json), which both formats share.
+- A `diagnostic` record is a JSON diagnostic, with the same fields, plus `type` and
+  `schema_version`. A file jsonvet cannot read gets one under the rule `unreadable`.
+- A `file` record follows each file's diagnostics, clean files included, in the order given,
+  with its `error_count` and `warning_count`.
+- The last line is the one `summary` record: `files` checked, `files_with_problems` (with an
+  error or a warning, or that could not be read), `error_count`, `warning_count`, the
+  `exit_code`, which is always jsonvet's exit status, and optional `notes`, as in JSON.
+- A usage error, a schema that cannot be read or used, or another error that ends the run, also
+  after other records, gives a `summary` record with `exit_code` 2 and `errors`, as in JSON, and
+  no counts. A failed write to standard output can leave the summary out.
+- jsonvet flushes the records after each file. A run that is killed keeps the records of the
+  files it finished, with no summary; a reader drops a last line that does not end in a newline.
+- [json-output.schema.json](json-output.schema.json) describes a record under `$defs/record`. A
+  test checks real output against it.
 
 ## SchemaStore catalog
 

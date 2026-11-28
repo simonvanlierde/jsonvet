@@ -33,3 +33,4 @@ a link or a renamed test is fine.
 | [0017](0017-docs-pages-built-with-marked.md) | The docs pages are built from the Markdown with marked | 2026-11-11 |
 | [0018](0018-docs-search.md) | Docs search is a build-time index in a script of its own | 2026-11-15 |
 | [0019](0019-docs-on-starlight.md) | The docs are built with Starlight, under a docs CSP that hashes its inline scripts | 2026-11-16 |
+| [0020](0020-json-lines-records.md) | JSON Lines output: the JSON diagnostic, a record per file, a summary last | 2026-11-28 |
